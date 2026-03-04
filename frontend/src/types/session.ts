@@ -5,6 +5,7 @@ export interface Session {
   initialPrompt?: string;
   tmuxSession: string;
   status: "running" | "waiting" | "error" | "done" | "stopped";
+  type: "worker" | "controller";
   createdAt: string;
   updatedAt: string;
 }

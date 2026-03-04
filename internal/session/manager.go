@@ -57,14 +57,15 @@ func (m *Manager) Create(name, projectPath, prompt string) (*Session, error) {
 		InitialPrompt: prompt,
 		TmuxSession:   tmuxSession,
 		Status:        StatusRunning,
+		Type:          TypeWorker,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
 
 	_, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, s.TmuxSession, string(s.Status), s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, s.TmuxSession, string(s.Status), string(s.Type), s.CreatedAt, s.UpdatedAt,
 	)
 	if err != nil {
 		// Cleanup tmux session on DB error
@@ -77,7 +78,7 @@ func (m *Manager) Create(name, projectPath, prompt string) (*Session, error) {
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -89,11 +90,13 @@ func (m *Manager) List() ([]Session, error) {
 	for rows.Next() {
 		var s Session
 		var status string
+		var sessionType string
 		var prompt sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = Status(status)
+		s.Type = SessionType(sessionType)
 		if prompt.Valid {
 			s.InitialPrompt = prompt.String
 		}
@@ -114,11 +117,12 @@ func (m *Manager) List() ([]Session, error) {
 func (m *Manager) Get(id string) (*Session, error) {
 	var s Session
 	var status string
+	var sessionType string
 	var prompt sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -126,6 +130,7 @@ func (m *Manager) Get(id string) (*Session, error) {
 		return nil, fmt.Errorf("query session: %w", err)
 	}
 	s.Status = Status(status)
+	s.Type = SessionType(sessionType)
 	if prompt.Valid {
 		s.InitialPrompt = prompt.String
 	}
@@ -214,6 +219,85 @@ func (m *Manager) waitForClaudeReady(tmuxSession string, timeout time.Duration) 
 		time.Sleep(1 * time.Second)
 	}
 	return fmt.Errorf("claude did not become ready within %s", timeout)
+}
+
+// GetController returns the controller session if it exists.
+func (m *Manager) GetController() (*Session, error) {
+	var s Session
+	var status string
+	var sessionType string
+	var prompt sql.NullString
+	err := m.db.QueryRow(
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, created_at, updated_at
+		 FROM sessions WHERE type = ? LIMIT 1`, string(TypeController),
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &s.CreatedAt, &s.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query controller session: %w", err)
+	}
+	s.Status = Status(status)
+	s.Type = SessionType(sessionType)
+	if prompt.Valid {
+		s.InitialPrompt = prompt.String
+	}
+	return &s, nil
+}
+
+// CreateController creates the singleton controller session.
+// Returns the existing controller session if one already exists and is active.
+func (m *Manager) CreateController(projectPath string) (*Session, error) {
+	existing, err := m.GetController()
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && (existing.Status == StatusRunning || existing.Status == StatusWaiting) {
+		// Already running, return existing
+		return existing, nil
+	}
+
+	// If a stopped/done controller exists, delete it first
+	if existing != nil {
+		_ = m.Delete(existing.ID)
+	}
+
+	id := uuid.New().String()
+	name := "controller"
+	tmuxSession := tmux.SessionPrefix + name
+
+	if err := m.tmux.NewSession(name, projectPath, ""); err != nil {
+		return nil, fmt.Errorf("create controller tmux session: %w", err)
+	}
+
+	time.Sleep(300 * time.Millisecond)
+	if err := m.tmux.SendKeysOnce(tmuxSession, m.claudeCommand); err != nil {
+		return nil, fmt.Errorf("launch claude for controller: %w", err)
+	}
+
+	now := time.Now()
+	s := &Session{
+		ID:          id,
+		Name:        name,
+		ProjectPath: projectPath,
+		TmuxSession: tmuxSession,
+		Status:      StatusRunning,
+		Type:        TypeController,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	_, err = m.db.Exec(
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, s.TmuxSession, string(s.Status), string(s.Type), s.CreatedAt, s.UpdatedAt,
+	)
+	if err != nil {
+		_ = m.tmux.KillSession(name)
+		return nil, fmt.Errorf("insert controller session: %w", err)
+	}
+
+	return s, nil
 }
 
 func (m *Manager) UpdateStatus(id string, status Status) error {

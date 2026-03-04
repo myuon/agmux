@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func DefaultDBPath() (string, error) {
+func AgmuxDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("get home dir: %w", err)
@@ -18,7 +19,27 @@ func DefaultDBPath() (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("create dir: %w", err)
 	}
+	return dir, nil
+}
+
+func DefaultDBPath() (string, error) {
+	dir, err := AgmuxDir()
+	if err != nil {
+		return "", err
+	}
 	return filepath.Join(dir, "agmux.db"), nil
+}
+
+func ControllerDir() (string, error) {
+	dir, err := AgmuxDir()
+	if err != nil {
+		return "", err
+	}
+	controllerDir := filepath.Join(dir, "controller")
+	if err := os.MkdirAll(controllerDir, 0o755); err != nil {
+		return "", fmt.Errorf("create controller dir: %w", err)
+	}
+	return controllerDir, nil
 }
 
 func Open(dbPath string) (*sql.DB, error) {
@@ -42,6 +63,7 @@ func migrate(db *sql.DB) error {
 			initial_prompt TEXT,
 			tmux_session TEXT NOT NULL UNIQUE,
 			status TEXT NOT NULL DEFAULT 'running',
+			type TEXT NOT NULL DEFAULT 'worker',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
@@ -54,5 +76,19 @@ func migrate(db *sql.DB) error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Migration: add type column if missing (for existing databases)
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN type TEXT NOT NULL DEFAULT 'worker'`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
+	return nil
+}
+
+func isAlterTableDuplicate(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column name")
 }
