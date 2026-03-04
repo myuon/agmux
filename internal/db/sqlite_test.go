@@ -1,0 +1,45 @@
+package db
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestOpenAndMigrate(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	db, err := Open(dbPath)
+	require.NoError(t, err)
+	defer db.Close()
+
+	_, err = os.Stat(dbPath)
+	assert.NoError(t, err)
+
+	// Verify tables exist
+	var count int
+	err = db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sessions'").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	err = db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='daemon_actions'").Scan(&count)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+}
+
+func TestMigrateIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "test.db")
+
+	db1, err := Open(dbPath)
+	require.NoError(t, err)
+	db1.Close()
+
+	db2, err := Open(dbPath)
+	require.NoError(t, err)
+	db2.Close()
+}

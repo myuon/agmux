@@ -4,6 +4,13 @@
       "Bash(git *)",
       "Bash(gh *)",
       "Bash(tmux *)",
+      "Bash(go *)",
+      "Bash(make *)",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(cd *)",
+      "Bash(mkdir *)",
+      "Bash(ls *)",
       "Skill(commit)"
     ]
   }
