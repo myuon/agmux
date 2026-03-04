@@ -59,6 +59,33 @@ func Default() *Config {
 	}
 }
 
+func configPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".agmux", "config.toml"), nil
+}
+
+func Save(cfg *Config) error {
+	path, err := configPath()
+	if err != nil {
+		return fmt.Errorf("get config path: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return fmt.Errorf("create config file: %w", err)
+	}
+	defer f.Close()
+	if err := toml.NewEncoder(f).Encode(cfg); err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	return nil
+}
+
 func Load() (*Config, error) {
 	cfg := Default()
 
