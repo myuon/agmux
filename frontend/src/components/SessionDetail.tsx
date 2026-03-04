@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import type { Session } from "../types/session";
-import { api, type DaemonAction } from "../api/client";
+import { api, type DaemonAction, type ClaudeLogEntry } from "../api/client";
 
 const actionColors: Record<string, string> = {
   approve: "text-green-600",
@@ -10,6 +10,13 @@ const actionColors: Record<string, string> = {
   none: "text-gray-400",
 };
 
+const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
+  user: { bg: "bg-blue-900/30", label: "User", text: "text-blue-300" },
+  assistant: { bg: "bg-gray-800/50", label: "Assistant", text: "text-green-300" },
+};
+
+type ViewMode = "terminal" | "logs";
+
 export function SessionDetail() {
   const { id: sessionId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -17,17 +24,21 @@ export function SessionDetail() {
   const [output, setOutput] = useState("");
   const [message, setMessage] = useState("");
   const [actions, setActions] = useState<DaemonAction[]>([]);
+  const [viewMode, setViewMode] = useState<ViewMode>("terminal");
+  const [logs, setLogs] = useState<ClaudeLogEntry[]>([]);
 
   useEffect(() => {
     if (!sessionId) return;
     api.getSession(sessionId).then(setSession);
     api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
     api.getSessionActions(sessionId).then(setActions);
+    api.getSessionLogs(sessionId).then(setLogs).catch(() => {});
 
     const interval = setInterval(() => {
       api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
       api.getSession(sessionId).then(setSession);
       api.getSessionActions(sessionId).then(setActions);
+      api.getSessionLogs(sessionId).then(setLogs).catch(() => {});
     }, 3000);
     return () => clearInterval(interval);
   }, [sessionId]);
@@ -62,25 +73,80 @@ export function SessionDetail() {
         Project: {session.projectPath}
       </p>
 
-      <div className="bg-gray-900 text-green-400 rounded-lg p-4 mb-4 font-mono text-xs h-96 overflow-y-auto whitespace-pre-wrap">
-        {output || "No output yet."}
+      <div className="flex border-b border-gray-300 mb-4">
+        <button
+          onClick={() => setViewMode("terminal")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+            viewMode === "terminal"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Terminal
+        </button>
+        <button
+          onClick={() => setViewMode("logs")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+            viewMode === "logs"
+              ? "border-blue-600 text-blue-600"
+              : "border-transparent text-gray-500 hover:text-gray-700"
+          }`}
+        >
+          Logs
+          {logs.length > 0 && (
+            <span className="ml-1 text-xs text-gray-400">({logs.length})</span>
+          )}
+        </button>
       </div>
 
-      <form onSubmit={handleSend} className="flex gap-2 mb-6">
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Send a message..."
-          className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
-        />
-        <button
-          type="submit"
-          className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          Send
-        </button>
-      </form>
+      {viewMode === "terminal" ? (
+        <>
+          <div className="bg-gray-900 text-green-400 rounded-lg p-4 mb-4 font-mono text-xs h-96 overflow-y-auto whitespace-pre-wrap">
+            {output || "No output yet."}
+          </div>
+
+          <form onSubmit={handleSend} className="flex gap-2 mb-6">
+            <input
+              type="text"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Send a message..."
+              className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
+            />
+            <button
+              type="submit"
+              className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Send
+            </button>
+          </form>
+        </>
+      ) : (
+        <div className="bg-gray-900 rounded-lg p-3 text-sm h-96 overflow-y-auto mb-4 space-y-3">
+          {logs.length === 0 ? (
+            <p className="text-gray-500">No logs yet</p>
+          ) : (
+            logs.map((log, i) => {
+              const style = roleStyles[log.type] || roleStyles.assistant;
+              return (
+                <div key={i} className={`rounded-lg p-3 ${style.bg}`}>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className={`font-semibold text-xs ${style.text}`}>
+                      {style.label}
+                    </span>
+                    <span className="text-gray-500 text-xs">
+                      {new Date(log.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <div className="text-gray-200 whitespace-pre-wrap break-words text-xs">
+                    {log.content}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
       {actions.length > 0 && (
         <div>

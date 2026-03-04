@@ -1,4 +1,4 @@
-.PHONY: build build-frontend dev clean test install
+.PHONY: build build-frontend dev clean test install restart
 
 build: build-frontend
 	go build -o agmux ./cmd/agmux
@@ -19,3 +19,9 @@ test:
 
 install: build-frontend
 	go install ./cmd/agmux
+
+restart: install
+	-pkill -f 'agmux serve'
+	@sleep 1
+	@nohup agmux serve > /dev/null 2>&1 &
+	@echo "agmux restarted"

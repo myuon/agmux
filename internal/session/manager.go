@@ -35,7 +35,7 @@ func (m *Manager) Create(name, projectPath, prompt string) (*Session, error) {
 
 	// Wait for shell to be ready, then send claude command
 	time.Sleep(300 * time.Millisecond)
-	if err := m.tmux.SendKeysOnce(tmuxSession, m.claudeCommand); err != nil {
+	if err := m.tmux.SendKeysOnce(tmuxSession, m.claudeCommand+" --session-id "+id); err != nil {
 		return nil, fmt.Errorf("launch claude: %w", err)
 	}
 
@@ -271,7 +271,7 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 	}
 
 	time.Sleep(300 * time.Millisecond)
-	if err := m.tmux.SendKeysOnce(tmuxSession, m.claudeCommand); err != nil {
+	if err := m.tmux.SendKeysOnce(tmuxSession, m.claudeCommand+" --session-id "+id); err != nil {
 		return nil, fmt.Errorf("launch claude for controller: %w", err)
 	}
 

@@ -8,7 +8,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -63,6 +65,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/send", s.sendToSession)
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
 		r.Get("/sessions/{id}/actions", s.getSessionActions)
+		r.Get("/sessions/{id}/logs", s.getSessionLogs)
 		r.Post("/sessions/controller/restart", s.restartController)
 		r.Get("/actions", s.getActions)
 		r.Get("/logs", s.getLogs)
@@ -323,6 +326,108 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, logs)
+}
+
+type claudeLogEntry struct {
+	Type      string `json:"type"`
+	Timestamp string `json:"timestamp"`
+	Content   string `json:"content"`
+}
+
+func (s *Server) getSessionLogs(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "id")
+
+	// Get session to find projectPath
+	sess, err := s.sessions.Get(sessionID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	// Build Claude Code JSONL path: ~/.claude/projects/[escaped-path]/[sessionId].jsonl
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "cannot determine home directory")
+		return
+	}
+
+	escapedPath := strings.ReplaceAll(sess.ProjectPath, "/", "-")
+	jsonlPath := filepath.Join(homeDir, ".claude", "projects", escapedPath, sessionID+".jsonl")
+
+	file, err := os.Open(jsonlPath)
+	if err != nil {
+		writeJSON(w, http.StatusOK, []claudeLogEntry{})
+		return
+	}
+	defer file.Close()
+
+	var logs []claudeLogEntry
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	for scanner.Scan() {
+		line := scanner.Text()
+		var entry struct {
+			Type      string `json:"type"`
+			Timestamp string `json:"timestamp"`
+			Message   struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+		if entry.Type != "user" && entry.Type != "assistant" {
+			continue
+		}
+
+		content := extractTextContent(entry.Message.Content)
+		if content == "" {
+			continue
+		}
+
+		logs = append(logs, claudeLogEntry{
+			Type:      entry.Type,
+			Timestamp: entry.Timestamp,
+			Content:   content,
+		})
+	}
+
+	if logs == nil {
+		logs = []claudeLogEntry{}
+	}
+
+	writeJSON(w, http.StatusOK, logs)
+}
+
+// extractTextContent extracts text from Claude message content.
+// Content can be a string or an array of content blocks.
+func extractTextContent(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	// Try as string first
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+
+	// Try as array of content blocks
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &blocks); err == nil {
+		var texts []string
+		for _, b := range blocks {
+			if b.Type == "text" && b.Text != "" {
+				texts = append(texts, b.Text)
+			}
+		}
+		return strings.Join(texts, "\n")
+	}
+
+	return ""
 }
 
 func (s *Server) restartController(w http.ResponseWriter, r *http.Request) {
