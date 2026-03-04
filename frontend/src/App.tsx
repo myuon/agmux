@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Routes, Route, useNavigate } from "react-router-dom";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
 import { CreateSession } from "./components/CreateSession";
@@ -9,12 +10,12 @@ import { useWebSocket } from "./hooks/useWebSocket";
 
 type MobileTab = "logs" | "sessions";
 
-function App() {
+function Dashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [showCreate, setShowCreate] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>("logs");
+  const navigate = useNavigate();
 
   const loadSessions = () => {
     api.listSessions().then(setSessions).catch((e) => setError(e.message));
@@ -72,18 +73,6 @@ function App() {
       setError(e instanceof Error ? e.message : "Failed to restart controller");
     }
   };
-
-  if (selectedId) {
-    return (
-      <SessionDetail
-        sessionId={selectedId}
-        onBack={() => {
-          setSelectedId(null);
-          loadSessions();
-        }}
-      />
-    );
-  }
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
@@ -159,7 +148,7 @@ function App() {
             sessions={sessions}
             onStop={handleStop}
             onDelete={handleDelete}
-            onSelect={setSelectedId}
+            onSelect={(id) => navigate(`/sessions/${id}`)}
             onRestartController={handleRestartController}
           />
         </div>
@@ -172,6 +161,15 @@ function App() {
         />
       )}
     </div>
+  );
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Dashboard />} />
+      <Route path="/sessions/:id" element={<SessionDetail />} />
+    </Routes>
   );
 }
 
