@@ -6,3 +6,7 @@
 
 # Build
 agmux
+frontend/dist/
+
+# Dependencies
+frontend/node_modules/

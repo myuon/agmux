@@ -1,0 +1,49 @@
+import type { Session } from "../types/session";
+
+const BASE = "/api";
+
+async function request<T>(
+  path: string,
+  options?: RequestInit
+): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    headers: { "Content-Type": "application/json" },
+    ...options,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || res.statusText);
+  }
+  return res.json();
+}
+
+export const api = {
+  listSessions: () => request<Session[]>("/sessions"),
+
+  createSession: (data: {
+    name: string;
+    projectPath: string;
+    prompt?: string;
+  }) =>
+    request<Session>("/sessions", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getSession: (id: string) => request<Session>(`/sessions/${id}`),
+
+  stopSession: (id: string) =>
+    request<{ status: string }>(`/sessions/${id}/stop`, { method: "POST" }),
+
+  deleteSession: (id: string) =>
+    request<{ status: string }>(`/sessions/${id}`, { method: "DELETE" }),
+
+  sendToSession: (id: string, text: string) =>
+    request<{ status: string }>(`/sessions/${id}/send`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+
+  getSessionOutput: (id: string) =>
+    request<{ output: string }>(`/sessions/${id}/output`),
+};
