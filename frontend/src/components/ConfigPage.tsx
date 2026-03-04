@@ -39,7 +39,7 @@ export function ConfigPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <p className="text-gray-400">Loading...</p>
       </div>
     );
@@ -47,18 +47,18 @@ export function ConfigPage() {
 
   if (!config) {
     return (
-      <div className="min-h-screen bg-gray-950 text-gray-100 flex items-center justify-center">
-        <p className="text-red-400">Failed to load config</p>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-red-500">Failed to load config</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
-      <header className="bg-gray-900 border-b border-gray-700 px-6 py-3 flex items-center gap-4">
+    <div className="min-h-screen bg-gray-50 text-gray-900">
+      <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center gap-4">
         <button
           onClick={() => navigate("/")}
-          className="text-gray-400 hover:text-gray-200 text-sm"
+          className="text-gray-500 hover:text-gray-700 text-sm"
         >
           ← Back
         </button>
@@ -66,7 +66,7 @@ export function ConfigPage() {
       </header>
 
       <div className="max-w-2xl mx-auto p-6 space-y-6">
-        <div className="bg-yellow-900/30 border border-yellow-700 rounded-lg px-4 py-3 text-yellow-300 text-sm">
+        <div className="bg-yellow-50 border border-yellow-300 rounded-lg px-4 py-3 text-yellow-800 text-sm">
           設定の変更は次回再起動時に反映されます
         </div>
 
@@ -74,8 +74,8 @@ export function ConfigPage() {
           <div
             className={`rounded-lg px-4 py-3 text-sm ${
               message.type === "success"
-                ? "bg-green-900/30 border border-green-700 text-green-300"
-                : "bg-red-900/30 border border-red-700 text-red-300"
+                ? "bg-green-50 border border-green-300 text-green-800"
+                : "bg-red-50 border border-red-300 text-red-800"
             }`}
           >
             {message.text}
@@ -90,7 +90,7 @@ export function ConfigPage() {
               onChange={(e) =>
                 setConfig({ ...config, server: { ...config.server, port: Number(e.target.value) } })
               }
-              className="bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm w-32 focus:outline-none focus:border-blue-500"
+              className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-32 focus:outline-none focus:border-blue-500"
             />
           </Field>
         </Section>
@@ -104,7 +104,7 @@ export function ConfigPage() {
                 setConfig({ ...config, daemon: { ...config.daemon, interval: e.target.value } })
               }
               placeholder="30s"
-              className="bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm w-32 focus:outline-none focus:border-blue-500"
+              className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-32 focus:outline-none focus:border-blue-500"
             />
           </Field>
           <Field label="Auto Approve">
@@ -113,11 +113,11 @@ export function ConfigPage() {
                 setConfig({ ...config, daemon: { ...config.daemon, autoApprove: !config.daemon.autoApprove } })
               }
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                config.daemon.autoApprove ? "bg-blue-600" : "bg-gray-600"
+                config.daemon.autoApprove ? "bg-blue-600" : "bg-gray-300"
               }`}
             >
               <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow ${
                   config.daemon.autoApprove ? "translate-x-6" : "translate-x-1"
                 }`}
               />
@@ -133,7 +133,7 @@ export function ConfigPage() {
               onChange={(e) =>
                 setConfig({ ...config, llm: { ...config.llm, model: e.target.value } })
               }
-              className="bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
+              className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
             />
           </Field>
         </Section>
@@ -146,7 +146,7 @@ export function ConfigPage() {
               onChange={(e) =>
                 setConfig({ ...config, session: { ...config.session, claudeCommand: e.target.value } })
               }
-              className="bg-gray-800 border border-gray-600 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
+              className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
             />
           </Field>
         </Section>
@@ -167,8 +167,8 @@ export function ConfigPage() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-700">
-      <h2 className="text-sm font-semibold text-gray-300 px-4 py-3 border-b border-gray-700">
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
+      <h2 className="text-sm font-semibold text-gray-700 px-4 py-3 border-b border-gray-200">
         {title}
       </h2>
       <div className="p-4 space-y-4">{children}</div>
@@ -179,7 +179,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between">
-      <label className="text-sm text-gray-400">{label}</label>
+      <label className="text-sm text-gray-600">{label}</label>
       {children}
     </div>
   );
