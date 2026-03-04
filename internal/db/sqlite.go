@@ -86,6 +86,22 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add detailed logging columns to daemon_actions
+	_, err = db.Exec(`ALTER TABLE daemon_actions ADD COLUMN captured_output_tail TEXT`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE daemon_actions ADD COLUMN previous_status TEXT`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
+	_, err = db.Exec(`ALTER TABLE daemon_actions ADD COLUMN new_status TEXT`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	return nil
 }
 
