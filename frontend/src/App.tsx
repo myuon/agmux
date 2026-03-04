@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Routes, Route, useNavigate } from "react-router-dom";
+import { Routes, Route, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
 import { CreateSession } from "./components/CreateSession";
@@ -14,7 +14,8 @@ function Dashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mobileTab, setMobileTab] = useState<MobileTab>("logs");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const mobileTab: MobileTab = searchParams.get("tab") === "sessions" ? "sessions" : "logs";
   const navigate = useNavigate();
 
   const loadSessions = () => {
@@ -103,7 +104,7 @@ function Dashboard() {
       {/* Mobile tab switcher */}
       <div className="md:hidden flex border-b border-gray-200 bg-white shrink-0">
         <button
-          onClick={() => setMobileTab("logs")}
+          onClick={() => setSearchParams({})}
           className={`flex-1 py-2.5 text-sm font-medium text-center ${
             mobileTab === "logs"
               ? "text-blue-600 border-b-2 border-blue-600"
@@ -113,7 +114,7 @@ function Dashboard() {
           Logs
         </button>
         <button
-          onClick={() => setMobileTab("sessions")}
+          onClick={() => setSearchParams({ tab: "sessions" })}
           className={`flex-1 py-2.5 text-sm font-medium text-center ${
             mobileTab === "sessions"
               ? "text-blue-600 border-b-2 border-blue-600"
