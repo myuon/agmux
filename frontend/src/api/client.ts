@@ -56,6 +56,9 @@ export const api = {
   getLogs: (limit = 100) =>
     request<LogEntry[]>(`/logs?limit=${limit}`),
 
+  getSessionLogs: (id: string) =>
+    request<ClaudeLogEntry[]>(`/sessions/${id}/logs`),
+
   restartController: () =>
     request<Session>("/sessions/controller/restart", { method: "POST" }),
 };
@@ -68,6 +71,12 @@ export interface LogEntry {
   session?: string;
   sessionId?: string;
   [key: string]: unknown;
+}
+
+export interface ClaudeLogEntry {
+  type: "user" | "assistant";
+  timestamp: string;
+  content: string;
 }
 
 export interface DaemonAction {
