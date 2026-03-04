@@ -68,10 +68,8 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/stop", s.stopSession)
 		r.Post("/sessions/{id}/send", s.sendToSession)
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
-		r.Get("/sessions/{id}/actions", s.getSessionActions)
 		r.Get("/sessions/{id}/logs", s.getSessionLogs)
 		r.Post("/sessions/controller/restart", s.restartController)
-		r.Get("/actions", s.getActions)
 		r.Get("/logs", s.getLogs)
 		r.Get("/config", s.getConfig)
 		r.Put("/config", s.updateConfig)
@@ -209,86 +207,6 @@ func (s *Server) getSessionOutput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"output": output})
-}
-
-type daemonAction struct {
-	SessionID          string `json:"sessionId"`
-	ActionType         string `json:"actionType"`
-	Detail             string `json:"detail"`
-	Source             string `json:"source"`
-	CapturedOutputTail string `json:"capturedOutputTail,omitempty"`
-	PreviousStatus     string `json:"previousStatus,omitempty"`
-	NewStatus          string `json:"newStatus,omitempty"`
-	CreatedAt          string `json:"createdAt"`
-}
-
-// readActionsFromLog reads action entries from the log file, optionally filtered by sessionID.
-func (s *Server) readActionsFromLog(sessionID string, limit int) []daemonAction {
-	if s.logPath == "" {
-		return []daemonAction{}
-	}
-
-	file, err := os.Open(s.logPath)
-	if err != nil {
-		return []daemonAction{}
-	}
-	defer file.Close()
-
-	var actions []daemonAction
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		var entry map[string]interface{}
-		if err := json.Unmarshal([]byte(scanner.Text()), &entry); err != nil {
-			continue
-		}
-		cat, _ := entry["category"].(string)
-		if cat != "action" {
-			continue
-		}
-		sid, _ := entry["sessionId"].(string)
-		if sessionID != "" && sid != sessionID {
-			continue
-		}
-		a := daemonAction{
-			SessionID:          sid,
-			ActionType:         strVal(entry, "actionType"),
-			Detail:             strVal(entry, "detail"),
-			Source:             strVal(entry, "source"),
-			CapturedOutputTail: strVal(entry, "capturedOutputTail"),
-			PreviousStatus:     strVal(entry, "previousStatus"),
-			NewStatus:          strVal(entry, "newStatus"),
-			CreatedAt:          strVal(entry, "time"),
-		}
-		actions = append(actions, a)
-	}
-
-	// Return last N entries (newest last in file, we want newest first)
-	if len(actions) > limit {
-		actions = actions[len(actions)-limit:]
-	}
-	// Reverse to newest-first
-	for i, j := 0, len(actions)-1; i < j; i, j = i+1, j-1 {
-		actions[i], actions[j] = actions[j], actions[i]
-	}
-	if actions == nil {
-		actions = []daemonAction{}
-	}
-	return actions
-}
-
-func strVal(m map[string]interface{}, key string) string {
-	v, _ := m[key].(string)
-	return v
-}
-
-func (s *Server) getActions(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.readActionsFromLog("", 50))
-}
-
-func (s *Server) getSessionActions(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	writeJSON(w, http.StatusOK, s.readActionsFromLog(id, 50))
 }
 
 func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
