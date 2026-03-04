@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git *)",
       "Bash(gh *)",
-      "Bash(tmux *)"
+      "Bash(tmux *)",
+      "Skill(commit)"
     ]
   }
 }

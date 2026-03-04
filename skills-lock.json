@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "commit": {
+      "source": "myuon/agent-skills",
+      "sourceType": "github",
+      "computedHash": "da4c3a82a798bd83a364b3261c53a0a592e277f69466fae85a74a7333b584d72"
+    }
+  }
+}
