@@ -14,13 +14,15 @@ import (
 
 type Server struct {
 	sessions *session.Manager
+	hub      *Hub
 	router   chi.Router
 	devMode  bool
 }
 
-func New(sessions *session.Manager, devMode bool) *Server {
+func New(sessions *session.Manager, hub *Hub, devMode bool) *Server {
 	s := &Server{
 		sessions: sessions,
+		hub:      hub,
 		devMode:  devMode,
 	}
 	s.setupRoutes()
@@ -40,6 +42,8 @@ func (s *Server) setupRoutes() {
 			AllowCredentials: true,
 		}))
 	}
+
+	r.Get("/ws", s.hub.HandleWS)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/sessions", s.listSessions)

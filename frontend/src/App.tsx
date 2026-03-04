@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
 import { SessionCard } from "./components/SessionCard";
 import { CreateSession } from "./components/CreateSession";
 import { SessionDetail } from "./components/SessionDetail";
+import { useWebSocket } from "./hooks/useWebSocket";
 
 function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -17,9 +18,15 @@ function App() {
 
   useEffect(() => {
     loadSessions();
-    const interval = setInterval(loadSessions, 5000);
-    return () => clearInterval(interval);
   }, []);
+
+  const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
+    if (msg.type === "session_update") {
+      setSessions(msg.data as Session[]);
+    }
+  }, []);
+
+  useWebSocket(handleWsMessage);
 
   const handleCreate = async (data: {
     name: string;
