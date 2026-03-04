@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/logging"
 	"github.com/myuon/agmux/internal/session"
@@ -72,6 +73,8 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/controller/restart", s.restartController)
 		r.Get("/actions", s.getActions)
 		r.Get("/logs", s.getLogs)
+		r.Get("/config", s.getConfig)
+		r.Put("/config", s.updateConfig)
 	})
 
 	s.router = r
@@ -462,6 +465,68 @@ func extractContentBlocks(raw json.RawMessage) []claudeContentBlock {
 		}
 	}
 	return blocks
+}
+
+type configJSON struct {
+	Server  configServerJSON  `json:"server"`
+	Daemon  configDaemonJSON  `json:"daemon"`
+	LLM     configLLMJSON     `json:"llm"`
+	Session configSessionJSON `json:"session"`
+}
+
+type configServerJSON struct {
+	Port int `json:"port"`
+}
+type configDaemonJSON struct {
+	Interval    string `json:"interval"`
+	AutoApprove bool   `json:"autoApprove"`
+}
+type configLLMJSON struct {
+	Model string `json:"model"`
+}
+type configSessionJSON struct {
+	ClaudeCommand string `json:"claudeCommand"`
+}
+
+func configToJSON(cfg *config.Config) configJSON {
+	return configJSON{
+		Server:  configServerJSON{Port: cfg.Server.Port},
+		Daemon:  configDaemonJSON{Interval: cfg.Daemon.Interval, AutoApprove: cfg.Daemon.AutoApprove},
+		LLM:     configLLMJSON{Model: cfg.LLM.Model},
+		Session: configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
+	}
+}
+
+func jsonToConfig(j configJSON) *config.Config {
+	return &config.Config{
+		Server:  config.ServerConfig{Port: j.Server.Port},
+		Daemon:  config.DaemonConfig{Interval: j.Daemon.Interval, AutoApprove: j.Daemon.AutoApprove},
+		LLM:     config.LLMConfig{Model: j.LLM.Model},
+		Session: config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand},
+	}
+}
+
+func (s *Server) getConfig(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.Load()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, configToJSON(cfg))
+}
+
+func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
+	var req configJSON
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	cfg := jsonToConfig(req)
+	if err := config.Save(cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) restartController(w http.ResponseWriter, r *http.Request) {

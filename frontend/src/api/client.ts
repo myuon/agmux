@@ -61,6 +61,14 @@ export const api = {
 
   restartController: () =>
     request<Session>("/sessions/controller/restart", { method: "POST" }),
+
+  getConfig: () => request<AppConfig>("/config"),
+
+  updateConfig: (data: AppConfig) =>
+    request<{ status: string }>("/config", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
 };
 
 export interface LogEntry {
@@ -85,6 +93,13 @@ export interface ClaudeLogEntry {
   type: "user" | "assistant";
   timestamp: string;
   blocks: ClaudeContentBlock[];
+}
+
+export interface AppConfig {
+  server: { port: number };
+  daemon: { interval: string; autoApprove: boolean };
+  llm: { model: string };
+  session: { claudeCommand: string };
 }
 
 export interface DaemonAction {
