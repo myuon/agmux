@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import type { Session } from "../types/session";
 
 const statusDots: Record<Session["status"], string> = {
@@ -21,12 +22,12 @@ function timeAgo(dateStr: string): string {
 interface Props {
   sessions: Session[];
   onStop: (id: string) => void;
-  onDelete: (id: string) => void;
-  onSelect: (id: string) => void;
   onRestartController: () => void;
 }
 
-export function SessionList({ sessions, onStop, onDelete, onSelect, onRestartController }: Props) {
+export function SessionList({ sessions, onStop, onRestartController }: Props) {
+  const navigate = useNavigate();
+
   if (sessions.length === 0) {
     return (
       <div className="text-center text-gray-400 py-8">
@@ -40,7 +41,8 @@ export function SessionList({ sessions, onStop, onDelete, onSelect, onRestartCon
       {sessions.map((s) => (
         <div
           key={s.id}
-          className="border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow bg-white"
+          onClick={() => navigate(`/sessions/${s.id}`)}
+          className="border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow bg-white cursor-pointer"
         >
           <div className="flex items-center gap-2 mb-1">
             <span className={`w-2 h-2 rounded-full shrink-0 ${statusDots[s.status]}`} />
@@ -64,7 +66,7 @@ export function SessionList({ sessions, onStop, onDelete, onSelect, onRestartCon
             <div className="flex gap-1.5">
               {(s.status === "running" || s.status === "waiting") && (
                 <button
-                  onClick={() => onStop(s.id)}
+                  onClick={(e) => { e.stopPropagation(); onStop(s.id); }}
                   className="px-2 py-0.5 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
                 >
                   Stop
@@ -72,26 +74,12 @@ export function SessionList({ sessions, onStop, onDelete, onSelect, onRestartCon
               )}
               {s.type === "controller" && (s.status === "stopped" || s.status === "done" || s.status === "error") && (
                 <button
-                  onClick={() => onRestartController()}
+                  onClick={(e) => { e.stopPropagation(); onRestartController(); }}
                   className="px-2 py-0.5 text-xs bg-purple-50 text-purple-600 rounded hover:bg-purple-100"
                 >
                   Restart
                 </button>
               )}
-              {s.type !== "controller" && (
-                <button
-                  onClick={() => onDelete(s.id)}
-                  className="px-2 py-0.5 text-xs bg-gray-50 text-gray-500 rounded hover:bg-gray-100"
-                >
-                  Delete
-                </button>
-              )}
-              <button
-                onClick={() => onSelect(s.id)}
-                className="px-2 py-0.5 text-xs bg-gray-50 text-gray-700 rounded hover:bg-gray-100"
-              >
-                View
-              </button>
             </div>
           </div>
         </div>

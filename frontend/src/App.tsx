@@ -58,15 +58,6 @@ function Dashboard() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    try {
-      await api.deleteSession(id);
-      loadSessions();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to delete session");
-    }
-  };
-
   const handleRestartController = async () => {
     try {
       await api.restartController();
@@ -160,8 +151,6 @@ function Dashboard() {
           <SessionList
             sessions={sessions}
             onStop={handleStop}
-            onDelete={handleDelete}
-            onSelect={(id) => navigate(`/sessions/${id}`)}
             onRestartController={handleRestartController}
           />
         </div>
