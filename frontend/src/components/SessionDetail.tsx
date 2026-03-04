@@ -1,11 +1,7 @@
 import { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import type { Session } from "../types/session";
 import { api, type DaemonAction } from "../api/client";
-
-interface Props {
-  sessionId: string;
-  onBack: () => void;
-}
 
 const actionColors: Record<string, string> = {
   approve: "text-green-600",
@@ -14,13 +10,16 @@ const actionColors: Record<string, string> = {
   none: "text-gray-400",
 };
 
-export function SessionDetail({ sessionId, onBack }: Props) {
+export function SessionDetail() {
+  const { id: sessionId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);
   const [output, setOutput] = useState("");
   const [message, setMessage] = useState("");
   const [actions, setActions] = useState<DaemonAction[]>([]);
 
   useEffect(() => {
+    if (!sessionId) return;
     api.getSession(sessionId).then(setSession);
     api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
     api.getSessionActions(sessionId).then(setActions);
@@ -35,7 +34,7 @@ export function SessionDetail({ sessionId, onBack }: Props) {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!message.trim()) return;
+    if (!sessionId || !message.trim()) return;
     await api.sendToSession(sessionId, message);
     setMessage("");
     setTimeout(
@@ -50,7 +49,7 @@ export function SessionDetail({ sessionId, onBack }: Props) {
   return (
     <div className="p-8 max-w-4xl mx-auto">
       <button
-        onClick={onBack}
+        onClick={() => navigate("/")}
         className="text-sm text-gray-500 hover:text-gray-800 mb-4"
       >
         &larr; Back
