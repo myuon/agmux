@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
-import { SessionCard } from "./components/SessionCard";
 import { CreateSession } from "./components/CreateSession";
 import { SessionDetail } from "./components/SessionDetail";
-import { LogViewer } from "./components/LogViewer";
+import { LogPanel } from "./components/LogPanel";
+import { SessionList } from "./components/SessionList";
 import { useWebSocket } from "./hooks/useWebSocket";
+
+type MobileTab = "logs" | "sessions";
 
 function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [showLogs, setShowLogs] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mobileTab, setMobileTab] = useState<MobileTab>("logs");
 
   const loadSessions = () => {
     api.listSessions().then(setSessions).catch((e) => setError(e.message));
@@ -53,10 +55,6 @@ function App() {
     }
   };
 
-  if (showLogs) {
-    return <LogViewer onBack={() => setShowLogs(false)} />;
-  }
-
   if (selectedId) {
     return (
       <SessionDetail
@@ -70,58 +68,82 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900">agmux Dashboard</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setShowLogs(true)}
-            className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-          >
-            Logs
-          </button>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            + New Session
-          </button>
-        </div>
+    <div className="h-screen flex flex-col bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-3 flex items-center justify-between shrink-0">
+        <h1 className="text-lg md:text-xl font-bold text-gray-900">agmux</h1>
+        <button
+          onClick={() => setShowCreate(true)}
+          className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          + New Session
+        </button>
       </header>
 
-      <main className="p-8 max-w-6xl mx-auto">
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded mb-4 text-sm">
-            {error}
-            <button
-              onClick={() => setError(null)}
-              className="ml-2 text-red-500 hover:text-red-800"
-            >
-              x
-            </button>
-          </div>
-        )}
+      {/* Error banner */}
+      {error && (
+        <div className="bg-red-50 border-b border-red-200 text-red-700 px-4 py-2 text-sm shrink-0 flex items-center justify-between">
+          <span>{error}</span>
+          <button
+            onClick={() => setError(null)}
+            className="ml-2 text-red-500 hover:text-red-800"
+          >
+            x
+          </button>
+        </div>
+      )}
 
-        {sessions.length === 0 ? (
-          <div className="text-center text-gray-400 py-20">
-            <p className="text-lg">No sessions yet</p>
-            <p className="text-sm mt-1">
-              Create a new session to get started.
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {sessions.map((s) => (
-              <SessionCard
-                key={s.id}
-                session={s}
-                onStop={handleStop}
-                onSelect={setSelectedId}
-              />
-            ))}
-          </div>
-        )}
-      </main>
+      {/* Mobile tab switcher */}
+      <div className="md:hidden flex border-b border-gray-200 bg-white shrink-0">
+        <button
+          onClick={() => setMobileTab("logs")}
+          className={`flex-1 py-2.5 text-sm font-medium text-center ${
+            mobileTab === "logs"
+              ? "text-blue-600 border-b-2 border-blue-600"
+              : "text-gray-500"
+          }`}
+        >
+          Logs
+        </button>
+        <button
+          onClick={() => setMobileTab("sessions")}
+          className={`flex-1 py-2.5 text-sm font-medium text-center ${
+            mobileTab === "sessions"
+              ? "text-blue-600 border-b-2 border-blue-600"
+              : "text-gray-500"
+          }`}
+        >
+          Sessions ({sessions.length})
+        </button>
+      </div>
+
+      {/* Main content */}
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+        {/* Log panel - desktop: always visible, mobile: only when tab active */}
+        <div
+          className={`flex-1 min-h-0 p-3 md:p-4 ${
+            mobileTab === "logs" ? "flex flex-col" : "hidden md:flex md:flex-col"
+          }`}
+        >
+          <LogPanel />
+        </div>
+
+        {/* Session sidebar - desktop: always visible, mobile: only when tab active */}
+        <div
+          className={`md:w-80 md:border-l border-gray-200 bg-white overflow-y-auto p-3 md:p-4 ${
+            mobileTab === "sessions" ? "flex-1" : "hidden md:block"
+          }`}
+        >
+          <h2 className="text-sm font-semibold text-gray-700 mb-3 hidden md:block">
+            Active Sessions ({sessions.length})
+          </h2>
+          <SessionList
+            sessions={sessions}
+            onStop={handleStop}
+            onSelect={setSelectedId}
+          />
+        </div>
+      </div>
 
       {showCreate && (
         <CreateSession

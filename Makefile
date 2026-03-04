@@ -1,4 +1,4 @@
-.PHONY: build build-frontend dev clean test
+.PHONY: build build-frontend dev clean test install
 
 build: build-frontend
 	go build -o agmux ./cmd/agmux
@@ -16,3 +16,6 @@ clean:
 
 test:
 	go test ./...
+
+install: build-frontend
+	go install ./cmd/agmux
