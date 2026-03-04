@@ -20,7 +20,7 @@ func New() *Monitor {
 func (m *Monitor) CheckStatus(s *session.Session) session.Status {
 	jsonlPath := BuildJSONLPath(s.ProjectPath, s.ID)
 
-	lastEntries := readLastEntries(jsonlPath, 5)
+	lastEntries := readLastEntries(jsonlPath, 20)
 	return classifyFromEntries(lastEntries)
 }
 
@@ -69,7 +69,18 @@ func classifyFromEntries(entries []jsonlEntry) session.Status {
 		return session.StatusWorking
 	}
 
-	last := entries[len(entries)-1]
+	// Find the last user or assistant entry (skip system, progress, queue-operation, etc.)
+	var last *jsonlEntry
+	for i := len(entries) - 1; i >= 0; i-- {
+		if entries[i].Type == "user" || entries[i].Type == "assistant" {
+			last = &entries[i]
+			break
+		}
+	}
+
+	if last == nil {
+		return session.StatusWorking
+	}
 
 	if last.Type == "user" {
 		return session.StatusWorking
@@ -96,7 +107,6 @@ func classifyFromEntries(entries []jsonlEntry) session.Status {
 		return session.StatusWorking
 	}
 
-	// For other types (progress, queue-operation, etc.), keep working
 	return session.StatusWorking
 }
 
