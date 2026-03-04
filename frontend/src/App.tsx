@@ -55,6 +55,24 @@ function App() {
     }
   };
 
+  const handleDelete = async (id: string) => {
+    try {
+      await api.deleteSession(id);
+      loadSessions();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to delete session");
+    }
+  };
+
+  const handleRestartController = async () => {
+    try {
+      await api.restartController();
+      loadSessions();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to restart controller");
+    }
+  };
+
   if (selectedId) {
     return (
       <SessionDetail
@@ -140,7 +158,9 @@ function App() {
           <SessionList
             sessions={sessions}
             onStop={handleStop}
+            onDelete={handleDelete}
             onSelect={setSelectedId}
+            onRestartController={handleRestartController}
           />
         </div>
       </div>

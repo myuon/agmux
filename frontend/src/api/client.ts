@@ -55,6 +55,9 @@ export const api = {
 
   getLogs: (limit = 100) =>
     request<LogEntry[]>(`/logs?limit=${limit}`),
+
+  restartController: () =>
+    request<Session>("/sessions/controller/restart", { method: "POST" }),
 };
 
 export interface LogEntry {

@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/session"
 )
 
@@ -62,6 +63,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/send", s.sendToSession)
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
 		r.Get("/sessions/{id}/actions", s.getSessionActions)
+		r.Post("/sessions/controller/restart", s.restartController)
 		r.Get("/actions", s.getActions)
 		r.Get("/logs", s.getLogs)
 	})
@@ -147,6 +149,15 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	sess, err := s.sessions.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if sess.Type == session.TypeController {
+		writeError(w, http.StatusForbidden, "controller session cannot be deleted")
+		return
+	}
 	if err := s.sessions.Delete(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -291,6 +302,20 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, logs)
+}
+
+func (s *Server) restartController(w http.ResponseWriter, r *http.Request) {
+	controllerDir, err := db.ControllerDir()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	sess, err := s.sessions.CreateController(controllerDir)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sess)
 }
 
 // helpers

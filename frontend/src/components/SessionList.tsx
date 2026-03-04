@@ -21,10 +21,12 @@ function timeAgo(dateStr: string): string {
 interface Props {
   sessions: Session[];
   onStop: (id: string) => void;
+  onDelete: (id: string) => void;
   onSelect: (id: string) => void;
+  onRestartController: () => void;
 }
 
-export function SessionList({ sessions, onStop, onSelect }: Props) {
+export function SessionList({ sessions, onStop, onDelete, onSelect, onRestartController }: Props) {
   if (sessions.length === 0) {
     return (
       <div className="text-center text-gray-400 py-8">
@@ -43,6 +45,11 @@ export function SessionList({ sessions, onStop, onSelect }: Props) {
           <div className="flex items-center gap-2 mb-1">
             <span className={`w-2 h-2 rounded-full shrink-0 ${statusDots[s.status]}`} />
             <span className="font-medium text-sm truncate">{s.name}</span>
+            {s.type === "controller" && (
+              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 rounded">
+                Controller
+              </span>
+            )}
             <span className="text-xs text-gray-400 ml-auto shrink-0">
               {s.status}
             </span>
@@ -61,6 +68,22 @@ export function SessionList({ sessions, onStop, onSelect }: Props) {
                   className="px-2 py-0.5 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
                 >
                   Stop
+                </button>
+              )}
+              {s.type === "controller" && (s.status === "stopped" || s.status === "done" || s.status === "error") && (
+                <button
+                  onClick={() => onRestartController()}
+                  className="px-2 py-0.5 text-xs bg-purple-50 text-purple-600 rounded hover:bg-purple-100"
+                >
+                  Restart
+                </button>
+              )}
+              {s.type !== "controller" && (
+                <button
+                  onClick={() => onDelete(s.id)}
+                  className="px-2 py-0.5 text-xs bg-gray-50 text-gray-500 rounded hover:bg-gray-100"
+                >
+                  Delete
                 </button>
               )}
               <button
