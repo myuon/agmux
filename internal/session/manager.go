@@ -10,12 +10,16 @@ import (
 )
 
 type Manager struct {
-	db   *sql.DB
-	tmux *tmux.Client
+	db            *sql.DB
+	tmux          *tmux.Client
+	claudeCommand string
 }
 
-func NewManager(db *sql.DB, tmuxClient *tmux.Client) *Manager {
-	return &Manager{db: db, tmux: tmuxClient}
+func NewManager(db *sql.DB, tmuxClient *tmux.Client, claudeCommand string) *Manager {
+	if claudeCommand == "" {
+		claudeCommand = "claude --dangerously-skip-permissions"
+	}
+	return &Manager{db: db, tmux: tmuxClient, claudeCommand: claudeCommand}
 }
 
 func (m *Manager) Create(name, projectPath, prompt string) (*Session, error) {
@@ -23,7 +27,7 @@ func (m *Manager) Create(name, projectPath, prompt string) (*Session, error) {
 	tmuxSession := tmux.SessionPrefix + name
 
 	// Start claude code in tmux session
-	command := "claude --dangerously-skip-permissions"
+	command := m.claudeCommand
 	if err := m.tmux.NewSession(name, projectPath, command); err != nil {
 		return nil, fmt.Errorf("create tmux session: %w", err)
 	}

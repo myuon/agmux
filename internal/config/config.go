@@ -1,0 +1,80 @@
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/BurntSushi/toml"
+)
+
+type Config struct {
+	Server  ServerConfig  `toml:"server"`
+	Daemon  DaemonConfig  `toml:"daemon"`
+	LLM     LLMConfig     `toml:"llm"`
+	Session SessionConfig `toml:"session"`
+}
+
+type ServerConfig struct {
+	Port int `toml:"port"`
+}
+
+type DaemonConfig struct {
+	Interval    string `toml:"interval"`
+	AutoApprove bool   `toml:"auto_approve"`
+}
+
+type LLMConfig struct {
+	Model string `toml:"model"`
+}
+
+type SessionConfig struct {
+	ClaudeCommand string `toml:"claude_command"`
+}
+
+func (d DaemonConfig) IntervalDuration() time.Duration {
+	dur, err := time.ParseDuration(d.Interval)
+	if err != nil {
+		return 30 * time.Second
+	}
+	return dur
+}
+
+func Default() *Config {
+	return &Config{
+		Server: ServerConfig{
+			Port: 4321,
+		},
+		Daemon: DaemonConfig{
+			Interval:    "30s",
+			AutoApprove: true,
+		},
+		LLM: LLMConfig{
+			Model: "claude-sonnet-4-20250514",
+		},
+		Session: SessionConfig{
+			ClaudeCommand: "claude --dangerously-skip-permissions",
+		},
+	}
+}
+
+func Load() (*Config, error) {
+	cfg := Default()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return cfg, nil
+	}
+
+	configPath := filepath.Join(home, ".agmux", "config.toml")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return cfg, nil
+	}
+
+	if _, err := toml.DecodeFile(configPath, cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	return cfg, nil
+}
