@@ -46,4 +46,18 @@ export const api = {
 
   getSessionOutput: (id: string) =>
     request<{ output: string }>(`/sessions/${id}/output`),
+
+  getActions: () =>
+    request<DaemonAction[]>("/actions"),
+
+  getSessionActions: (id: string) =>
+    request<DaemonAction[]>(`/sessions/${id}/actions`),
 };
+
+export interface DaemonAction {
+  id: number;
+  sessionId: string;
+  actionType: string;
+  detail: string;
+  createdAt: string;
+}

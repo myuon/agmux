@@ -1,24 +1,34 @@
 import { useEffect, useState } from "react";
 import type { Session } from "../types/session";
-import { api } from "../api/client";
+import { api, type DaemonAction } from "../api/client";
 
 interface Props {
   sessionId: string;
   onBack: () => void;
 }
 
+const actionColors: Record<string, string> = {
+  approve: "text-green-600",
+  retry: "text-yellow-600",
+  escalate: "text-red-600",
+  none: "text-gray-400",
+};
+
 export function SessionDetail({ sessionId, onBack }: Props) {
   const [session, setSession] = useState<Session | null>(null);
   const [output, setOutput] = useState("");
   const [message, setMessage] = useState("");
+  const [actions, setActions] = useState<DaemonAction[]>([]);
 
   useEffect(() => {
     api.getSession(sessionId).then(setSession);
     api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
+    api.getSessionActions(sessionId).then(setActions);
 
     const interval = setInterval(() => {
       api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
       api.getSession(sessionId).then(setSession);
+      api.getSessionActions(sessionId).then(setActions);
     }, 3000);
     return () => clearInterval(interval);
   }, [sessionId]);
@@ -57,7 +67,7 @@ export function SessionDetail({ sessionId, onBack }: Props) {
         {output || "No output yet."}
       </div>
 
-      <form onSubmit={handleSend} className="flex gap-2">
+      <form onSubmit={handleSend} className="flex gap-2 mb-6">
         <input
           type="text"
           value={message}
@@ -72,6 +82,30 @@ export function SessionDetail({ sessionId, onBack }: Props) {
           Send
         </button>
       </form>
+
+      {actions.length > 0 && (
+        <div>
+          <h3 className="text-lg font-semibold mb-2">Daemon Actions</h3>
+          <div className="space-y-2">
+            {actions.map((a) => (
+              <div
+                key={a.id}
+                className="border border-gray-200 rounded px-3 py-2 text-sm flex items-start gap-2"
+              >
+                <span
+                  className={`font-medium ${actionColors[a.actionType] || "text-gray-500"}`}
+                >
+                  [{a.actionType}]
+                </span>
+                <span className="text-gray-700 flex-1">{a.detail}</span>
+                <span className="text-xs text-gray-400 whitespace-nowrap">
+                  {new Date(a.createdAt).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

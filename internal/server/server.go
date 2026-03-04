@@ -1,6 +1,7 @@
 package server
 
 import (
+	"database/sql"
 	"encoding/json"
 	"io/fs"
 	"log"
@@ -14,14 +15,16 @@ import (
 
 type Server struct {
 	sessions *session.Manager
+	db       *sql.DB
 	hub      *Hub
 	router   chi.Router
 	devMode  bool
 }
 
-func New(sessions *session.Manager, hub *Hub, devMode bool) *Server {
+func New(sessions *session.Manager, database *sql.DB, hub *Hub, devMode bool) *Server {
 	s := &Server{
 		sessions: sessions,
+		db:       database,
 		hub:      hub,
 		devMode:  devMode,
 	}
@@ -53,6 +56,8 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/stop", s.stopSession)
 		r.Post("/sessions/{id}/send", s.sendToSession)
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
+		r.Get("/sessions/{id}/actions", s.getSessionActions)
+		r.Get("/actions", s.getActions)
 	})
 
 	s.router = r
@@ -174,6 +179,68 @@ func (s *Server) getSessionOutput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"output": output})
+}
+
+type daemonAction struct {
+	ID         int    `json:"id"`
+	SessionID  string `json:"sessionId"`
+	ActionType string `json:"actionType"`
+	Detail     string `json:"detail"`
+	CreatedAt  string `json:"createdAt"`
+}
+
+func (s *Server) getActions(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.db.Query(
+		"SELECT id, session_id, action_type, detail, created_at FROM daemon_actions ORDER BY created_at DESC LIMIT 50",
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	actions := []daemonAction{}
+	for rows.Next() {
+		var a daemonAction
+		var detail sql.NullString
+		if err := rows.Scan(&a.ID, &a.SessionID, &a.ActionType, &detail, &a.CreatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if detail.Valid {
+			a.Detail = detail.String
+		}
+		actions = append(actions, a)
+	}
+	writeJSON(w, http.StatusOK, actions)
+}
+
+func (s *Server) getSessionActions(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	rows, err := s.db.Query(
+		"SELECT id, session_id, action_type, detail, created_at FROM daemon_actions WHERE session_id = ? ORDER BY created_at DESC LIMIT 50",
+		id,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	actions := []daemonAction{}
+	for rows.Next() {
+		var a daemonAction
+		var detail sql.NullString
+		if err := rows.Scan(&a.ID, &a.SessionID, &a.ActionType, &detail, &a.CreatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if detail.Valid {
+			a.Detail = detail.String
+		}
+		actions = append(actions, a)
+	}
+	writeJSON(w, http.StatusOK, actions)
 }
 
 // helpers
