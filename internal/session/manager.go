@@ -3,6 +3,7 @@ package session
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,17 +27,23 @@ func (m *Manager) Create(name, projectPath, prompt string) (*Session, error) {
 	id := uuid.New().String()
 	tmuxSession := tmux.SessionPrefix + name
 
-	// Start claude code in tmux session
-	command := m.claudeCommand
-	if err := m.tmux.NewSession(name, projectPath, command); err != nil {
+	// Start tmux session with a shell, then launch claude via SendKeys
+	// (passing command directly to new-session causes immediate exit)
+	if err := m.tmux.NewSession(name, projectPath, ""); err != nil {
 		return nil, fmt.Errorf("create tmux session: %w", err)
 	}
 
-	// Wait briefly for process to start
-	time.Sleep(500 * time.Millisecond)
+	// Wait for shell to be ready, then send claude command
+	time.Sleep(300 * time.Millisecond)
+	if err := m.tmux.SendKeysOnce(tmuxSession, m.claudeCommand); err != nil {
+		return nil, fmt.Errorf("launch claude: %w", err)
+	}
 
-	// Send initial prompt if provided
+	// Wait for claude to start and handle trust prompt, then send initial prompt
 	if prompt != "" {
+		if err := m.waitForClaudeReady(tmuxSession, 30*time.Second); err != nil {
+			return nil, fmt.Errorf("wait for claude: %w", err)
+		}
 		if err := m.tmux.SendKeys(tmuxSession, prompt); err != nil {
 			return nil, fmt.Errorf("send initial prompt: %w", err)
 		}
@@ -173,6 +180,40 @@ func (m *Manager) CaptureOutput(id string) (string, error) {
 		return "", err
 	}
 	return m.tmux.CapturePane(s.TmuxSession, 200)
+}
+
+// waitForClaudeReady polls the tmux pane until claude is ready for input.
+// It handles the workspace trust prompt by sending Enter if detected.
+func (m *Manager) waitForClaudeReady(tmuxSession string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	trustHandled := false
+
+	for time.Now().Before(deadline) {
+		output, err := m.tmux.CapturePane(tmuxSession, 30)
+		if err != nil {
+			time.Sleep(1 * time.Second)
+			continue
+		}
+
+		// Handle trust prompt
+		if !trustHandled && strings.Contains(output, "Yes, I trust this folder") {
+			_ = m.tmux.SendKeysRaw(tmuxSession, "Enter")
+			trustHandled = true
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		// Claude is ready when we see the input prompt (> or similar)
+		if trustHandled || !strings.Contains(output, "trust this folder") {
+			// Check for claude's input prompt indicator
+			if strings.Contains(output, "> ") || strings.Contains(output, "Claude") {
+				return nil
+			}
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+	return fmt.Errorf("claude did not become ready within %s", timeout)
 }
 
 func (m *Manager) UpdateStatus(id string, status Status) error {

@@ -22,7 +22,7 @@ func NewClient() *Client {
 
 func (c *Client) NewSession(name string, workDir string, command string) error {
 	sessionName := SessionPrefix + name
-	args := []string{"new-session", "-d", "-s", sessionName, "-c", workDir}
+	args := []string{"new-session", "-d", "-s", sessionName, "-c", workDir, "-e", "CLAUDECODE="}
 	if command != "" {
 		args = append(args, command)
 	}
@@ -65,8 +65,23 @@ func (c *Client) KillSession(name string) error {
 	return c.run("kill-session", "-t", sessionName)
 }
 
+// SendKeys sends text + Enter, then an extra Enter after 1s for Claude Code TUI submission.
 func (c *Client) SendKeys(sessionName string, keys string) error {
+	if err := c.run("send-keys", "-t", sessionName, keys, "Enter"); err != nil {
+		return err
+	}
+	time.Sleep(1 * time.Second)
+	return c.run("send-keys", "-t", sessionName, "Enter")
+}
+
+// SendKeysOnce sends text + Enter (single). Use for shell commands, not Claude TUI input.
+func (c *Client) SendKeysOnce(sessionName string, keys string) error {
 	return c.run("send-keys", "-t", sessionName, keys, "Enter")
+}
+
+// SendKeysRaw sends keys without Enter.
+func (c *Client) SendKeysRaw(sessionName string, keys string) error {
+	return c.run("send-keys", "-t", sessionName, keys)
 }
 
 func (c *Client) CapturePane(sessionName string, lines int) (string, error) {
