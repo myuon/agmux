@@ -2,14 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Markdown from "react-markdown";
 import type { Session } from "../types/session";
-import { api, type DaemonAction, type ClaudeLogEntry, type ClaudeContentBlock } from "../api/client";
-
-const actionColors: Record<string, string> = {
-  approve: "text-green-600",
-  retry: "text-yellow-600",
-  escalate: "text-red-600",
-  none: "text-gray-400",
-};
+import { api, type ClaudeLogEntry, type ClaudeContentBlock } from "../api/client";
 
 const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
   user: { bg: "bg-blue-900/30", label: "User", text: "text-blue-300" },
@@ -59,7 +52,6 @@ export function SessionDetail() {
   const [session, setSession] = useState<Session | null>(null);
   const [output, setOutput] = useState("");
   const [message, setMessage] = useState("");
-  const [actions, setActions] = useState<DaemonAction[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("terminal");
   const [logs, setLogs] = useState<ClaudeLogEntry[]>([]);
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -69,13 +61,11 @@ export function SessionDetail() {
     if (!sessionId) return;
     api.getSession(sessionId).then(setSession);
     api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
-    api.getSessionActions(sessionId).then(setActions);
     api.getSessionLogs(sessionId).then(setLogs).catch(() => {});
 
     const interval = setInterval(() => {
       api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
       api.getSession(sessionId).then(setSession);
-      api.getSessionActions(sessionId).then(setActions);
       api.getSessionLogs(sessionId).then(setLogs).catch(() => {});
     }, 3000);
     return () => clearInterval(interval);
@@ -208,29 +198,6 @@ export function SessionDetail() {
         </>
       )}
 
-      {actions.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold mb-2">Daemon Actions</h3>
-          <div className="space-y-2">
-            {actions.map((a) => (
-              <div
-                key={a.id}
-                className="border border-gray-200 rounded px-3 py-2 text-sm flex items-start gap-2"
-              >
-                <span
-                  className={`font-medium ${actionColors[a.actionType] || "text-gray-500"}`}
-                >
-                  [{a.actionType}]
-                </span>
-                <span className="text-gray-700 flex-1">{a.detail}</span>
-                <span className="text-xs text-gray-400 whitespace-nowrap">
-                  {new Date(a.createdAt).toLocaleTimeString()}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
