@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"time"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -137,6 +139,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.recordSessionAction(sess.ID, "session_create", "name: "+req.Name+", path: "+req.ProjectPath)
 	writeJSON(w, http.StatusCreated, sess)
 }
 
@@ -165,6 +168,7 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.recordSessionAction(id, "session_delete", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -174,6 +178,7 @@ func (s *Server) stopSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.recordSessionAction(id, "session_stop", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 
@@ -188,6 +193,7 @@ func (s *Server) sendToSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.recordSessionAction(id, "session_send_keys", req.Text)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
 }
 
@@ -441,6 +447,7 @@ func (s *Server) restartController(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.recordSessionAction(sess.ID, "controller_restart", "")
 	writeJSON(w, http.StatusOK, sess)
 }
 
@@ -454,4 +461,25 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+func (s *Server) recordSessionAction(sessionID, actionType, detail string) {
+	_, err := s.db.Exec(
+		"INSERT INTO daemon_actions (session_id, action_type, detail) VALUES (?, ?, ?)",
+		sessionID, actionType, detail,
+	)
+	if err != nil {
+		log.Printf("record session action failed: %v", err)
+		return
+	}
+
+	s.hub.Broadcast(Message{
+		Type: "action_log",
+		Data: map[string]interface{}{
+			"sessionId":  sessionID,
+			"actionType": actionType,
+			"detail":     detail,
+			"timestamp":  time.Now(),
+		},
+	})
 }
