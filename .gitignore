@@ -5,7 +5,7 @@
 .claude/*.local.*
 
 # Build
-agmux
+/agmux
 frontend/dist/
 
 # Dependencies
