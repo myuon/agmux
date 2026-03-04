@@ -65,7 +65,7 @@ func serveCmd() *cobra.Command {
 				port = cfg.Server.Port
 			}
 
-			mgr, database, err := initManager(cfg)
+			mgr, _, err := initManager(cfg)
 			if err != nil {
 				return err
 			}
@@ -97,7 +97,7 @@ func serveCmd() *cobra.Command {
 
 			// Daemon (LLM-powered via local claude CLI)
 			llmClient := llm.New(cfg.LLM.Model)
-			d := daemon.New(mgr, tmuxClient, llmClient, database, cfg.Daemon.IntervalDuration(), logger)
+			d := daemon.New(mgr, tmuxClient, llmClient, cfg.Daemon.IntervalDuration(), logger)
 			d.SetBroadcast(func(actionType string, detail interface{}) {
 				hub.Broadcast(server.Message{
 					Type: "action_log",
@@ -119,7 +119,7 @@ func serveCmd() *cobra.Command {
 			}
 
 			logPath, _ := logging.LogPath()
-			srv := server.New(mgr, database, hub, devMode, logPath)
+			srv := server.New(mgr, hub, devMode, logPath, logger)
 
 			if !devMode {
 				frontendFS, err := agmux.FrontendFS()

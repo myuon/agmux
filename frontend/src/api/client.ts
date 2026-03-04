@@ -73,10 +73,18 @@ export interface LogEntry {
   [key: string]: unknown;
 }
 
+export interface ClaudeContentBlock {
+  type: "text" | "tool_use" | "tool_result";
+  text?: string;
+  name?: string;
+  input?: unknown;
+  content?: string;
+}
+
 export interface ClaudeLogEntry {
   type: "user" | "assistant";
   timestamp: string;
-  content: string;
+  blocks: ClaudeContentBlock[];
 }
 
 export interface DaemonAction {

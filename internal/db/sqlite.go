@@ -68,13 +68,7 @@ func migrate(db *sql.DB) error {
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 
-		CREATE TABLE IF NOT EXISTS daemon_actions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			session_id TEXT NOT NULL REFERENCES sessions(id),
-			action_type TEXT NOT NULL,
-			detail TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		);
+		DROP TABLE IF EXISTS daemon_actions;
 	`)
 	if err != nil {
 		return err
@@ -82,22 +76,6 @@ func migrate(db *sql.DB) error {
 
 	// Migration: add type column if missing (for existing databases)
 	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN type TEXT NOT NULL DEFAULT 'worker'`)
-	if err != nil && !isAlterTableDuplicate(err) {
-		return err
-	}
-
-	// Migration: add detailed logging columns to daemon_actions
-	_, err = db.Exec(`ALTER TABLE daemon_actions ADD COLUMN captured_output_tail TEXT`)
-	if err != nil && !isAlterTableDuplicate(err) {
-		return err
-	}
-
-	_, err = db.Exec(`ALTER TABLE daemon_actions ADD COLUMN previous_status TEXT`)
-	if err != nil && !isAlterTableDuplicate(err) {
-		return err
-	}
-
-	_, err = db.Exec(`ALTER TABLE daemon_actions ADD COLUMN new_status TEXT`)
 	if err != nil && !isAlterTableDuplicate(err) {
 		return err
 	}

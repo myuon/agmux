@@ -24,3 +24,10 @@ make dev          # dev mode (frontend dev server + go run)
 - イシュー管理は **gh issue** (GitHub Issues) を全面的に使用する
 - 新規イシューは `gh issue create` で起票
 - 進捗管理は `gh issue list` で確認
+
+## 仕様策定ルール
+
+- `/spec` スキルで仕様を詰める際、Spec.md ファイルは作成しない。代わりに **イシューの body に仕様を記載する**
+- 複数ステップからなるタスクの場合、`gh` の **sub-issue 機能**を使って親子の issue を紐づける
+  - 親イシュー: 全体の仕様・ゴールを記載
+  - 子イシュー (sub-issue): 各ステップ・タスクを個別のイシューとして起票し、親に紐づける

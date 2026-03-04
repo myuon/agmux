@@ -2,13 +2,13 @@ package daemon
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/myuon/agmux/internal/llm"
+	"github.com/myuon/agmux/internal/logging"
 	"github.com/myuon/agmux/internal/session"
 	"github.com/myuon/agmux/internal/tmux"
 )
@@ -17,7 +17,6 @@ type Daemon struct {
 	sessions    *session.Manager
 	tmux        *tmux.Client
 	llm         *llm.Client
-	db          *sql.DB
 	logger      *slog.Logger
 	broadcast   func(actionType string, detail interface{})
 	interval    time.Duration
@@ -25,12 +24,11 @@ type Daemon struct {
 	lastOutputs map[string]string
 }
 
-func New(sessions *session.Manager, tmuxClient *tmux.Client, llmClient *llm.Client, db *sql.DB, interval time.Duration, logger *slog.Logger) *Daemon {
+func New(sessions *session.Manager, tmuxClient *tmux.Client, llmClient *llm.Client, interval time.Duration, logger *slog.Logger) *Daemon {
 	return &Daemon{
 		sessions:    sessions,
 		tmux:        tmuxClient,
 		llm:         llmClient,
-		db:          db,
 		logger:      logger.With("component", "daemon"),
 		interval:    interval,
 		lastOutputs: make(map[string]string),
@@ -179,14 +177,11 @@ func (d *Daemon) recordAction(sessionID string, result *llm.AnalysisResult, capt
 		detail += " | sent: " + result.SendText
 	}
 
-	_, err := d.db.Exec(
-		"INSERT INTO daemon_actions (session_id, action_type, detail, captured_output_tail, previous_status, new_status) VALUES (?, ?, ?, ?, ?, ?)",
-		sessionID, result.Action, detail, capturedOutputTail, previousStatus, newStatus,
+	logging.LogAction(d.logger, sessionID, result.Action, detail, "daemon",
+		slog.String("capturedOutputTail", capturedOutputTail),
+		slog.String("previousStatus", previousStatus),
+		slog.String("newStatus", newStatus),
 	)
-	if err != nil {
-		d.logger.Error("record action failed", "error", err)
-		return
-	}
 
 	if d.broadcast != nil {
 		d.broadcast("action_log", map[string]interface{}{
