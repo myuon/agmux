@@ -26,9 +26,10 @@ func TestOpenAndMigrate(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 
+	// daemon_actions table should NOT exist (dropped)
 	err = db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='daemon_actions'").Scan(&count)
 	require.NoError(t, err)
-	assert.Equal(t, 1, count)
+	assert.Equal(t, 0, count)
 }
 
 func TestMigrateIdempotent(t *testing.T) {

@@ -42,3 +42,21 @@ func LogPath() (string, error) {
 	}
 	return filepath.Join(home, ".agmux", "agmux.log"), nil
 }
+
+// LogAction logs an action entry with category:"action" to distinguish from general logs.
+func LogAction(logger *slog.Logger, sessionID, actionType, detail, source string, extra ...slog.Attr) {
+	attrs := []slog.Attr{
+		slog.String("category", "action"),
+		slog.String("sessionId", sessionID),
+		slog.String("actionType", actionType),
+		slog.String("detail", detail),
+		slog.String("source", source),
+	}
+	attrs = append(attrs, extra...)
+
+	args := make([]any, len(attrs))
+	for i, a := range attrs {
+		args[i] = a
+	}
+	logger.Info("action", args...)
+}

@@ -2,10 +2,10 @@ package server
 
 import (
 	"bufio"
-	"database/sql"
 	"encoding/json"
 	"io/fs"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,25 +18,26 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/myuon/agmux/internal/db"
+	"github.com/myuon/agmux/internal/logging"
 	"github.com/myuon/agmux/internal/session"
 )
 
 type Server struct {
 	sessions *session.Manager
-	db       *sql.DB
 	hub      *Hub
 	router   chi.Router
 	devMode  bool
 	logPath  string
+	logger   *slog.Logger
 }
 
-func New(sessions *session.Manager, database *sql.DB, hub *Hub, devMode bool, logPath string) *Server {
+func New(sessions *session.Manager, hub *Hub, devMode bool, logPath string, logger *slog.Logger) *Server {
 	s := &Server{
 		sessions: sessions,
-		db:       database,
 		hub:      hub,
 		devMode:  devMode,
 		logPath:  logPath,
+		logger:   logger.With("component", "server"),
 	}
 	s.setupRoutes()
 	return s
@@ -208,86 +209,83 @@ func (s *Server) getSessionOutput(w http.ResponseWriter, r *http.Request) {
 }
 
 type daemonAction struct {
-	ID                 int    `json:"id"`
 	SessionID          string `json:"sessionId"`
 	ActionType         string `json:"actionType"`
 	Detail             string `json:"detail"`
+	Source             string `json:"source"`
 	CapturedOutputTail string `json:"capturedOutputTail,omitempty"`
 	PreviousStatus     string `json:"previousStatus,omitempty"`
 	NewStatus          string `json:"newStatus,omitempty"`
 	CreatedAt          string `json:"createdAt"`
 }
 
-func (s *Server) getActions(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.db.Query(
-		"SELECT id, session_id, action_type, detail, captured_output_tail, previous_status, new_status, created_at FROM daemon_actions ORDER BY created_at DESC LIMIT 50",
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+// readActionsFromLog reads action entries from the log file, optionally filtered by sessionID.
+func (s *Server) readActionsFromLog(sessionID string, limit int) []daemonAction {
+	if s.logPath == "" {
+		return []daemonAction{}
 	}
-	defer rows.Close()
 
-	actions := []daemonAction{}
-	for rows.Next() {
-		var a daemonAction
-		var detail, capturedOutputTail, previousStatus, newStatus sql.NullString
-		if err := rows.Scan(&a.ID, &a.SessionID, &a.ActionType, &detail, &capturedOutputTail, &previousStatus, &newStatus, &a.CreatedAt); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
+	file, err := os.Open(s.logPath)
+	if err != nil {
+		return []daemonAction{}
+	}
+	defer file.Close()
+
+	var actions []daemonAction
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		var entry map[string]interface{}
+		if err := json.Unmarshal([]byte(scanner.Text()), &entry); err != nil {
+			continue
 		}
-		if detail.Valid {
-			a.Detail = detail.String
+		cat, _ := entry["category"].(string)
+		if cat != "action" {
+			continue
 		}
-		if capturedOutputTail.Valid {
-			a.CapturedOutputTail = capturedOutputTail.String
+		sid, _ := entry["sessionId"].(string)
+		if sessionID != "" && sid != sessionID {
+			continue
 		}
-		if previousStatus.Valid {
-			a.PreviousStatus = previousStatus.String
-		}
-		if newStatus.Valid {
-			a.NewStatus = newStatus.String
+		a := daemonAction{
+			SessionID:          sid,
+			ActionType:         strVal(entry, "actionType"),
+			Detail:             strVal(entry, "detail"),
+			Source:             strVal(entry, "source"),
+			CapturedOutputTail: strVal(entry, "capturedOutputTail"),
+			PreviousStatus:     strVal(entry, "previousStatus"),
+			NewStatus:          strVal(entry, "newStatus"),
+			CreatedAt:          strVal(entry, "time"),
 		}
 		actions = append(actions, a)
 	}
-	writeJSON(w, http.StatusOK, actions)
+
+	// Return last N entries (newest last in file, we want newest first)
+	if len(actions) > limit {
+		actions = actions[len(actions)-limit:]
+	}
+	// Reverse to newest-first
+	for i, j := 0, len(actions)-1; i < j; i, j = i+1, j-1 {
+		actions[i], actions[j] = actions[j], actions[i]
+	}
+	if actions == nil {
+		actions = []daemonAction{}
+	}
+	return actions
+}
+
+func strVal(m map[string]interface{}, key string) string {
+	v, _ := m[key].(string)
+	return v
+}
+
+func (s *Server) getActions(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.readActionsFromLog("", 50))
 }
 
 func (s *Server) getSessionActions(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	rows, err := s.db.Query(
-		"SELECT id, session_id, action_type, detail, captured_output_tail, previous_status, new_status, created_at FROM daemon_actions WHERE session_id = ? ORDER BY created_at DESC LIMIT 50",
-		id,
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	defer rows.Close()
-
-	actions := []daemonAction{}
-	for rows.Next() {
-		var a daemonAction
-		var detail, capturedOutputTail, previousStatus, newStatus sql.NullString
-		if err := rows.Scan(&a.ID, &a.SessionID, &a.ActionType, &detail, &capturedOutputTail, &previousStatus, &newStatus, &a.CreatedAt); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if detail.Valid {
-			a.Detail = detail.String
-		}
-		if capturedOutputTail.Valid {
-			a.CapturedOutputTail = capturedOutputTail.String
-		}
-		if previousStatus.Valid {
-			a.PreviousStatus = previousStatus.String
-		}
-		if newStatus.Valid {
-			a.NewStatus = newStatus.String
-		}
-		actions = append(actions, a)
-	}
-	writeJSON(w, http.StatusOK, actions)
+	writeJSON(w, http.StatusOK, s.readActionsFromLog(id, 50))
 }
 
 func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
@@ -334,10 +332,18 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, logs)
 }
 
+type claudeContentBlock struct {
+	Type    string `json:"type"`              // "text", "tool_use", "tool_result"
+	Text    string `json:"text,omitempty"`    // for type=text
+	Name    string `json:"name,omitempty"`    // for type=tool_use (tool name)
+	Input   any    `json:"input,omitempty"`   // for type=tool_use (tool input)
+	Content string `json:"content,omitempty"` // for type=tool_result
+}
+
 type claudeLogEntry struct {
-	Type      string `json:"type"`
-	Timestamp string `json:"timestamp"`
-	Content   string `json:"content"`
+	Type      string              `json:"type"`
+	Timestamp string              `json:"timestamp"`
+	Blocks    []claudeContentBlock `json:"blocks"`
 }
 
 func (s *Server) getSessionLogs(w http.ResponseWriter, r *http.Request) {
@@ -358,6 +364,7 @@ func (s *Server) getSessionLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	escapedPath := strings.ReplaceAll(sess.ProjectPath, "/", "-")
+	escapedPath = strings.ReplaceAll(escapedPath, ".", "-")
 	jsonlPath := filepath.Join(homeDir, ".claude", "projects", escapedPath, sessionID+".jsonl")
 
 	file, err := os.Open(jsonlPath)
@@ -386,15 +393,15 @@ func (s *Server) getSessionLogs(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		content := extractTextContent(entry.Message.Content)
-		if content == "" {
+		blocks := extractContentBlocks(entry.Message.Content)
+		if len(blocks) == 0 {
 			continue
 		}
 
 		logs = append(logs, claudeLogEntry{
 			Type:      entry.Type,
 			Timestamp: entry.Timestamp,
-			Content:   content,
+			Blocks:    blocks,
 		})
 	}
 
@@ -405,35 +412,56 @@ func (s *Server) getSessionLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, logs)
 }
 
-// extractTextContent extracts text from Claude message content.
-// Content can be a string or an array of content blocks.
-func extractTextContent(raw json.RawMessage) string {
+// extractContentBlocks parses Claude message content into typed blocks.
+func extractContentBlocks(raw json.RawMessage) []claudeContentBlock {
 	if len(raw) == 0 {
-		return ""
+		return nil
 	}
 
-	// Try as string first
+	// Try as string first (plain user message)
 	var s string
 	if err := json.Unmarshal(raw, &s); err == nil {
-		return s
+		if s == "" {
+			return nil
+		}
+		return []claudeContentBlock{{Type: "text", Text: s}}
 	}
 
 	// Try as array of content blocks
-	var blocks []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
+	var rawBlocks []struct {
+		Type      string          `json:"type"`
+		Text      string          `json:"text,omitempty"`
+		Name      string          `json:"name,omitempty"`
+		Input     json.RawMessage `json:"input,omitempty"`
+		Content   json.RawMessage `json:"content,omitempty"`
+		ToolUseID string          `json:"tool_use_id,omitempty"`
 	}
-	if err := json.Unmarshal(raw, &blocks); err == nil {
-		var texts []string
-		for _, b := range blocks {
-			if b.Type == "text" && b.Text != "" {
-				texts = append(texts, b.Text)
-			}
-		}
-		return strings.Join(texts, "\n")
+	if err := json.Unmarshal(raw, &rawBlocks); err != nil {
+		return nil
 	}
 
-	return ""
+	var blocks []claudeContentBlock
+	for _, b := range rawBlocks {
+		switch b.Type {
+		case "text":
+			if b.Text != "" {
+				blocks = append(blocks, claudeContentBlock{Type: "text", Text: b.Text})
+			}
+		case "tool_use":
+			var input any
+			json.Unmarshal(b.Input, &input)
+			blocks = append(blocks, claudeContentBlock{Type: "tool_use", Name: b.Name, Input: input})
+		case "tool_result":
+			content := ""
+			// tool_result content can be string or structured
+			json.Unmarshal(b.Content, &content)
+			if content == "" {
+				content = string(b.Content)
+			}
+			blocks = append(blocks, claudeContentBlock{Type: "tool_result", Content: content})
+		}
+	}
+	return blocks
 }
 
 func (s *Server) restartController(w http.ResponseWriter, r *http.Request) {
@@ -464,14 +492,7 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 func (s *Server) recordSessionAction(sessionID, actionType, detail string) {
-	_, err := s.db.Exec(
-		"INSERT INTO daemon_actions (session_id, action_type, detail) VALUES (?, ?, ?)",
-		sessionID, actionType, detail,
-	)
-	if err != nil {
-		log.Printf("record session action failed: %v", err)
-		return
-	}
+	logging.LogAction(s.logger, sessionID, actionType, detail, "user")
 
 	s.hub.Broadcast(Message{
 		Type: "action_log",

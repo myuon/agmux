@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import Markdown from "react-markdown";
 import type { Session } from "../types/session";
-import { api, type DaemonAction, type ClaudeLogEntry } from "../api/client";
+import { api, type DaemonAction, type ClaudeLogEntry, type ClaudeContentBlock } from "../api/client";
 
 const actionColors: Record<string, string> = {
   approve: "text-green-600",
@@ -15,6 +16,41 @@ const roleStyles: Record<string, { bg: string; label: string; text: string }> = 
   assistant: { bg: "bg-gray-800/50", label: "Assistant", text: "text-green-300" },
 };
 
+function ContentBlockView({ block }: { block: ClaudeContentBlock }) {
+  if (block.type === "text") {
+    return (
+      <div className="prose prose-invert prose-xs max-w-none prose-pre:bg-gray-950 prose-pre:text-gray-300 prose-code:text-pink-300">
+        <Markdown>{block.text ?? ""}</Markdown>
+      </div>
+    );
+  }
+  if (block.type === "tool_use") {
+    const inputStr = typeof block.input === "string"
+      ? block.input
+      : JSON.stringify(block.input, null, 2);
+    return (
+      <details className="bg-gray-800/60 rounded px-2 py-1">
+        <summary className="cursor-pointer text-yellow-300 font-mono text-xs">
+          Tool: {block.name}
+        </summary>
+        <pre className="text-gray-400 text-xs mt-1 overflow-x-auto whitespace-pre-wrap">{inputStr}</pre>
+      </details>
+    );
+  }
+  if (block.type === "tool_result") {
+    const content = block.content ?? "";
+    return (
+      <details className="bg-gray-800/60 rounded px-2 py-1">
+        <summary className="cursor-pointer text-cyan-300 font-mono text-xs">
+          Tool Result
+        </summary>
+        <pre className="text-gray-400 text-xs mt-1 overflow-x-auto whitespace-pre-wrap">{content.slice(0, 2000)}</pre>
+      </details>
+    );
+  }
+  return null;
+}
+
 type ViewMode = "terminal" | "logs";
 
 export function SessionDetail() {
@@ -26,6 +62,8 @@ export function SessionDetail() {
   const [actions, setActions] = useState<DaemonAction[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>("terminal");
   const [logs, setLogs] = useState<ClaudeLogEntry[]>([]);
+  const terminalRef = useRef<HTMLDivElement>(null);
+  const logsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -43,6 +81,20 @@ export function SessionDetail() {
     return () => clearInterval(interval);
   }, [sessionId]);
 
+  // Auto-scroll terminal
+  useEffect(() => {
+    if (terminalRef.current) {
+      terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
+    }
+  }, [output]);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    if (logsRef.current) {
+      logsRef.current.scrollTop = logsRef.current.scrollHeight;
+    }
+  }, [logs]);
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!sessionId || !message.trim()) return;
@@ -56,6 +108,24 @@ export function SessionDetail() {
   };
 
   if (!session) return <div className="p-8">Loading...</div>;
+
+  const sendForm = (
+    <form onSubmit={handleSend} className="flex gap-2 mb-6">
+      <input
+        type="text"
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="Send a message..."
+        className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
+      />
+      <button
+        type="submit"
+        className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+      >
+        Send
+      </button>
+    </form>
+  );
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
@@ -101,51 +171,41 @@ export function SessionDetail() {
 
       {viewMode === "terminal" ? (
         <>
-          <div className="bg-gray-900 text-green-400 rounded-lg p-4 mb-4 font-mono text-xs h-96 overflow-y-auto whitespace-pre-wrap">
+          <div ref={terminalRef} className="bg-gray-900 text-green-400 rounded-lg p-4 mb-4 font-mono text-xs h-96 overflow-y-auto whitespace-pre-wrap">
             {output || "No output yet."}
           </div>
-
-          <form onSubmit={handleSend} className="flex gap-2 mb-6">
-            <input
-              type="text"
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Send a message..."
-              className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
-            />
-            <button
-              type="submit"
-              className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Send
-            </button>
-          </form>
+          {sendForm}
         </>
       ) : (
-        <div className="bg-gray-900 rounded-lg p-3 text-sm h-96 overflow-y-auto mb-4 space-y-3">
-          {logs.length === 0 ? (
-            <p className="text-gray-500">No logs yet</p>
-          ) : (
-            logs.map((log, i) => {
-              const style = roleStyles[log.type] || roleStyles.assistant;
-              return (
-                <div key={i} className={`rounded-lg p-3 ${style.bg}`}>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`font-semibold text-xs ${style.text}`}>
-                      {style.label}
-                    </span>
-                    <span className="text-gray-500 text-xs">
-                      {new Date(log.timestamp).toLocaleTimeString()}
-                    </span>
+        <>
+          <div ref={logsRef} className="bg-gray-900 rounded-lg p-3 text-sm h-96 overflow-y-auto mb-4 space-y-3">
+            {logs.length === 0 ? (
+              <p className="text-gray-500">No logs yet</p>
+            ) : (
+              logs.map((log, i) => {
+                const style = roleStyles[log.type] || roleStyles.assistant;
+                return (
+                  <div key={i} className={`rounded-lg p-3 ${style.bg}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className={`font-semibold text-xs ${style.text}`}>
+                        {style.label}
+                      </span>
+                      <span className="text-gray-500 text-xs">
+                        {new Date(log.timestamp).toLocaleTimeString()}
+                      </span>
+                    </div>
+                    <div className="text-gray-200 break-words text-xs space-y-2">
+                      {log.blocks.map((block, j) => (
+                        <ContentBlockView key={j} block={block} />
+                      ))}
+                    </div>
                   </div>
-                  <div className="text-gray-200 whitespace-pre-wrap break-words text-xs">
-                    {log.content}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
+                );
+              })
+            )}
+          </div>
+          {sendForm}
+        </>
       )}
 
       {actions.length > 0 && (
