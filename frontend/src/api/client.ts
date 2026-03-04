@@ -52,7 +52,20 @@ export const api = {
 
   getSessionActions: (id: string) =>
     request<DaemonAction[]>(`/sessions/${id}/actions`),
+
+  getLogs: (limit = 100) =>
+    request<LogEntry[]>(`/logs?limit=${limit}`),
 };
+
+export interface LogEntry {
+  time: string;
+  level: string;
+  msg: string;
+  component?: string;
+  session?: string;
+  sessionId?: string;
+  [key: string]: unknown;
+}
 
 export interface DaemonAction {
   id: number;

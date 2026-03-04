@@ -3,7 +3,7 @@ package daemon
 import (
 	"context"
 	"database/sql"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -12,27 +12,25 @@ import (
 	"github.com/myuon/agmux/internal/tmux"
 )
 
-type Broadcaster interface {
-	Broadcast(msg interface{})
-}
-
 type Daemon struct {
 	sessions    *session.Manager
 	tmux        *tmux.Client
 	llm         *llm.Client
 	db          *sql.DB
+	logger      *slog.Logger
 	broadcast   func(actionType string, detail interface{})
 	interval    time.Duration
 	mu          sync.Mutex
 	lastOutputs map[string]string
 }
 
-func New(sessions *session.Manager, tmuxClient *tmux.Client, llmClient *llm.Client, db *sql.DB, interval time.Duration) *Daemon {
+func New(sessions *session.Manager, tmuxClient *tmux.Client, llmClient *llm.Client, db *sql.DB, interval time.Duration, logger *slog.Logger) *Daemon {
 	return &Daemon{
 		sessions:    sessions,
 		tmux:        tmuxClient,
 		llm:         llmClient,
 		db:          db,
+		logger:      logger.With("component", "daemon"),
 		interval:    interval,
 		lastOutputs: make(map[string]string),
 	}
@@ -46,12 +44,12 @@ func (d *Daemon) Start(ctx context.Context) {
 	ticker := time.NewTicker(d.interval)
 	defer ticker.Stop()
 
-	log.Printf("Daemon started (interval: %s)", d.interval)
+	d.logger.Info("daemon started", "interval", d.interval.String())
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Daemon stopped")
+			d.logger.Info("daemon stopped")
 			return
 		case <-ticker.C:
 			d.patrol()
@@ -62,7 +60,7 @@ func (d *Daemon) Start(ctx context.Context) {
 func (d *Daemon) patrol() {
 	sessions, err := d.sessions.List()
 	if err != nil {
-		log.Printf("daemon: list sessions error: %v", err)
+		d.logger.Error("list sessions failed", "error", err)
 		return
 	}
 
@@ -71,9 +69,11 @@ func (d *Daemon) patrol() {
 			continue
 		}
 
+		log := d.logger.With("session", s.Name, "sessionId", s.ID)
+
 		output, err := d.tmux.CapturePane(s.TmuxSession, 100)
 		if err != nil {
-			log.Printf("daemon: capture %s error: %v", s.Name, err)
+			log.Error("capture pane failed", "error", err)
 			continue
 		}
 
@@ -81,26 +81,32 @@ func (d *Daemon) patrol() {
 		d.mu.Lock()
 		if d.lastOutputs[s.ID] == output {
 			d.mu.Unlock()
+			log.Debug("output unchanged, skipping")
 			continue
 		}
 		d.lastOutputs[s.ID] = output
 		d.mu.Unlock()
 
 		// Ask LLM to analyze
+		log.Info("analyzing session")
 		prompt := llm.BuildAnalysisPrompt(s.Name, s.ProjectPath, string(s.Status), output)
 		result, err := d.llm.Analyze(prompt)
 		if err != nil {
-			log.Printf("daemon: analyze %s error: %v", s.Name, err)
+			log.Error("analyze failed", "error", err)
 			continue
 		}
 
-		log.Printf("daemon: %s -> status=%s action=%s reason=%s", s.Name, result.Status, result.Action, result.Reason)
+		log.Info("analysis result",
+			"status", result.Status,
+			"action", result.Action,
+			"reason", result.Reason,
+		)
 
 		// Update session status
 		newStatus := session.Status(result.Status)
 		if newStatus != s.Status {
 			if err := d.sessions.UpdateStatus(s.ID, newStatus); err != nil {
-				log.Printf("daemon: update status %s error: %v", s.Name, err)
+				log.Error("update status failed", "error", err)
 			}
 		}
 
@@ -110,21 +116,23 @@ func (d *Daemon) patrol() {
 }
 
 func (d *Daemon) executeAction(s *session.Session, result *llm.AnalysisResult) {
+	log := d.logger.With("session", s.Name, "sessionId", s.ID, "action", result.Action)
+
 	switch result.Action {
 	case "approve", "retry":
 		if result.SendText != "" {
 			if err := d.sessions.SendKeys(s.ID, result.SendText); err != nil {
-				log.Printf("daemon: send keys to %s error: %v", s.Name, err)
+				log.Error("send keys failed", "error", err)
 				return
 			}
-			log.Printf("daemon: sent '%s' to %s (%s)", result.SendText, s.Name, result.Action)
+			log.Info("sent text", "text", result.SendText)
 		}
 	case "escalate":
-		log.Printf("daemon: ESCALATION for %s: %s", s.Name, result.Reason)
+		log.Warn("escalation required", "reason", result.Reason)
 	case "none":
 		return
 	default:
-		log.Printf("daemon: unknown action '%s' for %s", result.Action, s.Name)
+		log.Warn("unknown action", "action", result.Action)
 		return
 	}
 
@@ -143,7 +151,7 @@ func (d *Daemon) recordAction(sessionID string, result *llm.AnalysisResult) {
 		sessionID, result.Action, detail,
 	)
 	if err != nil {
-		log.Printf("daemon: record action error: %v", err)
+		d.logger.Error("record action failed", "error", err)
 		return
 	}
 

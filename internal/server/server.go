@@ -1,11 +1,14 @@
 package server
 
 import (
+	"bufio"
 	"database/sql"
 	"encoding/json"
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -19,14 +22,16 @@ type Server struct {
 	hub      *Hub
 	router   chi.Router
 	devMode  bool
+	logPath  string
 }
 
-func New(sessions *session.Manager, database *sql.DB, hub *Hub, devMode bool) *Server {
+func New(sessions *session.Manager, database *sql.DB, hub *Hub, devMode bool, logPath string) *Server {
 	s := &Server{
 		sessions: sessions,
 		db:       database,
 		hub:      hub,
 		devMode:  devMode,
+		logPath:  logPath,
 	}
 	s.setupRoutes()
 	return s
@@ -58,6 +63,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
 		r.Get("/sessions/{id}/actions", s.getSessionActions)
 		r.Get("/actions", s.getActions)
+		r.Get("/logs", s.getLogs)
 	})
 
 	s.router = r
@@ -241,6 +247,50 @@ func (s *Server) getSessionActions(w http.ResponseWriter, r *http.Request) {
 		actions = append(actions, a)
 	}
 	writeJSON(w, http.StatusOK, actions)
+}
+
+func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
+	limit := 100
+	if q := r.URL.Query().Get("limit"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n > 0 {
+			limit = n
+		}
+	}
+
+	if s.logPath == "" {
+		writeJSON(w, http.StatusOK, []string{})
+		return
+	}
+
+	file, err := os.Open(s.logPath)
+	if err != nil {
+		writeJSON(w, http.StatusOK, []string{})
+		return
+	}
+	defer file.Close()
+
+	// Read all lines, keep last N
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+
+	if len(lines) > limit {
+		lines = lines[len(lines)-limit:]
+	}
+
+	// Parse JSON lines into raw objects
+	var logs []json.RawMessage
+	for _, line := range lines {
+		logs = append(logs, json.RawMessage(line))
+	}
+	if logs == nil {
+		logs = []json.RawMessage{}
+	}
+
+	writeJSON(w, http.StatusOK, logs)
 }
 
 // helpers

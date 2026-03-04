@@ -4,12 +4,14 @@ import type { Session } from "./types/session";
 import { SessionCard } from "./components/SessionCard";
 import { CreateSession } from "./components/CreateSession";
 import { SessionDetail } from "./components/SessionDetail";
+import { LogViewer } from "./components/LogViewer";
 import { useWebSocket } from "./hooks/useWebSocket";
 
 function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [showLogs, setShowLogs] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadSessions = () => {
@@ -51,6 +53,10 @@ function App() {
     }
   };
 
+  if (showLogs) {
+    return <LogViewer onBack={() => setShowLogs(false)} />;
+  }
+
   if (selectedId) {
     return (
       <SessionDetail
@@ -67,12 +73,20 @@ function App() {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b border-gray-200 px-8 py-4 flex items-center justify-between">
         <h1 className="text-xl font-bold text-gray-900">agmux Dashboard</h1>
-        <button
-          onClick={() => setShowCreate(true)}
-          className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          + New Session
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowLogs(true)}
+            className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
+          >
+            Logs
+          </button>
+          <button
+            onClick={() => setShowCreate(true)}
+            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            + New Session
+          </button>
+        </div>
       </header>
 
       <main className="p-8 max-w-6xl mx-auto">
