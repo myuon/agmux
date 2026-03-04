@@ -128,6 +128,18 @@ export function SessionDetail() {
       <div className="flex items-center gap-3 mb-4">
         <h2 className="text-2xl font-bold">{session.name}</h2>
         <span className="text-sm text-gray-500">{session.status}</span>
+        {session.type !== "controller" && (
+          <button
+            onClick={async () => {
+              if (!confirm("Delete this session?")) return;
+              await api.deleteSession(session.id);
+              navigate("/");
+            }}
+            className="ml-auto px-3 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
+          >
+            Delete
+          </button>
+        )}
       </div>
       <p className="text-sm text-gray-500 mb-4">
         Project: {session.projectPath}
