@@ -5,11 +5,10 @@ import "time"
 type Status string
 
 const (
-	StatusRunning Status = "running"
-	StatusWaiting Status = "waiting"
-	StatusError   Status = "error"
-	StatusDone    Status = "done"
-	StatusStopped Status = "stopped"
+	StatusWorking         Status = "working"
+	StatusIdle            Status = "idle"
+	StatusQuestionWaiting Status = "question_waiting"
+	StatusStopped         Status = "stopped"
 )
 
 type SessionType string

@@ -91,8 +91,6 @@ export interface ClaudeLogEntry {
 
 export interface AppConfig {
   server: { port: number };
-  daemon: { interval: string; autoApprove: boolean };
-  llm: { model: string };
+  daemon: { interval: string };
   session: { claudeCommand: string };
 }
-

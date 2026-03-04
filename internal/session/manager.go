@@ -56,7 +56,7 @@ func (m *Manager) Create(name, projectPath, prompt string) (*Session, error) {
 		ProjectPath:   projectPath,
 		InitialPrompt: prompt,
 		TmuxSession:   tmuxSession,
-		Status:        StatusRunning,
+		Status:        StatusWorking,
 		Type:          TypeWorker,
 		CreatedAt:     now,
 		UpdatedAt:     now,
@@ -102,7 +102,7 @@ func (m *Manager) List() ([]Session, error) {
 		}
 
 		// Correct status based on tmux reality
-		if s.Status == StatusRunning || s.Status == StatusWaiting {
+		if s.Status == StatusWorking || s.Status == StatusQuestionWaiting || s.Status == StatusIdle {
 			if !m.tmux.HasSessionByFullName(s.TmuxSession) {
 				s.Status = StatusStopped
 				m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(StatusStopped), time.Now(), s.ID)
@@ -252,12 +252,12 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil && (existing.Status == StatusRunning || existing.Status == StatusWaiting) {
+	if existing != nil && (existing.Status == StatusWorking || existing.Status == StatusIdle || existing.Status == StatusQuestionWaiting) {
 		// Already running, return existing
 		return existing, nil
 	}
 
-	// If a stopped/done controller exists, delete it first
+	// If a stopped controller exists, delete it first
 	if existing != nil {
 		_ = m.Delete(existing.ID)
 	}
@@ -281,7 +281,7 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 		Name:        name,
 		ProjectPath: projectPath,
 		TmuxSession: tmuxSession,
-		Status:      StatusRunning,
+		Status:      StatusWorking,
 		Type:        TypeController,
 		CreatedAt:   now,
 		UpdatedAt:   now,

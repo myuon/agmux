@@ -1,87 +1,122 @@
 package monitor
 
 import (
+	"bufio"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/myuon/agmux/internal/session"
-	"github.com/myuon/agmux/internal/tmux"
 )
 
-type Monitor struct {
-	tmux *tmux.Client
+type Monitor struct{}
+
+func New() *Monitor {
+	return &Monitor{}
 }
 
-func New(tmuxClient *tmux.Client) *Monitor {
-	return &Monitor{tmux: tmuxClient}
+// CheckStatus reads the session's JSONL log file and determines status.
+func (m *Monitor) CheckStatus(s *session.Session) session.Status {
+	jsonlPath := BuildJSONLPath(s.ProjectPath, s.ID)
+
+	lastEntries := readLastEntries(jsonlPath, 5)
+	return classifyFromEntries(lastEntries)
 }
 
-// CheckStatus inspects a session's tmux pane and classifies its status.
-// Returns (status, capturedOutput, error).
-func (m *Monitor) CheckStatus(s *session.Session) (session.Status, string, error) {
-	if !m.tmux.HasSessionByFullName(s.TmuxSession) {
-		return session.StatusStopped, "", nil
-	}
+// BuildJSONLPath constructs the path to a session's JSONL log file.
+func BuildJSONLPath(projectPath, sessionID string) string {
+	homeDir, _ := os.UserHomeDir()
+	escapedPath := strings.ReplaceAll(projectPath, "/", "-")
+	escapedPath = strings.ReplaceAll(escapedPath, ".", "-")
+	return filepath.Join(homeDir, ".claude", "projects", escapedPath, sessionID+".jsonl")
+}
 
-	output, err := m.tmux.CapturePane(s.TmuxSession, 100)
+type jsonlEntry struct {
+	Type    string `json:"type"`
+	Message *struct {
+		StopReason *string         `json:"stop_reason"`
+		Content    json.RawMessage `json:"content"`
+	} `json:"message"`
+}
+
+func readLastEntries(path string, n int) []jsonlEntry {
+	f, err := os.Open(path)
 	if err != nil {
-		return session.StatusError, "", err
+		return nil
+	}
+	defer f.Close()
+
+	var entries []jsonlEntry
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	for scanner.Scan() {
+		var entry jsonlEntry
+		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+			continue
+		}
+		entries = append(entries, entry)
 	}
 
-	status := classifyOutput(output)
-	return status, output, nil
+	if len(entries) > n {
+		entries = entries[len(entries)-n:]
+	}
+	return entries
 }
 
-func classifyOutput(output string) session.Status {
-	// Look at the last ~20 lines for prompt detection
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	tail := output
-	if len(lines) > 20 {
-		tail = strings.Join(lines[len(lines)-20:], "\n")
+func classifyFromEntries(entries []jsonlEntry) session.Status {
+	if len(entries) == 0 {
+		return session.StatusWorking
 	}
 
-	lower := strings.ToLower(tail)
+	last := entries[len(entries)-1]
 
-	// Waiting patterns (permission prompts, user input requests)
-	waitingPatterns := []string{
-		"do you want to proceed",
-		"allow",
-		"[y/n]",
-		"(y/n)",
-		"press enter",
-		"yes/no",
-		"approve",
-		"permission",
-		"would you like",
+	if last.Type == "user" {
+		return session.StatusWorking
 	}
-	for _, p := range waitingPatterns {
-		if strings.Contains(lower, p) {
-			return session.StatusWaiting
+
+	if last.Type == "assistant" && last.Message != nil {
+		stopReason := ""
+		if last.Message.StopReason != nil {
+			stopReason = *last.Message.StopReason
+		}
+
+		if stopReason == "end_turn" {
+			if hasAskUserQuestion(last.Message.Content) {
+				return session.StatusQuestionWaiting
+			}
+			return session.StatusIdle
+		}
+
+		if stopReason == "tool_use" {
+			return session.StatusWorking
+		}
+
+		// stop_reason is null or empty → streaming
+		return session.StatusWorking
+	}
+
+	// For other types (progress, queue-operation, etc.), keep working
+	return session.StatusWorking
+}
+
+func hasAskUserQuestion(content json.RawMessage) bool {
+	if len(content) == 0 {
+		return false
+	}
+
+	var blocks []struct {
+		Type string `json:"type"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(content, &blocks); err != nil {
+		return false
+	}
+
+	for _, b := range blocks {
+		if b.Type == "tool_use" && b.Name == "AskUserQuestion" {
+			return true
 		}
 	}
-
-	// Error patterns
-	errorPatterns := []string{
-		"error:",
-		"fatal:",
-		"panic:",
-		"failed",
-		"exception",
-		"traceback",
-	}
-	for _, p := range errorPatterns {
-		if strings.Contains(lower, p) {
-			return session.StatusError
-		}
-	}
-
-	// Done patterns (shell prompt visible at the end, meaning claude exited)
-	lastLine := ""
-	if len(lines) > 0 {
-		lastLine = strings.TrimSpace(lines[len(lines)-1])
-	}
-	if lastLine == "$" || strings.HasSuffix(lastLine, "$ ") || strings.HasSuffix(lastLine, "% ") {
-		return session.StatusDone
-	}
-
-	return session.StatusRunning
+	return false
 }

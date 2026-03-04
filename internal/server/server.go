@@ -8,10 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
-	"strings"
-
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -20,6 +17,7 @@ import (
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/logging"
+	"github.com/myuon/agmux/internal/monitor"
 	"github.com/myuon/agmux/internal/session"
 )
 
@@ -262,8 +260,8 @@ type claudeContentBlock struct {
 }
 
 type claudeLogEntry struct {
-	Type      string              `json:"type"`
-	Timestamp string              `json:"timestamp"`
+	Type      string               `json:"type"`
+	Timestamp string               `json:"timestamp"`
 	Blocks    []claudeContentBlock `json:"blocks"`
 }
 
@@ -277,16 +275,8 @@ func (s *Server) getSessionLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build Claude Code JSONL path: ~/.claude/projects/[escaped-path]/[sessionId].jsonl
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "cannot determine home directory")
-		return
-	}
-
-	escapedPath := strings.ReplaceAll(sess.ProjectPath, "/", "-")
-	escapedPath = strings.ReplaceAll(escapedPath, ".", "-")
-	jsonlPath := filepath.Join(homeDir, ".claude", "projects", escapedPath, sessionID+".jsonl")
+	// Build Claude Code JSONL path
+	jsonlPath := monitor.BuildJSONLPath(sess.ProjectPath, sessionID)
 
 	file, err := os.Open(jsonlPath)
 	if err != nil {
@@ -340,12 +330,12 @@ func extractContentBlocks(raw json.RawMessage) []claudeContentBlock {
 	}
 
 	// Try as string first (plain user message)
-	var s string
-	if err := json.Unmarshal(raw, &s); err == nil {
-		if s == "" {
+	var str string
+	if err := json.Unmarshal(raw, &str); err == nil {
+		if str == "" {
 			return nil
 		}
-		return []claudeContentBlock{{Type: "text", Text: s}}
+		return []claudeContentBlock{{Type: "text", Text: str}}
 	}
 
 	// Try as array of content blocks
@@ -388,7 +378,6 @@ func extractContentBlocks(raw json.RawMessage) []claudeContentBlock {
 type configJSON struct {
 	Server  configServerJSON  `json:"server"`
 	Daemon  configDaemonJSON  `json:"daemon"`
-	LLM     configLLMJSON     `json:"llm"`
 	Session configSessionJSON `json:"session"`
 }
 
@@ -396,11 +385,7 @@ type configServerJSON struct {
 	Port int `json:"port"`
 }
 type configDaemonJSON struct {
-	Interval    string `json:"interval"`
-	AutoApprove bool   `json:"autoApprove"`
-}
-type configLLMJSON struct {
-	Model string `json:"model"`
+	Interval string `json:"interval"`
 }
 type configSessionJSON struct {
 	ClaudeCommand string `json:"claudeCommand"`
@@ -409,8 +394,7 @@ type configSessionJSON struct {
 func configToJSON(cfg *config.Config) configJSON {
 	return configJSON{
 		Server:  configServerJSON{Port: cfg.Server.Port},
-		Daemon:  configDaemonJSON{Interval: cfg.Daemon.Interval, AutoApprove: cfg.Daemon.AutoApprove},
-		LLM:     configLLMJSON{Model: cfg.LLM.Model},
+		Daemon:  configDaemonJSON{Interval: cfg.Daemon.Interval},
 		Session: configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
 	}
 }
@@ -418,8 +402,7 @@ func configToJSON(cfg *config.Config) configJSON {
 func jsonToConfig(j configJSON) *config.Config {
 	return &config.Config{
 		Server:  config.ServerConfig{Port: j.Server.Port},
-		Daemon:  config.DaemonConfig{Interval: j.Daemon.Interval, AutoApprove: j.Daemon.AutoApprove},
-		LLM:     config.LLMConfig{Model: j.LLM.Model},
+		Daemon:  config.DaemonConfig{Interval: j.Daemon.Interval},
 		Session: config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand},
 	}
 }
