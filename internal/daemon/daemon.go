@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,12 +58,32 @@ func (d *Daemon) Start(ctx context.Context) {
 	}
 }
 
+// outputTail returns the last n lines of the output string.
+func outputTail(output string, n int) string {
+	lines := strings.Split(output, "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (d *Daemon) patrol() {
 	sessions, err := d.sessions.List()
 	if err != nil {
 		d.logger.Error("list sessions failed", "error", err)
 		return
 	}
+
+	var targetCount, skipCount int
+	for _, s := range sessions {
+		if s.Status == session.StatusRunning || s.Status == session.StatusWaiting || s.Status == session.StatusError {
+			targetCount++
+		} else {
+			skipCount++
+			d.logger.Debug("skipping session", "session", s.Name, "status", string(s.Status))
+		}
+	}
+	d.logger.Info("patrol started", "targetSessions", targetCount, "skippedSessions", skipCount)
 
 	for _, s := range sessions {
 		if s.Status != session.StatusRunning && s.Status != session.StatusWaiting && s.Status != session.StatusError {
@@ -77,6 +98,10 @@ func (d *Daemon) patrol() {
 			continue
 		}
 
+		capturedLines := len(strings.Split(output, "\n"))
+		log.Info("captured pane output", "lines", capturedLines)
+		log.Debug("captured output tail", "tail", outputTail(output, 20))
+
 		// Skip if output hasn't changed
 		d.mu.Lock()
 		if d.lastOutputs[s.ID] == output {
@@ -88,8 +113,14 @@ func (d *Daemon) patrol() {
 		d.mu.Unlock()
 
 		// Ask LLM to analyze
-		log.Info("analyzing session")
+		previousStatus := string(s.Status)
+		log.Info("analyzing session",
+			"projectPath", s.ProjectPath,
+			"previousStatus", previousStatus,
+			"capturedLines", capturedLines,
+		)
 		prompt := llm.BuildAnalysisPrompt(s.Name, s.ProjectPath, string(s.Status), output)
+		log.Debug("analysis prompt", "prompt", prompt)
 		result, err := d.llm.Analyze(prompt)
 		if err != nil {
 			log.Error("analyze failed", "error", err)
@@ -100,22 +131,24 @@ func (d *Daemon) patrol() {
 			"status", result.Status,
 			"action", result.Action,
 			"reason", result.Reason,
+			"sendText", result.SendText,
 		)
 
 		// Update session status
 		newStatus := session.Status(result.Status)
 		if newStatus != s.Status {
+			log.Info("status changed", "previousStatus", previousStatus, "newStatus", string(newStatus))
 			if err := d.sessions.UpdateStatus(s.ID, newStatus); err != nil {
 				log.Error("update status failed", "error", err)
 			}
 		}
 
 		// Execute action
-		d.executeAction(&s, result)
+		d.executeAction(&s, result, outputTail(output, 20), previousStatus, string(newStatus))
 	}
 }
 
-func (d *Daemon) executeAction(s *session.Session, result *llm.AnalysisResult) {
+func (d *Daemon) executeAction(s *session.Session, result *llm.AnalysisResult, capturedOutputTail, previousStatus, newStatus string) {
 	log := d.logger.With("session", s.Name, "sessionId", s.ID, "action", result.Action)
 
 	switch result.Action {
@@ -137,18 +170,18 @@ func (d *Daemon) executeAction(s *session.Session, result *llm.AnalysisResult) {
 	}
 
 	// Record action
-	d.recordAction(s.ID, result)
+	d.recordAction(s.ID, result, capturedOutputTail, previousStatus, newStatus)
 }
 
-func (d *Daemon) recordAction(sessionID string, result *llm.AnalysisResult) {
+func (d *Daemon) recordAction(sessionID string, result *llm.AnalysisResult, capturedOutputTail, previousStatus, newStatus string) {
 	detail := result.Reason
 	if result.SendText != "" {
 		detail += " | sent: " + result.SendText
 	}
 
 	_, err := d.db.Exec(
-		"INSERT INTO daemon_actions (session_id, action_type, detail) VALUES (?, ?, ?)",
-		sessionID, result.Action, detail,
+		"INSERT INTO daemon_actions (session_id, action_type, detail, captured_output_tail, previous_status, new_status) VALUES (?, ?, ?, ?, ?, ?)",
+		sessionID, result.Action, detail, capturedOutputTail, previousStatus, newStatus,
 	)
 	if err != nil {
 		d.logger.Error("record action failed", "error", err)
@@ -157,10 +190,13 @@ func (d *Daemon) recordAction(sessionID string, result *llm.AnalysisResult) {
 
 	if d.broadcast != nil {
 		d.broadcast("action_log", map[string]interface{}{
-			"sessionId":  sessionID,
-			"actionType": result.Action,
-			"detail":     detail,
-			"timestamp":  time.Now(),
+			"sessionId":          sessionID,
+			"actionType":         result.Action,
+			"detail":             detail,
+			"capturedOutputTail": capturedOutputTail,
+			"previousStatus":     previousStatus,
+			"newStatus":          newStatus,
+			"timestamp":          time.Now(),
 		})
 	}
 }

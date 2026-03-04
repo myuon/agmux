@@ -199,16 +199,19 @@ func (s *Server) getSessionOutput(w http.ResponseWriter, r *http.Request) {
 }
 
 type daemonAction struct {
-	ID         int    `json:"id"`
-	SessionID  string `json:"sessionId"`
-	ActionType string `json:"actionType"`
-	Detail     string `json:"detail"`
-	CreatedAt  string `json:"createdAt"`
+	ID                 int    `json:"id"`
+	SessionID          string `json:"sessionId"`
+	ActionType         string `json:"actionType"`
+	Detail             string `json:"detail"`
+	CapturedOutputTail string `json:"capturedOutputTail,omitempty"`
+	PreviousStatus     string `json:"previousStatus,omitempty"`
+	NewStatus          string `json:"newStatus,omitempty"`
+	CreatedAt          string `json:"createdAt"`
 }
 
 func (s *Server) getActions(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(
-		"SELECT id, session_id, action_type, detail, created_at FROM daemon_actions ORDER BY created_at DESC LIMIT 50",
+		"SELECT id, session_id, action_type, detail, captured_output_tail, previous_status, new_status, created_at FROM daemon_actions ORDER BY created_at DESC LIMIT 50",
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -219,13 +222,22 @@ func (s *Server) getActions(w http.ResponseWriter, r *http.Request) {
 	actions := []daemonAction{}
 	for rows.Next() {
 		var a daemonAction
-		var detail sql.NullString
-		if err := rows.Scan(&a.ID, &a.SessionID, &a.ActionType, &detail, &a.CreatedAt); err != nil {
+		var detail, capturedOutputTail, previousStatus, newStatus sql.NullString
+		if err := rows.Scan(&a.ID, &a.SessionID, &a.ActionType, &detail, &capturedOutputTail, &previousStatus, &newStatus, &a.CreatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		if detail.Valid {
 			a.Detail = detail.String
+		}
+		if capturedOutputTail.Valid {
+			a.CapturedOutputTail = capturedOutputTail.String
+		}
+		if previousStatus.Valid {
+			a.PreviousStatus = previousStatus.String
+		}
+		if newStatus.Valid {
+			a.NewStatus = newStatus.String
 		}
 		actions = append(actions, a)
 	}
@@ -235,7 +247,7 @@ func (s *Server) getActions(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getSessionActions(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	rows, err := s.db.Query(
-		"SELECT id, session_id, action_type, detail, created_at FROM daemon_actions WHERE session_id = ? ORDER BY created_at DESC LIMIT 50",
+		"SELECT id, session_id, action_type, detail, captured_output_tail, previous_status, new_status, created_at FROM daemon_actions WHERE session_id = ? ORDER BY created_at DESC LIMIT 50",
 		id,
 	)
 	if err != nil {
@@ -247,13 +259,22 @@ func (s *Server) getSessionActions(w http.ResponseWriter, r *http.Request) {
 	actions := []daemonAction{}
 	for rows.Next() {
 		var a daemonAction
-		var detail sql.NullString
-		if err := rows.Scan(&a.ID, &a.SessionID, &a.ActionType, &detail, &a.CreatedAt); err != nil {
+		var detail, capturedOutputTail, previousStatus, newStatus sql.NullString
+		if err := rows.Scan(&a.ID, &a.SessionID, &a.ActionType, &detail, &capturedOutputTail, &previousStatus, &newStatus, &a.CreatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		if detail.Valid {
 			a.Detail = detail.String
+		}
+		if capturedOutputTail.Valid {
+			a.CapturedOutputTail = capturedOutputTail.String
+		}
+		if previousStatus.Valid {
+			a.PreviousStatus = previousStatus.String
+		}
+		if newStatus.Valid {
+			a.NewStatus = newStatus.String
 		}
 		actions = append(actions, a)
 	}
