@@ -3,7 +3,6 @@ package monitor
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -84,19 +83,18 @@ func (m *Monitor) checkStatusFromStreamJSONL(s *session.Session) CheckStatusResu
 		return result
 	}
 
-	// Fallback to type-based classification
-	lastEntries := readLastStreamEntries(jsonlPath, 20)
-	return classifyFromStreamEntries(lastEntries)
+	// LLM failed — keep current status
+	return CheckStatusResult{s.Status, fmt.Sprintf("llm failed, keeping current: %s", result.Reason)}
 }
 
 const StatusPrompt = `以下はClaude Codeセッションのstream-json出力の最後のエントリです。このセッションの現在の状態を判定してください。
 
 以下のいずれか1つだけを出力してください（他の文字は一切不要）:
 - working: AIが作業中（ツール実行中、コード生成中、思考中など）
-- idle: ゴールを達成し、ユーザーの次の指示を待っている状態
-- paused: ゴール未達成だが作業が中断している状態（次にやることはわかっている）
 - question_waiting: ユーザーに質問や確認をしている状態
 - alignment_needed: タスクの方針決定や仕様の確認など、ユーザーとのアラインメントが必要な状態
+- paused: ゴール未達成だが作業が中断している状態（次にやることはわかっている）
+- idle: ゴールを達成し、ユーザーの次の指示を待っている状態（明確にタスク完了した場合のみ）
 
 エントリ:
 `
@@ -112,6 +110,7 @@ func classifyWithLLM(lastLine string) CheckStatusResult {
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "claude", "-p", "--output-format", "text", StatusPrompt+input)
+	cmd.Env = filterEnv(os.Environ(), "CLAUDECODE")
 	out, err := cmd.Output()
 	if err != nil {
 		return CheckStatusResult{"", fmt.Sprintf("llm error: %v", err)}
@@ -206,6 +205,17 @@ func classifyFromTerminalContent(content string) CheckStatusResult {
 	return CheckStatusResult{session.StatusWorking, fmt.Sprintf("last_line: %q", truncate(lastLine, 60))}
 }
 
+func filterEnv(env []string, exclude string) []string {
+	var filtered []string
+	prefix := exclude + "="
+	for _, e := range env {
+		if !strings.HasPrefix(e, prefix) {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
+}
+
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -213,54 +223,3 @@ func truncate(s string, n int) string {
 	return s[:n] + "..."
 }
 
-// --- Stream JSONL parsing (fallback for stream mode) ---
-
-type streamEntry struct {
-	Type    string `json:"type"`
-	Subtype string `json:"subtype"`
-}
-
-func readLastStreamEntries(path string, n int) []streamEntry {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
-
-	var entries []streamEntry
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	for scanner.Scan() {
-		var entry streamEntry
-		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
-			continue
-		}
-		entries = append(entries, entry)
-	}
-
-	if len(entries) > n {
-		entries = entries[len(entries)-n:]
-	}
-	return entries
-}
-
-func classifyFromStreamEntries(entries []streamEntry) CheckStatusResult {
-	if len(entries) == 0 {
-		return CheckStatusResult{session.StatusWorking, "no stream entries"}
-	}
-
-	// Find the last meaningful entry (skip rate_limit_event etc.)
-	for i := len(entries) - 1; i >= 0; i-- {
-		e := entries[i]
-		switch e.Type {
-		case "result":
-			return CheckStatusResult{session.StatusIdle, fmt.Sprintf("last_entry: %s", e.Type)}
-		case "control_request":
-			return CheckStatusResult{session.StatusQuestionWaiting, fmt.Sprintf("last_entry: %s", e.Type)}
-		case "assistant", "user", "system":
-			return CheckStatusResult{session.StatusWorking, fmt.Sprintf("last_entry: %s", e.Type)}
-		}
-	}
-
-	return CheckStatusResult{session.StatusWorking, "no meaningful entries"}
-}
