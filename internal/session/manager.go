@@ -266,8 +266,9 @@ func (m *Manager) SendKeys(id string, text string) error {
 		if !ok {
 			// Auto-recover: restart stream process after server restart
 			mcpPath, _ := writeMCPConfig(s.ID, m.apiPort)
+			claudeSessionID := ReadClaudeSessionID(s.ID)
 			var err error
-			sp, err = StartStreamProcess(s.ID, s.ProjectPath, mcpPath, true)
+			sp, err = StartStreamProcess(s.ID, s.ProjectPath, mcpPath, true, claudeSessionID)
 			if err != nil {
 				return fmt.Errorf("restart stream process: %w", err)
 			}
@@ -550,7 +551,8 @@ func (m *Manager) Reconnect(id string) error {
 	}
 
 	if s.OutputMode == OutputModeStream {
-		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, true)
+		claudeSessionID := ReadClaudeSessionID(id)
+		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, true, claudeSessionID)
 		if err != nil {
 			return fmt.Errorf("start stream process: %w", err)
 		}

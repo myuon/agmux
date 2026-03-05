@@ -27,10 +27,43 @@ type StreamProcess struct {
 	sessionID string // claude session ID (may differ from agmux session ID after resume)
 }
 
+// ReadClaudeSessionID reads the Claude-assigned session ID from a stream JSONL file.
+// It looks for a "system" init message which indicates a successful session start.
+// Only returns the session_id from a "system" message; result-only session IDs
+// indicate failed sessions that cannot be resumed.
+// Returns empty string if no successful session was found.
+func ReadClaudeSessionID(agmuxSessionID string) string {
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		return ""
+	}
+	path := filepath.Join(streamsDir, agmuxSessionID+".jsonl")
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	var lastSystemSessionID string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	for scanner.Scan() {
+		var msg struct {
+			Type      string `json:"type"`
+			SessionID string `json:"session_id"`
+		}
+		if json.Unmarshal([]byte(scanner.Text()), &msg) == nil && msg.Type == "system" && msg.SessionID != "" {
+			lastSystemSessionID = msg.SessionID
+		}
+	}
+	return lastSystemSessionID
+}
+
 // StartStreamProcess starts a claude CLI subprocess in stream-json mode.
 // If resume is true, it uses --resume to continue an existing conversation;
 // otherwise it uses --session-id to start a new one.
-func StartStreamProcess(sessionID, projectPath, mcpConfigPath string, resume bool) (*StreamProcess, error) {
+// claudeSessionID is only used when resume=true — it's the Claude-assigned session ID.
+func StartStreamProcess(sessionID, projectPath, mcpConfigPath string, resume bool, claudeSessionID ...string) (*StreamProcess, error) {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
 		return nil, fmt.Errorf("get streams dir: %w", err)
@@ -43,15 +76,25 @@ func StartStreamProcess(sessionID, projectPath, mcpConfigPath string, resume boo
 	}
 
 	sessionFlag := "--session-id"
+	resumeID := sessionID
 	if resume {
-		sessionFlag = "--resume"
+		csid := ""
+		if len(claudeSessionID) > 0 {
+			csid = claudeSessionID[0]
+		}
+		if csid != "" {
+			sessionFlag = "--resume"
+			resumeID = csid
+		}
+		// If no Claude session ID found, fall back to starting a new session
+		// (e.g., when the original session failed before a successful turn)
 	}
 	args := []string{
 		"-p",
 		"--verbose",
 		"--output-format", "stream-json",
 		"--input-format", "stream-json",
-		sessionFlag, sessionID,
+		sessionFlag, resumeID,
 		"--dangerously-skip-permissions",
 	}
 	if mcpConfigPath != "" {
