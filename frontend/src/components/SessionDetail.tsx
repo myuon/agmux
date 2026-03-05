@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Square, RefreshCw, Trash2 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
 
@@ -601,16 +602,17 @@ export function SessionDetail() {
         <h2 className="text-xl sm:text-2xl font-bold">{session.name}</h2>
         <span className="text-xs sm:text-sm text-gray-500">{session.status}</span>
         {session.type !== "controller" && (
-          <div className="flex gap-2 sm:ml-auto">
+          <div className="flex gap-1.5 sm:ml-auto">
             {session.status !== "stopped" && (
               <button
                 onClick={async () => {
                   await api.stopSession(session.id);
                   api.getSession(session.id).then(setSession);
                 }}
-                className="px-3 py-1 text-xs bg-yellow-50 text-yellow-700 rounded hover:bg-yellow-100"
+                className="p-1.5 text-yellow-700 bg-yellow-50 rounded hover:bg-yellow-100"
+                title="Stop"
               >
-                Stop
+                <Square className="w-3.5 h-3.5" />
               </button>
             )}
             <button
@@ -618,9 +620,10 @@ export function SessionDetail() {
                 await api.reconnectSession(session.id);
                 api.getSession(session.id).then(setSession);
               }}
-              className="px-3 py-1 text-xs bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100"
+              className="p-1.5 text-indigo-700 bg-indigo-50 rounded hover:bg-indigo-100"
+              title="Reconnect"
             >
-              Reconnect
+              <RefreshCw className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={async () => {
@@ -628,9 +631,10 @@ export function SessionDetail() {
                 await api.deleteSession(session.id);
                 navigate("/");
               }}
-              className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
+              className="p-1.5 text-red-600 bg-red-50 rounded hover:bg-red-100"
+              title="Delete"
             >
-              Delete
+              <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
         )}
