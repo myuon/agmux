@@ -142,6 +142,15 @@ function mergeStreamEntries(entries: StreamEntry[]): { role: "user" | "assistant
   return groups;
 }
 
+function toolCallSummary(name: string, input: unknown): string {
+  if (name === "Bash" && input && typeof input === "object" && "command" in input) {
+    const cmd = String((input as { command: string }).command);
+    const firstLine = cmd.split("\n")[0];
+    return `Bash(${firstLine})`;
+  }
+  return `Tool: ${name}`;
+}
+
 function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool_call" }> }) {
   const inputStr = typeof item.input === "string"
     ? item.input
@@ -149,7 +158,7 @@ function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool
   return (
     <details className="bg-gray-800/60 rounded px-2 py-1">
       <summary className="cursor-pointer text-yellow-300 font-mono text-xs">
-        Tool: {item.name}
+        {toolCallSummary(item.name, item.input)}
       </summary>
       <div className="mt-1 space-y-1">
         <div>
