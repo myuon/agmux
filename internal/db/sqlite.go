@@ -110,6 +110,12 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add goals (JSON array) column if missing
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN goals TEXT NOT NULL DEFAULT '[]'`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: update old status values to new ones
 	_, err = db.Exec(`UPDATE sessions SET status = 'working' WHERE status IN ('running', 'waiting', 'error')`)
 	if err != nil {

@@ -9,6 +9,7 @@ export interface Session {
   outputMode: "terminal" | "stream";
   currentTask?: string;
   goal?: string;
+  goals?: { currentTask: string; goal: string }[];
   createdAt: string;
   updatedAt: string;
   githubUrl?: string;
