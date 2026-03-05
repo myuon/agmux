@@ -10,4 +10,13 @@ export interface Session {
   createdAt: string;
   updatedAt: string;
   githubUrl?: string;
+  branch?: string;
+  pullRequests?: PullRequest[];
+}
+
+export interface PullRequest {
+  number: number;
+  title: string;
+  url: string;
+  state: string;
 }
