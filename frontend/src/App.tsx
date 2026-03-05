@@ -39,6 +39,7 @@ function Dashboard() {
     name: string;
     projectPath: string;
     prompt?: string;
+    outputMode?: "terminal" | "stream";
   }) => {
     try {
       await api.createSession(data);

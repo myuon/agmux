@@ -3,10 +3,10 @@ package monitor
 import (
 	"context"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/myuon/agmux/internal/session"
+	"github.com/myuon/agmux/internal/tmux"
 )
 
 // Broadcaster is an interface for sending WebSocket messages.
@@ -15,31 +15,24 @@ type Broadcaster interface {
 }
 
 type StatusChecker struct {
-	monitor     *Monitor
-	sessions    *session.Manager
-	onUpdate    func(sessions []session.Session)
-	interval    time.Duration
-	mu          sync.RWMutex
-	outputCache map[string]string
+	monitor  *Monitor
+	sessions *session.Manager
+	tmux     *tmux.Client
+	onUpdate func(sessions []session.Session)
+	interval time.Duration
 }
 
-func NewStatusChecker(monitor *Monitor, sessions *session.Manager, interval time.Duration) *StatusChecker {
+func NewStatusChecker(monitor *Monitor, sessions *session.Manager, tmuxClient *tmux.Client, interval time.Duration) *StatusChecker {
 	return &StatusChecker{
-		monitor:     monitor,
-		sessions:    sessions,
-		interval:    interval,
-		outputCache: make(map[string]string),
+		monitor:  monitor,
+		sessions: sessions,
+		tmux:     tmuxClient,
+		interval: interval,
 	}
 }
 
 func (sc *StatusChecker) SetOnUpdate(fn func(sessions []session.Session)) {
 	sc.onUpdate = fn
-}
-
-func (sc *StatusChecker) GetCachedOutput(sessionID string) string {
-	sc.mu.RLock()
-	defer sc.mu.RUnlock()
-	return sc.outputCache[sessionID]
 }
 
 func (sc *StatusChecker) Start(ctx context.Context) {
@@ -69,21 +62,28 @@ func (sc *StatusChecker) check() {
 	changed := false
 	for i := range sessions {
 		s := &sessions[i]
-		if s.Status == session.StatusStopped || s.Status == session.StatusDone {
+		if s.Status == session.StatusStopped {
 			continue
 		}
 
-		newStatus, output, err := sc.monitor.CheckStatus(s)
-		if err != nil {
-			log.Printf("status checker: check %s error: %v", s.Name, err)
+		// Check if tmux session still exists
+		if !sc.tmux.HasSessionByFullName(s.TmuxSession) {
+			if s.Status != session.StatusStopped {
+				log.Printf("status checker: %s (%s): tmux session gone, marking stopped", s.Name, s.ID[:8])
+				if err := sc.sessions.UpdateStatus(s.ID, session.StatusStopped); err != nil {
+					log.Printf("status checker: update %s error: %v", s.Name, err)
+					continue
+				}
+				s.Status = session.StatusStopped
+				changed = true
+			}
 			continue
 		}
 
-		sc.mu.Lock()
-		sc.outputCache[s.ID] = output
-		sc.mu.Unlock()
-
+		// JSONL-based status detection
+		newStatus := sc.monitor.CheckStatus(s)
 		if newStatus != s.Status {
+			log.Printf("status checker: %s (%s): %s -> %s", s.Name, s.ID[:8], s.Status, newStatus)
 			if err := sc.sessions.UpdateStatus(s.ID, newStatus); err != nil {
 				log.Printf("status checker: update %s error: %v", s.Name, err)
 				continue

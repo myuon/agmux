@@ -5,11 +5,10 @@ import "time"
 type Status string
 
 const (
-	StatusRunning Status = "running"
-	StatusWaiting Status = "waiting"
-	StatusError   Status = "error"
-	StatusDone    Status = "done"
-	StatusStopped Status = "stopped"
+	StatusWorking         Status = "working"
+	StatusIdle            Status = "idle"
+	StatusQuestionWaiting Status = "question_waiting"
+	StatusStopped         Status = "stopped"
 )
 
 type SessionType string
@@ -17,6 +16,13 @@ type SessionType string
 const (
 	TypeWorker     SessionType = "worker"
 	TypeController SessionType = "controller"
+)
+
+type OutputMode string
+
+const (
+	OutputModeTerminal OutputMode = "terminal"
+	OutputModeStream   OutputMode = "stream"
 )
 
 type Session struct {
@@ -27,6 +33,7 @@ type Session struct {
 	TmuxSession   string      `json:"tmuxSession"`
 	Status        Status      `json:"status"`
 	Type          SessionType `json:"type"`
+	OutputMode    OutputMode  `json:"outputMode"`
 	CreatedAt     time.Time   `json:"createdAt"`
 	UpdatedAt     time.Time   `json:"updatedAt"`
 }

@@ -107,35 +107,6 @@ export function ConfigPage() {
               className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-32 focus:outline-none focus:border-blue-500"
             />
           </Field>
-          <Field label="Auto Approve">
-            <button
-              onClick={() =>
-                setConfig({ ...config, daemon: { ...config.daemon, autoApprove: !config.daemon.autoApprove } })
-              }
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                config.daemon.autoApprove ? "bg-blue-600" : "bg-gray-300"
-              }`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow ${
-                  config.daemon.autoApprove ? "translate-x-6" : "translate-x-1"
-                }`}
-              />
-            </button>
-          </Field>
-        </Section>
-
-        <Section title="LLM">
-          <Field label="Model">
-            <input
-              type="text"
-              value={config.llm.model}
-              onChange={(e) =>
-                setConfig({ ...config, llm: { ...config.llm, model: e.target.value } })
-              }
-              className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
-            />
-          </Field>
         </Section>
 
         <Section title="Session">

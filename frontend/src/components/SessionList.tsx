@@ -2,10 +2,9 @@ import { useNavigate } from "react-router-dom";
 import type { Session } from "../types/session";
 
 const statusDots: Record<Session["status"], string> = {
-  running: "bg-green-500",
-  waiting: "bg-yellow-500",
-  error: "bg-red-500",
-  done: "bg-blue-500",
+  working: "bg-green-500",
+  idle: "bg-blue-500",
+  question_waiting: "bg-orange-500",
   stopped: "bg-gray-400",
 };
 
@@ -64,7 +63,7 @@ export function SessionList({ sessions, onStop, onRestartController }: Props) {
               {timeAgo(s.createdAt)}
             </span>
             <div className="flex gap-1.5">
-              {(s.status === "running" || s.status === "waiting") && (
+              {(s.status === "working" || s.status === "idle" || s.status === "question_waiting") && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onStop(s.id); }}
                   className="px-2 py-0.5 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
@@ -72,7 +71,7 @@ export function SessionList({ sessions, onStop, onRestartController }: Props) {
                   Stop
                 </button>
               )}
-              {s.type === "controller" && (s.status === "stopped" || s.status === "done" || s.status === "error") && (
+              {s.type === "controller" && s.status === "stopped" && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onRestartController(); }}
                   className="px-2 py-0.5 text-xs bg-purple-50 text-purple-600 rounded hover:bg-purple-100"

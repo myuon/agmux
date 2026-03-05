@@ -10,9 +10,7 @@ import (
 
 	agmux "github.com/myuon/agmux"
 	"github.com/myuon/agmux/internal/config"
-	"github.com/myuon/agmux/internal/daemon"
 	"github.com/myuon/agmux/internal/db"
-	"github.com/myuon/agmux/internal/llm"
 	"github.com/myuon/agmux/internal/logging"
 	"github.com/myuon/agmux/internal/monitor"
 	"github.com/myuon/agmux/internal/server"
@@ -74,9 +72,9 @@ func serveCmd() *cobra.Command {
 			hub := server.NewHub()
 			go hub.Run()
 
-			// Status checker (lightweight, 5s interval)
-			mon := monitor.New(tmuxClient)
-			checker := monitor.NewStatusChecker(mon, mgr, 5*cfg.Daemon.IntervalDuration()/6)
+			// Status checker (JSONL-based)
+			mon := monitor.New()
+			checker := monitor.NewStatusChecker(mon, mgr, tmuxClient, cfg.Daemon.IntervalDuration())
 			checker.SetOnUpdate(func(sessions []session.Session) {
 				hub.Broadcast(server.Message{
 					Type: "session_update",
@@ -94,17 +92,6 @@ func serveCmd() *cobra.Command {
 				return fmt.Errorf("setup logging: %w", err)
 			}
 			defer logFile.Close()
-
-			// Daemon (LLM-powered via local claude CLI)
-			llmClient := llm.New(cfg.LLM.Model)
-			d := daemon.New(mgr, tmuxClient, llmClient, cfg.Daemon.IntervalDuration(), logger)
-			d.SetBroadcast(func(actionType string, detail interface{}) {
-				hub.Broadcast(server.Message{
-					Type: "action_log",
-					Data: detail,
-				})
-			})
-			go d.Start(ctx)
 
 			// Create controller session (singleton)
 			controllerDir, err := db.ControllerDir()
@@ -131,8 +118,7 @@ func serveCmd() *cobra.Command {
 
 			addr := fmt.Sprintf(":%d", port)
 			log.Printf("Starting agmux on http://localhost:%d", port)
-			log.Printf("Config: daemon interval=%s, model=%s, auto_approve=%v",
-				cfg.Daemon.Interval, cfg.LLM.Model, cfg.Daemon.AutoApprove)
+			log.Printf("Config: check interval=%s", cfg.Daemon.Interval)
 			return srv.ListenAndServe(addr)
 		},
 	}
@@ -162,28 +148,34 @@ func sessionCmd() *cobra.Command {
 func sessionCreateCmd() *cobra.Command {
 	var projectPath string
 	var prompt string
+	var mode string
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create a new agent session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			outputMode := session.OutputMode(mode)
+			if outputMode != session.OutputModeTerminal && outputMode != session.OutputModeStream {
+				return fmt.Errorf("invalid mode %q: must be 'terminal' or 'stream'", mode)
+			}
 			cfg, _ := config.Load()
 			mgr, _, err := initManager(cfg)
 			if err != nil {
 				return err
 			}
-			s, err := mgr.Create(args[0], projectPath, prompt)
+			s, err := mgr.Create(args[0], projectPath, prompt, outputMode)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Created session: %s (id: %s)\n", s.Name, s.ID)
+			fmt.Printf("Created session: %s (id: %s, mode: %s)\n", s.Name, s.ID, s.OutputMode)
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVarP(&projectPath, "path", "p", ".", "Project directory path")
 	cmd.Flags().StringVarP(&prompt, "message", "m", "", "Initial prompt to send")
+	cmd.Flags().StringVar(&mode, "mode", "terminal", "Output mode: terminal or stream")
 
 	return cmd
 }

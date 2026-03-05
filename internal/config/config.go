@@ -12,7 +12,6 @@ import (
 type Config struct {
 	Server  ServerConfig  `toml:"server"`
 	Daemon  DaemonConfig  `toml:"daemon"`
-	LLM     LLMConfig     `toml:"llm"`
 	Session SessionConfig `toml:"session"`
 }
 
@@ -21,12 +20,7 @@ type ServerConfig struct {
 }
 
 type DaemonConfig struct {
-	Interval    string `toml:"interval"`
-	AutoApprove bool   `toml:"auto_approve"`
-}
-
-type LLMConfig struct {
-	Model string `toml:"model"`
+	Interval string `toml:"interval"`
 }
 
 type SessionConfig struct {
@@ -47,11 +41,7 @@ func Default() *Config {
 			Port: 4321,
 		},
 		Daemon: DaemonConfig{
-			Interval:    "30s",
-			AutoApprove: true,
-		},
-		LLM: LLMConfig{
-			Model: "claude-sonnet-4-20250514",
+			Interval: "30s",
 		},
 		Session: SessionConfig{
 			ClaudeCommand: "claude --dangerously-skip-permissions",

@@ -30,6 +30,18 @@ func DefaultDBPath() (string, error) {
 	return filepath.Join(dir, "agmux.db"), nil
 }
 
+func StreamsDir() (string, error) {
+	dir, err := AgmuxDir()
+	if err != nil {
+		return "", err
+	}
+	streamsDir := filepath.Join(dir, "streams")
+	if err := os.MkdirAll(streamsDir, 0o755); err != nil {
+		return "", fmt.Errorf("create streams dir: %w", err)
+	}
+	return streamsDir, nil
+}
+
 func ControllerDir() (string, error) {
 	dir, err := AgmuxDir()
 	if err != nil {
@@ -62,7 +74,7 @@ func migrate(db *sql.DB) error {
 			project_path TEXT NOT NULL,
 			initial_prompt TEXT,
 			tmux_session TEXT NOT NULL UNIQUE,
-			status TEXT NOT NULL DEFAULT 'running',
+			status TEXT NOT NULL DEFAULT 'working',
 			type TEXT NOT NULL DEFAULT 'worker',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -77,6 +89,22 @@ func migrate(db *sql.DB) error {
 	// Migration: add type column if missing (for existing databases)
 	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN type TEXT NOT NULL DEFAULT 'worker'`)
 	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
+	// Migration: add output_mode column if missing
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN output_mode TEXT NOT NULL DEFAULT 'terminal'`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
+	// Migration: update old status values to new ones
+	_, err = db.Exec(`UPDATE sessions SET status = 'working' WHERE status IN ('running', 'waiting', 'error')`)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`UPDATE sessions SET status = 'idle' WHERE status = 'done'`)
+	if err != nil {
 		return err
 	}
 

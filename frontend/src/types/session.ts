@@ -4,8 +4,9 @@ export interface Session {
   projectPath: string;
   initialPrompt?: string;
   tmuxSession: string;
-  status: "running" | "waiting" | "error" | "done" | "stopped";
+  status: "working" | "idle" | "question_waiting" | "stopped";
   type: "worker" | "controller";
+  outputMode: "terminal" | "stream";
   createdAt: string;
   updatedAt: string;
 }

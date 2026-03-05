@@ -6,6 +6,7 @@ interface Props {
     name: string;
     projectPath: string;
     prompt?: string;
+    outputMode?: "terminal" | "stream";
   }) => void;
 }
 
@@ -13,10 +14,11 @@ export function CreateSession({ onClose, onCreate }: Props) {
   const [name, setName] = useState("");
   const [projectPath, setProjectPath] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [outputMode, setOutputMode] = useState<"terminal" | "stream">("terminal");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onCreate({ name, projectPath, prompt: prompt || undefined });
+    onCreate({ name, projectPath, prompt: prompt || undefined, outputMode });
   };
 
   return (
@@ -61,6 +63,33 @@ export function CreateSession({ onClose, onCreate }: Props) {
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
               placeholder="Fix the bug in..."
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Output Mode
+            </label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-1 text-sm">
+                <input
+                  type="radio"
+                  name="outputMode"
+                  value="terminal"
+                  checked={outputMode === "terminal"}
+                  onChange={() => setOutputMode("terminal")}
+                />
+                Terminal
+              </label>
+              <label className="flex items-center gap-1 text-sm">
+                <input
+                  type="radio"
+                  name="outputMode"
+                  value="stream"
+                  checked={outputMode === "stream"}
+                  onChange={() => setOutputMode("stream")}
+                />
+                Stream
+              </label>
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <button
