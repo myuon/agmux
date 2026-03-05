@@ -73,7 +73,7 @@ func serveCmd() *cobra.Command {
 			go hub.Run()
 
 			// Status checker (JSONL-based)
-			mon := monitor.New()
+			mon := monitor.New(tmuxClient)
 			checker := monitor.NewStatusChecker(mon, mgr, tmuxClient, cfg.Daemon.IntervalDuration())
 			checker.SetOnUpdate(func(sessions []session.Session) {
 				hub.Broadcast(server.Message{

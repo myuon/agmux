@@ -7,51 +7,121 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/session"
+	"github.com/myuon/agmux/internal/tmux"
 )
 
-type Monitor struct{}
-
-func New() *Monitor {
-	return &Monitor{}
+type Monitor struct {
+	tmux *tmux.Client
 }
 
-// CheckStatus reads the session's JSONL log file and determines status.
+func New(tmuxClient *tmux.Client) *Monitor {
+	return &Monitor{tmux: tmuxClient}
+}
+
+// CheckStatus determines the session status based on the output mode.
 func (m *Monitor) CheckStatus(s *session.Session) session.Status {
-	jsonlPath := BuildJSONLPath(s.ProjectPath, s.ID)
-
-	lastEntries := readLastEntries(jsonlPath, 20)
-	return classifyFromEntries(lastEntries)
+	switch s.OutputMode {
+	case session.OutputModeStream:
+		return m.checkStatusFromStreamJSONL(s)
+	default:
+		return m.checkStatusFromTerminal(s)
+	}
 }
 
-// BuildJSONLPath constructs the path to a session's JSONL log file.
-func BuildJSONLPath(projectPath, sessionID string) string {
-	homeDir, _ := os.UserHomeDir()
-	escapedPath := strings.ReplaceAll(projectPath, "/", "-")
-	escapedPath = strings.ReplaceAll(escapedPath, ".", "-")
-	return filepath.Join(homeDir, ".claude", "projects", escapedPath, sessionID+".jsonl")
+// checkStatusFromStreamJSONL reads the agmux-managed stream JSONL file.
+// Lifecycle:
+//
+//	system/init → working
+//	assistant (stop_reason=null, streaming) → working
+//	user → working
+//	control_request → question_waiting (permission prompt)
+//	result → idle (waiting for user input)
+func (m *Monitor) checkStatusFromStreamJSONL(s *session.Session) session.Status {
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		return session.StatusWorking
+	}
+	jsonlPath := filepath.Join(streamsDir, s.ID+".jsonl")
+	lastEntries := readLastStreamEntries(jsonlPath, 20)
+	return classifyFromStreamEntries(lastEntries)
 }
 
-type jsonlEntry struct {
+// checkStatusFromTerminal estimates status from tmux capture-pane output.
+func (m *Monitor) checkStatusFromTerminal(s *session.Session) session.Status {
+	content, err := m.tmux.CapturePane(s.TmuxSession, 50)
+	if err != nil {
+		return session.StatusWorking
+	}
+	return classifyFromTerminalContent(content)
+}
+
+// classifyFromTerminalContent does rough status estimation from terminal output.
+func classifyFromTerminalContent(content string) session.Status {
+	lines := strings.Split(strings.TrimSpace(content), "\n")
+
+	// Walk from the bottom to find the last non-empty line
+	lastLine := ""
+	for i := len(lines) - 1; i >= 0; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed != "" {
+			lastLine = trimmed
+			break
+		}
+	}
+
+	if lastLine == "" {
+		return session.StatusWorking
+	}
+
+	// Claude Code shows a prompt like ">" or "❯" when waiting for user input
+	if strings.HasPrefix(lastLine, ">") || strings.HasPrefix(lastLine, "❯") {
+		return session.StatusIdle
+	}
+
+	// Check for yes/no or permission prompts
+	lowerLine := strings.ToLower(lastLine)
+	if strings.Contains(lowerLine, "(y/n)") ||
+		strings.Contains(lowerLine, "[y/n]") ||
+		strings.Contains(lowerLine, "allow") ||
+		strings.Contains(lowerLine, "deny") {
+		return session.StatusQuestionWaiting
+	}
+
+	// Check nearby lines for question patterns
+	for i := len(lines) - 1; i >= 0 && i >= len(lines)-5; i-- {
+		trimmed := strings.TrimSpace(lines[i])
+		lower := strings.ToLower(trimmed)
+		if strings.Contains(lower, "do you want to") ||
+			strings.Contains(lower, "would you like") ||
+			strings.Contains(lower, "shall i") {
+			return session.StatusQuestionWaiting
+		}
+	}
+
+	return session.StatusWorking
+}
+
+// --- Stream JSONL parsing (for stream mode) ---
+
+type streamEntry struct {
 	Type    string `json:"type"`
-	Message *struct {
-		StopReason *string         `json:"stop_reason"`
-		Content    json.RawMessage `json:"content"`
-	} `json:"message"`
+	Subtype string `json:"subtype"`
 }
 
-func readLastEntries(path string, n int) []jsonlEntry {
+func readLastStreamEntries(path string, n int) []streamEntry {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil
 	}
 	defer f.Close()
 
-	var entries []jsonlEntry
+	var entries []streamEntry
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 	for scanner.Scan() {
-		var entry jsonlEntry
+		var entry streamEntry
 		if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
 			continue
 		}
@@ -64,69 +134,24 @@ func readLastEntries(path string, n int) []jsonlEntry {
 	return entries
 }
 
-func classifyFromEntries(entries []jsonlEntry) session.Status {
+func classifyFromStreamEntries(entries []streamEntry) session.Status {
 	if len(entries) == 0 {
 		return session.StatusWorking
 	}
 
-	// Find the last user or assistant entry (skip system, progress, queue-operation, etc.)
-	var last *jsonlEntry
+	// Find the last meaningful entry (skip rate_limit_event etc.)
 	for i := len(entries) - 1; i >= 0; i-- {
-		if entries[i].Type == "user" || entries[i].Type == "assistant" {
-			last = &entries[i]
-			break
-		}
-	}
-
-	if last == nil {
-		return session.StatusWorking
-	}
-
-	if last.Type == "user" {
-		return session.StatusWorking
-	}
-
-	if last.Type == "assistant" && last.Message != nil {
-		stopReason := ""
-		if last.Message.StopReason != nil {
-			stopReason = *last.Message.StopReason
-		}
-
-		if stopReason == "end_turn" {
-			if hasAskUserQuestion(last.Message.Content) {
-				return session.StatusQuestionWaiting
-			}
+		e := entries[i]
+		switch e.Type {
+		case "result":
 			return session.StatusIdle
-		}
-
-		if stopReason == "tool_use" {
+		case "control_request":
+			return session.StatusQuestionWaiting
+		case "assistant", "user", "system":
 			return session.StatusWorking
 		}
-
-		// stop_reason is null or empty → streaming
-		return session.StatusWorking
+		// skip unknown types like rate_limit_event, continue searching
 	}
 
 	return session.StatusWorking
-}
-
-func hasAskUserQuestion(content json.RawMessage) bool {
-	if len(content) == 0 {
-		return false
-	}
-
-	var blocks []struct {
-		Type string `json:"type"`
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(content, &blocks); err != nil {
-		return false
-	}
-
-	for _, b := range blocks {
-		if b.Type == "tool_use" && b.Name == "AskUserQuestion" {
-			return true
-		}
-	}
-	return false
 }

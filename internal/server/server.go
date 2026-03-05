@@ -17,7 +17,9 @@ import (
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/logging"
-	"github.com/myuon/agmux/internal/monitor"
+	"path/filepath"
+	"strings"
+
 	"github.com/myuon/agmux/internal/session"
 )
 
@@ -305,7 +307,7 @@ func (s *Server) getSessionLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build Claude Code JSONL path
-	jsonlPath := monitor.BuildJSONLPath(sess.ProjectPath, sessionID)
+	jsonlPath := buildClaudeJSONLPath(sess.ProjectPath, sessionID)
 
 	file, err := os.Open(jsonlPath)
 	if err != nil {
@@ -484,6 +486,13 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+func buildClaudeJSONLPath(projectPath, sessionID string) string {
+	homeDir, _ := os.UserHomeDir()
+	escapedPath := strings.ReplaceAll(projectPath, "/", "-")
+	escapedPath = strings.ReplaceAll(escapedPath, ".", "-")
+	return filepath.Join(homeDir, ".claude", "projects", escapedPath, sessionID+".jsonl")
 }
 
 func (s *Server) recordSessionAction(sessionID, actionType, detail string) {
