@@ -3,47 +3,12 @@ import { useParams, useNavigate } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Session } from "../types/session";
-import { api, type ClaudeLogEntry, type ClaudeContentBlock } from "../api/client";
+import { api } from "../api/client";
 
 const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
   user: { bg: "bg-blue-50", label: "User", text: "text-blue-700" },
   assistant: { bg: "bg-gray-50", label: "Assistant", text: "text-green-700" },
 };
-
-function ContentBlockView({ block }: { block: ClaudeContentBlock }) {
-  if (block.type === "text") {
-    return (
-      <div className="prose prose-xs max-w-none prose-pre:bg-gray-100 prose-pre:text-gray-800 prose-code:text-pink-600">
-        <Markdown remarkPlugins={[remarkGfm]}>{block.text ?? ""}</Markdown>
-      </div>
-    );
-  }
-  if (block.type === "tool_use") {
-    const inputStr = typeof block.input === "string"
-      ? block.input
-      : JSON.stringify(block.input, null, 2);
-    return (
-      <details className="bg-gray-100 rounded px-2 py-1">
-        <summary className="cursor-pointer text-yellow-700 font-mono text-xs">
-          Tool: {block.name}
-        </summary>
-        <pre className="text-gray-600 text-xs mt-1 overflow-x-auto whitespace-pre-wrap">{inputStr}</pre>
-      </details>
-    );
-  }
-  if (block.type === "tool_result") {
-    const content = block.content ?? "";
-    return (
-      <details className="bg-gray-100 rounded px-2 py-1">
-        <summary className="cursor-pointer text-cyan-700 font-mono text-xs">
-          Tool Result
-        </summary>
-        <pre className="text-gray-600 text-xs mt-1 overflow-x-auto whitespace-pre-wrap">{content.slice(0, 2000)}</pre>
-      </details>
-    );
-  }
-  return null;
-}
 
 // --- Stream mode types and helpers ---
 
@@ -298,22 +263,18 @@ export function SessionDetail() {
   const [session, setSession] = useState<Session | null>(null);
   const [output, setOutput] = useState("");
   const [message, setMessage] = useState("");
-  const [logs, setLogs] = useState<ClaudeLogEntry[]>([]);
   const [streamLines, setStreamLines] = useState<unknown[]>([]);
   const terminal = useAutoScroll(output);
-  const logsScroll = useAutoScroll(logs);
 
   useEffect(() => {
     if (!sessionId) return;
     api.getSession(sessionId).then(setSession);
     api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
-    api.getSessionLogs(sessionId).then(setLogs).catch(() => {});
     api.getStreamOutput(sessionId).then(setStreamLines).catch(() => {});
 
     const interval = setInterval(() => {
       api.getSession(sessionId).then(setSession);
       api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
-      api.getSessionLogs(sessionId).then(setLogs).catch(() => {});
       api.getStreamOutput(sessionId).then(setStreamLines).catch(() => {});
     }, 3000);
     return () => clearInterval(interval);
@@ -421,33 +382,6 @@ export function SessionDetail() {
             {output || "No output yet."}
           </div>
           {sendForm}
-          <div ref={logsScroll.ref} onScroll={logsScroll.onScroll} className="bg-gray-900 rounded-lg p-3 text-sm h-96 overflow-y-auto mb-4 space-y-3">
-            <h3 className="text-gray-400 text-xs font-semibold mb-2">Logs</h3>
-            {logs.length === 0 ? (
-              <p className="text-gray-500">No logs yet</p>
-            ) : (
-              logs.map((log, i) => {
-                const style = roleStyles[log.type] || roleStyles.assistant;
-                return (
-                  <div key={i} className={`rounded-lg p-3 ${style.bg}`}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`font-semibold text-xs ${style.text}`}>
-                        {style.label}
-                      </span>
-                      <span className="text-gray-500 text-xs">
-                        {new Date(log.timestamp).toLocaleTimeString()}
-                      </span>
-                    </div>
-                    <div className="text-gray-200 break-words text-xs space-y-2">
-                      {log.blocks.map((block, j) => (
-                        <ContentBlockView key={j} block={block} />
-                      ))}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
         </>
       )}
 
