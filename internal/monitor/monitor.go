@@ -93,7 +93,8 @@ const StatusPrompt = `以下はClaude Codeセッションのstream-json出力の
 
 以下のいずれか1つだけを出力してください（他の文字は一切不要）:
 - working: AIが作業中（ツール実行中、コード生成中、思考中など）
-- idle: 作業が完了してユーザーの次の指示を待っている状態
+- idle: ゴールを達成し、ユーザーの次の指示を待っている状態
+- paused: ゴール未達成だが作業が中断している状態（次にやることはわかっている）
 - question_waiting: ユーザーに質問や確認をしている状態
 - alignment_needed: タスクの方針決定や仕様の確認など、ユーザーとのアラインメントが必要な状態
 
@@ -123,6 +124,8 @@ func classifyWithLLM(lastLine string) CheckStatusResult {
 		return CheckStatusResult{session.StatusAlignmentNeeded, fmt.Sprintf("llm: %s", truncate(response, 60))}
 	case strings.Contains(response, "question_waiting"):
 		return CheckStatusResult{session.StatusQuestionWaiting, fmt.Sprintf("llm: %s", truncate(response, 60))}
+	case strings.Contains(response, "paused"):
+		return CheckStatusResult{session.StatusPaused, fmt.Sprintf("llm: %s", truncate(response, 60))}
 	case strings.Contains(response, "idle"):
 		return CheckStatusResult{session.StatusIdle, fmt.Sprintf("llm: %s", truncate(response, 60))}
 	case strings.Contains(response, "working"):
