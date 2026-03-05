@@ -288,7 +288,7 @@ function useAutoScroll(dep: unknown) {
   return { ref, onScroll };
 }
 
-function StreamOutputView({ lines }: { lines: unknown[] }) {
+function StreamOutputView({ lines, className }: { lines: unknown[]; className?: string }) {
   const { ref, onScroll } = useAutoScroll(lines);
   const [viewMode, setViewMode] = useState<StreamViewMode>("markdown");
 
@@ -299,8 +299,8 @@ function StreamOutputView({ lines }: { lines: unknown[] }) {
   const groups = mergeStreamEntries(entries);
 
   return (
-    <div>
-      <div className="flex justify-end mb-1">
+    <div className={`flex flex-col ${className || ""}`}>
+      <div className="flex justify-end mb-1 shrink-0">
         <button
           onClick={() => setViewMode(viewMode === "markdown" ? "json" : "markdown")}
           className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1"
@@ -308,7 +308,7 @@ function StreamOutputView({ lines }: { lines: unknown[] }) {
           {viewMode === "markdown" ? "JSON" : "Markdown"}
         </button>
       </div>
-      <div ref={ref} onScroll={onScroll} className="bg-white border border-gray-200 rounded-lg p-3 text-sm h-96 overflow-y-auto mb-4 space-y-3">
+      <div ref={ref} onScroll={onScroll} className="bg-white border border-gray-200 rounded-lg p-3 text-sm flex-1 min-h-0 overflow-y-auto space-y-3">
         {viewMode === "json" ? (
           lines.length === 0 ? (
             <p className="text-gray-400">No stream output yet</p>
@@ -479,7 +479,7 @@ export function SessionDetail() {
   const isStream = session.outputMode === "stream";
 
   const sendForm = (
-    <form onSubmit={handleSend} className="flex gap-2 mb-6">
+    <form onSubmit={handleSend} className="flex gap-2 shrink-0 sticky bottom-0 bg-white pt-2 pb-4 px-4 sm:px-8 -mx-4 sm:-mx-8 border-t border-gray-100">
       <input
         type="text"
         value={message}
@@ -497,14 +497,14 @@ export function SessionDetail() {
   );
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="h-dvh flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 max-w-4xl mx-auto">
       <button
         onClick={() => navigate("/")}
-        className="text-sm text-gray-500 hover:text-gray-800 mb-4"
+        className="text-sm text-gray-500 hover:text-gray-800 mb-4 shrink-0"
       >
         &larr; Back
       </button>
-      <div className="flex items-center gap-3 mb-4">
+      <div className="flex items-center gap-3 mb-4 shrink-0">
         <h2 className="text-2xl font-bold">{session.name}</h2>
         <span className="text-sm text-gray-500">{session.status}</span>
         {session.type !== "controller" && (
@@ -542,7 +542,7 @@ export function SessionDetail() {
           </div>
         )}
       </div>
-      <p className="text-sm text-gray-500 mb-2">
+      <p className="text-sm text-gray-500 mb-2 shrink-0">
         Project: {session.projectPath}
         {session.githubUrl && (
           <>
@@ -616,17 +616,17 @@ export function SessionDetail() {
       <DiffView files={diffFiles} />
 
       {isStream ? (
-        <>
-          <StreamOutputView lines={streamLines} />
+        <div className="flex flex-col flex-1 min-h-0">
+          <StreamOutputView lines={streamLines} className="flex-1 min-h-0" />
           {sendForm}
-        </>
+        </div>
       ) : (
-        <>
-          <div ref={terminal.ref} onScroll={terminal.onScroll} className="bg-gray-900 text-green-400 rounded-lg p-4 mb-4 font-mono text-xs h-96 overflow-y-auto whitespace-pre-wrap">
+        <div className="flex flex-col flex-1 min-h-0">
+          <div ref={terminal.ref} onScroll={terminal.onScroll} className="bg-gray-900 text-green-400 rounded-lg p-4 font-mono text-xs flex-1 min-h-0 overflow-y-auto whitespace-pre-wrap">
             {output || "No output yet."}
           </div>
           {sendForm}
-        </>
+        </div>
       )}
 
     </div>
