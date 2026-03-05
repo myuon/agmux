@@ -3,6 +3,7 @@ package monitor
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,8 +21,14 @@ func New(tmuxClient *tmux.Client) *Monitor {
 	return &Monitor{tmux: tmuxClient}
 }
 
+// CheckStatusResult holds the detected status and the reason for the detection.
+type CheckStatusResult struct {
+	Status session.Status
+	Reason string
+}
+
 // CheckStatus determines the session status based on the output mode.
-func (m *Monitor) CheckStatus(s *session.Session) session.Status {
+func (m *Monitor) CheckStatus(s *session.Session) CheckStatusResult {
 	switch s.OutputMode {
 	case session.OutputModeStream:
 		return m.checkStatusFromStreamJSONL(s)
@@ -31,17 +38,10 @@ func (m *Monitor) CheckStatus(s *session.Session) session.Status {
 }
 
 // checkStatusFromStreamJSONL reads the agmux-managed stream JSONL file.
-// Lifecycle:
-//
-//	system/init → working
-//	assistant (stop_reason=null, streaming) → working
-//	user → working
-//	control_request → question_waiting (permission prompt)
-//	result → idle (waiting for user input)
-func (m *Monitor) checkStatusFromStreamJSONL(s *session.Session) session.Status {
+func (m *Monitor) checkStatusFromStreamJSONL(s *session.Session) CheckStatusResult {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
-		return session.StatusWorking
+		return CheckStatusResult{session.StatusWorking, "streams dir error"}
 	}
 	jsonlPath := filepath.Join(streamsDir, s.ID+".jsonl")
 	lastEntries := readLastStreamEntries(jsonlPath, 20)
@@ -49,16 +49,16 @@ func (m *Monitor) checkStatusFromStreamJSONL(s *session.Session) session.Status 
 }
 
 // checkStatusFromTerminal estimates status from tmux capture-pane output.
-func (m *Monitor) checkStatusFromTerminal(s *session.Session) session.Status {
+func (m *Monitor) checkStatusFromTerminal(s *session.Session) CheckStatusResult {
 	content, err := m.tmux.CapturePane(s.TmuxSession, 50)
 	if err != nil {
-		return session.StatusWorking
+		return CheckStatusResult{session.StatusWorking, "capture-pane error"}
 	}
 	return classifyFromTerminalContent(content)
 }
 
 // classifyFromTerminalContent does rough status estimation from terminal output.
-func classifyFromTerminalContent(content string) session.Status {
+func classifyFromTerminalContent(content string) CheckStatusResult {
 	lines := strings.Split(strings.TrimSpace(content), "\n")
 
 	// Walk from the bottom to find the last non-empty line
@@ -72,12 +72,12 @@ func classifyFromTerminalContent(content string) session.Status {
 	}
 
 	if lastLine == "" {
-		return session.StatusWorking
+		return CheckStatusResult{session.StatusWorking, "empty output"}
 	}
 
 	// Claude Code shows a prompt like ">" or "❯" when waiting for user input
 	if strings.HasPrefix(lastLine, ">") || strings.HasPrefix(lastLine, "❯") {
-		return session.StatusIdle
+		return CheckStatusResult{session.StatusIdle, fmt.Sprintf("prompt detected: %q", truncate(lastLine, 60))}
 	}
 
 	// Check for yes/no or permission prompts
@@ -86,7 +86,7 @@ func classifyFromTerminalContent(content string) session.Status {
 		strings.Contains(lowerLine, "[y/n]") ||
 		strings.Contains(lowerLine, "allow") ||
 		strings.Contains(lowerLine, "deny") {
-		return session.StatusQuestionWaiting
+		return CheckStatusResult{session.StatusQuestionWaiting, fmt.Sprintf("permission prompt: %q", truncate(lastLine, 60))}
 	}
 
 	// Check nearby lines for question patterns
@@ -96,11 +96,18 @@ func classifyFromTerminalContent(content string) session.Status {
 		if strings.Contains(lower, "do you want to") ||
 			strings.Contains(lower, "would you like") ||
 			strings.Contains(lower, "shall i") {
-			return session.StatusQuestionWaiting
+			return CheckStatusResult{session.StatusQuestionWaiting, fmt.Sprintf("question: %q", truncate(trimmed, 60))}
 		}
 	}
 
-	return session.StatusWorking
+	return CheckStatusResult{session.StatusWorking, fmt.Sprintf("last_line: %q", truncate(lastLine, 60))}
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 // --- Stream JSONL parsing (for stream mode) ---
@@ -134,9 +141,9 @@ func readLastStreamEntries(path string, n int) []streamEntry {
 	return entries
 }
 
-func classifyFromStreamEntries(entries []streamEntry) session.Status {
+func classifyFromStreamEntries(entries []streamEntry) CheckStatusResult {
 	if len(entries) == 0 {
-		return session.StatusWorking
+		return CheckStatusResult{session.StatusWorking, "no stream entries"}
 	}
 
 	// Find the last meaningful entry (skip rate_limit_event etc.)
@@ -144,14 +151,13 @@ func classifyFromStreamEntries(entries []streamEntry) session.Status {
 		e := entries[i]
 		switch e.Type {
 		case "result":
-			return session.StatusIdle
+			return CheckStatusResult{session.StatusIdle, fmt.Sprintf("last_entry: %s", e.Type)}
 		case "control_request":
-			return session.StatusQuestionWaiting
+			return CheckStatusResult{session.StatusQuestionWaiting, fmt.Sprintf("last_entry: %s", e.Type)}
 		case "assistant", "user", "system":
-			return session.StatusWorking
+			return CheckStatusResult{session.StatusWorking, fmt.Sprintf("last_entry: %s", e.Type)}
 		}
-		// skip unknown types like rate_limit_event, continue searching
 	}
 
-	return session.StatusWorking
+	return CheckStatusResult{session.StatusWorking, "no meaningful entries"}
 }
