@@ -22,6 +22,7 @@ type StatusChecker struct {
 	tmux     *tmux.Client
 	logger   *slog.Logger
 	onUpdate func(sessions []session.Session)
+	onNotify func(sessionName, summary string)
 	interval time.Duration
 }
 
@@ -37,6 +38,10 @@ func NewStatusChecker(monitor *Monitor, sessions *session.Manager, tmuxClient *t
 
 func (sc *StatusChecker) SetOnUpdate(fn func(sessions []session.Session)) {
 	sc.onUpdate = fn
+}
+
+func (sc *StatusChecker) SetOnNotify(fn func(sessionName, summary string)) {
+	sc.onNotify = fn
 }
 
 func (sc *StatusChecker) Start(ctx context.Context) {
@@ -109,20 +114,24 @@ func (sc *StatusChecker) check() {
 			s.Status = result.Status
 			changed = true
 
-			// Log notification-worthy status changes
-			if result.Status == session.StatusQuestionWaiting {
-				sc.logger.Info(fmt.Sprintf("[notify] %s (%s): ユーザーの入力を待っています",
-					s.Name, shortID),
+			// Log and broadcast notification-worthy status changes
+			if result.Status == session.StatusQuestionWaiting || result.Status == session.StatusAlignmentNeeded {
+				summary := result.Summary
+				if summary == "" {
+					if result.Status == session.StatusQuestionWaiting {
+						summary = "ユーザーの入力を待っています"
+					} else {
+						summary = "ユーザーとのアラインメントが必要です"
+					}
+				}
+				sc.logger.Info(fmt.Sprintf("[notify] %s (%s): %s",
+					s.Name, shortID, summary),
 					slog.String("category", "status_checker"),
 					slog.String("sessionId", s.ID),
 				)
-			}
-			if result.Status == session.StatusAlignmentNeeded {
-				sc.logger.Info(fmt.Sprintf("[notify] %s (%s): ユーザーとのアラインメントが必要です",
-					s.Name, shortID),
-					slog.String("category", "status_checker"),
-					slog.String("sessionId", s.ID),
-				)
+				if sc.onNotify != nil {
+					sc.onNotify(s.Name, summary)
+				}
 			}
 
 			// Auto-resume paused sessions

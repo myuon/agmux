@@ -89,6 +89,15 @@ func serveCmd() *cobra.Command {
 					Data: sessions,
 				})
 			})
+			checker.SetOnNotify(func(sessionName, summary string) {
+				hub.Broadcast(server.Message{
+					Type: "notify",
+					Data: map[string]string{
+						"sessionName": sessionName,
+						"summary":     summary,
+					},
+				})
+			})
 
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
