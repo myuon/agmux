@@ -593,15 +593,15 @@ export function SessionDetail() {
     <div className="h-dvh flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 max-w-4xl mx-auto">
       <button
         onClick={() => navigate("/")}
-        className="text-sm text-gray-500 hover:text-gray-800 mb-4 shrink-0"
+        className="text-xs sm:text-sm text-gray-500 hover:text-gray-800 mb-3 sm:mb-4 shrink-0"
       >
         &larr; Back
       </button>
-      <div className="flex items-center gap-3 mb-4 shrink-0">
-        <h2 className="text-2xl font-bold">{session.name}</h2>
-        <span className="text-sm text-gray-500">{session.status}</span>
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 shrink-0">
+        <h2 className="text-xl sm:text-2xl font-bold">{session.name}</h2>
+        <span className="text-xs sm:text-sm text-gray-500">{session.status}</span>
         {session.type !== "controller" && (
-          <div className="ml-auto flex gap-2">
+          <div className="flex gap-2 sm:ml-auto">
             {session.status !== "stopped" && (
               <button
                 onClick={async () => {
@@ -635,7 +635,7 @@ export function SessionDetail() {
           </div>
         )}
       </div>
-      <p className="text-sm text-gray-500 mb-2 shrink-0">
+      <p className="text-xs sm:text-sm text-gray-500 mb-2 shrink-0 truncate" title={session.projectPath}>
         Project: {session.projectPath}
         {session.githubUrl && (
           <>
