@@ -17,6 +17,44 @@ function sendNotification(title: string, body: string) {
 
 type MobileTab = "logs" | "sessions";
 
+// Global notification hook — runs regardless of which page is active
+function useGlobalNotifications() {
+  const prevSessionsRef = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    // Seed prevSessionsRef with current session statuses
+    api.listSessions().then((data) => {
+      const map = new Map<string, string>();
+      for (const s of data) map.set(s.id, s.status);
+      prevSessionsRef.current = map;
+    });
+  }, []);
+
+  const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
+    if (msg.type === "session_update") {
+      const newSessions = msg.data as Session[];
+      const prev = prevSessionsRef.current;
+      const notify = localStorage.getItem("agmux-notify") === "true";
+      if (notify) {
+        for (const s of newSessions) {
+          const prevStatus = prev.get(s.id);
+          if (s.status === "question_waiting" && prevStatus && prevStatus !== "question_waiting") {
+            sendNotification("agmux", `${s.name}: ユーザーの入力を待っています`);
+          }
+          if (s.status === "alignment_needed" && prevStatus && prevStatus !== "alignment_needed") {
+            sendNotification("agmux", `${s.name}: ユーザーとのアラインメントが必要です`);
+          }
+        }
+      }
+      const map = new Map<string, string>();
+      for (const s of newSessions) map.set(s.id, s.status);
+      prevSessionsRef.current = map;
+    }
+  }, []);
+
+  useWebSocket(handleWsMessage);
+}
+
 function Dashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -24,7 +62,6 @@ function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const mobileTab: MobileTab = searchParams.get("tab") === "sessions" ? "sessions" : "logs";
   const navigate = useNavigate();
-  const prevSessionsRef = useRef<Map<string, string>>(new Map());
   const [notifyEnabled, setNotifyEnabled] = useState(() => {
     return localStorage.getItem("agmux-notify") === "true";
   });
@@ -49,9 +86,6 @@ function Dashboard() {
   const loadSessions = () => {
     api.listSessions().then((data) => {
       setSessions(data);
-      const map = new Map<string, string>();
-      for (const s of data) map.set(s.id, s.status);
-      prevSessionsRef.current = map;
     }).catch((e) => setError(e.message));
   };
 
@@ -62,22 +96,6 @@ function Dashboard() {
   const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === "session_update") {
       const newSessions = msg.data as Session[];
-      const prev = prevSessionsRef.current;
-      const notify = localStorage.getItem("agmux-notify") === "true";
-      if (notify) {
-        for (const s of newSessions) {
-          const prevStatus = prev.get(s.id);
-          if (s.status === "question_waiting" && prevStatus && prevStatus !== "question_waiting") {
-            sendNotification("agmux", `${s.name}: ユーザーの入力を待っています`);
-          }
-          if (s.status === "alignment_needed" && prevStatus && prevStatus !== "alignment_needed") {
-            sendNotification("agmux", `${s.name}: ユーザーとのアラインメントが必要です`);
-          }
-        }
-      }
-      const map = new Map<string, string>();
-      for (const s of newSessions) map.set(s.id, s.status);
-      prevSessionsRef.current = map;
       setSessions(newSessions);
     }
   }, []);
@@ -230,6 +248,8 @@ function Dashboard() {
 }
 
 function App() {
+  useGlobalNotifications();
+
   return (
     <Routes>
       <Route path="/" element={<Dashboard />} />
