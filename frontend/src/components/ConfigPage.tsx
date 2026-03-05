@@ -122,6 +122,8 @@ export function ConfigPage() {
           </Field>
         </Section>
 
+        <NotificationStatus />
+
         {config.prompts?.statusCheck && (
           <Section title="Prompts (read-only)">
             <div>
@@ -142,6 +144,62 @@ export function ConfigPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function NotificationStatus() {
+  const [permission, setPermission] = useState(() =>
+    "Notification" in window ? Notification.permission : "unsupported"
+  );
+  const notifyEnabled = localStorage.getItem("agmux-notify") === "true";
+
+  const requestPermission = async () => {
+    if ("Notification" in window) {
+      const result = await Notification.requestPermission();
+      setPermission(result);
+    }
+  };
+
+  const sendTest = () => {
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification("agmux", { body: "テスト通知です" });
+    }
+  };
+
+  return (
+    <Section title="Notifications">
+      <Field label="Browser Permission">
+        <span className={`text-sm font-medium ${
+          permission === "granted" ? "text-green-600" :
+          permission === "denied" ? "text-red-600" : "text-yellow-600"
+        }`}>
+          {permission}
+        </span>
+      </Field>
+      <Field label="agmux Toggle">
+        <span className={`text-sm font-medium ${notifyEnabled ? "text-green-600" : "text-gray-500"}`}>
+          {notifyEnabled ? "ON" : "OFF"}
+        </span>
+      </Field>
+      <div className="flex gap-2 pt-2">
+        {permission !== "granted" && (
+          <button
+            onClick={requestPermission}
+            className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700"
+          >
+            通知を許可
+          </button>
+        )}
+        {permission === "granted" && (
+          <button
+            onClick={sendTest}
+            className="text-xs bg-gray-600 text-white px-3 py-1.5 rounded hover:bg-gray-700"
+          >
+            テスト通知を送信
+          </button>
+        )}
+      </div>
+    </Section>
   );
 }
 
