@@ -173,6 +173,14 @@ func (sp *StreamProcess) Send(message string) error {
 		return fmt.Errorf("marshal message: %w", err)
 	}
 
+	// Record user message to memory buffer and JSONL file
+	line := string(data)
+	sp.mu.Lock()
+	sp.lines = append(sp.lines, line)
+	sp.file.WriteString(line + "\n")
+	sp.file.Sync()
+	sp.mu.Unlock()
+
 	_, err = fmt.Fprintf(sp.stdin, "%s\n", data)
 	return err
 }
