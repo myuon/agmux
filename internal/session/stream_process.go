@@ -57,6 +57,7 @@ func StartStreamProcess(sessionID, projectPath, mcpConfigPath string, resume boo
 	if mcpConfigPath != "" {
 		args = append(args, "--mcp-config", mcpConfigPath)
 	}
+	args = append(args, "--append-system-prompt", agmuxSystemPrompt)
 	cmd := exec.Command("claude", args...)
 	cmd.Dir = projectPath
 	// Filter out CLAUDECODE env var to avoid nested session detection
