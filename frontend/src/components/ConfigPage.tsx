@@ -160,10 +160,16 @@ function NotificationStatus() {
     }
   };
 
-  const sendTest = () => {
-    if ("Notification" in window && Notification.permission === "granted") {
-      new Notification("agmux", { body: "テスト通知です" });
+  const sendTest = async () => {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    if ("serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.ready.catch(() => null);
+      if (reg) {
+        reg.showNotification("agmux", { body: "テスト通知です" });
+        return;
+      }
     }
+    new Notification("agmux", { body: "テスト通知です" });
   };
 
   return (

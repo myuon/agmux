@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Routes, Route, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
@@ -9,46 +9,37 @@ import { SessionList } from "./components/SessionList";
 import { ConfigPage } from "./components/ConfigPage";
 import { useWebSocket } from "./hooks/useWebSocket";
 
-function sendNotification(title: string, body: string) {
-  if ("Notification" in window && Notification.permission === "granted") {
-    new Notification(title, { body });
+// Register service worker for mobile notifications
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+
+async function sendNotification(title: string, body: string) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+
+  // Mobile Chrome requires Service Worker for notifications
+  if ("serviceWorker" in navigator) {
+    const reg = await navigator.serviceWorker.ready.catch(() => null);
+    if (reg) {
+      reg.showNotification(title, { body });
+      return;
+    }
   }
+  // Desktop fallback
+  new Notification(title, { body });
 }
 
 type MobileTab = "logs" | "sessions";
 
 // Global notification hook — runs regardless of which page is active
 function useGlobalNotifications() {
-  const prevSessionsRef = useRef<Map<string, string>>(new Map());
-
-  useEffect(() => {
-    // Seed prevSessionsRef with current session statuses
-    api.listSessions().then((data) => {
-      const map = new Map<string, string>();
-      for (const s of data) map.set(s.id, s.status);
-      prevSessionsRef.current = map;
-    });
-  }, []);
-
   const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
-    if (msg.type === "session_update") {
-      const newSessions = msg.data as Session[];
-      const prev = prevSessionsRef.current;
+    if (msg.type === "notify") {
       const notify = localStorage.getItem("agmux-notify") === "true";
       if (notify) {
-        for (const s of newSessions) {
-          const prevStatus = prev.get(s.id);
-          if (s.status === "question_waiting" && prevStatus && prevStatus !== "question_waiting") {
-            sendNotification("agmux", `${s.name}: ユーザーの入力を待っています`);
-          }
-          if (s.status === "alignment_needed" && prevStatus && prevStatus !== "alignment_needed") {
-            sendNotification("agmux", `${s.name}: ユーザーとのアラインメントが必要です`);
-          }
-        }
+        const data = msg.data as { sessionName: string; summary: string };
+        sendNotification("agmux", `${data.sessionName}: ${data.summary}`);
       }
-      const map = new Map<string, string>();
-      for (const s of newSessions) map.set(s.id, s.status);
-      prevSessionsRef.current = map;
     }
   }, []);
 
