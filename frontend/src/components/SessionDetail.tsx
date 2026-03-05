@@ -150,6 +150,9 @@ function extractFileName(filePath: string): string {
 function toolCallSummary(name: string, input: unknown): string {
   const inp = input && typeof input === "object" ? (input as Record<string, unknown>) : null;
   if (name === "Bash" && inp && "command" in inp) {
+    if ("description" in inp && inp.description) {
+      return `Bash: ${String(inp.description)}`;
+    }
     const cmd = String(inp.command);
     const firstLine = cmd.split("\n")[0];
     return `Bash(${firstLine})`;
