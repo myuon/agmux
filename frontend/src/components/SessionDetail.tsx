@@ -142,11 +142,21 @@ function mergeStreamEntries(entries: StreamEntry[]): { role: "user" | "assistant
   return groups;
 }
 
+function extractFileName(filePath: string): string {
+  const parts = filePath.split("/");
+  return parts[parts.length - 1] || filePath;
+}
+
 function toolCallSummary(name: string, input: unknown): string {
-  if (name === "Bash" && input && typeof input === "object" && "command" in input) {
-    const cmd = String((input as { command: string }).command);
+  const inp = input && typeof input === "object" ? (input as Record<string, unknown>) : null;
+  if (name === "Bash" && inp && "command" in inp) {
+    const cmd = String(inp.command);
     const firstLine = cmd.split("\n")[0];
     return `Bash(${firstLine})`;
+  }
+  if ((name === "Read" || name === "Write" || name === "Edit") && inp && "file_path" in inp) {
+    const fileName = extractFileName(String(inp.file_path));
+    return `${name}(${fileName})`;
   }
   return `Tool: ${name}`;
 }
