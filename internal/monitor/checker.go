@@ -113,6 +113,21 @@ func (sc *StatusChecker) check() {
 		}
 	}
 
+	// Log summary
+	counts := map[session.Status]int{}
+	for _, s := range sessions {
+		counts[s.Status]++
+	}
+	sc.logger.Info("status_check_summary",
+		slog.String("category", "status_checker"),
+		slog.Int("total", len(sessions)),
+		slog.Int("working", counts[session.StatusWorking]),
+		slog.Int("idle", counts[session.StatusIdle]),
+		slog.Int("question_waiting", counts[session.StatusQuestionWaiting]),
+		slog.Int("stopped", counts[session.StatusStopped]),
+		slog.Bool("changed", changed),
+	)
+
 	if changed && sc.onUpdate != nil {
 		sc.onUpdate(sessions)
 	}
