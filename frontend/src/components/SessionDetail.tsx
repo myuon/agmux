@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Session } from "../types/session";
-import { api } from "../api/client";
+import { api, type DiffFile } from "../api/client";
 
 const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
   user: { bg: "bg-blue-50", label: "User", text: "text-blue-700" },
@@ -354,6 +354,76 @@ function StreamOutputView({ lines }: { lines: unknown[] }) {
   );
 }
 
+const statusBadgeColor: Record<string, string> = {
+  M: "bg-yellow-100 text-yellow-800",
+  A: "bg-green-100 text-green-800",
+  D: "bg-red-100 text-red-800",
+  R: "bg-blue-100 text-blue-800",
+  "?": "bg-gray-100 text-gray-600",
+};
+
+function DiffView({ files }: { files: DiffFile[] }) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  if (files.length === 0) {
+    return <p className="text-xs text-gray-400">No uncommitted changes</p>;
+  }
+
+  const toggle = (path: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden mb-4">
+      <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 border-b border-gray-200">
+        Changes ({files.length} files)
+      </div>
+      {files.map((file) => (
+        <div key={file.path} className="border-b border-gray-100 last:border-b-0">
+          <button
+            onClick={() => toggle(file.path)}
+            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 text-left"
+          >
+            <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-bold ${statusBadgeColor[file.status] || "bg-gray-100 text-gray-600"}`}>
+              {file.status}
+            </span>
+            <span className="font-mono text-gray-700 truncate">{file.path}</span>
+            {file.diff && (
+              <span className="ml-auto text-gray-400">{expanded.has(file.path) ? "▼" : "▶"}</span>
+            )}
+          </button>
+          {expanded.has(file.path) && file.diff && (
+            <pre className="bg-gray-900 text-gray-200 text-xs p-3 overflow-x-auto whitespace-pre font-mono">
+              {file.diff.split("\n").map((line, i) => (
+                <span
+                  key={i}
+                  className={
+                    line.startsWith("+") && !line.startsWith("+++")
+                      ? "text-green-400"
+                      : line.startsWith("-") && !line.startsWith("---")
+                        ? "text-red-400"
+                        : line.startsWith("@@")
+                          ? "text-blue-400"
+                          : ""
+                  }
+                >
+                  {line}
+                  {"\n"}
+                </span>
+              ))}
+            </pre>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function SessionDetail() {
   const { id: sessionId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -361,6 +431,7 @@ export function SessionDetail() {
   const [output, setOutput] = useState("");
   const [message, setMessage] = useState("");
   const [streamLines, setStreamLines] = useState<unknown[]>([]);
+  const [diffFiles, setDiffFiles] = useState<DiffFile[]>([]);
   const terminal = useAutoScroll(output);
 
   useEffect(() => {
@@ -373,6 +444,7 @@ export function SessionDetail() {
         api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
       }
     });
+    api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
 
     const interval = setInterval(() => {
       api.getSession(sessionId).then((s) => {
@@ -383,6 +455,7 @@ export function SessionDetail() {
           api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
         }
       });
+      api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
     }, 3000);
     return () => clearInterval(interval);
   }, [sessionId]);
@@ -539,6 +612,8 @@ export function SessionDetail() {
           )}
         </div>
       )}
+
+      <DiffView files={diffFiles} />
 
       {isStream ? (
         <>

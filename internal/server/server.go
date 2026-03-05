@@ -72,6 +72,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/reconnect", s.reconnectSession)
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
+		r.Get("/sessions/{id}/diff", s.getSessionDiff)
 		r.Post("/sessions/controller/restart", s.restartController)
 		r.Get("/logs", s.getLogs)
 		r.Get("/config", s.getConfig)
@@ -520,6 +521,125 @@ func detectPullRequests(projectPath, branch string) []prInfo {
 	for i, pr := range prs {
 		result[i] = prInfo{Number: pr.Number, Title: pr.Title, URL: pr.URL, State: pr.State}
 	}
+	return result
+}
+
+type diffFileEntry struct {
+	Path   string `json:"path"`
+	Status string `json:"status"`
+	Diff   string `json:"diff"`
+}
+
+func (s *Server) getSessionDiff(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	sess, err := s.sessions.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	files, err := getWorkingTreeDiff(sess.ProjectPath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"files": files})
+}
+
+func getWorkingTreeDiff(projectPath string) ([]diffFileEntry, error) {
+	// Get file list with status
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = projectPath
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	statusOutput := strings.TrimSpace(string(out))
+	if statusOutput == "" {
+		return []diffFileEntry{}, nil
+	}
+
+	// Get combined diff (staged + unstaged) against HEAD
+	diffCmd := exec.Command("git", "diff", "HEAD")
+	diffCmd.Dir = projectPath
+	diffOut, err := diffCmd.Output()
+	if err != nil {
+		// If HEAD doesn't exist (new repo), try without HEAD
+		diffCmd = exec.Command("git", "diff")
+		diffCmd.Dir = projectPath
+		diffOut, _ = diffCmd.Output()
+	}
+
+	// Parse per-file diffs
+	diffMap := parseDiffPerFile(string(diffOut))
+
+	// Parse status lines
+	var files []diffFileEntry
+	for _, line := range strings.Split(statusOutput, "\n") {
+		if len(line) < 4 {
+			continue
+		}
+		// git status --porcelain format: XY filename
+		statusCode := strings.TrimSpace(line[:2])
+		filePath := strings.TrimSpace(line[3:])
+		// Handle renamed files: "R  old -> new"
+		if idx := strings.Index(filePath, " -> "); idx >= 0 {
+			filePath = filePath[idx+4:]
+		}
+
+		// Map status codes to single letter
+		displayStatus := mapGitStatus(statusCode)
+
+		files = append(files, diffFileEntry{
+			Path:   filePath,
+			Status: displayStatus,
+			Diff:   diffMap[filePath],
+		})
+	}
+
+	return files, nil
+}
+
+func mapGitStatus(code string) string {
+	switch {
+	case code == "??":
+		return "?"
+	case code == "!!":
+		return "!"
+	case strings.Contains(code, "A"):
+		return "A"
+	case strings.Contains(code, "D"):
+		return "D"
+	case strings.Contains(code, "R"):
+		return "R"
+	case strings.Contains(code, "M"):
+		return "M"
+	default:
+		return code
+	}
+}
+
+func parseDiffPerFile(diffOutput string) map[string]string {
+	result := make(map[string]string)
+	if diffOutput == "" {
+		return result
+	}
+
+	// Split by "diff --git" boundaries
+	parts := strings.Split(diffOutput, "diff --git ")
+	for _, part := range parts[1:] { // skip first empty element
+		fullDiff := "diff --git " + part
+
+		// Extract filename from "diff --git a/path b/path"
+		firstLine := strings.SplitN(part, "\n", 2)[0]
+		tokens := strings.Fields(firstLine)
+		if len(tokens) >= 2 {
+			filePath := strings.TrimPrefix(tokens[1], "b/")
+			result[filePath] = strings.TrimRight(fullDiff, "\n")
+		}
+	}
+
 	return result
 }
 

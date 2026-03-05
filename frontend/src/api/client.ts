@@ -66,6 +66,9 @@ export const api = {
   restartController: () =>
     request<Session>("/sessions/controller/restart", { method: "POST" }),
 
+  getDiff: (id: string) =>
+    request<{ files: DiffFile[] }>(`/sessions/${id}/diff`),
+
   getConfig: () => request<AppConfig>("/config"),
 
   updateConfig: (data: AppConfig) =>
@@ -74,6 +77,12 @@ export const api = {
       body: JSON.stringify(data),
     }),
 };
+
+export interface DiffFile {
+  path: string;
+  status: string;
+  diff: string;
+}
 
 export interface LogEntry {
   time: string;
