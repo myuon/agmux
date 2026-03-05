@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -18,9 +19,6 @@ import (
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/logging"
-	"path/filepath"
-	"strings"
-
 	"github.com/myuon/agmux/internal/session"
 )
 
@@ -69,7 +67,6 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/stop", s.stopSession)
 		r.Post("/sessions/{id}/send", s.sendToSession)
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
-		r.Get("/sessions/{id}/logs", s.getSessionLogs)
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
 		r.Post("/sessions/controller/restart", s.restartController)
 		r.Get("/logs", s.getLogs)
@@ -289,130 +286,6 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, logs)
 }
 
-type claudeContentBlock struct {
-	Type    string `json:"type"`              // "text", "tool_use", "tool_result"
-	Text    string `json:"text,omitempty"`    // for type=text
-	Name    string `json:"name,omitempty"`    // for type=tool_use (tool name)
-	Input   any    `json:"input,omitempty"`   // for type=tool_use (tool input)
-	Content string `json:"content,omitempty"` // for type=tool_result
-}
-
-type claudeLogEntry struct {
-	Type      string               `json:"type"`
-	Timestamp string               `json:"timestamp"`
-	Blocks    []claudeContentBlock `json:"blocks"`
-}
-
-func (s *Server) getSessionLogs(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "id")
-
-	// Get session to find projectPath
-	sess, err := s.sessions.Get(sessionID)
-	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
-		return
-	}
-
-	// Build Claude Code JSONL path
-	jsonlPath := buildClaudeJSONLPath(sess.ProjectPath, sessionID)
-
-	file, err := os.Open(jsonlPath)
-	if err != nil {
-		writeJSON(w, http.StatusOK, []claudeLogEntry{})
-		return
-	}
-	defer file.Close()
-
-	var logs []claudeLogEntry
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		var entry struct {
-			Type      string `json:"type"`
-			Timestamp string `json:"timestamp"`
-			Message   struct {
-				Content json.RawMessage `json:"content"`
-			} `json:"message"`
-		}
-		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			continue
-		}
-		if entry.Type != "user" && entry.Type != "assistant" {
-			continue
-		}
-
-		blocks := extractContentBlocks(entry.Message.Content)
-		if len(blocks) == 0 {
-			continue
-		}
-
-		logs = append(logs, claudeLogEntry{
-			Type:      entry.Type,
-			Timestamp: entry.Timestamp,
-			Blocks:    blocks,
-		})
-	}
-
-	if logs == nil {
-		logs = []claudeLogEntry{}
-	}
-
-	writeJSON(w, http.StatusOK, logs)
-}
-
-// extractContentBlocks parses Claude message content into typed blocks.
-func extractContentBlocks(raw json.RawMessage) []claudeContentBlock {
-	if len(raw) == 0 {
-		return nil
-	}
-
-	// Try as string first (plain user message)
-	var str string
-	if err := json.Unmarshal(raw, &str); err == nil {
-		if str == "" {
-			return nil
-		}
-		return []claudeContentBlock{{Type: "text", Text: str}}
-	}
-
-	// Try as array of content blocks
-	var rawBlocks []struct {
-		Type      string          `json:"type"`
-		Text      string          `json:"text,omitempty"`
-		Name      string          `json:"name,omitempty"`
-		Input     json.RawMessage `json:"input,omitempty"`
-		Content   json.RawMessage `json:"content,omitempty"`
-		ToolUseID string          `json:"tool_use_id,omitempty"`
-	}
-	if err := json.Unmarshal(raw, &rawBlocks); err != nil {
-		return nil
-	}
-
-	var blocks []claudeContentBlock
-	for _, b := range rawBlocks {
-		switch b.Type {
-		case "text":
-			if b.Text != "" {
-				blocks = append(blocks, claudeContentBlock{Type: "text", Text: b.Text})
-			}
-		case "tool_use":
-			var input any
-			json.Unmarshal(b.Input, &input)
-			blocks = append(blocks, claudeContentBlock{Type: "tool_use", Name: b.Name, Input: input})
-		case "tool_result":
-			content := ""
-			// tool_result content can be string or structured
-			json.Unmarshal(b.Content, &content)
-			if content == "" {
-				content = string(b.Content)
-			}
-			blocks = append(blocks, claudeContentBlock{Type: "tool_result", Content: content})
-		}
-	}
-	return blocks
-}
-
 type configJSON struct {
 	Server  configServerJSON  `json:"server"`
 	Daemon  configDaemonJSON  `json:"daemon"`
@@ -523,13 +396,6 @@ func detectGithubURL(projectPath string) string {
 		return "https://github.com/" + path
 	}
 	return ""
-}
-
-func buildClaudeJSONLPath(projectPath, sessionID string) string {
-	homeDir, _ := os.UserHomeDir()
-	escapedPath := strings.ReplaceAll(projectPath, "/", "-")
-	escapedPath = strings.ReplaceAll(escapedPath, ".", "-")
-	return filepath.Join(homeDir, ".claude", "projects", escapedPath, sessionID+".jsonl")
 }
 
 func (s *Server) recordSessionAction(sessionID, actionType, detail string) {

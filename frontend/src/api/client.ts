@@ -51,9 +51,6 @@ export const api = {
   getLogs: (limit = 100) =>
     request<LogEntry[]>(`/logs?limit=${limit}`),
 
-  getSessionLogs: (id: string) =>
-    request<ClaudeLogEntry[]>(`/sessions/${id}/logs`),
-
   getStreamOutput: (id: string, limit = 200) =>
     request<unknown[]>(`/sessions/${id}/stream?limit=${limit}`),
 
@@ -77,20 +74,6 @@ export interface LogEntry {
   session?: string;
   sessionId?: string;
   [key: string]: unknown;
-}
-
-export interface ClaudeContentBlock {
-  type: "text" | "tool_use" | "tool_result";
-  text?: string;
-  name?: string;
-  input?: unknown;
-  content?: string;
-}
-
-export interface ClaudeLogEntry {
-  type: "user" | "assistant";
-  timestamp: string;
-  blocks: ClaudeContentBlock[];
 }
 
 export interface AppConfig {
