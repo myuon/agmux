@@ -104,9 +104,17 @@ type DisplayGroup =
 
 // Merge assistant/user entries into display items, pairing tool_use with tool_result by id
 function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
-  // First pass: collect all tool_results keyed by tool_use_id
+  // First pass: collect all tool_results keyed by tool_use_id, and track Skill tool IDs
   const resultMap = new Map<string, string>();
+  const skillToolIds = new Set<string>();
   for (const entry of entries) {
+    if (entry.type === "assistant") {
+      for (const block of parseStreamContentBlocks(entry)) {
+        if (block.type === "tool_use" && block.name === "Skill" && block.id) {
+          skillToolIds.add(block.id);
+        }
+      }
+    }
     if (entry.type !== "user") continue;
     for (const block of parseStreamContentBlocks(entry)) {
       if (block.type === "tool_result" && block.tool_use_id) {
@@ -122,8 +130,11 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
 
   // Second pass: build display groups
   const groups: DisplayGroup[] = [];
+  let skipNextUserText = false;
 
-  for (const entry of entries) {
+  for (let idx = 0; idx < entries.length; idx++) {
+    const entry = entries[idx];
+
     // Handle system events
     if (entry.type === "system") {
       const sysItem = parseSystemEvent(entry);
@@ -152,15 +163,54 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
             groups.push({ role: "system", items: [{ kind: "system_event", eventType: "plan_exit", label: "プランモードを終了しました" }] });
             continue;
           }
-          items.push({
-            kind: "tool_call",
-            name: b.name ?? "unknown",
-            input: b.input,
-            result: b.id ? resultMap.get(b.id) : undefined,
-          });
+
+          const result = b.id ? resultMap.get(b.id) : undefined;
+
+          // For Skill calls, fold the next user text (skill content) into the result
+          if (b.name === "Skill" && b.id && skillToolIds.has(b.id)) {
+            // Find the skill content: next user entry with only text (no tool_result) after the tool_result
+            let skillContent = result || "";
+            for (let j = idx + 1; j < entries.length && j <= idx + 3; j++) {
+              const nextEntry = entries[j];
+              if (nextEntry.type !== "user") break;
+              const nextBlocks = parseStreamContentBlocks(nextEntry);
+              const hasToolResult = nextBlocks.some(nb => nb.type === "tool_result");
+              const textBlocks = nextBlocks.filter(nb => nb.type === "text" && nb.text);
+              if (!hasToolResult && textBlocks.length > 0) {
+                // This is the skill content text
+                skillContent += "\n---\n" + textBlocks.map(tb => tb.text).join("\n");
+                skipNextUserText = true;
+                break;
+              }
+            }
+            items.push({
+              kind: "tool_call",
+              name: b.name,
+              input: b.input,
+              result: skillContent || undefined,
+            });
+          } else {
+            items.push({
+              kind: "tool_call",
+              name: b.name ?? "unknown",
+              input: b.input,
+              result,
+            });
+          }
         }
       }
     } else if (entry.type === "user") {
+      // Skip user text that was folded into a Skill tool call
+      if (skipNextUserText) {
+        const hasToolResult = blocks.some(b => b.type === "tool_result");
+        const hasOnlyText = blocks.every(b => b.type === "text");
+        if (!hasToolResult && hasOnlyText) {
+          skipNextUserText = false;
+          continue;
+        }
+        skipNextUserText = false;
+      }
+
       // Only show user text content (tool_results are merged into assistant tool_call items)
       for (const b of blocks) {
         if (b.type === "text" && b.text) {
@@ -206,6 +256,13 @@ function toolCallSummary(name: string, input: unknown): string {
     const fileName = extractFileName(String(inp.file_path));
     return `${name}(${fileName})`;
   }
+  if (name === "Skill" && inp && "skill" in inp) {
+    const args = inp.args ? ` ${String(inp.args).split("\n")[0]}` : "";
+    return `Skill: ${String(inp.skill)}${args}`;
+  }
+  if (name === "ToolSearch" && inp && "query" in inp) {
+    return `ToolSearch(${String(inp.query)})`;
+  }
   return `Tool: ${name}`;
 }
 
@@ -244,13 +301,44 @@ function SystemEventView({ item }: { item: Extract<StreamDisplayItem, { kind: "s
   );
 }
 
-function StreamDisplayItemView({ item }: { item: StreamDisplayItem }) {
-  if (item.kind === "text") {
+const COLLAPSE_LINE_THRESHOLD = 20;
+
+function CollapsibleText({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const lineCount = text.split("\n").length;
+  const shouldCollapse = lineCount > COLLAPSE_LINE_THRESHOLD;
+
+  if (!shouldCollapse || expanded) {
     return (
-      <div className="prose prose-xs max-w-none prose-pre:bg-gray-100 prose-pre:text-gray-800 prose-code:text-pink-600">
-        <Markdown remarkPlugins={[remarkGfm]}>{item.text}</Markdown>
+      <div>
+        <div className="prose prose-xs max-w-none prose-pre:bg-gray-100 prose-pre:text-gray-800 prose-code:text-pink-600">
+          <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
+        </div>
+        {shouldCollapse && (
+          <button onClick={() => setExpanded(false)} className="text-xs text-blue-500 hover:text-blue-700 mt-1">
+            折りたたむ
+          </button>
+        )}
       </div>
     );
+  }
+
+  const preview = text.split("\n").slice(0, 5).join("\n");
+  return (
+    <div>
+      <div className="prose prose-xs max-w-none prose-pre:bg-gray-100 prose-pre:text-gray-800 prose-code:text-pink-600 relative overflow-hidden max-h-24">
+        <Markdown remarkPlugins={[remarkGfm]}>{preview}</Markdown>
+      </div>
+      <button onClick={() => setExpanded(true)} className="text-xs text-blue-500 hover:text-blue-700 mt-1">
+        続きを表示 ({lineCount} 行)
+      </button>
+    </div>
+  );
+}
+
+function StreamDisplayItemView({ item }: { item: StreamDisplayItem }) {
+  if (item.kind === "text") {
+    return <CollapsibleText text={item.text} />;
   }
   if (item.kind === "tool_call") {
     return <ToolCallView item={item} />;
