@@ -34,6 +34,8 @@ type Session struct {
 	Status        Status      `json:"status"`
 	Type          SessionType `json:"type"`
 	OutputMode    OutputMode  `json:"outputMode"`
+	CurrentTask   string      `json:"currentTask,omitempty"`
+	Goal          string      `json:"goal,omitempty"`
 	CreatedAt     time.Time   `json:"createdAt"`
 	UpdatedAt     time.Time   `json:"updatedAt"`
 }

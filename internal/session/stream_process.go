@@ -30,7 +30,7 @@ type StreamProcess struct {
 // StartStreamProcess starts a claude CLI subprocess in stream-json mode.
 // If resume is true, it uses --resume to continue an existing conversation;
 // otherwise it uses --session-id to start a new one.
-func StartStreamProcess(sessionID, projectPath string, resume bool) (*StreamProcess, error) {
+func StartStreamProcess(sessionID, projectPath, mcpConfigPath string, resume bool) (*StreamProcess, error) {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
 		return nil, fmt.Errorf("get streams dir: %w", err)
@@ -53,6 +53,9 @@ func StartStreamProcess(sessionID, projectPath string, resume bool) (*StreamProc
 		"--input-format", "stream-json",
 		sessionFlag, sessionID,
 		"--dangerously-skip-permissions",
+	}
+	if mcpConfigPath != "" {
+		args = append(args, "--mcp-config", mcpConfigPath)
 	}
 	cmd := exec.Command("claude", args...)
 	cmd.Dir = projectPath

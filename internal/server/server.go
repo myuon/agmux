@@ -66,6 +66,8 @@ func (s *Server) setupRoutes() {
 		r.Delete("/sessions/{id}", s.deleteSession)
 		r.Post("/sessions/{id}/stop", s.stopSession)
 		r.Post("/sessions/{id}/send", s.sendToSession)
+		r.Put("/sessions/{id}/context", s.updateSessionContext)
+		r.Post("/sessions/{id}/reconnect", s.reconnectSession)
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
 		r.Post("/sessions/controller/restart", s.restartController)
@@ -112,6 +114,11 @@ type createSessionRequest struct {
 
 type sendRequest struct {
 	Text string `json:"text"`
+}
+
+type updateContextRequest struct {
+	CurrentTask string `json:"currentTask"`
+	Goal        string `json:"goal"`
 }
 
 func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
@@ -216,6 +223,30 @@ func (s *Server) sendToSession(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordSessionAction(id, "session_send_keys", req.Text)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+}
+
+func (s *Server) updateSessionContext(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req updateContextRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := s.sessions.UpdateContext(id, req.CurrentTask, req.Goal); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) reconnectSession(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := s.sessions.Reconnect(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordSessionAction(id, "session_reconnect", "")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "reconnected"})
 }
 
 func (s *Server) getSessionOutput(w http.ResponseWriter, r *http.Request) {

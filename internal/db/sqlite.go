@@ -98,6 +98,18 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add current_task column if missing
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN current_task TEXT`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
+	// Migration: add goal column if missing
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN goal TEXT`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: update old status values to new ones
 	_, err = db.Exec(`UPDATE sessions SET status = 'working' WHERE status IN ('running', 'waiting', 'error')`)
 	if err != nil {

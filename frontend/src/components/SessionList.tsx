@@ -55,6 +55,9 @@ export function SessionList({ sessions, onStop, onRestartController }: Props) {
               {s.status}
             </span>
           </div>
+          {s.currentTask && (
+            <p className="text-xs text-indigo-600 truncate mb-0.5">{s.currentTask}</p>
+          )}
           <p className="text-xs text-gray-500 truncate mb-1">
             {s.projectPath}
           </p>
