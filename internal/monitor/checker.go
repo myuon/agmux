@@ -3,6 +3,7 @@ package monitor
 import (
 	"context"
 	"log"
+	"log/slog"
 	"time"
 
 	"github.com/myuon/agmux/internal/session"
@@ -18,16 +19,18 @@ type StatusChecker struct {
 	monitor  *Monitor
 	sessions *session.Manager
 	tmux     *tmux.Client
+	logger   *slog.Logger
 	onUpdate func(sessions []session.Session)
 	interval time.Duration
 }
 
-func NewStatusChecker(monitor *Monitor, sessions *session.Manager, tmuxClient *tmux.Client, interval time.Duration) *StatusChecker {
+func NewStatusChecker(monitor *Monitor, sessions *session.Manager, tmuxClient *tmux.Client, interval time.Duration, logger *slog.Logger) *StatusChecker {
 	return &StatusChecker{
 		monitor:  monitor,
 		sessions: sessions,
 		tmux:     tmuxClient,
 		interval: interval,
+		logger:   logger,
 	}
 }
 
@@ -66,12 +69,21 @@ func (sc *StatusChecker) check() {
 			continue
 		}
 
+		shortID := s.ID[:8]
+
 		// Check if tmux session still exists
 		if !sc.tmux.HasSessionByFullName(s.TmuxSession) {
 			if s.Status != session.StatusStopped {
-				log.Printf("status checker: %s (%s): tmux session gone, marking stopped", s.Name, s.ID[:8])
+				sc.logger.Info("status_check",
+					slog.String("category", "status_checker"),
+					slog.String("sessionId", s.ID),
+					slog.String("sessionName", s.Name),
+					slog.String("event", "tmux_session_gone"),
+					slog.String("oldStatus", string(s.Status)),
+					slog.String("newStatus", string(session.StatusStopped)),
+				)
 				if err := sc.sessions.UpdateStatus(s.ID, session.StatusStopped); err != nil {
-					log.Printf("status checker: update %s error: %v", s.Name, err)
+					log.Printf("status checker: update %s (%s) error: %v", s.Name, shortID, err)
 					continue
 				}
 				s.Status = session.StatusStopped
@@ -80,12 +92,20 @@ func (sc *StatusChecker) check() {
 			continue
 		}
 
-		// JSONL-based status detection
+		// Mode-based status detection
 		newStatus := sc.monitor.CheckStatus(s)
 		if newStatus != s.Status {
-			log.Printf("status checker: %s (%s): %s -> %s", s.Name, s.ID[:8], s.Status, newStatus)
+			sc.logger.Info("status_check",
+				slog.String("category", "status_checker"),
+				slog.String("sessionId", s.ID),
+				slog.String("sessionName", s.Name),
+				slog.String("outputMode", string(s.OutputMode)),
+				slog.String("event", "status_changed"),
+				slog.String("oldStatus", string(s.Status)),
+				slog.String("newStatus", string(newStatus)),
+			)
 			if err := sc.sessions.UpdateStatus(s.ID, newStatus); err != nil {
-				log.Printf("status checker: update %s error: %v", s.Name, err)
+				log.Printf("status checker: update %s (%s) error: %v", s.Name, shortID, err)
 				continue
 			}
 			s.Status = newStatus
