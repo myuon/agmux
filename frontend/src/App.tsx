@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Routes, Route, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
@@ -9,6 +9,18 @@ import { SessionList } from "./components/SessionList";
 import { ConfigPage } from "./components/ConfigPage";
 import { useWebSocket } from "./hooks/useWebSocket";
 
+function requestNotificationPermission() {
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
+}
+
+function sendNotification(title: string, body: string) {
+  if ("Notification" in window && Notification.permission === "granted") {
+    new Notification(title, { body });
+  }
+}
+
 type MobileTab = "logs" | "sessions";
 
 function Dashboard() {
@@ -18,18 +30,36 @@ function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const mobileTab: MobileTab = searchParams.get("tab") === "sessions" ? "sessions" : "logs";
   const navigate = useNavigate();
+  const prevSessionsRef = useRef<Map<string, string>>(new Map());
 
   const loadSessions = () => {
-    api.listSessions().then(setSessions).catch((e) => setError(e.message));
+    api.listSessions().then((data) => {
+      setSessions(data);
+      const map = new Map<string, string>();
+      for (const s of data) map.set(s.id, s.status);
+      prevSessionsRef.current = map;
+    }).catch((e) => setError(e.message));
   };
 
   useEffect(() => {
     loadSessions();
+    requestNotificationPermission();
   }, []);
 
   const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === "session_update") {
-      setSessions(msg.data as Session[]);
+      const newSessions = msg.data as Session[];
+      const prev = prevSessionsRef.current;
+      for (const s of newSessions) {
+        const prevStatus = prev.get(s.id);
+        if (s.status === "question_waiting" && prevStatus && prevStatus !== "question_waiting") {
+          sendNotification("agmux", `${s.name}: ユーザーの入力を待っています`);
+        }
+      }
+      const map = new Map<string, string>();
+      for (const s of newSessions) map.set(s.id, s.status);
+      prevSessionsRef.current = map;
+      setSessions(newSessions);
     }
   }, []);
 
