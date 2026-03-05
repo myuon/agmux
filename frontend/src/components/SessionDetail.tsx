@@ -178,6 +178,7 @@ export function SessionDetail() {
     api.getSession(sessionId).then(setSession);
     api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
     api.getSessionLogs(sessionId).then(setLogs).catch(() => {});
+    api.getStreamOutput(sessionId).then(setStreamLines).catch(() => {});
 
     const interval = setInterval(() => {
       api.getSession(sessionId).then(setSession);
