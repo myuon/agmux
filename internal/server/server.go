@@ -147,7 +147,16 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 
 type sessionResponse struct {
 	*session.Session
-	GithubURL string `json:"githubUrl,omitempty"`
+	GithubURL  string      `json:"githubUrl,omitempty"`
+	Branch     string      `json:"branch,omitempty"`
+	PullRequests []prInfo  `json:"pullRequests,omitempty"`
+}
+
+type prInfo struct {
+	Number int    `json:"number"`
+	Title  string `json:"title"`
+	URL    string `json:"url"`
+	State  string `json:"state"`
 }
 
 func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
@@ -158,6 +167,10 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := sessionResponse{Session: sess, GithubURL: detectGithubURL(sess.ProjectPath)}
+	resp.Branch = detectBranch(sess.ProjectPath)
+	if resp.Branch != "" {
+		resp.PullRequests = detectPullRequests(sess.ProjectPath, resp.Branch)
+	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -396,6 +409,39 @@ func detectGithubURL(projectPath string) string {
 		return "https://github.com/" + path
 	}
 	return ""
+}
+
+func detectBranch(projectPath string) string {
+	cmd := exec.Command("git", "branch", "--show-current")
+	cmd.Dir = projectPath
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func detectPullRequests(projectPath, branch string) []prInfo {
+	cmd := exec.Command("gh", "pr", "list", "--state", "all", "--head", branch, "--json", "number,title,url,state", "--limit", "10")
+	cmd.Dir = projectPath
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	var prs []struct {
+		Number int    `json:"number"`
+		Title  string `json:"title"`
+		URL    string `json:"url"`
+		State  string `json:"state"`
+	}
+	if err := json.Unmarshal(out, &prs); err != nil {
+		return nil
+	}
+	result := make([]prInfo, len(prs))
+	for i, pr := range prs {
+		result[i] = prInfo{Number: pr.Number, Title: pr.Title, URL: pr.URL, State: pr.State}
+	}
+	return result
 }
 
 func (s *Server) recordSessionAction(sessionID, actionType, detail string) {

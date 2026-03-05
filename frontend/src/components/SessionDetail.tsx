@@ -353,7 +353,7 @@ export function SessionDetail() {
           </div>
         )}
       </div>
-      <p className="text-sm text-gray-500 mb-4">
+      <p className="text-sm text-gray-500 mb-2">
         Project: {session.projectPath}
         {session.githubUrl && (
           <>
@@ -370,6 +370,32 @@ export function SessionDetail() {
           </>
         )}
       </p>
+      {session.branch && (
+        <p className="text-sm text-gray-500 mb-2">
+          Branch: <span className="font-mono text-gray-700">{session.branch}</span>
+        </p>
+      )}
+      {session.pullRequests && session.pullRequests.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-4">
+          {session.pullRequests.map((pr) => (
+            <a
+              key={pr.number}
+              href={pr.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
+                pr.state === "MERGED"
+                  ? "bg-purple-100 text-purple-700"
+                  : pr.state === "OPEN"
+                    ? "bg-green-100 text-green-700"
+                    : "bg-gray-100 text-gray-600"
+              }`}
+            >
+              #{pr.number} {pr.title}
+            </a>
+          ))}
+        </div>
+      )}
 
       {isStream ? (
         <>
