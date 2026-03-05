@@ -69,6 +69,7 @@ func (sc *StatusChecker) check() {
 		// Check if tmux session still exists
 		if !sc.tmux.HasSessionByFullName(s.TmuxSession) {
 			if s.Status != session.StatusStopped {
+				log.Printf("status checker: %s (%s): tmux session gone, marking stopped", s.Name, s.ID[:8])
 				if err := sc.sessions.UpdateStatus(s.ID, session.StatusStopped); err != nil {
 					log.Printf("status checker: update %s error: %v", s.Name, err)
 					continue
@@ -82,6 +83,7 @@ func (sc *StatusChecker) check() {
 		// JSONL-based status detection
 		newStatus := sc.monitor.CheckStatus(s)
 		if newStatus != s.Status {
+			log.Printf("status checker: %s (%s): %s -> %s", s.Name, s.ID[:8], s.Status, newStatus)
 			if err := sc.sessions.UpdateStatus(s.ID, newStatus); err != nil {
 				log.Printf("status checker: update %s error: %v", s.Name, err)
 				continue

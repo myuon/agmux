@@ -18,6 +18,13 @@ const (
 	TypeController SessionType = "controller"
 )
 
+type OutputMode string
+
+const (
+	OutputModeTerminal OutputMode = "terminal"
+	OutputModeStream   OutputMode = "stream"
+)
+
 type Session struct {
 	ID            string      `json:"id"`
 	Name          string      `json:"name"`
@@ -26,6 +33,7 @@ type Session struct {
 	TmuxSession   string      `json:"tmuxSession"`
 	Status        Status      `json:"status"`
 	Type          SessionType `json:"type"`
+	OutputMode    OutputMode  `json:"outputMode"`
 	CreatedAt     time.Time   `json:"createdAt"`
 	UpdatedAt     time.Time   `json:"updatedAt"`
 }

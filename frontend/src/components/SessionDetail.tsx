@@ -44,7 +44,53 @@ function ContentBlockView({ block }: { block: ClaudeContentBlock }) {
   return null;
 }
 
-type ViewMode = "terminal" | "logs";
+function StreamOutputView({ lines }: { lines: unknown[] }) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.scrollTop = ref.current.scrollHeight;
+    }
+  }, [lines]);
+
+  return (
+    <div ref={ref} className="bg-gray-900 rounded-lg p-3 text-sm h-96 overflow-y-auto mb-4 space-y-1">
+      {lines.length === 0 ? (
+        <p className="text-gray-500">No stream output yet</p>
+      ) : (
+        lines.map((line, i) => {
+          const obj = line as Record<string, unknown>;
+          const type = obj?.type as string | undefined;
+          if (type === "assistant" || type === "user") {
+            const style = roleStyles[type] || roleStyles.assistant;
+            // Try to extract text content
+            const content = obj?.content;
+            let text = "";
+            if (typeof content === "string") {
+              text = content;
+            } else if (Array.isArray(content)) {
+              text = content
+                .filter((b: Record<string, unknown>) => b.type === "text")
+                .map((b: Record<string, unknown>) => b.text)
+                .join("\n");
+            }
+            return (
+              <div key={i} className={`rounded px-2 py-1 ${style.bg}`}>
+                <span className={`font-semibold text-xs ${style.text} mr-2`}>{style.label}</span>
+                <span className="text-gray-200 text-xs">{text || JSON.stringify(line)}</span>
+              </div>
+            );
+          }
+          return (
+            <pre key={i} className="text-gray-400 text-xs whitespace-pre-wrap">
+              {JSON.stringify(line)}
+            </pre>
+          );
+        })
+      )}
+    </div>
+  );
+}
 
 export function SessionDetail() {
   const { id: sessionId } = useParams<{ id: string }>();
@@ -52,8 +98,8 @@ export function SessionDetail() {
   const [session, setSession] = useState<Session | null>(null);
   const [output, setOutput] = useState("");
   const [message, setMessage] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("terminal");
   const [logs, setLogs] = useState<ClaudeLogEntry[]>([]);
+  const [streamLines, setStreamLines] = useState<unknown[]>([]);
   const terminalRef = useRef<HTMLDivElement>(null);
   const logsRef = useRef<HTMLDivElement>(null);
 
@@ -64,9 +110,10 @@ export function SessionDetail() {
     api.getSessionLogs(sessionId).then(setLogs).catch(() => {});
 
     const interval = setInterval(() => {
-      api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
       api.getSession(sessionId).then(setSession);
+      api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
       api.getSessionLogs(sessionId).then(setLogs).catch(() => {});
+      api.getStreamOutput(sessionId).then(setStreamLines).catch(() => {});
     }, 3000);
     return () => clearInterval(interval);
   }, [sessionId]);
@@ -90,14 +137,18 @@ export function SessionDetail() {
     if (!sessionId || !message.trim()) return;
     await api.sendToSession(sessionId, message);
     setMessage("");
-    setTimeout(
-      () =>
-        api.getSessionOutput(sessionId).then((r) => setOutput(r.output)),
-      500
-    );
+    setTimeout(() => {
+      if (session?.outputMode === "stream") {
+        api.getStreamOutput(sessionId).then(setStreamLines).catch(() => {});
+      } else {
+        api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
+      }
+    }, 500);
   };
 
   if (!session) return <div className="p-8">Loading...</div>;
+
+  const isStream = session.outputMode === "stream";
 
   const sendForm = (
     <form onSubmit={handleSend} className="flex gap-2 mb-6">
@@ -133,42 +184,19 @@ export function SessionDetail() {
         Project: {session.projectPath}
       </p>
 
-      <div className="flex border-b border-gray-300 mb-4">
-        <button
-          onClick={() => setViewMode("terminal")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-            viewMode === "terminal"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          Terminal
-        </button>
-        <button
-          onClick={() => setViewMode("logs")}
-          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-            viewMode === "logs"
-              ? "border-blue-600 text-blue-600"
-              : "border-transparent text-gray-500 hover:text-gray-700"
-          }`}
-        >
-          Logs
-          {logs.length > 0 && (
-            <span className="ml-1 text-xs text-gray-400">({logs.length})</span>
-          )}
-        </button>
-      </div>
-
-      {viewMode === "terminal" ? (
+      {isStream ? (
+        <>
+          <StreamOutputView lines={streamLines} />
+          {sendForm}
+        </>
+      ) : (
         <>
           <div ref={terminalRef} className="bg-gray-900 text-green-400 rounded-lg p-4 mb-4 font-mono text-xs h-96 overflow-y-auto whitespace-pre-wrap">
             {output || "No output yet."}
           </div>
           {sendForm}
-        </>
-      ) : (
-        <>
           <div ref={logsRef} className="bg-gray-900 rounded-lg p-3 text-sm h-96 overflow-y-auto mb-4 space-y-3">
+            <h3 className="text-gray-400 text-xs font-semibold mb-2">Logs</h3>
             {logs.length === 0 ? (
               <p className="text-gray-500">No logs yet</p>
             ) : (
@@ -194,7 +222,6 @@ export function SessionDetail() {
               })
             )}
           </div>
-          {sendForm}
         </>
       )}
 

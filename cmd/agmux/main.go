@@ -148,28 +148,34 @@ func sessionCmd() *cobra.Command {
 func sessionCreateCmd() *cobra.Command {
 	var projectPath string
 	var prompt string
+	var mode string
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create a new agent session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			outputMode := session.OutputMode(mode)
+			if outputMode != session.OutputModeTerminal && outputMode != session.OutputModeStream {
+				return fmt.Errorf("invalid mode %q: must be 'terminal' or 'stream'", mode)
+			}
 			cfg, _ := config.Load()
 			mgr, _, err := initManager(cfg)
 			if err != nil {
 				return err
 			}
-			s, err := mgr.Create(args[0], projectPath, prompt)
+			s, err := mgr.Create(args[0], projectPath, prompt, outputMode)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Created session: %s (id: %s)\n", s.Name, s.ID)
+			fmt.Printf("Created session: %s (id: %s, mode: %s)\n", s.Name, s.ID, s.OutputMode)
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVarP(&projectPath, "path", "p", ".", "Project directory path")
 	cmd.Flags().StringVarP(&prompt, "message", "m", "", "Initial prompt to send")
+	cmd.Flags().StringVar(&mode, "mode", "terminal", "Output mode: terminal or stream")
 
 	return cmd
 }

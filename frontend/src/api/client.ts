@@ -24,6 +24,7 @@ export const api = {
     name: string;
     projectPath: string;
     prompt?: string;
+    outputMode?: "terminal" | "stream";
   }) =>
     request<Session>("/sessions", {
       method: "POST",
@@ -52,6 +53,9 @@ export const api = {
 
   getSessionLogs: (id: string) =>
     request<ClaudeLogEntry[]>(`/sessions/${id}/logs`),
+
+  getStreamOutput: (id: string, limit = 200) =>
+    request<unknown[]>(`/sessions/${id}/stream?limit=${limit}`),
 
   restartController: () =>
     request<Session>("/sessions/controller/restart", { method: "POST" }),

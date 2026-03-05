@@ -1,51 +1,85 @@
 package session
 
 import (
+	"bufio"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/tmux"
 )
 
 type Manager struct {
-	db            *sql.DB
-	tmux          *tmux.Client
-	claudeCommand string
+	db              *sql.DB
+	tmux            *tmux.Client
+	claudeCommand   string
+	streamProcesses map[string]*StreamProcess
+	streamMu        sync.Mutex
 }
 
 func NewManager(db *sql.DB, tmuxClient *tmux.Client, claudeCommand string) *Manager {
 	if claudeCommand == "" {
 		claudeCommand = "claude --dangerously-skip-permissions"
 	}
-	return &Manager{db: db, tmux: tmuxClient, claudeCommand: claudeCommand}
+	return &Manager{
+		db:              db,
+		tmux:            tmuxClient,
+		claudeCommand:   claudeCommand,
+		streamProcesses: make(map[string]*StreamProcess),
+	}
 }
 
-func (m *Manager) Create(name, projectPath, prompt string) (*Session, error) {
+func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode) (*Session, error) {
+	if outputMode == "" {
+		outputMode = OutputModeTerminal
+	}
+
 	id := uuid.New().String()
 	tmuxSession := tmux.SessionPrefix + name
 
-	// Start tmux session with a shell, then launch claude via SendKeys
-	// (passing command directly to new-session causes immediate exit)
+	// Start tmux session with a shell
 	if err := m.tmux.NewSession(name, projectPath, ""); err != nil {
 		return nil, fmt.Errorf("create tmux session: %w", err)
 	}
 
-	// Wait for shell to be ready, then send claude command
-	time.Sleep(300 * time.Millisecond)
-	if err := m.tmux.SendKeysOnce(tmuxSession, m.claudeCommand+" --session-id "+id); err != nil {
-		return nil, fmt.Errorf("launch claude: %w", err)
-	}
-
-	// Wait for claude to start and handle trust prompt, then send initial prompt
-	if prompt != "" {
-		if err := m.waitForClaudeReady(tmuxSession, 30*time.Second); err != nil {
-			return nil, fmt.Errorf("wait for claude: %w", err)
+	if outputMode == OutputModeStream {
+		// Stream mode: start Go subprocess instead of claude TUI
+		sp, err := StartStreamProcess(id, projectPath, false)
+		if err != nil {
+			_ = m.tmux.KillSession(name)
+			return nil, fmt.Errorf("start stream process: %w", err)
 		}
-		if err := m.tmux.SendKeys(tmuxSession, prompt); err != nil {
-			return nil, fmt.Errorf("send initial prompt: %w", err)
+		m.streamMu.Lock()
+		m.streamProcesses[id] = sp
+		m.streamMu.Unlock()
+
+		// Send initial prompt via stream process
+		if prompt != "" {
+			if err := sp.Send(prompt); err != nil {
+				return nil, fmt.Errorf("send initial prompt: %w", err)
+			}
+		}
+	} else {
+		// Terminal mode: launch claude TUI in tmux
+		time.Sleep(300 * time.Millisecond)
+		if err := m.tmux.SendKeysOnce(tmuxSession, m.claudeCommand+" --session-id "+id); err != nil {
+			return nil, fmt.Errorf("launch claude: %w", err)
+		}
+
+		// Wait for claude to start and handle trust prompt, then send initial prompt
+		if prompt != "" {
+			if err := m.waitForClaudeReady(tmuxSession, 30*time.Second); err != nil {
+				return nil, fmt.Errorf("wait for claude: %w", err)
+			}
+			if err := m.tmux.SendKeys(tmuxSession, prompt); err != nil {
+				return nil, fmt.Errorf("send initial prompt: %w", err)
+			}
 		}
 	}
 
@@ -58,14 +92,15 @@ func (m *Manager) Create(name, projectPath, prompt string) (*Session, error) {
 		TmuxSession:   tmuxSession,
 		Status:        StatusWorking,
 		Type:          TypeWorker,
+		OutputMode:    outputMode,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
 
 	_, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, s.TmuxSession, string(s.Status), string(s.Type), s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, s.TmuxSession, string(s.Status), string(s.Type), string(s.OutputMode), s.CreatedAt, s.UpdatedAt,
 	)
 	if err != nil {
 		// Cleanup tmux session on DB error
@@ -78,7 +113,7 @@ func (m *Manager) Create(name, projectPath, prompt string) (*Session, error) {
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -91,12 +126,14 @@ func (m *Manager) List() ([]Session, error) {
 		var s Session
 		var status string
 		var sessionType string
+		var outputMode string
 		var prompt sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = Status(status)
 		s.Type = SessionType(sessionType)
+		s.OutputMode = OutputMode(outputMode)
 		if prompt.Valid {
 			s.InitialPrompt = prompt.String
 		}
@@ -118,11 +155,12 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var s Session
 	var status string
 	var sessionType string
+	var outputMode string
 	var prompt sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -131,6 +169,7 @@ func (m *Manager) Get(id string) (*Session, error) {
 	}
 	s.Status = Status(status)
 	s.Type = SessionType(sessionType)
+	s.OutputMode = OutputMode(outputMode)
 	if prompt.Valid {
 		s.InitialPrompt = prompt.String
 	}
@@ -142,6 +181,9 @@ func (m *Manager) Stop(id string) error {
 	if err != nil {
 		return err
 	}
+
+	// Stop stream process if exists
+	m.stopStreamProcess(id)
 
 	// Kill tmux session (strip prefix for KillSession which adds it)
 	name := s.TmuxSession[len(tmux.SessionPrefix):]
@@ -161,6 +203,9 @@ func (m *Manager) Delete(id string) error {
 		return err
 	}
 
+	// Stop stream process if exists
+	m.stopStreamProcess(id)
+
 	// Kill tmux session if it exists
 	name := s.TmuxSession[len(tmux.SessionPrefix):]
 	if m.tmux.HasSession(name) {
@@ -171,12 +216,82 @@ func (m *Manager) Delete(id string) error {
 	return err
 }
 
+func (m *Manager) stopStreamProcess(id string) {
+	m.streamMu.Lock()
+	sp, ok := m.streamProcesses[id]
+	if ok {
+		delete(m.streamProcesses, id)
+	}
+	m.streamMu.Unlock()
+	if ok {
+		sp.Stop()
+	}
+}
+
 func (m *Manager) SendKeys(id string, text string) error {
 	s, err := m.Get(id)
 	if err != nil {
 		return err
 	}
+	if s.OutputMode == OutputModeStream {
+		m.streamMu.Lock()
+		sp, ok := m.streamProcesses[id]
+		m.streamMu.Unlock()
+		if !ok {
+			// Auto-recover: restart stream process after server restart
+			var err error
+			sp, err = StartStreamProcess(s.ID, s.ProjectPath, true)
+			if err != nil {
+				return fmt.Errorf("restart stream process: %w", err)
+			}
+			m.streamMu.Lock()
+			m.streamProcesses[id] = sp
+			m.streamMu.Unlock()
+		}
+		return sp.Send(text)
+	}
 	return m.tmux.SendKeys(s.TmuxSession, text)
+}
+
+// GetStreamLines returns the last N lines from the stream process memory,
+// falling back to file if no active process (e.g. after server restart).
+func (m *Manager) GetStreamLines(id string, limit int) ([]string, error) {
+	m.streamMu.Lock()
+	sp, ok := m.streamProcesses[id]
+	m.streamMu.Unlock()
+
+	if ok {
+		return sp.GetLines(limit), nil
+	}
+
+	// Fallback: read from file
+	return m.readStreamFile(id, limit)
+}
+
+func (m *Manager) readStreamFile(id string, limit int) ([]string, error) {
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		return nil, err
+	}
+
+	path := filepath.Join(streamsDir, id+".jsonl")
+	f, err := os.Open(path)
+	if err != nil {
+		return []string{}, nil
+	}
+	defer f.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+
+	if limit > 0 && len(lines) > limit {
+		lines = lines[len(lines)-limit:]
+	}
+	return lines, nil
 }
 
 func (m *Manager) CaptureOutput(id string) (string, error) {
@@ -226,11 +341,12 @@ func (m *Manager) GetController() (*Session, error) {
 	var s Session
 	var status string
 	var sessionType string
+	var outputMode string
 	var prompt sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, created_at, updated_at
 		 FROM sessions WHERE type = ? LIMIT 1`, string(TypeController),
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -239,6 +355,7 @@ func (m *Manager) GetController() (*Session, error) {
 	}
 	s.Status = Status(status)
 	s.Type = SessionType(sessionType)
+	s.OutputMode = OutputMode(outputMode)
 	if prompt.Valid {
 		s.InitialPrompt = prompt.String
 	}
@@ -283,14 +400,15 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 		TmuxSession: tmuxSession,
 		Status:      StatusWorking,
 		Type:        TypeController,
+		OutputMode:  OutputModeTerminal,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
 
 	_, err = m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, s.TmuxSession, string(s.Status), string(s.Type), s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, s.TmuxSession, string(s.Status), string(s.Type), string(s.OutputMode), s.CreatedAt, s.UpdatedAt,
 	)
 	if err != nil {
 		_ = m.tmux.KillSession(name)

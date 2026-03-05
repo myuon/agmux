@@ -67,6 +67,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/send", s.sendToSession)
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
 		r.Get("/sessions/{id}/logs", s.getSessionLogs)
+		r.Get("/sessions/{id}/stream", s.getSessionStream)
 		r.Post("/sessions/controller/restart", s.restartController)
 		r.Get("/logs", s.getLogs)
 		r.Get("/config", s.getConfig)
@@ -106,6 +107,7 @@ type createSessionRequest struct {
 	Name        string `json:"name"`
 	ProjectPath string `json:"projectPath"`
 	Prompt      string `json:"prompt,omitempty"`
+	OutputMode  string `json:"outputMode,omitempty"`
 }
 
 type sendRequest struct {
@@ -134,7 +136,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and projectPath are required")
 		return
 	}
-	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt)
+	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, session.OutputMode(req.OutputMode))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -205,6 +207,33 @@ func (s *Server) getSessionOutput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"output": output})
+}
+
+func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	limit := 200
+	if q := r.URL.Query().Get("limit"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n > 0 {
+			limit = n
+		}
+	}
+
+	lines, err := s.sessions.GetStreamLines(id, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	var result []json.RawMessage
+	for _, line := range lines {
+		result = append(result, json.RawMessage(line))
+	}
+	if result == nil {
+		result = []json.RawMessage{}
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
