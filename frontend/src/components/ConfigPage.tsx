@@ -122,6 +122,15 @@ export function ConfigPage() {
           </Field>
         </Section>
 
+        {config.prompts?.statusCheck && (
+          <Section title="Prompts (read-only)">
+            <div>
+              <label className="text-sm text-gray-600 block mb-1">Status Check Prompt</label>
+              <pre className="bg-gray-50 border border-gray-200 rounded px-3 py-2 text-xs text-gray-700 whitespace-pre-wrap">{config.prompts.statusCheck}</pre>
+            </div>
+          </Section>
+        )}
+
         <div className="pt-4">
           <button
             onClick={handleSave}

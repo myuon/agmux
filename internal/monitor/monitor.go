@@ -89,7 +89,7 @@ func (m *Monitor) checkStatusFromStreamJSONL(s *session.Session) CheckStatusResu
 	return classifyFromStreamEntries(lastEntries)
 }
 
-const statusPrompt = `以下はClaude Codeセッションのstream-json出力の最後のエントリです。このセッションの現在の状態を判定してください。
+const StatusPrompt = `以下はClaude Codeセッションのstream-json出力の最後のエントリです。このセッションの現在の状態を判定してください。
 
 以下のいずれか1つだけを出力してください（他の文字は一切不要）:
 - working: AIが作業中（ツール実行中、コード生成中、思考中など）
@@ -109,7 +109,7 @@ func classifyWithLLM(lastLine string) CheckStatusResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "claude", "-p", "--output-format", "text", statusPrompt+input)
+	cmd := exec.CommandContext(ctx, "claude", "-p", "--output-format", "text", StatusPrompt+input)
 	out, err := cmd.Output()
 	if err != nil {
 		return CheckStatusResult{"", fmt.Sprintf("llm error: %v", err)}

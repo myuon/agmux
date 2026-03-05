@@ -19,6 +19,7 @@ import (
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/logging"
+	"github.com/myuon/agmux/internal/monitor"
 	"github.com/myuon/agmux/internal/session"
 )
 
@@ -335,6 +336,11 @@ type configJSON struct {
 	Server  configServerJSON  `json:"server"`
 	Daemon  configDaemonJSON  `json:"daemon"`
 	Session configSessionJSON `json:"session"`
+	Prompts *configPromptsJSON `json:"prompts,omitempty"`
+}
+
+type configPromptsJSON struct {
+	StatusCheck string `json:"statusCheck"`
 }
 
 type configServerJSON struct {
@@ -369,7 +375,11 @@ func (s *Server) getConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, configToJSON(cfg))
+	result := configToJSON(cfg)
+	result.Prompts = &configPromptsJSON{
+		StatusCheck: monitor.StatusPrompt,
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
