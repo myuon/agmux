@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"text/tabwriter"
+	"time"
 
 	agmux "github.com/myuon/agmux"
 	"github.com/myuon/agmux/internal/config"
@@ -129,7 +132,27 @@ func serveCmd() *cobra.Command {
 			addr := fmt.Sprintf(":%d", port)
 			logger.Info(fmt.Sprintf("Starting agmux on http://localhost:%d", port))
 			logger.Info(fmt.Sprintf("Config: check interval=%s", cfg.Daemon.Interval))
-			return srv.ListenAndServe(addr)
+
+			httpSrv := srv.NewHTTPServer(addr)
+
+			// Graceful shutdown on SIGTERM/SIGINT
+			shutdownCh := make(chan os.Signal, 1)
+			signal.Notify(shutdownCh, syscall.SIGTERM, syscall.SIGINT)
+
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- httpSrv.ListenAndServe()
+			}()
+
+			select {
+			case err := <-errCh:
+				return err
+			case sig := <-shutdownCh:
+				logger.Info(fmt.Sprintf("Received %s, shutting down gracefully...", sig))
+				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer shutdownCancel()
+				return httpSrv.Shutdown(shutdownCtx)
+			}
 		},
 	}
 
