@@ -12,6 +12,7 @@ import (
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/logging"
+	"github.com/myuon/agmux/internal/mcp"
 	"github.com/myuon/agmux/internal/monitor"
 	"github.com/myuon/agmux/internal/server"
 	"github.com/myuon/agmux/internal/session"
@@ -27,6 +28,7 @@ func main() {
 
 	rootCmd.AddCommand(sessionCmd())
 	rootCmd.AddCommand(serveCmd())
+	rootCmd.AddCommand(mcpCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -42,7 +44,7 @@ func initManager(cfg *config.Config) (*session.Manager, *sql.DB, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return session.NewManager(database, tmux.NewClient(), cfg.Session.ClaudeCommand), database, nil
+	return session.NewManager(database, tmux.NewClient(), cfg.Session.ClaudeCommand, cfg.Server.Port), database, nil
 }
 
 func serveCmd() *cobra.Command {
@@ -267,6 +269,17 @@ func sessionSendCmd() *cobra.Command {
 			}
 			fmt.Println("Text sent.")
 			return nil
+		},
+	}
+}
+
+func mcpCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    "mcp",
+		Short:  "Run as MCP server (stdio transport)",
+		Hidden: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return mcp.NewServer().Run()
 		},
 	}
 }

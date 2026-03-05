@@ -54,6 +54,15 @@ export const api = {
   getStreamOutput: (id: string, limit = 200) =>
     request<unknown[]>(`/sessions/${id}/stream?limit=${limit}`),
 
+  updateSessionContext: (id: string, data: { currentTask: string; goal: string }) =>
+    request<{ status: string }>(`/sessions/${id}/context`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  reconnectSession: (id: string) =>
+    request<{ status: string }>(`/sessions/${id}/reconnect`, { method: "POST" }),
+
   restartController: () =>
     request<Session>("/sessions/controller/restart", { method: "POST" }),
 

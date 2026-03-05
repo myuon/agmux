@@ -7,6 +7,8 @@ export interface Session {
   status: "working" | "idle" | "question_waiting" | "stopped";
   type: "worker" | "controller";
   outputMode: "terminal" | "stream";
+  currentTask?: string;
+  goal?: string;
   createdAt: string;
   updatedAt: string;
   githubUrl?: string;

@@ -342,6 +342,15 @@ export function SessionDetail() {
             )}
             <button
               onClick={async () => {
+                await api.reconnectSession(session.id);
+                api.getSession(session.id).then(setSession);
+              }}
+              className="px-3 py-1 text-xs bg-indigo-50 text-indigo-700 rounded hover:bg-indigo-100"
+            >
+              Reconnect
+            </button>
+            <button
+              onClick={async () => {
                 if (!confirm("Delete this session?")) return;
                 await api.deleteSession(session.id);
                 navigate("/");
@@ -395,6 +404,21 @@ export function SessionDetail() {
               #{pr.number} {pr.title}
             </a>
           ))}
+        </div>
+      )}
+
+      {(session.currentTask || session.goal) && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 mb-4">
+          {session.currentTask && (
+            <p className="text-sm text-indigo-800">
+              <span className="font-semibold">Task:</span> {session.currentTask}
+            </p>
+          )}
+          {session.goal && (
+            <p className="text-sm text-indigo-600 mt-1">
+              <span className="font-semibold">Goal:</span> {session.goal}
+            </p>
+          )}
         </div>
       )}
 
