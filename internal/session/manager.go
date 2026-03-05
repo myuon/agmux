@@ -320,6 +320,9 @@ func (m *Manager) CaptureOutput(id string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if s.OutputMode == OutputModeStream {
+		return "", nil
+	}
 	return m.tmux.CapturePane(s.TmuxSession, 200)
 }
 

@@ -268,14 +268,24 @@ export function SessionDetail() {
 
   useEffect(() => {
     if (!sessionId) return;
-    api.getSession(sessionId).then(setSession);
-    api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
-    api.getStreamOutput(sessionId).then(setStreamLines).catch(() => {});
+    api.getSession(sessionId).then((s) => {
+      setSession(s);
+      if (s.outputMode === "stream") {
+        api.getStreamOutput(sessionId).then(setStreamLines).catch(() => {});
+      } else {
+        api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
+      }
+    });
 
     const interval = setInterval(() => {
-      api.getSession(sessionId).then(setSession);
-      api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
-      api.getStreamOutput(sessionId).then(setStreamLines).catch(() => {});
+      api.getSession(sessionId).then((s) => {
+        setSession(s);
+        if (s.outputMode === "stream") {
+          api.getStreamOutput(sessionId).then(setStreamLines).catch(() => {});
+        } else {
+          api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
+        }
+      });
     }, 3000);
     return () => clearInterval(interval);
   }, [sessionId]);
