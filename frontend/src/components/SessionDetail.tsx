@@ -376,7 +376,8 @@ export function SessionDetail() {
         </p>
       )}
       {session.pullRequests && session.pullRequests.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <span className="text-sm text-gray-500">PR:</span>
           {session.pullRequests.map((pr) => (
             <a
               key={pr.number}
