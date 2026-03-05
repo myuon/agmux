@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"text/tabwriter"
 
@@ -119,8 +118,8 @@ func serveCmd() *cobra.Command {
 			}
 
 			addr := fmt.Sprintf(":%d", port)
-			log.Printf("Starting agmux on http://localhost:%d", port)
-			log.Printf("Config: check interval=%s", cfg.Daemon.Interval)
+			logger.Info(fmt.Sprintf("Starting agmux on http://localhost:%d", port))
+			logger.Info(fmt.Sprintf("Config: check interval=%s", cfg.Daemon.Interval))
 			return srv.ListenAndServe(addr)
 		},
 	}

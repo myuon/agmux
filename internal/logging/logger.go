@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -45,12 +46,14 @@ func LogPath() (string, error) {
 
 // LogAction logs an action entry with category:"action" to distinguish from general logs.
 func LogAction(logger *slog.Logger, sessionID, actionType, detail, source string, extra ...slog.Attr) {
+	msg := fmt.Sprintf("[action] %s", actionType)
+	if detail != "" {
+		msg += ": " + detail
+	}
+
 	attrs := []slog.Attr{
 		slog.String("category", "action"),
 		slog.String("sessionId", sessionID),
-		slog.String("actionType", actionType),
-		slog.String("detail", detail),
-		slog.String("source", source),
 	}
 	attrs = append(attrs, extra...)
 
@@ -58,5 +61,5 @@ func LogAction(logger *slog.Logger, sessionID, actionType, detail, source string
 	for i, a := range attrs {
 		args[i] = a
 	}
-	logger.Info("action", args...)
+	logger.Info(msg, args...)
 }

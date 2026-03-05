@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"log/slog"
 	"time"
@@ -74,13 +75,10 @@ func (sc *StatusChecker) check() {
 		// Check if tmux session still exists
 		if !sc.tmux.HasSessionByFullName(s.TmuxSession) {
 			if s.Status != session.StatusStopped {
-				sc.logger.Info("status_check",
+				sc.logger.Info(fmt.Sprintf("%s (%s): tmux session gone, %s → stopped",
+					s.Name, shortID, s.Status),
 					slog.String("category", "status_checker"),
 					slog.String("sessionId", s.ID),
-					slog.String("sessionName", s.Name),
-					slog.String("event", "tmux_session_gone"),
-					slog.String("oldStatus", string(s.Status)),
-					slog.String("newStatus", string(session.StatusStopped)),
 				)
 				if err := sc.sessions.UpdateStatus(s.ID, session.StatusStopped); err != nil {
 					log.Printf("status checker: update %s (%s) error: %v", s.Name, shortID, err)
@@ -93,22 +91,19 @@ func (sc *StatusChecker) check() {
 		}
 
 		// Mode-based status detection
-		newStatus := sc.monitor.CheckStatus(s)
-		if newStatus != s.Status {
-			sc.logger.Info("status_check",
+		result := sc.monitor.CheckStatus(s)
+		if result.Status != s.Status {
+			sc.logger.Info(fmt.Sprintf("[%s] %s (%s): %s → %s (%s)",
+				s.OutputMode, s.Name, shortID,
+				s.Status, result.Status, result.Reason),
 				slog.String("category", "status_checker"),
 				slog.String("sessionId", s.ID),
-				slog.String("sessionName", s.Name),
-				slog.String("outputMode", string(s.OutputMode)),
-				slog.String("event", "status_changed"),
-				slog.String("oldStatus", string(s.Status)),
-				slog.String("newStatus", string(newStatus)),
 			)
-			if err := sc.sessions.UpdateStatus(s.ID, newStatus); err != nil {
+			if err := sc.sessions.UpdateStatus(s.ID, result.Status); err != nil {
 				log.Printf("status checker: update %s (%s) error: %v", s.Name, shortID, err)
 				continue
 			}
-			s.Status = newStatus
+			s.Status = result.Status
 			changed = true
 		}
 	}
@@ -118,14 +113,13 @@ func (sc *StatusChecker) check() {
 	for _, s := range sessions {
 		counts[s.Status]++
 	}
-	sc.logger.Info("status_check_summary",
+	sc.logger.Info(fmt.Sprintf("checked %d sessions: %d working, %d idle, %d question, %d stopped",
+		len(sessions),
+		counts[session.StatusWorking],
+		counts[session.StatusIdle],
+		counts[session.StatusQuestionWaiting],
+		counts[session.StatusStopped]),
 		slog.String("category", "status_checker"),
-		slog.Int("total", len(sessions)),
-		slog.Int("working", counts[session.StatusWorking]),
-		slog.Int("idle", counts[session.StatusIdle]),
-		slog.Int("question_waiting", counts[session.StatusQuestionWaiting]),
-		slog.Int("stopped", counts[session.StatusStopped]),
-		slog.Bool("changed", changed),
 	)
 
 	if changed && sc.onUpdate != nil {
