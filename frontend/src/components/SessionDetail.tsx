@@ -45,6 +45,8 @@ function ContentBlockView({ block }: { block: ClaudeContentBlock }) {
   return null;
 }
 
+// --- Stream mode types and helpers ---
+
 interface StreamEntry {
   type: string;
   message?: {
@@ -53,31 +55,133 @@ interface StreamEntry {
   };
 }
 
-function parseStreamBlocks(entry: StreamEntry): ClaudeContentBlock[] {
+interface StreamContentBlock {
+  type: string;
+  id?: string;
+  tool_use_id?: string;
+  text?: string;
+  name?: string;
+  input?: unknown;
+  content?: unknown;
+}
+
+// A display item for the merged stream view
+type StreamDisplayItem =
+  | { kind: "text"; text: string }
+  | { kind: "tool_call"; name: string; input: unknown; result?: string };
+
+function parseStreamContentBlocks(entry: StreamEntry): StreamContentBlock[] {
   const content = entry.message?.content;
   if (!content) return [];
-
   if (typeof content === "string") {
     return content ? [{ type: "text", text: content }] : [];
   }
-
   if (!Array.isArray(content)) return [];
+  return content;
+}
 
-  const blocks: ClaudeContentBlock[] = [];
-  for (const b of content) {
-    if (b.type === "text" && b.text) {
-      blocks.push({ type: "text", text: b.text });
-    } else if (b.type === "tool_use") {
-      blocks.push({ type: "tool_use", name: b.name, input: b.input });
-    } else if (b.type === "tool_result") {
-      const c = typeof b.content === "string"
-        ? b.content
-        : JSON.stringify(b.content);
-      blocks.push({ type: "tool_result", content: c });
+// Merge assistant/user entries into display items, pairing tool_use with tool_result by id
+function mergeStreamEntries(entries: StreamEntry[]): { role: "user" | "assistant"; items: StreamDisplayItem[] }[] {
+  // First pass: collect all tool_results keyed by tool_use_id
+  const resultMap = new Map<string, string>();
+  for (const entry of entries) {
+    if (entry.type !== "user") continue;
+    for (const block of parseStreamContentBlocks(entry)) {
+      if (block.type === "tool_result" && block.tool_use_id) {
+        const c = typeof block.content === "string"
+          ? block.content
+          : Array.isArray(block.content)
+            ? block.content.map((b: { text?: string }) => b.text ?? "").join("")
+            : JSON.stringify(block.content);
+        resultMap.set(block.tool_use_id, c);
+      }
     }
   }
-  return blocks;
+
+  // Second pass: build display groups from assistant and user text entries
+  const groups: { role: "user" | "assistant"; items: StreamDisplayItem[] }[] = [];
+
+  for (const entry of entries) {
+    const blocks = parseStreamContentBlocks(entry);
+
+    if (entry.type === "assistant") {
+      const items: StreamDisplayItem[] = [];
+      for (const b of blocks) {
+        if (b.type === "text" && b.text) {
+          items.push({ kind: "text", text: b.text });
+        } else if (b.type === "tool_use") {
+          items.push({
+            kind: "tool_call",
+            name: b.name ?? "unknown",
+            input: b.input,
+            result: b.id ? resultMap.get(b.id) : undefined,
+          });
+        }
+      }
+      if (items.length > 0) {
+        groups.push({ role: "assistant", items });
+      }
+    } else if (entry.type === "user") {
+      // Only show user text content (tool_results are merged into assistant tool_call items)
+      const items: StreamDisplayItem[] = [];
+      for (const b of blocks) {
+        if (b.type === "text" && b.text) {
+          items.push({ kind: "text", text: b.text });
+        }
+      }
+      // user entries with content as plain string
+      if (items.length === 0 && typeof entry.message?.content === "string" && entry.message.content) {
+        items.push({ kind: "text", text: entry.message.content });
+      }
+      if (items.length > 0) {
+        groups.push({ role: "user", items });
+      }
+    }
+  }
+
+  return groups;
 }
+
+function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool_call" }> }) {
+  const inputStr = typeof item.input === "string"
+    ? item.input
+    : JSON.stringify(item.input, null, 2);
+  return (
+    <details className="bg-gray-800/60 rounded px-2 py-1">
+      <summary className="cursor-pointer text-yellow-300 font-mono text-xs">
+        Tool: {item.name}
+      </summary>
+      <div className="mt-1 space-y-1">
+        <div>
+          <span className="text-gray-500 text-xs">Input:</span>
+          <pre className="text-gray-400 text-xs overflow-x-auto whitespace-pre-wrap">{inputStr}</pre>
+        </div>
+        {item.result !== undefined && (
+          <div>
+            <span className="text-gray-500 text-xs">Output:</span>
+            <pre className="text-gray-400 text-xs overflow-x-auto whitespace-pre-wrap">{item.result.slice(0, 2000)}</pre>
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function StreamDisplayItemView({ item }: { item: StreamDisplayItem }) {
+  if (item.kind === "text") {
+    return (
+      <div className="prose prose-invert prose-xs max-w-none prose-pre:bg-gray-950 prose-pre:text-gray-300 prose-code:text-pink-300">
+        <Markdown remarkPlugins={[remarkGfm]}>{item.text}</Markdown>
+      </div>
+    );
+  }
+  if (item.kind === "tool_call") {
+    return <ToolCallView item={item} />;
+  }
+  return null;
+}
+
+// --- Shared components ---
 
 type StreamViewMode = "markdown" | "json";
 
@@ -112,6 +216,8 @@ function StreamOutputView({ lines }: { lines: unknown[] }) {
     .map((line) => line as StreamEntry)
     .filter((e) => e.type === "user" || e.type === "assistant");
 
+  const groups = mergeStreamEntries(entries);
+
   return (
     <div>
       <div className="flex justify-end mb-1">
@@ -133,14 +239,11 @@ function StreamOutputView({ lines }: { lines: unknown[] }) {
               </pre>
             ))
           )
-        ) : entries.length === 0 ? (
+        ) : groups.length === 0 ? (
           <p className="text-gray-500">No stream output yet</p>
         ) : (
-          entries.map((entry, i) => {
-            const role = entry.type as "user" | "assistant";
-            const style = roleStyles[role] || roleStyles.assistant;
-            const blocks = parseStreamBlocks(entry);
-            if (blocks.length === 0) return null;
+          groups.map((group, i) => {
+            const style = roleStyles[group.role] || roleStyles.assistant;
             return (
               <div key={i} className={`rounded-lg p-3 ${style.bg}`}>
                 <div className="flex items-center gap-2 mb-1">
@@ -149,8 +252,8 @@ function StreamOutputView({ lines }: { lines: unknown[] }) {
                   </span>
                 </div>
                 <div className="text-gray-200 break-words text-xs space-y-2">
-                  {blocks.map((block, j) => (
-                    <ContentBlockView key={j} block={block} />
+                  {group.items.map((item, j) => (
+                    <StreamDisplayItemView key={j} item={item} />
                   ))}
                 </div>
               </div>
