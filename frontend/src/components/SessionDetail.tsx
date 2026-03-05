@@ -367,16 +367,29 @@ export function SessionDetail() {
         <h2 className="text-2xl font-bold">{session.name}</h2>
         <span className="text-sm text-gray-500">{session.status}</span>
         {session.type !== "controller" && (
-          <button
-            onClick={async () => {
-              if (!confirm("Delete this session?")) return;
-              await api.deleteSession(session.id);
-              navigate("/");
-            }}
-            className="ml-auto px-3 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
-          >
-            Delete
-          </button>
+          <div className="ml-auto flex gap-2">
+            {session.status !== "stopped" && (
+              <button
+                onClick={async () => {
+                  await api.stopSession(session.id);
+                  api.getSession(session.id).then(setSession);
+                }}
+                className="px-3 py-1 text-xs bg-yellow-50 text-yellow-700 rounded hover:bg-yellow-100"
+              >
+                Stop
+              </button>
+            )}
+            <button
+              onClick={async () => {
+                if (!confirm("Delete this session?")) return;
+                await api.deleteSession(session.id);
+                navigate("/");
+              }}
+              className="px-3 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
+            >
+              Delete
+            </button>
+          </div>
         )}
       </div>
       <p className="text-sm text-gray-500 mb-4">
