@@ -419,6 +419,17 @@ export function SessionDetail() {
 
       {(session.currentTask || session.goal) && (
         <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 mb-4">
+          {session.goals && session.goals.length > 1 && (
+            <div className="text-xs text-indigo-400 mb-2">
+              {session.goals.slice(0, -1).map((g, i) => (
+                <span key={i}>
+                  {i > 0 && " > "}
+                  {g.goal}
+                </span>
+              ))}
+              {" > "}
+            </div>
+          )}
           {session.currentTask && (
             <p className="text-sm text-indigo-800">
               <span className="font-semibold">Task:</span> {session.currentTask}

@@ -121,7 +121,7 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, current_task, goal, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, current_task, goal, goals, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -135,8 +135,8 @@ func (m *Manager) List() ([]Session, error) {
 		var status string
 		var sessionType string
 		var outputMode string
-		var prompt, currentTask, goal sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &currentTask, &goal, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		var prompt, currentTask, goal, goalsJSON sql.NullString
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = Status(status)
@@ -150,6 +150,9 @@ func (m *Manager) List() ([]Session, error) {
 		}
 		if goal.Valid {
 			s.Goal = goal.String
+		}
+		if goalsJSON.Valid {
+			s.Goals = ParseGoalStack(goalsJSON.String)
 		}
 
 		// Correct status based on tmux reality
@@ -170,11 +173,11 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var status string
 	var sessionType string
 	var outputMode string
-	var prompt, currentTask, goal sql.NullString
+	var prompt, currentTask, goal, goalsJSON sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, current_task, goal, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, current_task, goal, goals, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &currentTask, &goal, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -192,6 +195,9 @@ func (m *Manager) Get(id string) (*Session, error) {
 	}
 	if goal.Valid {
 		s.Goal = goal.String
+	}
+	if goalsJSON.Valid {
+		s.Goals = ParseGoalStack(goalsJSON.String)
 	}
 	return &s, nil
 }
@@ -366,11 +372,11 @@ func (m *Manager) GetController() (*Session, error) {
 	var status string
 	var sessionType string
 	var outputMode string
-	var prompt, currentTask, goal sql.NullString
+	var prompt, currentTask, goal, goalsJSON sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, current_task, goal, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, current_task, goal, goals, created_at, updated_at
 		 FROM sessions WHERE type = ? LIMIT 1`, string(TypeController),
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &currentTask, &goal, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -388,6 +394,9 @@ func (m *Manager) GetController() (*Session, error) {
 	}
 	if goal.Valid {
 		s.Goal = goal.String
+	}
+	if goalsJSON.Valid {
+		s.Goals = ParseGoalStack(goalsJSON.String)
 	}
 	return &s, nil
 }
@@ -462,6 +471,54 @@ func (m *Manager) UpdateStatus(id string, status Status) error {
 func (m *Manager) UpdateContext(id string, currentTask, goal string) error {
 	_, err := m.db.Exec("UPDATE sessions SET current_task = ?, goal = ?, updated_at = ? WHERE id = ?", currentTask, goal, time.Now(), id)
 	return err
+}
+
+func (m *Manager) CreateGoal(id string, currentTask, goal string, subgoal bool) error {
+	s, err := m.Get(id)
+	if err != nil {
+		return err
+	}
+
+	var newGoals GoalStack
+	if subgoal {
+		newGoals = s.Goals.Push(GoalEntry{CurrentTask: currentTask, Goal: goal})
+	} else {
+		newGoals = GoalStack{GoalEntry{CurrentTask: currentTask, Goal: goal}}
+	}
+
+	_, err = m.db.Exec(
+		"UPDATE sessions SET current_task = ?, goal = ?, goals = ?, updated_at = ? WHERE id = ?",
+		currentTask, goal, newGoals.ToJSON(), time.Now(), id,
+	)
+	return err
+}
+
+func (m *Manager) CompleteGoal(id string) (*GoalEntry, error) {
+	s, err := m.Get(id)
+	if err != nil {
+		return nil, err
+	}
+
+	newGoals := s.Goals.Pop()
+
+	var currentTask, goal string
+	if top := newGoals.Top(); top != nil {
+		currentTask = top.CurrentTask
+		goal = top.Goal
+	}
+
+	_, err = m.db.Exec(
+		"UPDATE sessions SET current_task = ?, goal = ?, goals = ?, updated_at = ? WHERE id = ?",
+		currentTask, goal, newGoals.ToJSON(), time.Now(), id,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if top := newGoals.Top(); top != nil {
+		return top, nil
+	}
+	return nil, nil
 }
 
 // Reconnect restarts the Claude process for an existing session,

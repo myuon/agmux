@@ -22,9 +22,11 @@ type mcpServerEntry struct {
 }
 
 const agmuxSystemPrompt = `あなたはagmuxで管理されているセッションです。以下のルールを守ってください:
-- 新しいタスクに着手するとき、set_session_context ツールで currentTask と goal を設定してください
-- タスクの内容や目標が変わったら、その都度 set_session_context を呼び出して更新してください
-- タスクが完了したら、set_session_context で完了状態を反映してください`
+- 新しいタスクに着手するとき、create_goal ツールで currentTask と goal を設定してください
+- タスクの内容や目標が変わったら、その都度 create_goal を呼び出して更新してください
+- タスクが完了したら、complete_goal で完了状態を反映してください
+- サブタスクが発生した場合は create_goal の subgoal=true で親ゴールを保持したままサブゴールを設定してください
+- サブタスクが完了したら complete_goal でポップし、親ゴールに戻ってください`
 
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"

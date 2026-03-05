@@ -68,6 +68,8 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/stop", s.stopSession)
 		r.Post("/sessions/{id}/send", s.sendToSession)
 		r.Put("/sessions/{id}/context", s.updateSessionContext)
+		r.Post("/sessions/{id}/goals", s.createGoal)
+		r.Post("/sessions/{id}/goals/complete", s.completeGoal)
 		r.Post("/sessions/{id}/reconnect", s.reconnectSession)
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
@@ -239,6 +241,40 @@ func (s *Server) updateSessionContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+type createGoalRequest struct {
+	CurrentTask string `json:"currentTask"`
+	Goal        string `json:"goal"`
+	Subgoal     bool   `json:"subgoal"`
+}
+
+func (s *Server) createGoal(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req createGoalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := s.sessions.CreateGoal(id, req.CurrentTask, req.Goal, req.Subgoal); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) completeGoal(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	parent, err := s.sessions.CompleteGoal(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	result := map[string]interface{}{"status": "ok"}
+	if parent != nil {
+		result["parentGoal"] = parent
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) reconnectSession(w http.ResponseWriter, r *http.Request) {
