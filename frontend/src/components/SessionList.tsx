@@ -5,6 +5,7 @@ const statusDots: Record<Session["status"], string> = {
   working: "bg-green-500",
   idle: "bg-blue-500",
   question_waiting: "bg-orange-500",
+  alignment_needed: "bg-red-500",
   stopped: "bg-gray-400",
 };
 

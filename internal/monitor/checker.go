@@ -123,11 +123,12 @@ func (sc *StatusChecker) check() {
 	for _, s := range sessions {
 		counts[s.Status]++
 	}
-	sc.logger.Info(fmt.Sprintf("checked %d sessions: %d working, %d idle, %d question, %d stopped",
+	sc.logger.Info(fmt.Sprintf("checked %d sessions: %d working, %d idle, %d question, %d alignment, %d stopped",
 		len(sessions),
 		counts[session.StatusWorking],
 		counts[session.StatusIdle],
 		counts[session.StatusQuestionWaiting],
+		counts[session.StatusAlignmentNeeded],
 		counts[session.StatusStopped]),
 		slog.String("category", "status_checker"),
 	)
