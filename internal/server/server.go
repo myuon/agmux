@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"io/fs"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -101,9 +100,11 @@ func (s *Server) Handler() http.Handler {
 	return s.router
 }
 
-func (s *Server) ListenAndServe(addr string) error {
-	log.Printf("Server listening on %s", addr)
-	return http.ListenAndServe(addr, s.router)
+func (s *Server) NewHTTPServer(addr string) *http.Server {
+	return &http.Server{
+		Addr:    addr,
+		Handler: s.router,
+	}
 }
 
 // API handlers
