@@ -6,14 +6,14 @@ import type { Session } from "../types/session";
 import { api, type ClaudeLogEntry, type ClaudeContentBlock } from "../api/client";
 
 const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
-  user: { bg: "bg-blue-900/30", label: "User", text: "text-blue-300" },
-  assistant: { bg: "bg-gray-800/50", label: "Assistant", text: "text-green-300" },
+  user: { bg: "bg-blue-50", label: "User", text: "text-blue-700" },
+  assistant: { bg: "bg-gray-50", label: "Assistant", text: "text-green-700" },
 };
 
 function ContentBlockView({ block }: { block: ClaudeContentBlock }) {
   if (block.type === "text") {
     return (
-      <div className="prose prose-invert prose-xs max-w-none prose-pre:bg-gray-950 prose-pre:text-gray-300 prose-code:text-pink-300">
+      <div className="prose prose-xs max-w-none prose-pre:bg-gray-100 prose-pre:text-gray-800 prose-code:text-pink-600">
         <Markdown remarkPlugins={[remarkGfm]}>{block.text ?? ""}</Markdown>
       </div>
     );
@@ -23,22 +23,22 @@ function ContentBlockView({ block }: { block: ClaudeContentBlock }) {
       ? block.input
       : JSON.stringify(block.input, null, 2);
     return (
-      <details className="bg-gray-800/60 rounded px-2 py-1">
-        <summary className="cursor-pointer text-yellow-300 font-mono text-xs">
+      <details className="bg-gray-100 rounded px-2 py-1">
+        <summary className="cursor-pointer text-yellow-700 font-mono text-xs">
           Tool: {block.name}
         </summary>
-        <pre className="text-gray-400 text-xs mt-1 overflow-x-auto whitespace-pre-wrap">{inputStr}</pre>
+        <pre className="text-gray-600 text-xs mt-1 overflow-x-auto whitespace-pre-wrap">{inputStr}</pre>
       </details>
     );
   }
   if (block.type === "tool_result") {
     const content = block.content ?? "";
     return (
-      <details className="bg-gray-800/60 rounded px-2 py-1">
-        <summary className="cursor-pointer text-cyan-300 font-mono text-xs">
+      <details className="bg-gray-100 rounded px-2 py-1">
+        <summary className="cursor-pointer text-cyan-700 font-mono text-xs">
           Tool Result
         </summary>
-        <pre className="text-gray-400 text-xs mt-1 overflow-x-auto whitespace-pre-wrap">{content.slice(0, 2000)}</pre>
+        <pre className="text-gray-600 text-xs mt-1 overflow-x-auto whitespace-pre-wrap">{content.slice(0, 2000)}</pre>
       </details>
     );
   }
@@ -104,8 +104,10 @@ function mergeStreamEntries(entries: StreamEntry[]): { role: "user" | "assistant
   for (const entry of entries) {
     const blocks = parseStreamContentBlocks(entry);
 
+    const role = entry.type as "user" | "assistant";
+    const items: StreamDisplayItem[] = [];
+
     if (entry.type === "assistant") {
-      const items: StreamDisplayItem[] = [];
       for (const b of blocks) {
         if (b.type === "text" && b.text) {
           items.push({ kind: "text", text: b.text });
@@ -118,12 +120,8 @@ function mergeStreamEntries(entries: StreamEntry[]): { role: "user" | "assistant
           });
         }
       }
-      if (items.length > 0) {
-        groups.push({ role: "assistant", items });
-      }
     } else if (entry.type === "user") {
       // Only show user text content (tool_results are merged into assistant tool_call items)
-      const items: StreamDisplayItem[] = [];
       for (const b of blocks) {
         if (b.type === "text" && b.text) {
           items.push({ kind: "text", text: b.text });
@@ -133,8 +131,15 @@ function mergeStreamEntries(entries: StreamEntry[]): { role: "user" | "assistant
       if (items.length === 0 && typeof entry.message?.content === "string" && entry.message.content) {
         items.push({ kind: "text", text: entry.message.content });
       }
-      if (items.length > 0) {
-        groups.push({ role: "user", items });
+    }
+
+    if (items.length > 0) {
+      // Merge into previous group if same role
+      const last = groups[groups.length - 1];
+      if (last && last.role === role) {
+        last.items.push(...items);
+      } else {
+        groups.push({ role, items });
       }
     }
   }
@@ -169,19 +174,19 @@ function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool
     ? item.input
     : JSON.stringify(item.input, null, 2);
   return (
-    <details className="bg-gray-800/60 rounded px-2 py-1">
-      <summary className="cursor-pointer text-yellow-300 font-mono text-xs">
+    <details className="bg-gray-100 rounded px-2 py-1">
+      <summary className="cursor-pointer text-yellow-700 font-mono text-xs">
         {item.result !== undefined ? "✔ " : ""}{toolCallSummary(item.name, item.input)}
       </summary>
       <div className="mt-1 space-y-1">
         <div>
           <span className="text-gray-500 text-xs">Input:</span>
-          <pre className="text-gray-400 text-xs overflow-x-auto whitespace-pre-wrap">{inputStr}</pre>
+          <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap">{inputStr}</pre>
         </div>
         {item.result !== undefined && (
           <div>
             <span className="text-gray-500 text-xs">Output:</span>
-            <pre className="text-gray-400 text-xs overflow-x-auto whitespace-pre-wrap">{item.result.slice(0, 2000)}</pre>
+            <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap">{item.result.slice(0, 2000)}</pre>
           </div>
         )}
       </div>
@@ -192,7 +197,7 @@ function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool
 function StreamDisplayItemView({ item }: { item: StreamDisplayItem }) {
   if (item.kind === "text") {
     return (
-      <div className="prose prose-invert prose-xs max-w-none prose-pre:bg-gray-950 prose-pre:text-gray-300 prose-code:text-pink-300">
+      <div className="prose prose-xs max-w-none prose-pre:bg-gray-100 prose-pre:text-gray-800 prose-code:text-pink-600">
         <Markdown remarkPlugins={[remarkGfm]}>{item.text}</Markdown>
       </div>
     );
@@ -245,24 +250,24 @@ function StreamOutputView({ lines }: { lines: unknown[] }) {
       <div className="flex justify-end mb-1">
         <button
           onClick={() => setViewMode(viewMode === "markdown" ? "json" : "markdown")}
-          className="text-xs text-gray-400 hover:text-gray-200 px-2 py-1"
+          className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1"
         >
           {viewMode === "markdown" ? "JSON" : "Markdown"}
         </button>
       </div>
-      <div ref={ref} onScroll={onScroll} className="bg-gray-900 rounded-lg p-3 text-sm h-96 overflow-y-auto mb-4 space-y-3">
+      <div ref={ref} onScroll={onScroll} className="bg-white border border-gray-200 rounded-lg p-3 text-sm h-96 overflow-y-auto mb-4 space-y-3">
         {viewMode === "json" ? (
           lines.length === 0 ? (
-            <p className="text-gray-500">No stream output yet</p>
+            <p className="text-gray-400">No stream output yet</p>
           ) : (
             lines.map((line, i) => (
-              <pre key={i} className="text-gray-400 text-xs whitespace-pre-wrap">
+              <pre key={i} className="text-gray-600 text-xs whitespace-pre-wrap">
                 {JSON.stringify(line, null, 2)}
               </pre>
             ))
           )
         ) : groups.length === 0 ? (
-          <p className="text-gray-500">No stream output yet</p>
+          <p className="text-gray-400">No stream output yet</p>
         ) : (
           groups.map((group, i) => {
             const style = roleStyles[group.role] || roleStyles.assistant;
@@ -273,7 +278,7 @@ function StreamOutputView({ lines }: { lines: unknown[] }) {
                     {style.label}
                   </span>
                 </div>
-                <div className="text-gray-200 break-words text-xs space-y-2">
+                <div className="text-gray-800 break-words text-xs space-y-2">
                   {group.items.map((item, j) => (
                     <StreamDisplayItemView key={j} item={item} />
                   ))}
