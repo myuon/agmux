@@ -68,13 +68,20 @@ func serveCmd() *cobra.Command {
 				return err
 			}
 
+			// Logger
+			logFile, logger, err := logging.Setup()
+			if err != nil {
+				return fmt.Errorf("setup logging: %w", err)
+			}
+			defer logFile.Close()
+
 			tmuxClient := tmux.NewClient()
 			hub := server.NewHub()
 			go hub.Run()
 
-			// Status checker (JSONL-based)
+			// Status checker
 			mon := monitor.New(tmuxClient)
-			checker := monitor.NewStatusChecker(mon, mgr, tmuxClient, cfg.Daemon.IntervalDuration())
+			checker := monitor.NewStatusChecker(mon, mgr, tmuxClient, cfg.Daemon.IntervalDuration(), logger)
 			checker.SetOnUpdate(func(sessions []session.Session) {
 				hub.Broadcast(server.Message{
 					Type: "session_update",
@@ -85,13 +92,6 @@ func serveCmd() *cobra.Command {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			go checker.Start(ctx)
-
-			// Logger
-			logFile, logger, err := logging.Setup()
-			if err != nil {
-				return fmt.Errorf("setup logging: %w", err)
-			}
-			defer logFile.Close()
 
 			// Create controller session (singleton)
 			controllerDir, err := db.ControllerDir()
