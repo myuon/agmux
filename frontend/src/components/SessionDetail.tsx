@@ -451,10 +451,11 @@ const statusBadgeColor: Record<string, string> = {
 };
 
 function DiffView({ files }: { files: DiffFile[] }) {
+  const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   if (files.length === 0) {
-    return <p className="text-xs text-gray-400">No uncommitted changes</p>;
+    return null;
   }
 
   const toggle = (path: string) => {
@@ -467,11 +468,15 @@ function DiffView({ files }: { files: DiffFile[] }) {
   };
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden mb-4">
-      <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 border-b border-gray-200">
+    <div className="border border-gray-200 rounded-lg overflow-hidden mb-4 shrink-0">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 border-b border-gray-200 flex items-center gap-2 hover:bg-gray-100 text-left"
+      >
+        <span className="text-gray-400">{open ? "▼" : "▶"}</span>
         Changes ({files.length} files)
-      </div>
-      {files.map((file) => (
+      </button>
+      {open && files.map((file) => (
         <div key={file.path} className="border-b border-gray-100 last:border-b-0">
           <button
             onClick={() => toggle(file.path)}
