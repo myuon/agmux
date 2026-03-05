@@ -168,7 +168,7 @@ function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool
   return (
     <details className="bg-gray-800/60 rounded px-2 py-1">
       <summary className="cursor-pointer text-yellow-300 font-mono text-xs">
-        {toolCallSummary(item.name, item.input)}
+        {item.result !== undefined ? "✔ " : ""}{toolCallSummary(item.name, item.input)}
       </summary>
       <div className="mt-1 space-y-1">
         <div>
