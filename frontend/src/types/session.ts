@@ -9,4 +9,5 @@ export interface Session {
   outputMode: "terminal" | "stream";
   createdAt: string;
   updatedAt: string;
+  githubUrl?: string;
 }

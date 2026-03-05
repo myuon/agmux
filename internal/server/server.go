@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"strconv"
 	"time"
 
@@ -147,6 +148,11 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, sess)
 }
 
+type sessionResponse struct {
+	*session.Session
+	GithubURL string `json:"githubUrl,omitempty"`
+}
+
 func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	sess, err := s.sessions.Get(id)
@@ -154,7 +160,8 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, sess)
+	resp := sessionResponse{Session: sess, GithubURL: detectGithubURL(sess.ProjectPath)}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
@@ -486,6 +493,36 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+func detectGithubURL(projectPath string) string {
+	cmd := exec.Command("git", "remote", "get-url", "origin")
+	cmd.Dir = projectPath
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	remote := strings.TrimSpace(string(out))
+
+	// SSH format: git@github.com:user/repo.git
+	if strings.HasPrefix(remote, "git@github.com:") {
+		path := strings.TrimPrefix(remote, "git@github.com:")
+		path = strings.TrimSuffix(path, ".git")
+		return "https://github.com/" + path
+	}
+	// HTTPS format: https://github.com/user/repo.git
+	if strings.Contains(remote, "github.com") && strings.HasPrefix(remote, "https://") {
+		return strings.TrimSuffix(remote, ".git")
+	}
+	// SSH format: ssh://git@github.com/user/repo.git
+	if strings.HasPrefix(remote, "ssh://") && strings.Contains(remote, "github.com") {
+		path := remote
+		path = strings.TrimPrefix(path, "ssh://git@github.com/")
+		path = strings.TrimPrefix(path, "ssh://github.com/")
+		path = strings.TrimSuffix(path, ".git")
+		return "https://github.com/" + path
+	}
+	return ""
 }
 
 func buildClaudeJSONLPath(projectPath, sessionID string) string {
