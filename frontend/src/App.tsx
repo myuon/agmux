@@ -70,6 +70,9 @@ function Dashboard() {
           if (s.status === "question_waiting" && prevStatus && prevStatus !== "question_waiting") {
             sendNotification("agmux", `${s.name}: ユーザーの入力を待っています`);
           }
+          if (s.status === "alignment_needed" && prevStatus && prevStatus !== "alignment_needed") {
+            sendNotification("agmux", `${s.name}: ユーザーとのアラインメントが必要です`);
+          }
         }
       }
       const map = new Map<string, string>();

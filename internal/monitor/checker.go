@@ -69,6 +69,9 @@ func (sc *StatusChecker) check() {
 		if s.Status == session.StatusStopped {
 			continue
 		}
+		if s.OutputMode != session.OutputModeStream {
+			continue
+		}
 
 		shortID := s.ID[:8]
 
@@ -105,6 +108,28 @@ func (sc *StatusChecker) check() {
 			}
 			s.Status = result.Status
 			changed = true
+
+			// Auto-resume paused sessions
+			if result.Status == session.StatusPaused {
+				sc.logger.Info(fmt.Sprintf("%s (%s): auto-resuming paused session",
+					s.Name, shortID),
+					slog.String("category", "status_checker"),
+					slog.String("sessionId", s.ID),
+				)
+				if err := sc.sessions.SendKeys(s.ID, "作業を進めてください"); err != nil {
+					log.Printf("status checker: auto-resume %s (%s) error: %v", s.Name, shortID, err)
+				} else {
+					_ = sc.sessions.UpdateStatus(s.ID, session.StatusWorking)
+					s.Status = session.StatusWorking
+				}
+			}
+		} else {
+			sc.logger.Info(fmt.Sprintf("[%s] %s (%s): %s (%s)",
+				s.OutputMode, s.Name, shortID,
+				s.Status, result.Reason),
+				slog.String("category", "status_checker"),
+				slog.String("sessionId", s.ID),
+			)
 		}
 	}
 
@@ -113,11 +138,13 @@ func (sc *StatusChecker) check() {
 	for _, s := range sessions {
 		counts[s.Status]++
 	}
-	sc.logger.Info(fmt.Sprintf("checked %d sessions: %d working, %d idle, %d question, %d stopped",
+	sc.logger.Info(fmt.Sprintf("checked %d sessions: %d working, %d idle, %d paused, %d question, %d alignment, %d stopped",
 		len(sessions),
 		counts[session.StatusWorking],
 		counts[session.StatusIdle],
+		counts[session.StatusPaused],
 		counts[session.StatusQuestionWaiting],
+		counts[session.StatusAlignmentNeeded],
 		counts[session.StatusStopped]),
 		slog.String("category", "status_checker"),
 	)

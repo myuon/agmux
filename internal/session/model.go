@@ -8,6 +8,8 @@ const (
 	StatusWorking         Status = "working"
 	StatusIdle            Status = "idle"
 	StatusQuestionWaiting Status = "question_waiting"
+	StatusAlignmentNeeded Status = "alignment_needed"
+	StatusPaused          Status = "paused"
 	StatusStopped         Status = "stopped"
 )
 
