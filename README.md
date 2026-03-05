@@ -3,6 +3,16 @@
 複数のClaude Codeセッションを同時に実行・監視・制御するための統合管理ツール。
 1つのWebダッシュボードから、ローカルPC上で動いているすべてのagentの状態を把握し、介入できます。
 
+## スクリーンショット
+
+### ダッシュボード
+
+![Dashboard](docs/screenshot-dashboard.png)
+
+### セッション詳細 (Stream Mode)
+
+![Session Detail](docs/screenshot-session-detail.png)
+
 ## 主な機能
 
 - **セッション管理** — Web UIまたはCLIからClaude Codeセッションを作成・停止・削除
