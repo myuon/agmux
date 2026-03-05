@@ -69,6 +69,9 @@ func (sc *StatusChecker) check() {
 		if s.Status == session.StatusStopped {
 			continue
 		}
+		if s.OutputMode != session.OutputModeStream {
+			continue
+		}
 
 		shortID := s.ID[:8]
 
@@ -105,6 +108,13 @@ func (sc *StatusChecker) check() {
 			}
 			s.Status = result.Status
 			changed = true
+		} else {
+			sc.logger.Info(fmt.Sprintf("[%s] %s (%s): %s (%s)",
+				s.OutputMode, s.Name, shortID,
+				s.Status, result.Reason),
+				slog.String("category", "status_checker"),
+				slog.String("sessionId", s.ID),
+			)
 		}
 	}
 

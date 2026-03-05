@@ -221,6 +221,7 @@ func (s *Server) sendToSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	_ = s.sessions.UpdateStatus(id, session.StatusWorking)
 	s.recordSessionAction(id, "session_send_keys", req.Text)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
 }
