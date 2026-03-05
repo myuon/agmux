@@ -109,6 +109,22 @@ func (sc *StatusChecker) check() {
 			s.Status = result.Status
 			changed = true
 
+			// Log notification-worthy status changes
+			if result.Status == session.StatusQuestionWaiting {
+				sc.logger.Info(fmt.Sprintf("[notify] %s (%s): ユーザーの入力を待っています",
+					s.Name, shortID),
+					slog.String("category", "status_checker"),
+					slog.String("sessionId", s.ID),
+				)
+			}
+			if result.Status == session.StatusAlignmentNeeded {
+				sc.logger.Info(fmt.Sprintf("[notify] %s (%s): ユーザーとのアラインメントが必要です",
+					s.Name, shortID),
+					slog.String("category", "status_checker"),
+					slog.String("sessionId", s.ID),
+				)
+			}
+
 			// Auto-resume paused sessions
 			if result.Status == session.StatusPaused {
 				sc.logger.Info(fmt.Sprintf("%s (%s): auto-resuming paused session",
