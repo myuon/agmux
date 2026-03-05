@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"github.com/myuon/agmux/internal/db"
 )
@@ -18,6 +19,15 @@ type mcpServerEntry struct {
 	Command string            `json:"command"`
 	Args    []string          `json:"args"`
 	Env     map[string]string `json:"env,omitempty"`
+}
+
+const agmuxSystemPrompt = `あなたはagmuxで管理されているセッションです。以下のルールを守ってください:
+- 新しいタスクに着手するとき、set_session_context ツールで currentTask と goal を設定してください
+- タスクの内容や目標が変わったら、その都度 set_session_context を呼び出して更新してください
+- タスクが完了したら、set_session_context で完了状態を反映してください`
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
 }
 
 // writeMCPConfig generates a temporary MCP config JSON file for a session.
