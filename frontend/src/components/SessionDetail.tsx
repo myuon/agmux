@@ -33,7 +33,8 @@ interface StreamContentBlock {
 // A display item for the merged stream view
 type StreamDisplayItem =
   | { kind: "text"; text: string }
-  | { kind: "tool_call"; name: string; input: unknown; result?: string };
+  | { kind: "tool_call"; name: string; input: unknown; result?: string }
+  | { kind: "system_event"; eventType: string; label: string; detail?: string };
 
 function parseStreamContentBlocks(entry: StreamEntry): StreamContentBlock[] {
   const content = entry.message?.content;
@@ -45,8 +46,64 @@ function parseStreamContentBlocks(entry: StreamEntry): StreamContentBlock[] {
   return content;
 }
 
+// Parse a system event entry into a display item, or return null if not displayable
+function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
+  const raw = entry as unknown as Record<string, unknown>;
+  const subtype = raw.subtype as string | undefined;
+
+  if (subtype === "compact_boundary") {
+    const meta = raw.compact_metadata as { trigger?: string; pre_tokens?: number } | undefined;
+    const tokens = meta?.pre_tokens ? `${Math.round(meta.pre_tokens / 1000)}k tokens` : "";
+    return {
+      kind: "system_event",
+      eventType: "compact",
+      label: "コンテキストをコンパクション",
+      detail: tokens ? `(${tokens})` : undefined,
+    };
+  }
+
+  if (subtype === "status") {
+    const status = raw.status as string | null;
+    if (status === "compacting") {
+      return {
+        kind: "system_event",
+        eventType: "compacting",
+        label: "コンパクション中...",
+      };
+    }
+    // status: null means compaction finished — skip (compact_boundary covers it)
+    return null;
+  }
+
+  if (subtype === "task_started") {
+    const desc = (raw.description as string) || "バックグラウンドタスク";
+    return {
+      kind: "system_event",
+      eventType: "task_started",
+      label: `タスク開始: ${desc}`,
+    };
+  }
+
+  if (subtype === "task_notification") {
+    const status = raw.status as string;
+    const summary = (raw.summary as string) || "";
+    return {
+      kind: "system_event",
+      eventType: "task_notification",
+      label: `タスク${status === "completed" ? "完了" : status}`,
+      detail: summary || undefined,
+    };
+  }
+
+  return null;
+}
+
+type DisplayGroup =
+  | { role: "user" | "assistant"; items: StreamDisplayItem[] }
+  | { role: "system"; items: StreamDisplayItem[] };
+
 // Merge assistant/user entries into display items, pairing tool_use with tool_result by id
-function mergeStreamEntries(entries: StreamEntry[]): { role: "user" | "assistant"; items: StreamDisplayItem[] }[] {
+function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
   // First pass: collect all tool_results keyed by tool_use_id
   const resultMap = new Map<string, string>();
   for (const entry of entries) {
@@ -63,10 +120,19 @@ function mergeStreamEntries(entries: StreamEntry[]): { role: "user" | "assistant
     }
   }
 
-  // Second pass: build display groups from assistant and user text entries
-  const groups: { role: "user" | "assistant"; items: StreamDisplayItem[] }[] = [];
+  // Second pass: build display groups
+  const groups: DisplayGroup[] = [];
 
   for (const entry of entries) {
+    // Handle system events
+    if (entry.type === "system") {
+      const sysItem = parseSystemEvent(entry);
+      if (sysItem) {
+        groups.push({ role: "system", items: [sysItem] });
+      }
+      continue;
+    }
+
     const blocks = parseStreamContentBlocks(entry);
 
     const role = entry.type as "user" | "assistant";
@@ -77,6 +143,15 @@ function mergeStreamEntries(entries: StreamEntry[]): { role: "user" | "assistant
         if (b.type === "text" && b.text) {
           items.push({ kind: "text", text: b.text });
         } else if (b.type === "tool_use") {
+          // Detect plan mode transitions
+          if (b.name === "EnterPlanMode") {
+            groups.push({ role: "system", items: [{ kind: "system_event", eventType: "plan_enter", label: "プランモードに入りました" }] });
+            continue;
+          }
+          if (b.name === "ExitPlanMode") {
+            groups.push({ role: "system", items: [{ kind: "system_event", eventType: "plan_exit", label: "プランモードを終了しました" }] });
+            continue;
+          }
           items.push({
             kind: "tool_call",
             name: b.name ?? "unknown",
@@ -159,6 +234,16 @@ function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool
   );
 }
 
+function SystemEventView({ item }: { item: Extract<StreamDisplayItem, { kind: "system_event" }> }) {
+  return (
+    <div className="flex items-center gap-2 py-1 px-3 text-xs text-gray-500 border-y border-dashed border-gray-200">
+      <span className="text-gray-400">⟡</span>
+      <span>{item.label}</span>
+      {item.detail && <span className="text-gray-400">{item.detail}</span>}
+    </div>
+  );
+}
+
 function StreamDisplayItemView({ item }: { item: StreamDisplayItem }) {
   if (item.kind === "text") {
     return (
@@ -169,6 +254,9 @@ function StreamDisplayItemView({ item }: { item: StreamDisplayItem }) {
   }
   if (item.kind === "tool_call") {
     return <ToolCallView item={item} />;
+  }
+  if (item.kind === "system_event") {
+    return <SystemEventView item={item} />;
   }
   return null;
 }
@@ -206,7 +294,7 @@ function StreamOutputView({ lines }: { lines: unknown[] }) {
 
   const entries = lines
     .map((line) => line as StreamEntry)
-    .filter((e) => e.type === "user" || e.type === "assistant");
+    .filter((e) => e.type === "user" || e.type === "assistant" || e.type === "system");
 
   const groups = mergeStreamEntries(entries);
 
@@ -235,6 +323,15 @@ function StreamOutputView({ lines }: { lines: unknown[] }) {
           <p className="text-gray-400">No stream output yet</p>
         ) : (
           groups.map((group, i) => {
+            if (group.role === "system") {
+              return (
+                <div key={i}>
+                  {group.items.map((item, j) => (
+                    <StreamDisplayItemView key={j} item={item} />
+                  ))}
+                </div>
+              );
+            }
             const style = roleStyles[group.role] || roleStyles.assistant;
             return (
               <div key={i} className={`rounded-lg p-3 ${style.bg}`}>
