@@ -80,8 +80,8 @@ func (sc *StatusChecker) check() {
 
 		shortID := s.ID[:8]
 
-		// Check if tmux session still exists
-		if !sc.tmux.HasSessionByFullName(s.TmuxSession) {
+		// Check if tmux session still exists (only for non-stream modes)
+		if s.OutputMode != session.OutputModeStream && !sc.tmux.HasSessionByFullName(s.TmuxSession) {
 			if s.Status != session.StatusStopped {
 				sc.logger.Info(fmt.Sprintf("%s (%s): tmux session gone, %s → stopped",
 					s.Name, shortID, s.Status),
