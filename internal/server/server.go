@@ -313,6 +313,33 @@ func (s *Server) getSessionOutput(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
+	// Delta fetch: if "after" is specified, return only new lines since that index
+	if q := r.URL.Query().Get("after"); q != "" {
+		after, err := strconv.Atoi(q)
+		if err != nil || after < 0 {
+			writeError(w, http.StatusBadRequest, "invalid after parameter")
+			return
+		}
+		lines, total, err := s.sessions.GetStreamLinesAfter(id, after)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		var result []json.RawMessage
+		for _, line := range lines {
+			result = append(result, json.RawMessage(line))
+		}
+		if result == nil {
+			result = []json.RawMessage{}
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"lines": result,
+			"total": total,
+		})
+		return
+	}
+
+	// Legacy: return last N lines (for initial load / backward compatibility)
 	limit := 200
 	if q := r.URL.Query().Get("limit"); q != "" {
 		if n, err := strconv.Atoi(q); err == nil && n > 0 {
