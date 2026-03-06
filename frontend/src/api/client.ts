@@ -63,6 +63,9 @@ export const api = {
   reconnectSession: (id: string) =>
     request<{ status: string }>(`/sessions/${id}/reconnect`, { method: "POST" }),
 
+  clearSession: (id: string) =>
+    request<{ status: string }>(`/sessions/${id}/clear`, { method: "POST" }),
+
   restartController: () =>
     request<Session>("/sessions/controller/restart", { method: "POST" }),
 
