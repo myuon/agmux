@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff, X, FolderOpen,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2,
-  ListTodo, Target, RotateCcw,
+  ListTodo, Target, RotateCcw, Circle,
 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
@@ -360,6 +360,10 @@ function ToolInputView({ input }: { input: unknown }) {
 }
 
 function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool_call" }> }) {
+  if (item.name === "TodoWrite") {
+    return <TodoCallView item={item} />;
+  }
+
   const [open, setOpen] = useState(false);
   const Icon = toolIcon(item.name);
   const desc = toolDescription(item.name, item.input);
@@ -459,6 +463,74 @@ function StreamDisplayItemView({ item }: { item: StreamDisplayItem }) {
     return <SystemEventView item={item} />;
   }
   return null;
+}
+
+// --- Todo extraction from stream ---
+
+interface TodoItem {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  activeForm: string;
+}
+
+function parseTodoInput(input: unknown): TodoItem[] | null {
+  const inp = input as { todos?: TodoItem[] } | null;
+  if (inp?.todos && Array.isArray(inp.todos)) return inp.todos;
+  return null;
+}
+
+function TodoCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool_call" }> }) {
+  const [open, setOpen] = useState(false);
+  const todos = parseTodoInput(item.input);
+  if (!todos || todos.length === 0) return null;
+
+  const completed = todos.filter(t => t.status === "completed").length;
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full text-left border border-gray-200 rounded-lg overflow-hidden px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 transition-colors"
+      >
+        <div className="flex items-center gap-2 mb-1.5">
+          <ListTodo className="w-3.5 h-3.5 text-gray-400" />
+          <span className="font-medium text-xs text-gray-800">Tasks</span>
+          <span className="text-[10px] text-gray-400 ml-auto">{completed}/{todos.length}</span>
+        </div>
+        <div className="space-y-0.5">
+          {todos.map((todo, i) => (
+            <div key={i} className="flex items-start gap-1.5 text-xs">
+              {todo.status === "completed" ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-green-500 shrink-0 mt-0.5" />
+              ) : todo.status === "in_progress" ? (
+                <Circle className="w-3.5 h-3.5 text-blue-500 fill-blue-500 shrink-0 mt-0.5" />
+              ) : (
+                <Circle className="w-3.5 h-3.5 text-gray-300 shrink-0 mt-0.5" />
+              )}
+              <span className={todo.status === "completed" ? "text-gray-400 line-through" : "text-gray-700"}>
+                {todo.content}
+              </span>
+            </div>
+          ))}
+        </div>
+      </button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={<span className="flex items-center gap-2"><ListTodo className="w-4 h-4 text-gray-500" />TodoWrite</span>}
+      >
+        <div className="space-y-3">
+          <ToolInputView input={item.input} />
+          {item.result !== undefined && (
+            <div>
+              <span className="text-gray-400 text-[10px] uppercase tracking-wide">Output</span>
+              <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap mt-0.5">{item.result!.slice(0, 2000)}</pre>
+            </div>
+          )}
+        </div>
+      </Modal>
+    </>
+  );
 }
 
 // --- Shared components ---
