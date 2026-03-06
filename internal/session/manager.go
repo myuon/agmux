@@ -254,6 +254,65 @@ func (m *Manager) stopStreamProcess(id string) {
 	}
 }
 
+// Clear resets the session context by stopping the current process,
+// clearing the stream history, and restarting without --resume.
+func (m *Manager) Clear(id string) error {
+	s, err := m.Get(id)
+	if err != nil {
+		return err
+	}
+
+	// Stop existing stream process if any
+	m.stopStreamProcess(id)
+
+	// Kill existing tmux session
+	name := s.TmuxSession[len(tmux.SessionPrefix):]
+	if m.tmux.HasSession(name) {
+		_ = m.tmux.KillSession(name)
+	}
+
+	// Clear the JSONL stream file (truncate)
+	if s.OutputMode == OutputModeStream {
+		streamsDir, err := db.StreamsDir()
+		if err == nil {
+			streamPath := filepath.Join(streamsDir, id+".jsonl")
+			_ = os.Truncate(streamPath, 0)
+		}
+	}
+
+	// Generate fresh MCP config
+	mcpConfigPath, err := writeMCPConfig(id, m.apiPort)
+	if err != nil {
+		return fmt.Errorf("write mcp config: %w", err)
+	}
+
+	// Recreate tmux session
+	if err := m.tmux.NewSession(name, s.ProjectPath, ""); err != nil {
+		return fmt.Errorf("create tmux session: %w", err)
+	}
+
+	if s.OutputMode == OutputModeStream {
+		// Start fresh (no resume)
+		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, false)
+		if err != nil {
+			return fmt.Errorf("start stream process: %w", err)
+		}
+		m.streamMu.Lock()
+		m.streamProcesses[id] = sp
+		m.streamMu.Unlock()
+	} else {
+		time.Sleep(300 * time.Millisecond)
+		claudeCmd := m.claudeCommand + " --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(agmuxSystemPrompt)
+		if err := m.tmux.SendKeysOnce(s.TmuxSession, claudeCmd); err != nil {
+			return fmt.Errorf("launch claude: %w", err)
+		}
+	}
+
+	// Reset task/goal and set status to working
+	_, err = m.db.Exec("UPDATE sessions SET status = ?, current_task = NULL, goal = NULL, goals = NULL, updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
+	return err
+}
+
 func (m *Manager) SendKeys(id string, text string) error {
 	s, err := m.Get(id)
 	if err != nil {

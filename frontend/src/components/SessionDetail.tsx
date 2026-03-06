@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff, X, FolderOpen,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2,
-  ListTodo, Target,
+  ListTodo, Target, RotateCcw,
 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
@@ -734,6 +734,20 @@ export function SessionDetail() {
                 <Square className="w-3.5 h-3.5" />
               </button>
             )}
+            <button
+              onClick={async () => {
+                if (!confirm("Clear session context? This will start a fresh conversation.")) return;
+                await api.clearSession(session.id);
+                api.getSession(session.id).then(setSession);
+                if (session.outputMode === "stream") {
+                  api.getStreamOutput(session.id).then(setStreamLines).catch(() => {});
+                }
+              }}
+              className="p-1.5 text-orange-700 bg-orange-50 rounded hover:bg-orange-100"
+              title="Clear"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
             <button
               onClick={async () => {
                 await api.reconnectSession(session.id);
