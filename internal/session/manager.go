@@ -155,11 +155,13 @@ func (m *Manager) List() ([]Session, error) {
 			s.Goals = ParseGoalStack(goalsJSON.String)
 		}
 
-		// Correct status based on tmux reality
-		if s.Status == StatusWorking || s.Status == StatusQuestionWaiting || s.Status == StatusIdle {
-			if !m.tmux.HasSessionByFullName(s.TmuxSession) {
-				s.Status = StatusStopped
-				m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(StatusStopped), time.Now(), s.ID)
+		// Correct status based on tmux reality (only for non-stream modes)
+		if s.OutputMode != OutputModeStream {
+			if s.Status == StatusWorking || s.Status == StatusQuestionWaiting || s.Status == StatusIdle {
+				if !m.tmux.HasSessionByFullName(s.TmuxSession) {
+					s.Status = StatusStopped
+					m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(StatusStopped), time.Now(), s.ID)
+				}
 			}
 		}
 
