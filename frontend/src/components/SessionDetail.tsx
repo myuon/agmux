@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Square, RefreshCw, Trash2, ArrowLeft,
+  Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2, ChevronRight,
 } from "lucide-react";
 import type { Session } from "../types/session";
@@ -693,21 +693,21 @@ export function SessionDetail() {
           </>
         )}
       </p>
-      {session.branch && (
-        <p className="text-sm text-gray-500 mb-2">
-          Branch: <span className="font-mono text-gray-700">{session.branch}</span>
-        </p>
-      )}
-      {session.pullRequests && session.pullRequests.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <span className="text-sm text-gray-500">PR:</span>
-          {session.pullRequests.map((pr) => (
+      {(session.branch || (session.pullRequests && session.pullRequests.length > 0)) && (
+        <div className="flex flex-wrap items-center gap-2 mb-2 shrink-0">
+          {session.branch && (
+            <>
+              <GitBranch className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <span className="font-mono text-xs text-gray-700">{session.branch}</span>
+            </>
+          )}
+          {session.pullRequests && session.pullRequests.map((pr) => (
             <a
               key={pr.number}
               href={pr.url}
               target="_blank"
               rel="noopener noreferrer"
-              className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
+              className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${
                 pr.state === "MERGED"
                   ? "bg-purple-100 text-purple-700"
                   : pr.state === "OPEN"
@@ -715,7 +715,8 @@ export function SessionDetail() {
                     : "bg-gray-100 text-gray-600"
               }`}
             >
-              #{pr.number} {pr.title}
+              <GitPullRequest className="w-3 h-3" />
+              #{pr.number}
             </a>
           ))}
         </div>
