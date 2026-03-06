@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Square, RefreshCw, Trash2 } from "lucide-react";
+import {
+  Square, RefreshCw, Trash2,
+  Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2,
+} from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
 
@@ -238,53 +241,77 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
   return groups;
 }
 
-function extractFileName(filePath: string): string {
-  const parts = filePath.split("/");
-  return parts[parts.length - 1] || filePath;
+
+function toolIcon(name: string) {
+  switch (name) {
+    case "Bash": return Terminal;
+    case "Read": return FileText;
+    case "Write": return FilePen;
+    case "Edit": return PenLine;
+    case "Grep":
+    case "Glob":
+    case "ToolSearch": return Search;
+    case "Skill": return Sparkles;
+    case "WebFetch":
+    case "WebSearch": return Globe;
+    default: return Wrench;
+  }
 }
 
-function toolCallSummary(name: string, input: unknown): string {
+function toolDescription(name: string, input: unknown): string | null {
   const inp = input && typeof input === "object" ? (input as Record<string, unknown>) : null;
-  if (name === "Bash" && inp && "command" in inp) {
-    if ("description" in inp && inp.description) {
-      return `Bash: ${String(inp.description)}`;
+  if (name === "Bash" && inp) {
+    if ("description" in inp && inp.description) return String(inp.description);
+    if ("command" in inp) {
+      const cmd = String(inp.command);
+      return cmd.split("\n")[0].slice(0, 120);
     }
-    const cmd = String(inp.command);
-    const firstLine = cmd.split("\n")[0];
-    return `Bash(${firstLine})`;
   }
   if ((name === "Read" || name === "Write" || name === "Edit") && inp && "file_path" in inp) {
-    const fileName = extractFileName(String(inp.file_path));
-    return `${name}(${fileName})`;
+    const fp = String(inp.file_path);
+    const parts = fp.split("/");
+    return parts[parts.length - 1] || fp;
   }
   if (name === "Skill" && inp && "skill" in inp) {
     const args = inp.args ? ` ${String(inp.args).split("\n")[0]}` : "";
-    return `Skill: ${String(inp.skill)}${args}`;
+    return `${String(inp.skill)}${args}`;
+  }
+  if ((name === "Grep" || name === "Glob") && inp && "pattern" in inp) {
+    return String(inp.pattern);
   }
   if (name === "ToolSearch" && inp && "query" in inp) {
-    return `ToolSearch(${String(inp.query)})`;
+    return String(inp.query);
   }
-  return `Tool: ${name}`;
+  return null;
 }
 
 function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool_call" }> }) {
   const inputStr = typeof item.input === "string"
     ? item.input
     : JSON.stringify(item.input, null, 2);
+  const Icon = toolIcon(item.name);
+  const desc = toolDescription(item.name, item.input);
+  const done = item.result !== undefined;
+
   return (
-    <details className="bg-gray-100 rounded px-2 py-1">
-      <summary className="cursor-pointer text-yellow-700 font-mono text-xs">
-        {toolCallSummary(item.name, item.input)}{item.result !== undefined ? " ✔" : ""}
+    <details className="border border-gray-200 rounded-lg overflow-hidden">
+      <summary className="cursor-pointer flex items-center gap-2 px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 transition-colors">
+        <Icon className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+        <span className="font-medium text-xs text-gray-800">{item.name}</span>
+        {desc && (
+          <span className="text-xs text-gray-500 truncate min-w-0">{desc}</span>
+        )}
+        {done && <CheckCircle2 className="w-3 h-3 text-green-500 ml-auto shrink-0" />}
       </summary>
-      <div className="mt-1 space-y-1">
+      <div className="px-2.5 py-2 space-y-1 border-t border-gray-100 bg-white">
         <div>
-          <span className="text-gray-500 text-xs">Input:</span>
-          <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap">{inputStr}</pre>
+          <span className="text-gray-400 text-[10px] uppercase tracking-wide">Input</span>
+          <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap mt-0.5">{inputStr}</pre>
         </div>
-        {item.result !== undefined && (
+        {done && (
           <div>
-            <span className="text-gray-500 text-xs">Output:</span>
-            <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap">{item.result.slice(0, 2000)}</pre>
+            <span className="text-gray-400 text-[10px] uppercase tracking-wide">Output</span>
+            <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap mt-0.5">{item.result!.slice(0, 2000)}</pre>
           </div>
         )}
       </div>
