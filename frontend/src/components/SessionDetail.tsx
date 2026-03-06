@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Square, RefreshCw, Trash2,
+  Square, RefreshCw, Trash2, ArrowLeft,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2, ChevronRight,
 } from "lucide-react";
 import type { Session } from "../types/session";
@@ -628,13 +628,14 @@ export function SessionDetail() {
 
   return (
     <div className="h-dvh flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 max-w-4xl mx-auto">
-      <button
-        onClick={() => navigate("/")}
-        className="text-xs sm:text-sm text-gray-500 hover:text-gray-800 mb-3 sm:mb-4 shrink-0"
-      >
-        &larr; Back
-      </button>
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 shrink-0">
+        <button
+          onClick={() => navigate("/")}
+          className="p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 shrink-0"
+          title="Back"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
         <h2 className="text-xl sm:text-2xl font-bold">{session.name}</h2>
         <span className="text-xs sm:text-sm text-gray-500">{session.status}</span>
         {session.type !== "controller" && (
