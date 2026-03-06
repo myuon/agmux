@@ -540,11 +540,15 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 		return nil, fmt.Errorf("create controller tmux session: %w", err)
 	}
 
-	time.Sleep(300 * time.Millisecond)
-	claudeCmd := m.claudeCommand + " --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(agmuxSystemPrompt)
-	if err := m.tmux.SendKeysOnce(tmuxSession, claudeCmd); err != nil {
-		return nil, fmt.Errorf("launch claude for controller: %w", err)
+	// Stream mode: start Go subprocess instead of claude TUI
+	sp, err := StartStreamProcess(id, projectPath, mcpConfigPath, false)
+	if err != nil {
+		_ = m.tmux.KillSession(name)
+		return nil, fmt.Errorf("start stream process for controller: %w", err)
 	}
+	m.streamMu.Lock()
+	m.streamProcesses[id] = sp
+	m.streamMu.Unlock()
 
 	now := time.Now()
 	s := &Session{
@@ -554,7 +558,7 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 		TmuxSession: tmuxSession,
 		Status:      StatusWorking,
 		Type:        TypeController,
-		OutputMode:  OutputModeTerminal,
+		OutputMode:  OutputModeStream,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
