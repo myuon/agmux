@@ -3,8 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff,
-  Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2, ChevronRight,
+  Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff, X,
+  Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2,
 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
@@ -287,7 +287,29 @@ function toolSubDetail(name: string, input: unknown): string | null {
   return null;
 }
 
+function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: React.ReactNode; children: React.ReactNode }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="fixed inset-0 bg-black/30" />
+      <div
+        className="relative bg-white rounded-t-xl sm:rounded-xl shadow-xl w-full sm:max-w-2xl max-h-[80vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+          <div className="text-sm font-medium text-gray-800 min-w-0 truncate">{title}</div>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="overflow-y-auto p-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool_call" }> }) {
+  const [open, setOpen] = useState(false);
   const inputStr = typeof item.input === "string"
     ? item.input
     : JSON.stringify(item.input, null, 2);
@@ -297,10 +319,12 @@ function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool
   const done = item.result !== undefined;
 
   return (
-    <details className="group border border-gray-200 rounded-lg overflow-hidden">
-      <summary className="cursor-pointer px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 transition-colors list-none [&::-webkit-details-marker]:hidden">
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full text-left border border-gray-200 rounded-lg overflow-hidden px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 transition-colors"
+      >
         <div className="flex items-center gap-2">
-          <ChevronRight className="w-3 h-3 text-gray-400 shrink-0 transition-transform group-open:rotate-90" />
           <Icon className="w-3.5 h-3.5 text-gray-500 shrink-0" />
           <span className="font-medium text-xs text-gray-800">{item.name}</span>
           {desc && (
@@ -311,20 +335,26 @@ function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool
         {subDetail && (
           <div className="mt-0.5 ml-[22px] font-mono text-[11px] text-gray-400 truncate">{subDetail}</div>
         )}
-      </summary>
-      <div className="px-2.5 py-2 space-y-1 border-t border-gray-100 bg-white">
-        <div>
-          <span className="text-gray-400 text-[10px] uppercase tracking-wide">Input</span>
-          <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap mt-0.5">{inputStr}</pre>
-        </div>
-        {done && (
+      </button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={<span className="flex items-center gap-2"><Icon className="w-4 h-4 text-gray-500" />{item.name} {desc && <span className="text-gray-400 font-normal">{desc}</span>}</span>}
+      >
+        <div className="space-y-3">
           <div>
-            <span className="text-gray-400 text-[10px] uppercase tracking-wide">Output</span>
-            <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap mt-0.5">{item.result!.slice(0, 2000)}</pre>
+            <span className="text-gray-400 text-[10px] uppercase tracking-wide">Input</span>
+            <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap mt-0.5">{inputStr}</pre>
           </div>
-        )}
-      </div>
-    </details>
+          {done && (
+            <div>
+              <span className="text-gray-400 text-[10px] uppercase tracking-wide">Output</span>
+              <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap mt-0.5">{item.result!.slice(0, 2000)}</pre>
+            </div>
+          )}
+        </div>
+      </Modal>
+    </>
   );
 }
 
@@ -505,15 +535,19 @@ function DiffDropdown({ files }: { files: DiffFile[] }) {
   return (
     <>
       <button
-        onClick={() => setOpen(!open)}
+        onClick={() => setOpen(true)}
         className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 hover:bg-orange-100"
         title="Changes"
       >
         <FileDiff className="w-3 h-3" />
         {files.length}
       </button>
-      {open && (
-        <div className="basis-full border border-gray-200 rounded-lg overflow-hidden mt-1">
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title={<span className="flex items-center gap-2"><FileDiff className="w-4 h-4 text-orange-500" />Changes ({files.length} files)</span>}
+      >
+        <div className="border border-gray-200 rounded-lg overflow-hidden">
           {files.map((file) => (
             <div key={file.path} className="border-b border-gray-100 last:border-b-0">
               <button
@@ -552,7 +586,7 @@ function DiffDropdown({ files }: { files: DiffFile[] }) {
             </div>
           ))}
         </div>
-      )}
+      </Modal>
     </>
   );
 }
