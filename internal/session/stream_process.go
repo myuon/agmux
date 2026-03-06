@@ -88,6 +88,9 @@ func StartStreamProcess(sessionID, projectPath, mcpConfigPath string, resume boo
 		}
 		// If no Claude session ID found, fall back to starting a new session
 		// (e.g., when the original session failed before a successful turn)
+	} else if len(claudeSessionID) > 0 && claudeSessionID[0] != "" {
+		// Use provided CLI session ID (e.g. fresh ID after context clear)
+		resumeID = claudeSessionID[0]
 	}
 	args := []string{
 		"-p",

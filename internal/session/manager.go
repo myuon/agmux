@@ -292,8 +292,9 @@ func (m *Manager) Clear(id string) error {
 	}
 
 	if s.OutputMode == OutputModeStream {
-		// Start fresh (no resume)
-		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, false)
+		// Start fresh with a new CLI session ID to avoid resuming the old conversation
+		freshCLISessionID := uuid.New().String()
+		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, false, freshCLISessionID)
 		if err != nil {
 			return fmt.Errorf("start stream process: %w", err)
 		}
