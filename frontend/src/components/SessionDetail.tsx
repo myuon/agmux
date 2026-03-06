@@ -134,7 +134,7 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
 
   // Second pass: build display groups
   const groups: DisplayGroup[] = [];
-  let skipNextUserText = false;
+  const skillSkipIndices = new Set<number>();
 
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx];
@@ -172,18 +172,19 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
 
           // For Skill calls, fold the next user text (skill content) into the result
           if (b.name === "Skill" && b.id && skillToolIds.has(b.id)) {
-            // Find the skill content: next user entry with only text (no tool_result) after the tool_result
+            // Pattern: tool_use(Skill) → user(tool_result) → user(text = skill content)
+            // Scan forward past tool_result entries to find the text-only user entry
             let skillContent = result || "";
-            for (let j = idx + 1; j < entries.length && j <= idx + 3; j++) {
+            for (let j = idx + 1; j < entries.length && j <= idx + 4; j++) {
               const nextEntry = entries[j];
               if (nextEntry.type !== "user") break;
               const nextBlocks = parseStreamContentBlocks(nextEntry);
-              const hasToolResult = nextBlocks.some(nb => nb.type === "tool_result");
               const textBlocks = nextBlocks.filter(nb => nb.type === "text" && nb.text);
-              if (!hasToolResult && textBlocks.length > 0) {
-                // This is the skill content text
+              const hasToolResult = nextBlocks.some(nb => nb.type === "tool_result");
+              if (hasToolResult) continue; // skip the tool_result entry
+              if (textBlocks.length > 0) {
                 skillContent += "\n---\n" + textBlocks.map(tb => tb.text).join("\n");
-                skipNextUserText = true;
+                skillSkipIndices.add(j);
                 break;
               }
             }
@@ -205,14 +206,8 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
       }
     } else if (entry.type === "user") {
       // Skip user text that was folded into a Skill tool call
-      if (skipNextUserText) {
-        const hasToolResult = blocks.some(b => b.type === "tool_result");
-        const hasOnlyText = blocks.every(b => b.type === "text");
-        if (!hasToolResult && hasOnlyText) {
-          skipNextUserText = false;
-          continue;
-        }
-        skipNextUserText = false;
+      if (skillSkipIndices.has(idx)) {
+        continue;
       }
 
       // Only show user text content (tool_results are merged into assistant tool_call items)
