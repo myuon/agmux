@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm";
 import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff, X, FolderOpen,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2,
+  ListTodo, Target,
 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
@@ -111,11 +112,15 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
   // First pass: collect all tool_results keyed by tool_use_id, and track Skill tool IDs
   const resultMap = new Map<string, string>();
   const skillToolIds = new Set<string>();
+  const toolSearchToolIds = new Set<string>();
   for (const entry of entries) {
     if (entry.type === "assistant") {
       for (const block of parseStreamContentBlocks(entry)) {
         if (block.type === "tool_use" && block.name === "Skill" && block.id) {
           skillToolIds.add(block.id);
+        }
+        if (block.type === "tool_use" && block.name === "ToolSearch" && block.id) {
+          toolSearchToolIds.add(block.id);
         }
       }
     }
@@ -193,6 +198,26 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
               name: b.name,
               input: b.input,
               result: skillContent || undefined,
+            });
+          } else if (b.name === "ToolSearch" && b.id && toolSearchToolIds.has(b.id)) {
+            // Skip the "Tool loaded." user text after ToolSearch
+            for (let j = idx + 1; j < entries.length && j <= idx + 4; j++) {
+              const nextEntry = entries[j];
+              if (nextEntry.type !== "user") break;
+              const nextBlocks = parseStreamContentBlocks(nextEntry);
+              const hasToolResult = nextBlocks.some(nb => nb.type === "tool_result");
+              if (hasToolResult) continue;
+              const textBlocks = nextBlocks.filter(nb => nb.type === "text" && nb.text);
+              if (textBlocks.length > 0) {
+                skillSkipIndices.add(j);
+                break;
+              }
+            }
+            items.push({
+              kind: "tool_call",
+              name: b.name,
+              input: b.input,
+              result,
             });
           } else {
             items.push({
@@ -779,9 +804,9 @@ export function SessionDetail() {
       )}
 
       {(session.currentTask || session.goal) && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 mb-4">
+        <div className="border-l-2 border-gray-300 bg-gray-50 rounded-r-lg px-3 py-2 mb-3 space-y-1">
           {session.goals && session.goals.length > 1 && (
-            <div className="text-xs text-indigo-400 mb-2">
+            <div className="text-[10px] text-gray-400 ml-5">
               {session.goals.slice(0, -1).map((g, i) => (
                 <span key={i}>
                   {i > 0 && " > "}
@@ -792,14 +817,16 @@ export function SessionDetail() {
             </div>
           )}
           {session.currentTask && (
-            <p className="text-sm text-indigo-800">
-              <span className="font-semibold">Task:</span> {session.currentTask}
-            </p>
+            <div className="flex items-start gap-1.5 text-xs text-gray-700">
+              <ListTodo className="w-3.5 h-3.5 shrink-0 mt-0.5 text-indigo-400" />
+              <span>{session.currentTask}</span>
+            </div>
           )}
           {session.goal && (
-            <p className="text-sm text-indigo-600 mt-1">
-              <span className="font-semibold">Goal:</span> {session.goal}
-            </p>
+            <div className="flex items-start gap-1.5 text-xs text-gray-500">
+              <Target className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-400" />
+              <span>{session.goal}</span>
+            </div>
           )}
         </div>
       )}
