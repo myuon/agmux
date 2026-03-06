@@ -308,11 +308,34 @@ function Modal({ open, onClose, title, children }: { open: boolean; onClose: () 
   );
 }
 
+function ToolInputView({ input }: { input: unknown }) {
+  if (input && typeof input === "object" && !Array.isArray(input)) {
+    const entries = Object.entries(input as Record<string, unknown>);
+    return (
+      <div className="space-y-2">
+        {entries.map(([key, value]) => {
+          const str = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+          const isMultiline = str.includes("\n");
+          return (
+            <div key={key}>
+              <span className="text-gray-400 text-[10px] uppercase tracking-wide">{key}</span>
+              {isMultiline ? (
+                <pre className="text-gray-700 text-xs mt-0.5 bg-gray-50 border border-gray-200 rounded p-2 overflow-x-auto whitespace-pre-wrap">{str}</pre>
+              ) : (
+                <div className="text-gray-700 text-xs mt-0.5 font-mono">{str}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+  const str = typeof input === "string" ? input : JSON.stringify(input, null, 2);
+  return <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap">{str}</pre>;
+}
+
 function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool_call" }> }) {
   const [open, setOpen] = useState(false);
-  const inputStr = typeof item.input === "string"
-    ? item.input
-    : JSON.stringify(item.input, null, 2);
   const Icon = toolIcon(item.name);
   const desc = toolDescription(item.name, item.input);
   const subDetail = toolSubDetail(item.name, item.input);
@@ -342,10 +365,7 @@ function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool
         title={<span className="flex items-center gap-2"><Icon className="w-4 h-4 text-gray-500" />{item.name} {desc && <span className="text-gray-400 font-normal">{desc}</span>}</span>}
       >
         <div className="space-y-3">
-          <div>
-            <span className="text-gray-400 text-[10px] uppercase tracking-wide">Input</span>
-            <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap mt-0.5">{inputStr}</pre>
-          </div>
+          <ToolInputView input={item.input} />
           {done && (
             <div>
               <span className="text-gray-400 text-[10px] uppercase tracking-wide">Output</span>
