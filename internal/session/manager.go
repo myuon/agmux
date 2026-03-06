@@ -170,6 +170,34 @@ func (m *Manager) List() ([]Session, error) {
 	return sessions, rows.Err()
 }
 
+// ResolveID resolves a (possibly abbreviated) session ID prefix to a full ID.
+// Returns an error if the prefix matches zero or multiple sessions.
+func (m *Manager) ResolveID(prefix string) (string, error) {
+	rows, err := m.db.Query(`SELECT id FROM sessions WHERE id LIKE ?`, prefix+"%")
+	if err != nil {
+		return "", fmt.Errorf("query sessions: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return "", fmt.Errorf("scan session id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+
+	switch len(ids) {
+	case 0:
+		return "", fmt.Errorf("session not found: %s", prefix)
+	case 1:
+		return ids[0], nil
+	default:
+		return "", fmt.Errorf("ambiguous session ID prefix '%s' matches %d sessions", prefix, len(ids))
+	}
+}
+
 func (m *Manager) Get(id string) (*Session, error) {
 	var s Session
 	var status string

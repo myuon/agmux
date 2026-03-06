@@ -255,7 +255,11 @@ func sessionStopCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := mgr.Stop(args[0]); err != nil {
+			id, err := mgr.ResolveID(args[0])
+			if err != nil {
+				return err
+			}
+			if err := mgr.Stop(id); err != nil {
 				return err
 			}
 			fmt.Println("Session stopped.")
@@ -275,7 +279,11 @@ func sessionDeleteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := mgr.Delete(args[0]); err != nil {
+			id, err := mgr.ResolveID(args[0])
+			if err != nil {
+				return err
+			}
+			if err := mgr.Delete(id); err != nil {
 				return err
 			}
 			fmt.Println("Session deleted.")
@@ -295,7 +303,11 @@ func sessionSendCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := mgr.SendKeys(args[0], args[1]); err != nil {
+			id, err := mgr.ResolveID(args[0])
+			if err != nil {
+				return err
+			}
+			if err := mgr.SendKeys(id, args[1]); err != nil {
 				return err
 			}
 			fmt.Println("Text sent.")
@@ -326,7 +338,11 @@ func sessionCaptureCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			output, err := mgr.CaptureOutput(args[0])
+			id, err := mgr.ResolveID(args[0])
+			if err != nil {
+				return err
+			}
+			output, err := mgr.CaptureOutput(id)
 			if err != nil {
 				return err
 			}
