@@ -252,6 +252,30 @@ func (sp *StreamProcess) GetLines(limit int) []string {
 	return result
 }
 
+// GetLinesAfter returns lines added after the given index and the current total line count.
+func (sp *StreamProcess) GetLinesAfter(after int) ([]string, int) {
+	sp.mu.RLock()
+	defer sp.mu.RUnlock()
+
+	total := len(sp.lines)
+	if after >= total {
+		return nil, total
+	}
+	if after < 0 {
+		after = 0
+	}
+	result := make([]string, total-after)
+	copy(result, sp.lines[after:])
+	return result, total
+}
+
+// TotalLines returns the current total number of lines.
+func (sp *StreamProcess) TotalLines() int {
+	sp.mu.RLock()
+	defer sp.mu.RUnlock()
+	return len(sp.lines)
+}
+
 // Stop gracefully stops the stream process.
 func (sp *StreamProcess) Stop() {
 	// Close stdin to signal EOF to the process

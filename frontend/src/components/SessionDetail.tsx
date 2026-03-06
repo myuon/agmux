@@ -645,13 +645,20 @@ export function SessionDetail() {
   const [streamLines, setStreamLines] = useState<unknown[]>([]);
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>([]);
   const terminal = useAutoScroll(output);
+  const streamCursorRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!sessionId) return;
+    // Reset cursor on session change
+    streamCursorRef.current = null;
+
     api.getSession(sessionId).then((s) => {
       setSession(s);
       if (s.outputMode === "stream") {
-        api.getStreamOutput(sessionId).then(setStreamLines).catch(() => {});
+        api.getStreamOutput(sessionId).then((lines) => {
+          setStreamLines(lines);
+          streamCursorRef.current = lines.length;
+        }).catch(() => {});
       } else {
         api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
       }
@@ -662,7 +669,22 @@ export function SessionDetail() {
       api.getSession(sessionId).then((s) => {
         setSession(s);
         if (s.outputMode === "stream") {
-          api.getStreamOutput(sessionId).then(setStreamLines).catch(() => {});
+          const cursor = streamCursorRef.current;
+          if (cursor !== null) {
+            // Delta fetch: only get new lines
+            api.getStreamOutputDelta(sessionId, cursor).then((resp) => {
+              if (resp.lines.length > 0) {
+                setStreamLines((prev) => [...prev, ...resp.lines]);
+              }
+              streamCursorRef.current = resp.total;
+            }).catch(() => {});
+          } else {
+            // Fallback to full fetch if cursor not initialized
+            api.getStreamOutput(sessionId).then((lines) => {
+              setStreamLines(lines);
+              streamCursorRef.current = lines.length;
+            }).catch(() => {});
+          }
         } else {
           api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
         }
@@ -679,7 +701,20 @@ export function SessionDetail() {
     setMessage("");
     setTimeout(() => {
       if (session?.outputMode === "stream") {
-        api.getStreamOutput(sessionId).then(setStreamLines).catch(() => {});
+        const cursor = streamCursorRef.current;
+        if (cursor !== null) {
+          api.getStreamOutputDelta(sessionId, cursor).then((resp) => {
+            if (resp.lines.length > 0) {
+              setStreamLines((prev) => [...prev, ...resp.lines]);
+            }
+            streamCursorRef.current = resp.total;
+          }).catch(() => {});
+        } else {
+          api.getStreamOutput(sessionId).then((lines) => {
+            setStreamLines(lines);
+            streamCursorRef.current = lines.length;
+          }).catch(() => {});
+        }
       } else {
         api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
       }

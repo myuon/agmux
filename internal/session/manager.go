@@ -382,6 +382,52 @@ func (m *Manager) readStreamFile(id string, limit int) ([]string, error) {
 	return lines, nil
 }
 
+// GetStreamLinesAfter returns lines added after the given index and the current total.
+func (m *Manager) GetStreamLinesAfter(id string, after int) ([]string, int, error) {
+	m.streamMu.Lock()
+	sp, ok := m.streamProcesses[id]
+	m.streamMu.Unlock()
+
+	if ok {
+		lines, total := sp.GetLinesAfter(after)
+		return lines, total, nil
+	}
+
+	// Fallback: read from file
+	lines, err := m.readStreamFileAfter(id, after)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := after + len(lines)
+	return lines, total, nil
+}
+
+func (m *Manager) readStreamFileAfter(id string, after int) ([]string, error) {
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		return nil, err
+	}
+
+	path := filepath.Join(streamsDir, id+".jsonl")
+	f, err := os.Open(path)
+	if err != nil {
+		return []string{}, nil
+	}
+	defer f.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	lineIdx := 0
+	for scanner.Scan() {
+		if lineIdx >= after {
+			lines = append(lines, scanner.Text())
+		}
+		lineIdx++
+	}
+	return lines, nil
+}
+
 func (m *Manager) CaptureOutput(id string) (string, error) {
 	s, err := m.Get(id)
 	if err != nil {
