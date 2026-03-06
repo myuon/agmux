@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest,
+  Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2, ChevronRight,
 } from "lucide-react";
 import type { Session } from "../types/session";
@@ -487,13 +487,11 @@ const statusBadgeColor: Record<string, string> = {
   "?": "bg-gray-100 text-gray-600",
 };
 
-function DiffView({ files }: { files: DiffFile[] }) {
+function DiffDropdown({ files }: { files: DiffFile[] }) {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  if (files.length === 0) {
-    return null;
-  }
+  if (files.length === 0) return null;
 
   const toggle = (path: string) => {
     setExpanded((prev) => {
@@ -505,52 +503,57 @@ function DiffView({ files }: { files: DiffFile[] }) {
   };
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden mb-4 shrink-0">
+    <>
       <button
         onClick={() => setOpen(!open)}
-        className="w-full bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-600 border-b border-gray-200 flex items-center gap-2 hover:bg-gray-100 text-left"
+        className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 hover:bg-orange-100"
+        title="Changes"
       >
-        <span className="text-gray-400">{open ? "▼" : "▶"}</span>
-        Changes ({files.length} files)
+        <FileDiff className="w-3 h-3" />
+        {files.length}
       </button>
-      {open && files.map((file) => (
-        <div key={file.path} className="border-b border-gray-100 last:border-b-0">
-          <button
-            onClick={() => toggle(file.path)}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 text-left"
-          >
-            <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-bold ${statusBadgeColor[file.status] || "bg-gray-100 text-gray-600"}`}>
-              {file.status}
-            </span>
-            <span className="font-mono text-gray-700 truncate">{file.path}</span>
-            {file.diff && (
-              <span className="ml-auto text-gray-400">{expanded.has(file.path) ? "▼" : "▶"}</span>
-            )}
-          </button>
-          {expanded.has(file.path) && file.diff && (
-            <pre className="bg-gray-900 text-gray-200 text-xs p-3 overflow-x-auto whitespace-pre font-mono">
-              {file.diff.split("\n").map((line, i) => (
-                <span
-                  key={i}
-                  className={
-                    line.startsWith("+") && !line.startsWith("+++")
-                      ? "text-green-400"
-                      : line.startsWith("-") && !line.startsWith("---")
-                        ? "text-red-400"
-                        : line.startsWith("@@")
-                          ? "text-blue-400"
-                          : ""
-                  }
-                >
-                  {line}
-                  {"\n"}
+      {open && (
+        <div className="basis-full border border-gray-200 rounded-lg overflow-hidden mt-1">
+          {files.map((file) => (
+            <div key={file.path} className="border-b border-gray-100 last:border-b-0">
+              <button
+                onClick={() => toggle(file.path)}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 text-left"
+              >
+                <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-bold ${statusBadgeColor[file.status] || "bg-gray-100 text-gray-600"}`}>
+                  {file.status}
                 </span>
-              ))}
-            </pre>
-          )}
+                <span className="font-mono text-gray-700 truncate">{file.path}</span>
+                {file.diff && (
+                  <span className="ml-auto text-gray-400">{expanded.has(file.path) ? "▼" : "▶"}</span>
+                )}
+              </button>
+              {expanded.has(file.path) && file.diff && (
+                <pre className="bg-gray-900 text-gray-200 text-xs p-3 overflow-x-auto whitespace-pre font-mono">
+                  {file.diff.split("\n").map((line, i) => (
+                    <span
+                      key={i}
+                      className={
+                        line.startsWith("+") && !line.startsWith("+++")
+                          ? "text-green-400"
+                          : line.startsWith("-") && !line.startsWith("---")
+                            ? "text-red-400"
+                            : line.startsWith("@@")
+                              ? "text-blue-400"
+                              : ""
+                      }
+                    >
+                      {line}
+                      {"\n"}
+                    </span>
+                  ))}
+                </pre>
+              )}
+            </div>
+          ))}
         </div>
-      ))}
-    </div>
+      )}
+    </>
   );
 }
 
@@ -693,7 +696,7 @@ export function SessionDetail() {
           </>
         )}
       </p>
-      {(session.branch || (session.pullRequests && session.pullRequests.length > 0)) && (
+      {(session.branch || (session.pullRequests && session.pullRequests.length > 0) || diffFiles.length > 0) && (
         <div className="flex flex-wrap items-center gap-2 mb-2 shrink-0">
           {session.branch && (
             <>
@@ -719,6 +722,7 @@ export function SessionDetail() {
               #{pr.number}
             </a>
           ))}
+          <DiffDropdown files={diffFiles} />
         </div>
       )}
 
@@ -747,8 +751,6 @@ export function SessionDetail() {
           )}
         </div>
       )}
-
-      <DiffView files={diffFiles} />
 
       {isStream ? (
         <div className="flex flex-col flex-1 min-h-0">
