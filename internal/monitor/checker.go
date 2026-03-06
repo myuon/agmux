@@ -148,31 +148,8 @@ func (sc *StatusChecker) check() {
 					s.Status = session.StatusWorking
 				}
 			}
-		} else {
-			sc.logger.Info(fmt.Sprintf("[%s] %s (%s): %s (%s)",
-				s.OutputMode, s.Name, shortID,
-				s.Status, result.Reason),
-				slog.String("category", "status_checker"),
-				slog.String("sessionId", s.ID),
-			)
 		}
 	}
-
-	// Log summary
-	counts := map[session.Status]int{}
-	for _, s := range sessions {
-		counts[s.Status]++
-	}
-	sc.logger.Info(fmt.Sprintf("checked %d sessions: %d working, %d idle, %d paused, %d question, %d alignment, %d stopped",
-		len(sessions),
-		counts[session.StatusWorking],
-		counts[session.StatusIdle],
-		counts[session.StatusPaused],
-		counts[session.StatusQuestionWaiting],
-		counts[session.StatusAlignmentNeeded],
-		counts[session.StatusStopped]),
-		slog.String("category", "status_checker"),
-	)
 
 	if changed && sc.onUpdate != nil {
 		sc.onUpdate(sessions)
