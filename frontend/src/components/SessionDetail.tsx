@@ -10,6 +10,7 @@ import {
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
 import { StatusDot } from "./StatusBadge";
+import { setActiveSessionName } from "../activeSession";
 
 const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
   user: { bg: "bg-blue-50", label: "User", text: "text-blue-700" },
@@ -846,6 +847,13 @@ export function SessionDetail() {
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
 
+  // Track active session name for notification suppression
+  useEffect(() => {
+    return () => {
+      setActiveSessionName(null);
+    };
+  }, []);
+
   useEffect(() => {
     if (!sessionId) return;
     // Reset cursor on session change
@@ -853,6 +861,7 @@ export function SessionDetail() {
 
     api.getSession(sessionId).then((s) => {
       setSession(s);
+      setActiveSessionName(s.name);
       if (s.outputMode === "stream") {
         api.getStreamOutput(sessionId).then((resp) => {
           setStreamLines(resp.lines);
