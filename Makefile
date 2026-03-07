@@ -22,6 +22,7 @@ install: build-frontend
 
 restart: install
 	-lsof -ti :4321 | xargs kill
-	@sleep 1
+	@echo "Waiting for port 4321 to be released..."
+	@while lsof -ti :4321 > /dev/null 2>&1; do sleep 1; done
 	@nohup agmux serve > /dev/null 2>&1 &
 	@echo "agmux restarted"
