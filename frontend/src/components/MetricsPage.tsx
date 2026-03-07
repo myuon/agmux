@@ -169,7 +169,7 @@ export function MetricsPage() {
                   <BarChart data={costChartData}>
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis dataKey="time" fontSize={10} />
-                    <YAxis fontSize={10} tickFormatter={(v) => `$${v.toFixed(3)}`} />
+                    <YAxis fontSize={10} tickFormatter={(v: number) => `$${v.toFixed(3)}`} />
                     <Tooltip formatter={(v) => formatCost(Number(v))} />
                     <Bar dataKey="cost" fill="#3b82f6" />
                   </BarChart>
