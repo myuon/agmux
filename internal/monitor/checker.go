@@ -3,7 +3,6 @@ package monitor
 import (
 	"context"
 	"fmt"
-	"log"
 	"log/slog"
 	"time"
 
@@ -64,7 +63,7 @@ func (sc *StatusChecker) Start(ctx context.Context) {
 func (sc *StatusChecker) check() {
 	sessions, err := sc.sessions.List()
 	if err != nil {
-		log.Printf("status checker: list error: %v", err)
+		sc.logger.Error("status checker: list error", "error", err)
 		return
 	}
 
@@ -89,7 +88,7 @@ func (sc *StatusChecker) check() {
 					slog.String("sessionId", s.ID),
 				)
 				if err := sc.sessions.UpdateStatus(s.ID, session.StatusStopped); err != nil {
-					log.Printf("status checker: update %s (%s) error: %v", s.Name, shortID, err)
+					sc.logger.Error("status checker: update error", "name", s.Name, "sessionId", s.ID, "error", err)
 					continue
 				}
 				s.Status = session.StatusStopped
@@ -108,7 +107,7 @@ func (sc *StatusChecker) check() {
 				slog.String("sessionId", s.ID),
 			)
 			if err := sc.sessions.UpdateStatus(s.ID, result.Status); err != nil {
-				log.Printf("status checker: update %s (%s) error: %v", s.Name, shortID, err)
+				sc.logger.Error("status checker: update error", "name", s.Name, "sessionId", s.ID, "error", err)
 				continue
 			}
 			s.Status = result.Status
@@ -142,7 +141,7 @@ func (sc *StatusChecker) check() {
 					slog.String("sessionId", s.ID),
 				)
 				if err := sc.sessions.SendKeys(s.ID, "作業を進めてください"); err != nil {
-					log.Printf("status checker: auto-resume %s (%s) error: %v", s.Name, shortID, err)
+					sc.logger.Error("status checker: auto-resume error", "name", s.Name, "sessionId", s.ID, "error", err)
 				} else {
 					_ = sc.sessions.UpdateStatus(s.ID, session.StatusWorking)
 					s.Status = session.StatusWorking
