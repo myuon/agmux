@@ -33,6 +33,10 @@ type MobileTab = "logs" | "sessions";
 // Global notification hook — runs regardless of which page is active
 function useGlobalNotifications() {
   const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
+    if (msg.type === "server_started") {
+      sendNotification("agmux", "Server started");
+      return;
+    }
     if (msg.type === "notify") {
       const notify = localStorage.getItem("agmux-notify") === "true";
       if (!notify) return;
