@@ -147,11 +147,29 @@ export function ConfigPage() {
   );
 }
 
+const NOTIFY_STATUSES = [
+  { key: "working", label: "Working" },
+  { key: "idle", label: "Idle" },
+  { key: "question_waiting", label: "Question Waiting" },
+  { key: "alignment_needed", label: "Alignment Needed" },
+  { key: "paused", label: "Paused" },
+  { key: "stopped", label: "Stopped" },
+] as const;
+
 function NotificationStatus() {
   const [permission, setPermission] = useState(() =>
     "Notification" in window ? Notification.permission : "unsupported"
   );
   const notifyEnabled = localStorage.getItem("agmux-notify") === "true";
+  const [statusFilters, setStatusFilters] = useState<Record<string, boolean>>(() =>
+    JSON.parse(localStorage.getItem("agmux-notify-statuses") || "{}")
+  );
+
+  const toggleStatus = (key: string) => {
+    const next = { ...statusFilters, [key]: !(statusFilters[key] ?? true) };
+    setStatusFilters(next);
+    localStorage.setItem("agmux-notify-statuses", JSON.stringify(next));
+  };
 
   const requestPermission = async () => {
     if ("Notification" in window) {
@@ -187,6 +205,27 @@ function NotificationStatus() {
           {notifyEnabled ? "ON" : "OFF"}
         </span>
       </Field>
+      <div>
+        <label className="text-sm text-gray-600 block mb-2">通知するステータス</label>
+        <div className="flex flex-wrap gap-2">
+          {NOTIFY_STATUSES.map(({ key, label }) => {
+            const enabled = statusFilters[key] ?? true;
+            return (
+              <button
+                key={key}
+                onClick={() => toggleStatus(key)}
+                className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
+                  enabled
+                    ? "bg-blue-50 border-blue-300 text-blue-700"
+                    : "bg-gray-50 border-gray-200 text-gray-400"
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <div className="flex gap-2 pt-2">
         {permission !== "granted" && (
           <button

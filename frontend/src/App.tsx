@@ -36,10 +36,13 @@ function useGlobalNotifications() {
   const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === "notify") {
       const notify = localStorage.getItem("agmux-notify") === "true";
-      if (notify) {
-        const data = msg.data as { sessionName: string; summary: string };
-        sendNotification("agmux", `${data.sessionName}: ${data.summary}`);
-      }
+      if (!notify) return;
+      const data = msg.data as { sessionName: string; status: string; summary: string };
+      const statusFilters = JSON.parse(localStorage.getItem("agmux-notify-statuses") || "{}") as Record<string, boolean>;
+      // If no filters configured, default to notifying for all statuses
+      const hasAnyFilter = Object.keys(statusFilters).length > 0;
+      if (hasAnyFilter && statusFilters[data.status] === false) return;
+      sendNotification("agmux", `${data.sessionName}: ${data.summary}`);
     }
   }, []);
 
