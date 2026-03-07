@@ -597,7 +597,7 @@ func getWorkingTreeDiff(projectPath string) ([]diffFileEntry, error) {
 		return nil, err
 	}
 
-	statusOutput := strings.TrimSpace(string(out))
+	statusOutput := strings.TrimRight(string(out), "\n")
 	if statusOutput == "" {
 		return []diffFileEntry{}, nil
 	}
@@ -622,9 +622,9 @@ func getWorkingTreeDiff(projectPath string) ([]diffFileEntry, error) {
 		if len(line) < 4 {
 			continue
 		}
-		// git status --porcelain format: XY filename
+		// git status --porcelain format: XY filename (XY is 2 chars, then 1 space)
 		statusCode := strings.TrimSpace(line[:2])
-		filePath := strings.TrimSpace(line[3:])
+		filePath := line[3:]
 		// Handle renamed files: "R  old -> new"
 		if idx := strings.Index(filePath, " -> "); idx >= 0 {
 			filePath = filePath[idx+4:]
@@ -633,10 +633,20 @@ func getWorkingTreeDiff(projectPath string) ([]diffFileEntry, error) {
 		// Map status codes to single letter
 		displayStatus := mapGitStatus(statusCode)
 
+		diff := diffMap[filePath]
+
+		// For untracked/new files not in diffMap, generate diff
+		if diff == "" && (statusCode == "??" || strings.Contains(statusCode, "A")) {
+			untrackedDiff, err := generateNewFileDiff(projectPath, filePath)
+			if err == nil {
+				diff = untrackedDiff
+			}
+		}
+
 		files = append(files, diffFileEntry{
 			Path:   filePath,
 			Status: displayStatus,
-			Diff:   diffMap[filePath],
+			Diff:   diff,
 		})
 	}
 
@@ -683,6 +693,18 @@ func parseDiffPerFile(diffOutput string) map[string]string {
 	}
 
 	return result
+}
+
+func generateNewFileDiff(projectPath, filePath string) (string, error) {
+	// git diff --no-index returns exit code 1 when files differ, which is expected.
+	// Output() still returns stdout content even with non-zero exit code.
+	cmd := exec.Command("git", "diff", "--no-index", "--", "/dev/null", filePath)
+	cmd.Dir = projectPath
+	out, _ := cmd.Output()
+	if len(out) == 0 {
+		return "", nil
+	}
+	return strings.TrimRight(string(out), "\n"), nil
 }
 
 func (s *Server) recordSessionAction(sessionID, actionType, detail string) {

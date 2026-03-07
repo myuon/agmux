@@ -763,14 +763,14 @@ function DiffDropdown({ files }: { files: DiffFile[] }) {
             <div key={file.path} className="border-b border-gray-100 last:border-b-0">
               <button
                 onClick={() => toggle(file.path)}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 text-left"
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 text-left min-w-0"
               >
-                <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-bold ${statusBadgeColor[file.status] || "bg-gray-100 text-gray-600"}`}>
+                <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-bold shrink-0 ${statusBadgeColor[file.status] || "bg-gray-100 text-gray-600"}`}>
                   {file.status}
                 </span>
-                <span className="font-mono text-gray-700 truncate">{file.path}</span>
+                <span className="font-mono text-gray-700 truncate min-w-0">{file.path}</span>
                 {file.diff && (
-                  <span className="ml-auto text-gray-400">{expanded.has(file.path) ? "▼" : "▶"}</span>
+                  <span className="ml-auto text-gray-400 shrink-0">{expanded.has(file.path) ? "▼" : "▶"}</span>
                 )}
               </button>
               {expanded.has(file.path) && file.diff && (
