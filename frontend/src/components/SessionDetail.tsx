@@ -35,6 +35,19 @@ interface StreamContentBlock {
   content?: unknown;
 }
 
+// AskUserQuestion input types
+interface AskUserQuestionOption {
+  label: string;
+  description?: string;
+}
+
+interface AskUserQuestionItem {
+  question: string;
+  header?: string;
+  options: AskUserQuestionOption[];
+  multiSelect?: boolean;
+}
+
 // A display item for the merged stream view
 type StreamDisplayItem =
   | { kind: "text"; text: string }
@@ -113,6 +126,7 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
   const resultMap = new Map<string, string>();
   const skillToolIds = new Set<string>();
   const toolSearchToolIds = new Set<string>();
+  const askUserToolIds = new Set<string>();
   for (const entry of entries) {
     if (entry.type === "assistant") {
       for (const block of parseStreamContentBlocks(entry)) {
@@ -122,10 +136,17 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
         if (block.type === "tool_use" && block.name === "ToolSearch" && block.id) {
           toolSearchToolIds.add(block.id);
         }
+        if (block.type === "tool_use" && block.name === "AskUserQuestion" && block.id) {
+          askUserToolIds.add(block.id);
+        }
       }
     }
     if (entry.type !== "user") continue;
     for (const block of parseStreamContentBlocks(entry)) {
+      // Skip AskUserQuestion tool_results (auto-answered by CLI)
+      if (block.type === "tool_result" && block.tool_use_id && askUserToolIds.has(block.tool_use_id)) {
+        continue;
+      }
       if (block.type === "tool_result" && block.tool_use_id) {
         const c = typeof block.content === "string"
           ? block.content
@@ -299,6 +320,10 @@ function toolDescription(name: string, input: unknown): string | null {
   if (name === "ToolSearch" && inp && "query" in inp) {
     return String(inp.query);
   }
+  if (name === "AskUserQuestion" && inp && "questions" in inp) {
+    const questions = inp.questions as AskUserQuestionItem[];
+    return questions[0]?.question?.slice(0, 60) || null;
+  }
   return null;
 }
 
@@ -359,9 +384,62 @@ function ToolInputView({ input }: { input: unknown }) {
   return <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap">{str}</pre>;
 }
 
-function ToolCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool_call" }> }) {
+function AskUserQuestionCallView({ item, onAnswer }: { item: Extract<StreamDisplayItem, { kind: "tool_call" }>; onAnswer?: (text: string) => void }) {
+  const [expanded, setExpanded] = useState(true);
+  const inp = item.input as { questions?: AskUserQuestionItem[] } | undefined;
+  const Icon = toolIcon(item.name);
+  const desc = toolDescription(item.name, item.input);
+
+  return (
+    <div className="border border-orange-200 rounded-lg overflow-hidden bg-orange-50">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full text-left px-2.5 py-1.5 hover:bg-orange-100 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Icon className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+          <span className="font-medium text-xs text-orange-800">{item.name}</span>
+          {desc && (
+            <span className="text-xs text-orange-600 truncate min-w-0">{desc}</span>
+          )}
+        </div>
+      </button>
+      {expanded && inp?.questions && (
+        <div className="px-3 pb-3 space-y-3">
+          {inp.questions.map((q, qi) => (
+            <div key={qi}>
+              {q.header && (
+                <span className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-orange-200 text-orange-800 rounded mb-1">
+                  {q.header}
+                </span>
+              )}
+              <p className="text-sm text-gray-800 mb-2">{q.question}</p>
+              <div className="flex flex-wrap gap-2">
+                {q.options.map((opt, oi) => (
+                  <button
+                    key={oi}
+                    onClick={() => onAnswer?.(opt.label)}
+                    className="px-3 py-1.5 text-xs rounded-lg border bg-white border-gray-300 text-gray-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors"
+                    title={opt.description}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolCallView({ item, onAnswer }: { item: Extract<StreamDisplayItem, { kind: "tool_call" }>; onAnswer?: (text: string) => void }) {
   if (item.name === "TodoWrite") {
     return <TodoCallView item={item} />;
+  }
+  if (item.name === "AskUserQuestion") {
+    return <AskUserQuestionCallView item={item} onAnswer={onAnswer} />;
   }
 
   const [open, setOpen] = useState(false);
@@ -452,12 +530,12 @@ function CollapsibleText({ text }: { text: string }) {
   );
 }
 
-function StreamDisplayItemView({ item }: { item: StreamDisplayItem }) {
+function StreamDisplayItemView({ item, onAnswer }: { item: StreamDisplayItem; onAnswer?: (text: string) => void }) {
   if (item.kind === "text") {
     return <CollapsibleText text={item.text} />;
   }
   if (item.kind === "tool_call") {
-    return <ToolCallView item={item} />;
+    return <ToolCallView item={item} onAnswer={onAnswer} />;
   }
   if (item.kind === "system_event") {
     return <SystemEventView item={item} />;
@@ -560,7 +638,7 @@ function useAutoScroll(dep: unknown) {
   return { ref, onScroll };
 }
 
-function StreamOutputView({ lines, className }: { lines: unknown[]; className?: string }) {
+function StreamOutputView({ lines, className, onAnswer }: { lines: unknown[]; className?: string; onAnswer?: (text: string) => void }) {
   const { ref, onScroll } = useAutoScroll(lines);
   const [viewMode, setViewMode] = useState<StreamViewMode>("markdown");
 
@@ -599,7 +677,7 @@ function StreamOutputView({ lines, className }: { lines: unknown[]; className?: 
               return (
                 <div key={i}>
                   {group.items.map((item, j) => (
-                    <StreamDisplayItemView key={j} item={item} />
+                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} />
                   ))}
                 </div>
               );
@@ -614,7 +692,7 @@ function StreamOutputView({ lines, className }: { lines: unknown[]; className?: 
                 </div>
                 <div className="text-gray-800 break-words text-xs space-y-2">
                   {group.items.map((item, j) => (
-                    <StreamDisplayItemView key={j} item={item} />
+                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} />
                   ))}
                 </div>
               </div>
@@ -954,7 +1032,10 @@ export function SessionDetail() {
 
       {isStream ? (
         <div className="flex flex-col flex-1 min-h-0">
-          <StreamOutputView lines={streamLines} className="flex-1 min-h-0" />
+          <StreamOutputView lines={streamLines} className="flex-1 min-h-0" onAnswer={async (text) => {
+            if (!sessionId) return;
+            await api.sendToSession(sessionId, text);
+          }} />
           {sendForm}
         </div>
       ) : (
