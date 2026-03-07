@@ -183,13 +183,13 @@ func (s *Server) handleCreateGoal(args json.RawMessage) (interface{}, *jsonRPCEr
 }
 
 func (s *Server) handleCompleteGoal() (interface{}, *jsonRPCError) {
-	parent, err := s.apiCompleteGoal()
+	parentGoal, err := s.apiCompleteGoal()
 	if err != nil {
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
 
-	if parent != "" {
-		return toolResult(fmt.Sprintf("Goal completed. Returning to parent goal: %s", parent), false), nil
+	if parentGoal != "" {
+		return toolResult(fmt.Sprintf("Goal completed. Returning to parent goal: %s", parentGoal), false), nil
 	}
 	return toolResult("Goal completed. No more goals in the stack.", false), nil
 }

@@ -44,6 +44,16 @@ function useGlobalNotifications() {
       sendNotification("agmux - Escalation", `${data.sessionName}: ${data.message}`);
       return;
     }
+    if (msg.type === "goal_completed") {
+      const enabled = localStorage.getItem("agmux-notify-goal-completed") !== "false";
+      if (!enabled) return;
+      const data = msg.data as { sessionName: string; currentTask: string; goal: string; durationMs: number };
+      const thresholdMin = Number(localStorage.getItem("agmux-notify-goal-threshold-min") || "10");
+      if (data.durationMs < thresholdMin * 60 * 1000) return;
+      const durationMin = Math.round(data.durationMs / 60000);
+      sendNotification("agmux - Task Completed", `${data.sessionName}: ${data.currentTask} (${durationMin}min)`);
+      return;
+    }
     if (msg.type === "notify") {
       const notify = localStorage.getItem("agmux-notify") === "true";
       if (!notify) return;
