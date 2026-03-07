@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
+import { StatusBadge } from "./StatusBadge";
 
 const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
   user: { bg: "bg-blue-50", label: "User", text: "text-blue-700" },
@@ -826,7 +827,7 @@ export function SessionDetail() {
           <ArrowLeft className="w-4 h-4" />
         </button>
         <h2 className="text-xl sm:text-2xl font-bold">{session.name}</h2>
-        <span className="text-xs sm:text-sm text-gray-500">{session.status}</span>
+        <StatusBadge status={session.status} />
         {session.type !== "controller" && (
           <div className="flex gap-1.5 sm:ml-auto">
             {session.status !== "stopped" && (
