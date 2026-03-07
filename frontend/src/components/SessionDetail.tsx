@@ -56,7 +56,7 @@ interface AskUserQuestionItem {
 type StreamDisplayItem =
   | { kind: "text"; text: string }
   | { kind: "image"; mediaType: string; data: string }
-  | { kind: "tool_call"; name: string; input: unknown; result?: string }
+  | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }> }
   | { kind: "system_event"; eventType: string; label: string; detail?: string };
 
 function parseStreamContentBlocks(entry: StreamEntry): StreamContentBlock[] {
@@ -132,6 +132,7 @@ type DisplayGroup =
 function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
   // First pass: collect all tool_results keyed by tool_use_id, and track Skill tool IDs
   const resultMap = new Map<string, string>();
+  const resultImageMap = new Map<string, Array<{ mediaType: string; data: string }>>();
   const skillToolIds = new Set<string>();
   const toolSearchToolIds = new Set<string>();
   const askUserToolIds = new Set<string>();
@@ -160,12 +161,26 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
         continue;
       }
       if (block.type === "tool_result" && block.tool_use_id) {
-        const c = typeof block.content === "string"
-          ? block.content
-          : Array.isArray(block.content)
-            ? block.content.map((b: { text?: string }) => b.text ?? "").join("")
+        if (Array.isArray(block.content)) {
+          const texts: string[] = [];
+          const images: Array<{ mediaType: string; data: string }> = [];
+          for (const b of block.content as Array<{ type?: string; text?: string; source?: { media_type: string; data: string } }>) {
+            if (b.type === "image" && b.source) {
+              images.push({ mediaType: b.source.media_type, data: b.source.data });
+            } else if (b.text) {
+              texts.push(b.text);
+            }
+          }
+          resultMap.set(block.tool_use_id, texts.join(""));
+          if (images.length > 0) {
+            resultImageMap.set(block.tool_use_id, images);
+          }
+        } else {
+          const c = typeof block.content === "string"
+            ? block.content
             : JSON.stringify(block.content);
-        resultMap.set(block.tool_use_id, c);
+          resultMap.set(block.tool_use_id, c);
+        }
       }
     }
   }
@@ -214,6 +229,7 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
           }
 
           const result = b.id ? resultMap.get(b.id) : undefined;
+          const resultImages = b.id ? resultImageMap.get(b.id) : undefined;
 
           // For Skill calls, fold the next user text (skill content) into the result
           if (b.name === "Skill" && b.id && skillToolIds.has(b.id)) {
@@ -238,6 +254,7 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
               name: b.name,
               input: b.input,
               result: skillContent || undefined,
+              resultImages,
             });
           } else if (b.name === "ToolSearch" && b.id && toolSearchToolIds.has(b.id)) {
             // Skip the "Tool loaded." user text after ToolSearch
@@ -258,6 +275,7 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
               name: b.name,
               input: b.input,
               result,
+              resultImages,
             });
           } else if (b.name === "Agent" && b.id && agentToolIds.has(b.id)) {
             // Skip the subagent prompt user text after Agent tool call
@@ -280,6 +298,7 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
               name: b.name,
               input: b.input,
               result,
+              resultImages,
             });
           } else {
             items.push({
@@ -287,6 +306,7 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
               name: b.name ?? "unknown",
               input: b.input,
               result,
+              resultImages,
             });
           }
         }
@@ -611,10 +631,25 @@ function ToolCallView({ item, onAnswer, sessionId, escalationId, onEscalationRes
       >
         <div className="space-y-3">
           <ToolInputView input={item.input} />
-          {done && (
+          {item.resultImages && item.resultImages.length > 0 && (
+            <div>
+              <span className="text-gray-400 text-[10px] uppercase tracking-wide">Images</span>
+              <div className="mt-1 flex flex-wrap gap-2">
+                {item.resultImages.map((img, i) => (
+                  <img
+                    key={i}
+                    src={`data:${img.mediaType};base64,${img.data}`}
+                    alt={`result-${i}`}
+                    className="max-w-full max-h-96 rounded border border-gray-200"
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          {done && item.result && (
             <div>
               <span className="text-gray-400 text-[10px] uppercase tracking-wide">Output</span>
-              <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap mt-0.5">{item.result!.slice(0, 2000)}</pre>
+              <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap mt-0.5">{item.result.slice(0, 2000)}</pre>
             </div>
           )}
         </div>
