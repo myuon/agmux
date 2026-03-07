@@ -25,6 +25,7 @@ type DaemonConfig struct {
 
 type SessionConfig struct {
 	ClaudeCommand string `toml:"claude_command"`
+	SystemPrompt  string `toml:"system_prompt"`
 }
 
 func (d DaemonConfig) IntervalDuration() time.Duration {

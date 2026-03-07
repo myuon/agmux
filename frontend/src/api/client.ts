@@ -75,6 +75,15 @@ export const api = {
   getDiff: (id: string) =>
     request<{ files: DiffFile[] }>(`/sessions/${id}/diff`),
 
+  getPendingEscalation: (sessionId: string) =>
+    request<{ escalation: { id: string; sessionId: string; message: string } | null }>(`/sessions/${sessionId}/escalate`),
+
+  respondEscalation: (sessionId: string, escalationId: string, response: string) =>
+    request<{ status: string }>(`/sessions/${sessionId}/escalate/respond`, {
+      method: "POST",
+      body: JSON.stringify({ id: escalationId, response }),
+    }),
+
   getConfig: () => request<AppConfig>("/config"),
 
   updateConfig: (data: AppConfig) =>
@@ -104,5 +113,5 @@ export interface AppConfig {
   server: { port: number };
   daemon: { interval: string };
   session: { claudeCommand: string };
-  prompts?: { statusCheck: string };
+  prompts?: { statusCheck: string; systemPrompt: string };
 }

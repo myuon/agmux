@@ -1,16 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff, X, FolderOpen,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2,
-  ListTodo, Target, RotateCcw, Circle, Bot, ImagePlus, SendHorizonal,
+  ListTodo, Target, RotateCcw, Circle, Bot, ImagePlus, SendHorizonal, AlertTriangle,
 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
 import { StatusDot } from "./StatusBadge";
 import { setActiveSessionName } from "../activeSession";
+import { useWebSocket } from "../hooks/useWebSocket";
 
 const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
   user: { bg: "bg-blue-50", label: "User", text: "text-blue-700" },
@@ -338,6 +339,7 @@ function toolIcon(name: string) {
     case "WebFetch":
     case "WebSearch": return Globe;
     case "Agent": return Bot;
+    case "mcp__agmux__escalate": return AlertTriangle;
     default: return Wrench;
   }
 }
@@ -372,6 +374,9 @@ function toolDescription(name: string, input: unknown): string | null {
   if (name === "AskUserQuestion" && inp && "questions" in inp) {
     const questions = inp.questions as AskUserQuestionItem[];
     return questions[0]?.question?.slice(0, 60) || null;
+  }
+  if (name === "mcp__agmux__escalate" && inp && "message" in inp) {
+    return String(inp.message).slice(0, 80);
   }
   return null;
 }
@@ -483,12 +488,96 @@ function AskUserQuestionCallView({ item, onAnswer }: { item: Extract<StreamDispl
   );
 }
 
-function ToolCallView({ item, onAnswer }: { item: Extract<StreamDisplayItem, { kind: "tool_call" }>; onAnswer?: (text: string) => void }) {
+function EscalateCallView({ item, sessionId, escalationId, onResponded }: {
+  item: Extract<StreamDisplayItem, { kind: "tool_call" }>;
+  sessionId?: string;
+  escalationId?: string;
+  onResponded?: () => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const [response, setResponse] = useState("");
+  const [sending, setSending] = useState(false);
+  const inp = item.input as { message?: string } | undefined;
+  const isResolved = item.result !== undefined;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sessionId || !response.trim() || sending) return;
+
+    if (!escalationId) return;
+    const escId = escalationId;
+    setSending(true);
+    try {
+      await api.respondEscalation(sessionId, escId, response.trim());
+      setResponse("");
+      onResponded?.();
+    } catch {
+      // ignore errors
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="border border-red-200 rounded-lg overflow-hidden bg-red-50">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full text-left px-2.5 py-1.5 hover:bg-red-100 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+          <span className="font-medium text-xs text-red-800">Escalation</span>
+          {isResolved && <CheckCircle2 className="w-3 h-3 text-green-500 ml-auto shrink-0" />}
+        </div>
+      </button>
+      {expanded && (
+        <div className="px-3 pb-3 space-y-2">
+          <p className="text-sm text-gray-800">{inp?.message}</p>
+          {isResolved ? (
+            <div className="text-xs text-gray-500 bg-white border border-gray-200 rounded px-2 py-1.5">
+              <span className="text-gray-400">Response: </span>
+              {item.result}
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="flex gap-2">
+              <input
+                type="text"
+                value={response}
+                onChange={(e) => setResponse(e.target.value)}
+                placeholder="Enter your response..."
+                className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-xs"
+                disabled={sending}
+              />
+              <button
+                type="submit"
+                disabled={sending || !response.trim()}
+                className="px-3 py-1.5 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+              >
+                {sending ? "..." : "Respond"}
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolCallView({ item, onAnswer, sessionId, escalationId, onEscalationResponded }: {
+  item: Extract<StreamDisplayItem, { kind: "tool_call" }>;
+  onAnswer?: (text: string) => void;
+  sessionId?: string;
+  escalationId?: string;
+  onEscalationResponded?: () => void;
+}) {
   if (item.name === "TodoWrite") {
     return <TodoCallView item={item} />;
   }
   if (item.name === "AskUserQuestion") {
     return <AskUserQuestionCallView item={item} onAnswer={onAnswer} />;
+  }
+  if (item.name === "mcp__agmux__escalate") {
+    return <EscalateCallView item={item} sessionId={sessionId} escalationId={escalationId} onResponded={onEscalationResponded} />;
   }
 
   const [open, setOpen] = useState(false);
@@ -579,7 +668,13 @@ function CollapsibleText({ text }: { text: string }) {
   );
 }
 
-function StreamDisplayItemView({ item, onAnswer }: { item: StreamDisplayItem; onAnswer?: (text: string) => void }) {
+function StreamDisplayItemView({ item, onAnswer, sessionId, escalationId, onEscalationResponded }: {
+  item: StreamDisplayItem;
+  onAnswer?: (text: string) => void;
+  sessionId?: string;
+  escalationId?: string;
+  onEscalationResponded?: () => void;
+}) {
   if (item.kind === "text") {
     return <CollapsibleText text={item.text} />;
   }
@@ -593,7 +688,7 @@ function StreamDisplayItemView({ item, onAnswer }: { item: StreamDisplayItem; on
     );
   }
   if (item.kind === "tool_call") {
-    return <ToolCallView item={item} onAnswer={onAnswer} />;
+    return <ToolCallView item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} onEscalationResponded={onEscalationResponded} />;
   }
   if (item.kind === "system_event") {
     return <SystemEventView item={item} />;
@@ -696,7 +791,14 @@ function useAutoScroll(dep: unknown) {
   return { ref, onScroll };
 }
 
-function StreamOutputView({ lines, className, onAnswer }: { lines: unknown[]; className?: string; onAnswer?: (text: string) => void }) {
+function StreamOutputView({ lines, className, onAnswer, sessionId, escalationId, onEscalationResponded }: {
+  lines: unknown[];
+  className?: string;
+  onAnswer?: (text: string) => void;
+  sessionId?: string;
+  escalationId?: string;
+  onEscalationResponded?: () => void;
+}) {
   const { ref, onScroll } = useAutoScroll(lines);
   const [viewMode, setViewMode] = useState<StreamViewMode>("markdown");
 
@@ -735,7 +837,7 @@ function StreamOutputView({ lines, className, onAnswer }: { lines: unknown[]; cl
               return (
                 <div key={i}>
                   {group.items.map((item, j) => (
-                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} />
+                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} onEscalationResponded={onEscalationResponded} />
                   ))}
                 </div>
               );
@@ -750,7 +852,7 @@ function StreamOutputView({ lines, className, onAnswer }: { lines: unknown[]; cl
                 </div>
                 <div className="text-gray-800 break-words text-xs space-y-2">
                   {group.items.map((item, j) => (
-                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} />
+                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} onEscalationResponded={onEscalationResponded} />
                   ))}
                 </div>
               </div>
@@ -854,6 +956,7 @@ export function SessionDetail() {
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>([]);
   const [pendingImages, setPendingImages] = useState<{ data: string; mediaType: string; preview: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingEscalationId, setPendingEscalationId] = useState<string | null>(null);
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
 
@@ -863,6 +966,17 @@ export function SessionDetail() {
       setActiveSessionName(null);
     };
   }, []);
+
+  // Listen for escalation WebSocket messages
+  const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
+    if (msg.type === "escalation") {
+      const data = msg.data as { id: string; sessionId: string };
+      if (data.sessionId === sessionId) {
+        setPendingEscalationId(data.id);
+      }
+    }
+  }, [sessionId]);
+  useWebSocket(handleWsMessage);
 
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -912,6 +1026,9 @@ export function SessionDetail() {
       }
     });
     api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
+    api.getPendingEscalation(sessionId).then((r) => {
+      if (r.escalation) setPendingEscalationId(r.escalation.id);
+    }).catch(() => {});
 
     const interval = setInterval(() => {
       api.getSession(sessionId).then((s) => {
@@ -1195,7 +1312,7 @@ export function SessionDetail() {
 
       {isStream ? (
         <div className="flex flex-col flex-1 min-h-0">
-          <StreamOutputView lines={streamLines} className="flex-1 min-h-0" onAnswer={async (text) => {
+          <StreamOutputView lines={streamLines} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} onEscalationResponded={() => setPendingEscalationId(null)} onAnswer={async (text) => {
             if (!sessionId) return;
             await api.sendToSession(sessionId, text);
           }} />

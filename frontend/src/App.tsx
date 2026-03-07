@@ -38,6 +38,11 @@ function useGlobalNotifications() {
       sendNotification("agmux", "Server started");
       return;
     }
+    if (msg.type === "escalation") {
+      const data = msg.data as { sessionName: string; message: string };
+      sendNotification("agmux - Escalation", `${data.sessionName}: ${data.message}`);
+      return;
+    }
     if (msg.type === "notify") {
       const notify = localStorage.getItem("agmux-notify") === "true";
       if (!notify) return;

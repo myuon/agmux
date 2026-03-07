@@ -22,26 +22,36 @@ type Manager struct {
 	tmux            *tmux.Client
 	claudeCommand   string
 	apiPort         int
+	systemPrompt    string
 	streamProcesses map[string]*StreamProcess
 	streamMu        sync.Mutex
 	logger          *slog.Logger
 }
 
-func NewManager(db *sql.DB, tmuxClient *tmux.Client, claudeCommand string, apiPort int, logger *slog.Logger) *Manager {
+func NewManager(db *sql.DB, tmuxClient *tmux.Client, claudeCommand string, apiPort int, logger *slog.Logger, systemPrompt string) *Manager {
 	if claudeCommand == "" {
 		claudeCommand = "claude --dangerously-skip-permissions"
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
+	if systemPrompt == "" {
+		systemPrompt = defaultSystemPrompt
+	}
 	return &Manager{
 		db:              db,
 		tmux:            tmuxClient,
 		claudeCommand:   claudeCommand,
 		apiPort:         apiPort,
+		systemPrompt:    systemPrompt,
 		streamProcesses: make(map[string]*StreamProcess),
 		logger:          logger.With("component", "session_manager"),
 	}
+}
+
+// SystemPrompt returns the system prompt used for sessions.
+func (m *Manager) SystemPrompt() string {
+	return m.systemPrompt
 }
 
 // RecoverStreamProcesses restarts stream processes for all working stream sessions.
@@ -70,7 +80,7 @@ func (m *Manager) RecoverStreamProcesses() {
 			continue
 		}
 		claudeSessionID := ReadClaudeSessionID(id)
-		sp, err := StartStreamProcess(id, projectPath, mcpPath, true, false, claudeSessionID)
+		sp, err := StartStreamProcess(id, projectPath, mcpPath, m.systemPrompt, true, false, claudeSessionID)
 		if err != nil {
 			m.logger.Error("recover stream processes: start failed", "sessionId", id, "error", err)
 			continue
@@ -103,7 +113,7 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 
 	if outputMode == OutputModeStream {
 		// Stream mode: start Go subprocess instead of claude TUI
-		sp, err := StartStreamProcess(id, projectPath, mcpConfigPath, false, worktree)
+		sp, err := StartStreamProcess(id, projectPath, mcpConfigPath, m.systemPrompt, false, worktree)
 		if err != nil {
 			_ = m.tmux.KillSession(name)
 			return nil, fmt.Errorf("start stream process: %w", err)
@@ -121,7 +131,7 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 	} else {
 		// Terminal mode: launch claude TUI in tmux
 		time.Sleep(300 * time.Millisecond)
-		claudeCmd := m.claudeCommand + " --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(agmuxSystemPrompt)
+		claudeCmd := m.claudeCommand + " --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(m.systemPrompt)
 		if err := m.tmux.SendKeysOnce(tmuxSession, claudeCmd); err != nil {
 			return nil, fmt.Errorf("launch claude: %w", err)
 		}
@@ -384,7 +394,7 @@ func (m *Manager) Clear(id string) error {
 	if s.OutputMode == OutputModeStream {
 		// Start fresh with a new CLI session ID to avoid resuming the old conversation
 		freshCLISessionID := uuid.New().String()
-		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, false, false, freshCLISessionID)
+		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, m.systemPrompt, false, false, freshCLISessionID)
 		if err != nil {
 			return fmt.Errorf("start stream process: %w", err)
 		}
@@ -393,7 +403,7 @@ func (m *Manager) Clear(id string) error {
 		m.streamMu.Unlock()
 	} else {
 		time.Sleep(300 * time.Millisecond)
-		claudeCmd := m.claudeCommand + " --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(agmuxSystemPrompt)
+		claudeCmd := m.claudeCommand + " --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(m.systemPrompt)
 		if err := m.tmux.SendKeysOnce(s.TmuxSession, claudeCmd); err != nil {
 			return fmt.Errorf("launch claude: %w", err)
 		}
@@ -422,7 +432,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			mcpPath, _ := writeMCPConfig(s.ID, m.apiPort)
 			claudeSessionID := ReadClaudeSessionID(s.ID)
 			var err error
-			sp, err = StartStreamProcess(s.ID, s.ProjectPath, mcpPath, true, false, claudeSessionID)
+			sp, err = StartStreamProcess(s.ID, s.ProjectPath, mcpPath, m.systemPrompt, true, false, claudeSessionID)
 			if err != nil {
 				return fmt.Errorf("restart stream process: %w", err)
 			}
@@ -643,7 +653,7 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 	}
 
 	// Stream mode: start Go subprocess instead of claude TUI
-	sp, err := StartStreamProcess(id, projectPath, mcpConfigPath, false, false)
+	sp, err := StartStreamProcess(id, projectPath, mcpConfigPath, m.systemPrompt, false, false)
 	if err != nil {
 		_ = m.tmux.KillSession(name)
 		return nil, fmt.Errorf("start stream process for controller: %w", err)
@@ -766,7 +776,7 @@ func (m *Manager) Reconnect(id string) error {
 
 	if s.OutputMode == OutputModeStream {
 		claudeSessionID := ReadClaudeSessionID(id)
-		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, true, false, claudeSessionID)
+		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, m.systemPrompt, true, false, claudeSessionID)
 		if err != nil {
 			return fmt.Errorf("start stream process: %w", err)
 		}
@@ -775,7 +785,7 @@ func (m *Manager) Reconnect(id string) error {
 		m.streamMu.Unlock()
 	} else {
 		time.Sleep(300 * time.Millisecond)
-		claudeCmd := m.claudeCommand + " --resume --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(agmuxSystemPrompt)
+		claudeCmd := m.claudeCommand + " --resume --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(m.systemPrompt)
 		if err := m.tmux.SendKeysOnce(s.TmuxSession, claudeCmd); err != nil {
 			return fmt.Errorf("launch claude: %w", err)
 		}
