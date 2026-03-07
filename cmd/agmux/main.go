@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -14,7 +15,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -238,16 +238,10 @@ func sessionCreateCmd() *cobra.Command {
 				return fmt.Errorf("invalid mode %q: must be 'terminal' or 'stream'", mode)
 			}
 
-			// For stream mode, delegate to the running server via HTTP API.
-			// The CLI process exits immediately, so child processes (claude)
-			// would be killed. The server keeps them alive.
 			if outputMode == session.OutputModeStream {
-				cfg, _ := config.Load()
-				port := cfg.Server.Port
-				if port == 0 {
-					port = 4321
-				}
-				return createSessionViaAPI(port, args[0], projectPath, prompt, string(outputMode), worktree)
+				// Stream mode: delegate to the running agmux server so the
+				// child process outlives this CLI invocation.
+				return createSessionViaAPI(args[0], projectPath, prompt, mode, worktree)
 			}
 
 			cfg, _ := config.Load()
@@ -270,6 +264,49 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&worktree, "worktree", "w", false, "Create a git worktree for the session")
 
 	return cmd
+}
+
+// createSessionViaAPI sends a POST /api/sessions request to the running agmux server
+// so that the stream process is owned by the server, not this short-lived CLI process.
+func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool) error {
+	cfg, _ := config.Load()
+	port := cfg.Server.Port
+
+	absPath, err := filepath.Abs(projectPath)
+	if err != nil {
+		return fmt.Errorf("resolve project path: %w", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"name":        name,
+		"projectPath": absPath,
+		"prompt":      prompt,
+		"outputMode":  mode,
+		"worktree":    worktree,
+	})
+
+	url := fmt.Sprintf("http://localhost:%d/api/sessions", port)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to connect to agmux server on port %d (is it running?): %w", port, err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		OutputMode string `json:"outputMode"`
+		Error      string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode server response: %w", err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("server error: %s", result.Error)
+	}
+
+	fmt.Printf("Created session: %s (id: %s, mode: %s)\n", result.Name, result.ID, result.OutputMode)
+	return nil
 }
 
 func sessionListCmd() *cobra.Command {
@@ -411,37 +448,6 @@ func sessionCaptureCmd() *cobra.Command {
 	}
 }
 
-func createSessionViaAPI(port int, name, projectPath, prompt, outputMode string, worktree bool) error {
-	body := fmt.Sprintf(
-		`{"name":%q,"projectPath":%q,"prompt":%q,"outputMode":%q,"worktree":%t}`,
-		name, projectPath, prompt, outputMode, worktree,
-	)
-	resp, err := http.Post(
-		fmt.Sprintf("http://localhost:%d/api/sessions", port),
-		"application/json",
-		strings.NewReader(body),
-	)
-	if err != nil {
-		return fmt.Errorf("connect to agmux server: %w (is agmux serve running?)", err)
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		ID         string `json:"id"`
-		Name       string `json:"name"`
-		OutputMode string `json:"outputMode"`
-		Error      string `json:"error"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("decode response: %w", err)
-	}
-	if result.Error != "" {
-		return fmt.Errorf("server error: %s", result.Error)
-	}
-	fmt.Printf("Created session: %s (id: %s, mode: %s)\n", result.Name, result.ID, result.OutputMode)
-	return nil
-}
-
 func logsCmd() *cobra.Command {
 	var follow bool
 	var lines int
@@ -561,4 +567,3 @@ func readTailLines(file *os.File, n int) ([]string, error) {
 	}
 	return allLines[len(allLines)-n:], nil
 }
-// modified
