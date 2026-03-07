@@ -803,17 +803,17 @@ function DiffDropdown({ files }: { files: DiffFile[] }) {
                 )}
               </button>
               {expanded.has(file.path) && file.diff && (
-                <pre className="bg-gray-900 text-gray-200 text-xs p-3 overflow-x-auto whitespace-pre font-mono">
+                <pre className="bg-gray-50 text-gray-800 text-xs p-3 overflow-x-auto whitespace-pre font-mono border-t border-gray-200">
                   {file.diff.split("\n").map((line, i) => (
                     <span
                       key={i}
                       className={
                         line.startsWith("+") && !line.startsWith("+++")
-                          ? "text-green-400"
+                          ? "text-green-700 bg-green-50"
                           : line.startsWith("-") && !line.startsWith("---")
-                            ? "text-red-400"
+                            ? "text-red-700 bg-red-50"
                             : line.startsWith("@@")
-                              ? "text-blue-400"
+                              ? "text-blue-600"
                               : ""
                       }
                     >
@@ -978,7 +978,7 @@ export function SessionDetail() {
               <button
                 type="button"
                 onClick={() => removeImage(i)}
-                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px]"
               >
                 <X className="w-2.5 h-2.5" />
               </button>
