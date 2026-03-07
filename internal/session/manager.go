@@ -428,17 +428,27 @@ func (m *Manager) SendKeys(id string, text string) error {
 
 // GetStreamLines returns the last N lines from the stream process memory,
 // falling back to file if no active process (e.g. after server restart).
-func (m *Manager) GetStreamLines(id string, limit int) ([]string, error) {
+// Also returns the total line count so callers can use it as a cursor for delta fetches.
+func (m *Manager) GetStreamLines(id string, limit int) ([]string, int, error) {
 	m.streamMu.Lock()
 	sp, ok := m.streamProcesses[id]
 	m.streamMu.Unlock()
 
 	if ok {
-		return sp.GetLines(limit), nil
+		total := sp.TotalLines()
+		return sp.GetLines(limit), total, nil
 	}
 
-	// Fallback: read from file
-	return m.readStreamFile(id, limit)
+	// Fallback: read all lines from file, then truncate to limit
+	allLines, err := m.readStreamFile(id, 0)
+	if err != nil {
+		return nil, 0, err
+	}
+	total := len(allLines)
+	if limit > 0 && len(allLines) > limit {
+		allLines = allLines[len(allLines)-limit:]
+	}
+	return allLines, total, nil
 }
 
 func (m *Manager) readStreamFile(id string, limit int) ([]string, error) {

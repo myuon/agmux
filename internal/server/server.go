@@ -348,7 +348,7 @@ func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	lines, err := s.sessions.GetStreamLines(id, limit)
+	lines, total, err := s.sessions.GetStreamLines(id, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -362,7 +362,10 @@ func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
 		result = []json.RawMessage{}
 	}
 
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"lines": result,
+		"total": total,
+	})
 }
 
 func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
