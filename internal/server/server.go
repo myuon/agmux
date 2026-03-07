@@ -622,9 +622,9 @@ func getWorkingTreeDiff(projectPath string) ([]diffFileEntry, error) {
 		if len(line) < 4 {
 			continue
 		}
-		// git status --porcelain format: XY filename
+		// git status --porcelain format: XY filename (XY is 2 chars, then 1 space)
 		statusCode := strings.TrimSpace(line[:2])
-		filePath := strings.TrimSpace(line[3:])
+		filePath := line[3:]
 		// Handle renamed files: "R  old -> new"
 		if idx := strings.Index(filePath, " -> "); idx >= 0 {
 			filePath = filePath[idx+4:]
