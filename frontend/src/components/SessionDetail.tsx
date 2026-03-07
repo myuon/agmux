@@ -103,6 +103,14 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
     };
   }
 
+  if (subtype === "init") {
+    return {
+      kind: "system_event",
+      eventType: "session_resumed",
+      label: "セッション再開",
+    };
+  }
+
   if (subtype === "task_notification") {
     const status = raw.status as string;
     const summary = (raw.summary as string) || "";
@@ -162,12 +170,19 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
   // Second pass: build display groups
   const groups: DisplayGroup[] = [];
   const skillSkipIndices = new Set<number>();
+  let initCount = 0;
 
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx];
 
     // Handle system events
     if (entry.type === "system") {
+      // Track init count; skip the first one (session start)
+      const raw = entry as unknown as Record<string, unknown>;
+      if (raw.subtype === "init") {
+        initCount++;
+        if (initCount === 1) continue;
+      }
       const sysItem = parseSystemEvent(entry);
       if (sysItem) {
         groups.push({ role: "system", items: [sysItem] });

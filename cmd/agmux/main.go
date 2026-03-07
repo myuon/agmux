@@ -107,6 +107,9 @@ func serveCmd() *cobra.Command {
 			defer cancel()
 			go checker.Start(ctx)
 
+			// Recover stream processes for working sessions
+			mgr.RecoverStreamProcesses()
+
 			// Create controller session (singleton)
 			controllerDir, err := db.ControllerDir()
 			if err != nil {
@@ -150,6 +153,7 @@ func serveCmd() *cobra.Command {
 				return err
 			case sig := <-shutdownCh:
 				logger.Info(fmt.Sprintf("Received %s, shutting down gracefully...", sig))
+				mgr.StopAllStreamProcesses()
 				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer shutdownCancel()
 				return httpSrv.Shutdown(shutdownCtx)
@@ -210,7 +214,7 @@ func sessionCreateCmd() *cobra.Command {
 
 	cmd.Flags().StringVarP(&projectPath, "path", "p", ".", "Project directory path")
 	cmd.Flags().StringVarP(&prompt, "message", "m", "", "Initial prompt to send")
-	cmd.Flags().StringVar(&mode, "mode", "terminal", "Output mode: terminal or stream")
+	cmd.Flags().StringVar(&mode, "mode", "stream", "Output mode: terminal or stream")
 	cmd.Flags().BoolVarP(&worktree, "worktree", "w", false, "Create a git worktree for the session")
 
 	return cmd
