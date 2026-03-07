@@ -36,10 +36,16 @@ function useGlobalNotifications() {
   const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === "notify") {
       const notify = localStorage.getItem("agmux-notify") === "true";
-      if (notify) {
-        const data = msg.data as { sessionName: string; summary: string };
-        sendNotification("agmux", `${data.sessionName}: ${data.summary}`);
-      }
+      if (!notify) return;
+      const data = msg.data as { sessionName: string; status: string; summary: string };
+      const defaultStatuses: Record<string, boolean> = {
+        working: false, idle: true, question_waiting: true,
+        alignment_needed: true, paused: false, stopped: false,
+      };
+      const saved = localStorage.getItem("agmux-notify-statuses");
+      const statusFilters = saved ? JSON.parse(saved) as Record<string, boolean> : defaultStatuses;
+      if (!(statusFilters[data.status] ?? defaultStatuses[data.status] ?? true)) return;
+      sendNotification("agmux", `${data.sessionName}: ${data.summary}`);
     }
   }, []);
 
@@ -53,27 +59,6 @@ function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const mobileTab: MobileTab = searchParams.get("tab") === "sessions" ? "sessions" : "logs";
   const navigate = useNavigate();
-  const [notifyEnabled, setNotifyEnabled] = useState(() => {
-    return localStorage.getItem("agmux-notify") === "true";
-  });
-
-  const toggleNotify = async () => {
-    if (!notifyEnabled) {
-      if ("Notification" in window) {
-        const perm = Notification.permission === "granted"
-          ? "granted"
-          : await Notification.requestPermission();
-        if (perm === "granted") {
-          setNotifyEnabled(true);
-          localStorage.setItem("agmux-notify", "true");
-        }
-      }
-    } else {
-      setNotifyEnabled(false);
-      localStorage.setItem("agmux-notify", "false");
-    }
-  };
-
   const loadSessions = () => {
     api.listSessions().then((data) => {
       setSessions(data);
@@ -132,19 +117,6 @@ function Dashboard() {
       <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-3 flex items-center justify-between shrink-0">
         <h1 className="text-lg md:text-xl font-bold text-gray-900">agmux</h1>
         <div className="flex items-center gap-2">
-          <button
-            onClick={toggleNotify}
-            className={`p-1.5 rounded-lg hover:bg-gray-100 ${notifyEnabled ? "text-blue-600" : "text-gray-400"}`}
-            title={notifyEnabled ? "Notifications ON" : "Notifications OFF"}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              {notifyEnabled ? (
-                <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
-              ) : (
-                <path fillRule="evenodd" d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A6.002 6.002 0 0016 8a6 6 0 00-6-6c-1.558 0-2.98.594-4.048 1.566L3.707 2.293zM4 8c0-.31.024-.615.07-.912L13.586 16.6H4a1 1 0 01-.707-1.707L4 14.186V8zm6 10a3 3 0 01-2.83-2h5.66A3 3 0 0110 18z" clipRule="evenodd" />
-              )}
-            </svg>
-          </button>
           <button
             onClick={() => navigate("/config")}
             className="p-1.5 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"
