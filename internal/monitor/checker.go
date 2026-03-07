@@ -21,7 +21,7 @@ type StatusChecker struct {
 	tmux     *tmux.Client
 	logger   *slog.Logger
 	onUpdate func(sessions []session.Session)
-	onNotify func(sessionName, status, summary string)
+	onNotify func(sessionId, sessionName, status, summary string)
 	interval time.Duration
 }
 
@@ -39,7 +39,7 @@ func (sc *StatusChecker) SetOnUpdate(fn func(sessions []session.Session)) {
 	sc.onUpdate = fn
 }
 
-func (sc *StatusChecker) SetOnNotify(fn func(sessionName, status, summary string)) {
+func (sc *StatusChecker) SetOnNotify(fn func(sessionId, sessionName, status, summary string)) {
 	sc.onNotify = fn
 }
 
@@ -129,7 +129,7 @@ func (sc *StatusChecker) check() {
 					slog.String("sessionId", s.ID),
 				)
 				if sc.onNotify != nil {
-					sc.onNotify(s.Name, string(result.Status), summary)
+					sc.onNotify(s.ID, s.Name, string(result.Status), summary)
 				}
 			}
 
