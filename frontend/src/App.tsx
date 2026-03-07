@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { Routes, Route, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
-import { CreateSession } from "./components/CreateSession";
 import { SessionDetail } from "./components/SessionDetail";
 import { LogPanel } from "./components/LogPanel";
 import { SessionList } from "./components/SessionList";
@@ -54,7 +53,6 @@ function useGlobalNotifications() {
 
 function Dashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
-  const [showCreate, setShowCreate] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const mobileTab: MobileTab = searchParams.get("tab") === "sessions" ? "sessions" : "logs";
@@ -77,21 +75,6 @@ function Dashboard() {
   }, []);
 
   useWebSocket(handleWsMessage);
-
-  const handleCreate = async (data: {
-    name: string;
-    projectPath: string;
-    prompt?: string;
-    outputMode?: "terminal" | "stream";
-  }) => {
-    try {
-      await api.createSession(data);
-      setShowCreate(false);
-      loadSessions();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to create session");
-    }
-  };
 
   const handleStop = async (id: string) => {
     try {
@@ -127,10 +110,19 @@ function Dashboard() {
             </svg>
           </button>
           <button
-            onClick={() => setShowCreate(true)}
-            className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            onClick={() => {
+              const controller = sessions.find((s) => s.type === "controller");
+              if (controller) {
+                navigate(`/sessions/${controller.id}`);
+              }
+            }}
+            className="p-1.5 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"
+            title="Controller"
           >
-            + New Session
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="4 17 10 11 4 5" />
+              <line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
           </button>
         </div>
       </header>
@@ -200,12 +192,6 @@ function Dashboard() {
         </div>
       </div>
 
-      {showCreate && (
-        <CreateSession
-          onClose={() => setShowCreate(false)}
-          onCreate={handleCreate}
-        />
-      )}
     </div>
   );
 }
