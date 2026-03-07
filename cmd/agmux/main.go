@@ -143,17 +143,11 @@ func serveCmd() *cobra.Command {
 
 			httpSrv := srv.NewHTTPServer(addr)
 
-			// Listen first so we can notify clients the moment the server is ready
+			// Listen first so we can start serving immediately
 			ln, err := net.Listen("tcp", addr)
 			if err != nil {
 				return fmt.Errorf("listen: %w", err)
 			}
-
-			// Notify connected clients that the server has started
-			hub.Broadcast(server.Message{
-				Type: "server_started",
-			})
-			logger.Info("Server started, notification sent")
 
 			// Graceful shutdown on SIGTERM/SIGINT
 			shutdownCh := make(chan os.Signal, 1)
@@ -162,6 +156,15 @@ func serveCmd() *cobra.Command {
 			errCh := make(chan error, 1)
 			go func() {
 				errCh <- httpSrv.Serve(ln)
+			}()
+
+			// Notify after Serve starts, with delay for clients to reconnect
+			go func() {
+				time.Sleep(3 * time.Second)
+				hub.Broadcast(server.Message{
+					Type: "server_started",
+				})
+				logger.Info("Server started, notification sent")
 			}()
 
 			select {
