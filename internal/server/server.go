@@ -116,6 +116,7 @@ type createSessionRequest struct {
 	ProjectPath string `json:"projectPath"`
 	Prompt      string `json:"prompt,omitempty"`
 	OutputMode  string `json:"outputMode,omitempty"`
+	Worktree    bool   `json:"worktree,omitempty"`
 }
 
 type sendRequest struct {
@@ -149,7 +150,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and projectPath are required")
 		return
 	}
-	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, session.OutputMode(req.OutputMode))
+	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, session.OutputMode(req.OutputMode), req.Worktree)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

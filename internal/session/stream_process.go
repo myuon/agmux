@@ -63,7 +63,7 @@ func ReadClaudeSessionID(agmuxSessionID string) string {
 // If resume is true, it uses --resume to continue an existing conversation;
 // otherwise it uses --session-id to start a new one.
 // claudeSessionID is only used when resume=true — it's the Claude-assigned session ID.
-func StartStreamProcess(sessionID, projectPath, mcpConfigPath string, resume bool, claudeSessionID ...string) (*StreamProcess, error) {
+func StartStreamProcess(sessionID, projectPath, mcpConfigPath string, resume bool, worktree bool, claudeSessionID ...string) (*StreamProcess, error) {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
 		return nil, fmt.Errorf("get streams dir: %w", err)
@@ -104,6 +104,9 @@ func StartStreamProcess(sessionID, projectPath, mcpConfigPath string, resume boo
 		args = append(args, "--mcp-config", mcpConfigPath)
 	}
 	args = append(args, "--append-system-prompt", agmuxSystemPrompt)
+	if worktree {
+		args = append(args, "--worktree")
+	}
 	cmd := exec.Command("claude", args...)
 	cmd.Dir = projectPath
 	// Filter out CLAUDECODE env var to avoid nested session detection

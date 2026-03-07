@@ -37,7 +37,7 @@ func NewManager(db *sql.DB, tmuxClient *tmux.Client, claudeCommand string, apiPo
 	}
 }
 
-func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode) (*Session, error) {
+func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode, worktree bool) (*Session, error) {
 	if outputMode == "" {
 		outputMode = OutputModeTerminal
 	}
@@ -58,7 +58,7 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 
 	if outputMode == OutputModeStream {
 		// Stream mode: start Go subprocess instead of claude TUI
-		sp, err := StartStreamProcess(id, projectPath, mcpConfigPath, false)
+		sp, err := StartStreamProcess(id, projectPath, mcpConfigPath, false, worktree)
 		if err != nil {
 			_ = m.tmux.KillSession(name)
 			return nil, fmt.Errorf("start stream process: %w", err)
@@ -324,7 +324,7 @@ func (m *Manager) Clear(id string) error {
 	if s.OutputMode == OutputModeStream {
 		// Start fresh with a new CLI session ID to avoid resuming the old conversation
 		freshCLISessionID := uuid.New().String()
-		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, false, freshCLISessionID)
+		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, false, false, freshCLISessionID)
 		if err != nil {
 			return fmt.Errorf("start stream process: %w", err)
 		}
@@ -358,7 +358,7 @@ func (m *Manager) SendKeys(id string, text string) error {
 			mcpPath, _ := writeMCPConfig(s.ID, m.apiPort)
 			claudeSessionID := ReadClaudeSessionID(s.ID)
 			var err error
-			sp, err = StartStreamProcess(s.ID, s.ProjectPath, mcpPath, true, claudeSessionID)
+			sp, err = StartStreamProcess(s.ID, s.ProjectPath, mcpPath, true, false, claudeSessionID)
 			if err != nil {
 				return fmt.Errorf("restart stream process: %w", err)
 			}
@@ -569,7 +569,7 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 	}
 
 	// Stream mode: start Go subprocess instead of claude TUI
-	sp, err := StartStreamProcess(id, projectPath, mcpConfigPath, false)
+	sp, err := StartStreamProcess(id, projectPath, mcpConfigPath, false, false)
 	if err != nil {
 		_ = m.tmux.KillSession(name)
 		return nil, fmt.Errorf("start stream process for controller: %w", err)
@@ -692,7 +692,7 @@ func (m *Manager) Reconnect(id string) error {
 
 	if s.OutputMode == OutputModeStream {
 		claudeSessionID := ReadClaudeSessionID(id)
-		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, true, claudeSessionID)
+		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, true, false, claudeSessionID)
 		if err != nil {
 			return fmt.Errorf("start stream process: %w", err)
 		}
