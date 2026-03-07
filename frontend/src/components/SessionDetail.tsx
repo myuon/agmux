@@ -821,9 +821,9 @@ export function SessionDetail() {
     api.getSession(sessionId).then((s) => {
       setSession(s);
       if (s.outputMode === "stream") {
-        api.getStreamOutput(sessionId).then((lines) => {
-          setStreamLines(lines);
-          streamCursorRef.current = lines.length;
+        api.getStreamOutput(sessionId).then((resp) => {
+          setStreamLines(resp.lines);
+          streamCursorRef.current = resp.total;
         }).catch(() => {});
       } else {
         api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
@@ -846,9 +846,9 @@ export function SessionDetail() {
             }).catch(() => {});
           } else {
             // Fallback to full fetch if cursor not initialized
-            api.getStreamOutput(sessionId).then((lines) => {
-              setStreamLines(lines);
-              streamCursorRef.current = lines.length;
+            api.getStreamOutput(sessionId).then((resp) => {
+              setStreamLines(resp.lines);
+              streamCursorRef.current = resp.total;
             }).catch(() => {});
           }
         } else {
@@ -876,9 +876,9 @@ export function SessionDetail() {
             streamCursorRef.current = resp.total;
           }).catch(() => {});
         } else {
-          api.getStreamOutput(sessionId).then((lines) => {
-            setStreamLines(lines);
-            streamCursorRef.current = lines.length;
+          api.getStreamOutput(sessionId).then((resp) => {
+            setStreamLines(resp.lines);
+            streamCursorRef.current = resp.total;
           }).catch(() => {});
         }
       } else {
@@ -943,7 +943,10 @@ export function SessionDetail() {
                 await api.clearSession(session.id);
                 api.getSession(session.id).then(setSession);
                 if (session.outputMode === "stream") {
-                  api.getStreamOutput(session.id).then(setStreamLines).catch(() => {});
+                  api.getStreamOutput(session.id).then((resp) => {
+                    setStreamLines(resp.lines);
+                    streamCursorRef.current = resp.total;
+                  }).catch(() => {});
                 }
               }}
               className="p-1.5 text-orange-700 bg-orange-50 rounded hover:bg-orange-100"

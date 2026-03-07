@@ -52,7 +52,7 @@ export const api = {
     request<LogEntry[]>(`/logs?limit=${limit}`),
 
   getStreamOutput: (id: string, limit = 200) =>
-    request<unknown[]>(`/sessions/${id}/stream?limit=${limit}`),
+    request<{ lines: unknown[]; total: number }>(`/sessions/${id}/stream?limit=${limit}`),
 
   getStreamOutputDelta: (id: string, after: number) =>
     request<{ lines: unknown[]; total: number }>(`/sessions/${id}/stream?after=${after}`),
