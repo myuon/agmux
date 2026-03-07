@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff, X, FolderOpen,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2,
-  ListTodo, Target, RotateCcw, Circle,
+  ListTodo, Target, RotateCcw, Circle, Bot,
 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
@@ -136,6 +136,7 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
   const skillToolIds = new Set<string>();
   const toolSearchToolIds = new Set<string>();
   const askUserToolIds = new Set<string>();
+  const agentToolIds = new Set<string>();
   for (const entry of entries) {
     if (entry.type === "assistant") {
       for (const block of parseStreamContentBlocks(entry)) {
@@ -147,6 +148,9 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
         }
         if (block.type === "tool_use" && block.name === "AskUserQuestion" && block.id) {
           askUserToolIds.add(block.id);
+        }
+        if (block.type === "tool_use" && block.name === "Agent" && block.id) {
+          agentToolIds.add(block.id);
         }
       }
     }
@@ -256,6 +260,28 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
               input: b.input,
               result,
             });
+          } else if (b.name === "Agent" && b.id && agentToolIds.has(b.id)) {
+            // Skip the subagent prompt user text after Agent tool call
+            // System entries (task_started, task_progress) may appear between the tool call and the user prompt
+            for (let j = idx + 1; j < entries.length && j <= idx + 8; j++) {
+              const nextEntry = entries[j];
+              if (nextEntry.type === "system") continue; // skip system entries
+              if (nextEntry.type !== "user") break;
+              const nextBlocks = parseStreamContentBlocks(nextEntry);
+              const hasToolResult = nextBlocks.some(nb => nb.type === "tool_result");
+              if (hasToolResult) continue;
+              const textBlocks = nextBlocks.filter(nb => nb.type === "text" && nb.text);
+              if (textBlocks.length > 0) {
+                skillSkipIndices.add(j);
+                break;
+              }
+            }
+            items.push({
+              kind: "tool_call",
+              name: b.name,
+              input: b.input,
+              result,
+            });
           } else {
             items.push({
               kind: "tool_call",
@@ -311,6 +337,7 @@ function toolIcon(name: string) {
     case "Skill": return Sparkles;
     case "WebFetch":
     case "WebSearch": return Globe;
+    case "Agent": return Bot;
     default: return Wrench;
   }
 }
@@ -335,6 +362,12 @@ function toolDescription(name: string, input: unknown): string | null {
   }
   if (name === "ToolSearch" && inp && "query" in inp) {
     return String(inp.query);
+  }
+  if (name === "WebSearch" && inp && "query" in inp) {
+    return String(inp.query);
+  }
+  if (name === "Agent" && inp && "description" in inp) {
+    return String(inp.description);
   }
   if (name === "AskUserQuestion" && inp && "questions" in inp) {
     const questions = inp.questions as AskUserQuestionItem[];
