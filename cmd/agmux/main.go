@@ -463,3 +463,4 @@ func readTailLines(file *os.File, n int) ([]string, error) {
 	}
 	return allLines[len(allLines)-n:], nil
 }
+// modified

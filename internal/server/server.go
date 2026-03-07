@@ -597,7 +597,7 @@ func getWorkingTreeDiff(projectPath string) ([]diffFileEntry, error) {
 		return nil, err
 	}
 
-	statusOutput := strings.TrimSpace(string(out))
+	statusOutput := strings.TrimRight(string(out), "\n")
 	if statusOutput == "" {
 		return []diffFileEntry{}, nil
 	}
