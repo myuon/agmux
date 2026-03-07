@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff, X, FolderOpen,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2,
-  ListTodo, Target, RotateCcw, Circle, Bot,
+  ListTodo, Target, RotateCcw, Circle, Bot, ImagePlus,
 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
@@ -839,6 +839,8 @@ export function SessionDetail() {
   const [message, setMessage] = useState("");
   const [streamLines, setStreamLines] = useState<unknown[]>([]);
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>([]);
+  const [pendingImages, setPendingImages] = useState<{ data: string; mediaType: string; preview: string }[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
 
@@ -848,6 +850,36 @@ export function SessionDetail() {
       setActiveSessionName(null);
     };
   }, []);
+
+  const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+  const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
+
+  const addImageFiles = (files: FileList | File[]) => {
+    Array.from(files).forEach((file) => {
+      if (!ALLOWED_TYPES.includes(file.type)) {
+        alert(`Unsupported format: ${file.type}. Supported: JPEG, PNG, GIF, WebP`);
+        return;
+      }
+      if (file.size > MAX_IMAGE_SIZE) {
+        alert(`File too large: ${(file.size / 1024 / 1024).toFixed(1)}MB. Max: 5MB`);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        const base64 = result.split(",")[1];
+        setPendingImages((prev) => [
+          ...prev,
+          { data: base64, mediaType: file.type, preview: result },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const removeImage = (index: number) => {
+    setPendingImages((prev) => prev.filter((_, i) => i !== index));
+  };
 
   useEffect(() => {
     if (!sessionId) return;
@@ -899,9 +931,13 @@ export function SessionDetail() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sessionId || !message.trim()) return;
-    await api.sendToSession(sessionId, message);
+    if (!sessionId || (!message.trim() && pendingImages.length === 0)) return;
+    const images = pendingImages.length > 0
+      ? pendingImages.map(({ data, mediaType }) => ({ data, mediaType }))
+      : undefined;
+    await api.sendToSession(sessionId, message, images);
     setMessage("");
+    setPendingImages([]);
     setTimeout(() => {
       if (session?.outputMode === "stream") {
         const cursor = streamCursorRef.current;
@@ -929,33 +965,89 @@ export function SessionDetail() {
   const isStream = session.outputMode === "stream";
 
   const sendForm = (
-    <form onSubmit={handleSend} className="flex gap-2 shrink-0 sticky bottom-0 bg-white pt-2 pb-4 px-4 sm:px-8 -mx-4 sm:-mx-8 border-t border-gray-100">
-      <input
-        type="text"
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        placeholder="Send a message..."
-        className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
-      />
-      {session.status !== "stopped" && session.type !== "controller" && (
+    <form onSubmit={handleSend} className="shrink-0 sticky bottom-0 bg-white pt-2 pb-4 px-4 sm:px-8 -mx-4 sm:-mx-8 border-t border-gray-100">
+      {pendingImages.length > 0 && (
+        <div className="flex gap-2 mb-2 flex-wrap">
+          {pendingImages.map((img, i) => (
+            <div key={i} className="relative group">
+              <img
+                src={img.preview}
+                alt={`preview ${i}`}
+                className="w-16 h-16 object-cover rounded border border-gray-200"
+              />
+              <button
+                type="button"
+                onClick={() => removeImage(i)}
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          onPaste={(e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+            const imageFiles: File[] = [];
+            for (const item of Array.from(items)) {
+              if (item.type.startsWith("image/")) {
+                const file = item.getAsFile();
+                if (file) imageFiles.push(file);
+              }
+            }
+            if (imageFiles.length > 0) {
+              e.preventDefault();
+              addImageFiles(imageFiles);
+            }
+          }}
+          placeholder="Send a message..."
+          className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files) addImageFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
         <button
           type="button"
-          onClick={async () => {
-            await api.stopSession(session.id);
-            api.getSession(session.id).then(setSession);
-          }}
-          className="px-3 py-2 text-sm text-red-600 bg-red-50 rounded hover:bg-red-100"
-          title="Stop"
+          onClick={() => fileInputRef.current?.click()}
+          className="px-3 py-2 text-sm text-gray-500 bg-gray-50 rounded hover:bg-gray-100"
+          title="Add image"
         >
-          <Square className="w-4 h-4" />
+          <ImagePlus className="w-4 h-4" />
         </button>
-      )}
-      <button
-        type="submit"
-        className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
-      >
-        Send
-      </button>
+        {session.status !== "stopped" && session.type !== "controller" && (
+          <button
+            type="button"
+            onClick={async () => {
+              await api.stopSession(session.id);
+              api.getSession(session.id).then(setSession);
+            }}
+            className="px-3 py-2 text-sm text-red-600 bg-red-50 rounded hover:bg-red-100"
+            title="Stop"
+          >
+            <Square className="w-4 h-4" />
+          </button>
+        )}
+        <button
+          type="submit"
+          className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Send
+        </button>
+      </div>
     </form>
   );
 

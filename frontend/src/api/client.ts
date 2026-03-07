@@ -39,10 +39,10 @@ export const api = {
   deleteSession: (id: string) =>
     request<{ status: string }>(`/sessions/${id}`, { method: "DELETE" }),
 
-  sendToSession: (id: string, text: string) =>
+  sendToSession: (id: string, text: string, images?: { data: string; mediaType: string }[]) =>
     request<{ status: string }>(`/sessions/${id}/send`, {
       method: "POST",
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, ...(images && images.length > 0 ? { images } : {}) }),
     }),
 
   getSessionOutput: (id: string) =>

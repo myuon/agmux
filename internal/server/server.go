@@ -119,8 +119,14 @@ type createSessionRequest struct {
 	Worktree    bool   `json:"worktree,omitempty"`
 }
 
+type sendImageData struct {
+	Data      string `json:"data"`
+	MediaType string `json:"mediaType"`
+}
+
 type sendRequest struct {
-	Text string `json:"text"`
+	Text   string          `json:"text"`
+	Images []sendImageData `json:"images,omitempty"`
 }
 
 type updateContextRequest struct {
@@ -224,7 +230,15 @@ func (s *Server) sendToSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if err := s.sessions.SendKeys(id, req.Text); err != nil {
+	// Convert images if present
+	var images []session.ImageData
+	for _, img := range req.Images {
+		images = append(images, session.ImageData{
+			Data:      img.Data,
+			MediaType: img.MediaType,
+		})
+	}
+	if err := s.sessions.SendKeysWithImages(id, req.Text, images); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
