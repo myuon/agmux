@@ -405,6 +405,10 @@ func (m *Manager) Clear(id string) error {
 }
 
 func (m *Manager) SendKeys(id string, text string) error {
+	return m.SendKeysWithImages(id, text, nil)
+}
+
+func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData) error {
 	s, err := m.Get(id)
 	if err != nil {
 		return err
@@ -426,7 +430,7 @@ func (m *Manager) SendKeys(id string, text string) error {
 			m.streamProcesses[id] = sp
 			m.streamMu.Unlock()
 		}
-		return sp.Send(text)
+		return sp.SendWithImages(text, images)
 	}
 	return m.tmux.SendKeys(s.TmuxSession, text)
 }

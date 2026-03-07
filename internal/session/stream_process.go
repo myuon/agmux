@@ -207,21 +207,81 @@ func (sp *StreamProcess) SessionID() string {
 	return sp.sessionID
 }
 
+// ImageData represents a base64-encoded image to be sent with a message.
+type ImageData struct {
+	Data      string `json:"data"`
+	MediaType string `json:"mediaType"`
+}
+
 // Send writes a user message to the process stdin in stream-json format.
 func (sp *StreamProcess) Send(message string) error {
-	msg := struct {
-		Type    string `json:"type"`
-		Message struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
-		} `json:"message"`
-	}{
-		Type: "user",
-	}
-	msg.Message.Role = "user"
-	msg.Message.Content = message
+	return sp.SendWithImages(message, nil)
+}
 
-	data, err := json.Marshal(msg)
+// SendWithImages writes a user message with optional images to the process stdin in stream-json format.
+// When images are provided, content is sent as an array of content blocks (text + image blocks).
+// When no images are provided, content is sent as a plain string for backward compatibility.
+func (sp *StreamProcess) SendWithImages(message string, images []ImageData) error {
+	var data []byte
+	var err error
+
+	if len(images) > 0 {
+		// Build content array with text block + image blocks
+		type imageSource struct {
+			Type      string `json:"type"`
+			MediaType string `json:"media_type"`
+			Data      string `json:"data"`
+		}
+		type contentBlock struct {
+			Type   string       `json:"type"`
+			Text   string       `json:"text,omitempty"`
+			Source *imageSource `json:"source,omitempty"`
+		}
+
+		var content []contentBlock
+		if message != "" {
+			content = append(content, contentBlock{Type: "text", Text: message})
+		}
+		for _, img := range images {
+			content = append(content, contentBlock{
+				Type: "image",
+				Source: &imageSource{
+					Type:      "base64",
+					MediaType: img.MediaType,
+					Data:      img.Data,
+				},
+			})
+		}
+
+		msg := struct {
+			Type    string `json:"type"`
+			Message struct {
+				Role    string         `json:"role"`
+				Content []contentBlock `json:"content"`
+			} `json:"message"`
+		}{
+			Type: "user",
+		}
+		msg.Message.Role = "user"
+		msg.Message.Content = content
+
+		data, err = json.Marshal(msg)
+	} else {
+		msg := struct {
+			Type    string `json:"type"`
+			Message struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"message"`
+		}{
+			Type: "user",
+		}
+		msg.Message.Role = "user"
+		msg.Message.Content = message
+
+		data, err = json.Marshal(msg)
+	}
+
 	if err != nil {
 		return fmt.Errorf("marshal message: %w", err)
 	}
