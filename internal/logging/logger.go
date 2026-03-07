@@ -9,8 +9,9 @@ import (
 )
 
 // Setup initializes slog with JSON output to both stderr and a log file.
+// Additional writers can be provided to tee log output to extra destinations.
 // Returns the log file (caller should defer Close) and the logger.
-func Setup() (*os.File, *slog.Logger, error) {
+func Setup(extraWriters ...io.Writer) (*os.File, *slog.Logger, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, nil, err
@@ -27,7 +28,9 @@ func Setup() (*os.File, *slog.Logger, error) {
 		return nil, nil, err
 	}
 
-	writer := io.MultiWriter(os.Stderr, file)
+	writers := []io.Writer{os.Stderr, file}
+	writers = append(writers, extraWriters...)
+	writer := io.MultiWriter(writers...)
 	logger := slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	}))
@@ -42,6 +45,38 @@ func LogPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".agmux", "agmux.log"), nil
+}
+
+// ServerLogPath returns the server log file path (~/.agmux/server.log).
+func ServerLogPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".agmux", "server.log"), nil
+}
+
+// SetupServerLog opens ~/.agmux/server.log for append and returns the file
+// and an io.Writer that tees to both os.Stdout and the file.
+// The caller should defer file.Close().
+func SetupServerLog() (*os.File, io.Writer, error) {
+	logPath, err := ServerLogPath()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	dir := filepath.Dir(logPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, nil, err
+	}
+
+	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	writer := io.MultiWriter(os.Stdout, file)
+	return file, writer, nil
 }
 
 // LogAction logs an action entry with category:"action" to distinguish from general logs.

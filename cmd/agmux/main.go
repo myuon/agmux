@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"os/signal"
@@ -76,8 +77,18 @@ func serveCmd() *cobra.Command {
 				return err
 			}
 
-			// Logger
-			logFile, logger, err := logging.Setup()
+			// Server log (HTTP requests, events, errors → ~/.agmux/server.log + stdout)
+			serverLogFile, serverLogWriter, err := logging.SetupServerLog()
+			if err != nil {
+				return fmt.Errorf("setup server log: %w", err)
+			}
+			defer serverLogFile.Close()
+
+			// Redirect standard log (used by chi middleware.Logger) to server log
+			log.SetOutput(serverLogWriter)
+
+			// Logger (slog → stderr + agmux.log + server.log)
+			logFile, logger, err := logging.Setup(serverLogFile)
 			if err != nil {
 				return fmt.Errorf("setup logging: %w", err)
 			}
