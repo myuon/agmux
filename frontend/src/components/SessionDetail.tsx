@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff, X, FolderOpen,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2,
-  ListTodo, Target, RotateCcw, Circle,
+  ListTodo, Target, RotateCcw, Circle, Bot,
 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
@@ -262,8 +262,10 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
             });
           } else if (b.name === "Agent" && b.id && agentToolIds.has(b.id)) {
             // Skip the subagent prompt user text after Agent tool call
-            for (let j = idx + 1; j < entries.length && j <= idx + 4; j++) {
+            // System entries (task_started, task_progress) may appear between the tool call and the user prompt
+            for (let j = idx + 1; j < entries.length && j <= idx + 8; j++) {
               const nextEntry = entries[j];
+              if (nextEntry.type === "system") continue; // skip system entries
               if (nextEntry.type !== "user") break;
               const nextBlocks = parseStreamContentBlocks(nextEntry);
               const hasToolResult = nextBlocks.some(nb => nb.type === "tool_result");
@@ -335,6 +337,7 @@ function toolIcon(name: string) {
     case "Skill": return Sparkles;
     case "WebFetch":
     case "WebSearch": return Globe;
+    case "Agent": return Bot;
     default: return Wrench;
   }
 }
@@ -359,6 +362,12 @@ function toolDescription(name: string, input: unknown): string | null {
   }
   if (name === "ToolSearch" && inp && "query" in inp) {
     return String(inp.query);
+  }
+  if (name === "WebSearch" && inp && "query" in inp) {
+    return String(inp.query);
+  }
+  if (name === "Agent" && inp && "description" in inp) {
+    return String(inp.description);
   }
   if (name === "AskUserQuestion" && inp && "questions" in inp) {
     const questions = inp.questions as AskUserQuestionItem[];
