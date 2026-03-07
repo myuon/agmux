@@ -156,17 +156,47 @@ const NOTIFY_STATUSES = [
   { key: "stopped", label: "Stopped" },
 ] as const;
 
+const DEFAULT_NOTIFY_STATUSES: Record<string, boolean> = {
+  working: false,
+  idle: true,
+  question_waiting: true,
+  alignment_needed: true,
+  paused: false,
+  stopped: false,
+};
+
 function NotificationStatus() {
   const [permission, setPermission] = useState(() =>
     "Notification" in window ? Notification.permission : "unsupported"
   );
-  const notifyEnabled = localStorage.getItem("agmux-notify") === "true";
-  const [statusFilters, setStatusFilters] = useState<Record<string, boolean>>(() =>
-    JSON.parse(localStorage.getItem("agmux-notify-statuses") || "{}")
+  const [notifyEnabled, setNotifyEnabled] = useState(
+    () => localStorage.getItem("agmux-notify") === "true"
   );
 
+  const toggleNotify = async () => {
+    if (!notifyEnabled) {
+      if ("Notification" in window) {
+        const perm = Notification.permission === "granted"
+          ? "granted"
+          : await Notification.requestPermission();
+        if (perm === "granted") {
+          setNotifyEnabled(true);
+          localStorage.setItem("agmux-notify", "true");
+        }
+      }
+    } else {
+      setNotifyEnabled(false);
+      localStorage.setItem("agmux-notify", "false");
+    }
+  };
+  const [statusFilters, setStatusFilters] = useState<Record<string, boolean>>(() => {
+    const saved = localStorage.getItem("agmux-notify-statuses");
+    return saved ? JSON.parse(saved) : { ...DEFAULT_NOTIFY_STATUSES };
+  });
+
   const toggleStatus = (key: string) => {
-    const next = { ...statusFilters, [key]: !(statusFilters[key] ?? true) };
+    const current = statusFilters[key] ?? DEFAULT_NOTIFY_STATUSES[key] ?? true;
+    const next = { ...statusFilters, [key]: !current };
     setStatusFilters(next);
     localStorage.setItem("agmux-notify-statuses", JSON.stringify(next));
   };
@@ -200,16 +230,23 @@ function NotificationStatus() {
           {permission}
         </span>
       </Field>
-      <Field label="agmux Toggle">
-        <span className={`text-sm font-medium ${notifyEnabled ? "text-green-600" : "text-gray-500"}`}>
+      <Field label="通知">
+        <button
+          onClick={toggleNotify}
+          className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors ${
+            notifyEnabled
+              ? "bg-green-50 border-green-300 text-green-700"
+              : "bg-gray-50 border-gray-200 text-gray-400"
+          }`}
+        >
           {notifyEnabled ? "ON" : "OFF"}
-        </span>
+        </button>
       </Field>
       <div>
         <label className="text-sm text-gray-600 block mb-2">通知するステータス</label>
         <div className="flex flex-wrap gap-2">
           {NOTIFY_STATUSES.map(({ key, label }) => {
-            const enabled = statusFilters[key] ?? true;
+            const enabled = statusFilters[key] ?? DEFAULT_NOTIFY_STATUSES[key] ?? true;
             return (
               <button
                 key={key}
