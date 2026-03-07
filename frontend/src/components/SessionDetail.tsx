@@ -1026,6 +1026,9 @@ export function SessionDetail() {
       }
     });
     api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
+    api.getPendingEscalation(sessionId).then((r) => {
+      if (r.escalation) setPendingEscalationId(r.escalation.id);
+    }).catch(() => {});
 
     const interval = setInterval(() => {
       api.getSession(sessionId).then((s) => {

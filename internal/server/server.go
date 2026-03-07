@@ -76,6 +76,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
 		r.Get("/sessions/{id}/diff", s.getSessionDiff)
+		r.Get("/sessions/{id}/escalate", s.getPendingEscalation)
 		r.Post("/sessions/{id}/escalate", s.createEscalation)
 		r.Post("/sessions/{id}/escalate/respond", s.respondEscalation)
 		r.Post("/sessions/controller/restart", s.restartController)
@@ -297,6 +298,16 @@ func (s *Server) completeGoal(w http.ResponseWriter, r *http.Request) {
 		result["parentGoal"] = parent
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) getPendingEscalation(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "id")
+	esc := s.escalations.GetBySession(sessionID)
+	if esc == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"escalation": nil})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"escalation": esc})
 }
 
 type createEscalationRequest struct {
