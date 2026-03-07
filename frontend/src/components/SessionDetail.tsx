@@ -136,6 +136,7 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
   const skillToolIds = new Set<string>();
   const toolSearchToolIds = new Set<string>();
   const askUserToolIds = new Set<string>();
+  const agentToolIds = new Set<string>();
   for (const entry of entries) {
     if (entry.type === "assistant") {
       for (const block of parseStreamContentBlocks(entry)) {
@@ -147,6 +148,9 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
         }
         if (block.type === "tool_use" && block.name === "AskUserQuestion" && block.id) {
           askUserToolIds.add(block.id);
+        }
+        if (block.type === "tool_use" && block.name === "Agent" && block.id) {
+          agentToolIds.add(block.id);
         }
       }
     }
@@ -238,6 +242,26 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
             });
           } else if (b.name === "ToolSearch" && b.id && toolSearchToolIds.has(b.id)) {
             // Skip the "Tool loaded." user text after ToolSearch
+            for (let j = idx + 1; j < entries.length && j <= idx + 4; j++) {
+              const nextEntry = entries[j];
+              if (nextEntry.type !== "user") break;
+              const nextBlocks = parseStreamContentBlocks(nextEntry);
+              const hasToolResult = nextBlocks.some(nb => nb.type === "tool_result");
+              if (hasToolResult) continue;
+              const textBlocks = nextBlocks.filter(nb => nb.type === "text" && nb.text);
+              if (textBlocks.length > 0) {
+                skillSkipIndices.add(j);
+                break;
+              }
+            }
+            items.push({
+              kind: "tool_call",
+              name: b.name,
+              input: b.input,
+              result,
+            });
+          } else if (b.name === "Agent" && b.id && agentToolIds.has(b.id)) {
+            // Skip the subagent prompt user text after Agent tool call
             for (let j = idx + 1; j < entries.length && j <= idx + 4; j++) {
               const nextEntry = entries[j];
               if (nextEntry.type !== "user") break;
