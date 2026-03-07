@@ -301,15 +301,36 @@ func (s *Server) createGoal(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) completeGoal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	parent, err := s.sessions.CompleteGoal(id)
+	cgResult, err := s.sessions.CompleteGoal(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	result := map[string]interface{}{"status": "ok"}
-	if parent != nil {
-		result["parentGoal"] = parent
+	if cgResult.ParentGoal != nil {
+		result["parentGoal"] = cgResult.ParentGoal
 	}
+
+	// Broadcast goal_completed notification via WebSocket
+	if cgResult.CompletedGoal != nil && !cgResult.CompletedGoal.StartedAt.IsZero() {
+		durationMs := time.Since(cgResult.CompletedGoal.StartedAt).Milliseconds()
+		sess, _ := s.sessions.Get(id)
+		sessionName := ""
+		if sess != nil {
+			sessionName = sess.Name
+		}
+		s.hub.Broadcast(Message{
+			Type: "goal_completed",
+			Data: map[string]interface{}{
+				"sessionId":   id,
+				"sessionName": sessionName,
+				"currentTask": cgResult.CompletedGoal.CurrentTask,
+				"goal":        cgResult.CompletedGoal.Goal,
+				"durationMs":  durationMs,
+			},
+		})
+	}
+
 	writeJSON(w, http.StatusOK, result)
 }
 

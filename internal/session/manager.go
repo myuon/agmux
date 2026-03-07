@@ -706,11 +706,12 @@ func (m *Manager) CreateGoal(id string, currentTask, goal string, subgoal bool) 
 		return err
 	}
 
+	entry := GoalEntry{CurrentTask: currentTask, Goal: goal, StartedAt: time.Now()}
 	var newGoals GoalStack
 	if subgoal {
-		newGoals = s.Goals.Push(GoalEntry{CurrentTask: currentTask, Goal: goal})
+		newGoals = s.Goals.Push(entry)
 	} else {
-		newGoals = GoalStack{GoalEntry{CurrentTask: currentTask, Goal: goal}}
+		newGoals = GoalStack{entry}
 	}
 
 	_, err = m.db.Exec(
@@ -720,12 +721,19 @@ func (m *Manager) CreateGoal(id string, currentTask, goal string, subgoal bool) 
 	return err
 }
 
-func (m *Manager) CompleteGoal(id string) (*GoalEntry, error) {
+// CompleteGoalResult contains the result of completing a goal.
+type CompleteGoalResult struct {
+	CompletedGoal *GoalEntry // the goal that was just completed
+	ParentGoal    *GoalEntry // the new top of stack (nil if empty)
+}
+
+func (m *Manager) CompleteGoal(id string) (*CompleteGoalResult, error) {
 	s, err := m.Get(id)
 	if err != nil {
 		return nil, err
 	}
 
+	completedGoal := s.Goals.Top()
 	newGoals := s.Goals.Pop()
 
 	var currentTask, goal string
@@ -742,10 +750,15 @@ func (m *Manager) CompleteGoal(id string) (*GoalEntry, error) {
 		return nil, err
 	}
 
-	if top := newGoals.Top(); top != nil {
-		return top, nil
+	result := &CompleteGoalResult{}
+	if completedGoal != nil {
+		copied := *completedGoal
+		result.CompletedGoal = &copied
 	}
-	return nil, nil
+	if top := newGoals.Top(); top != nil {
+		result.ParentGoal = top
+	}
+	return result, nil
 }
 
 // Reconnect restarts the Claude process for an existing session,

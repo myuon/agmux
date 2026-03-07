@@ -173,6 +173,55 @@ const DEFAULT_NOTIFY_STATUSES: Record<string, boolean> = {
   stopped: false,
 };
 
+function GoalCompletionNotifySettings() {
+  const [enabled, setEnabled] = useState(
+    () => localStorage.getItem("agmux-notify-goal-completed") !== "false"
+  );
+  const [thresholdMin, setThresholdMin] = useState(
+    () => Number(localStorage.getItem("agmux-notify-goal-threshold-min") || "10")
+  );
+
+  const toggleEnabled = () => {
+    const next = !enabled;
+    setEnabled(next);
+    localStorage.setItem("agmux-notify-goal-completed", next ? "true" : "false");
+  };
+
+  const handleThresholdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = Math.max(1, Number(e.target.value) || 1);
+    setThresholdMin(val);
+    localStorage.setItem("agmux-notify-goal-threshold-min", String(val));
+  };
+
+  return (
+    <>
+      <Field label="タスク完了通知">
+        <button
+          onClick={toggleEnabled}
+          className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors ${
+            enabled
+              ? "bg-green-50 border-green-300 text-green-700"
+              : "bg-gray-50 border-gray-200 text-gray-400"
+          }`}
+        >
+          {enabled ? "ON" : "OFF"}
+        </button>
+      </Field>
+      {enabled && (
+        <Field label="閾値（分）">
+          <input
+            type="number"
+            min={1}
+            value={thresholdMin}
+            onChange={handleThresholdChange}
+            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </Field>
+      )}
+    </>
+  );
+}
+
 function NotificationStatus() {
   const [permission, setPermission] = useState(() =>
     "Notification" in window ? Notification.permission : "unsupported"
@@ -271,6 +320,7 @@ function NotificationStatus() {
           })}
         </div>
       </div>
+      <GoalCompletionNotifySettings />
       <div className="flex gap-2 pt-2">
         {permission !== "granted" && (
           <button

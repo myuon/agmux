@@ -47,8 +47,9 @@ type Session struct {
 }
 
 type GoalEntry struct {
-	CurrentTask string `json:"currentTask"`
-	Goal        string `json:"goal"`
+	CurrentTask string    `json:"currentTask"`
+	Goal        string    `json:"goal"`
+	StartedAt   time.Time `json:"startedAt,omitempty"`
 }
 
 type GoalStack []GoalEntry
