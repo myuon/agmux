@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import type { Session } from "../types/session";
-import { StatusBadge } from "./StatusBadge";
+import { StatusDot } from "./StatusBadge";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -38,14 +38,15 @@ export function SessionList({ sessions, onStop, onRestartController }: Props) {
           className="border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow bg-white cursor-pointer"
         >
           <div className="flex items-center gap-2 mb-1">
+            <StatusDot status={s.status} />
             <span className="font-medium text-sm truncate">{s.name}</span>
             {s.type === "controller" && (
               <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 rounded">
                 Controller
               </span>
             )}
-            <span className="ml-auto shrink-0">
-              <StatusBadge status={s.status} />
+            <span className="text-xs text-gray-400 ml-auto shrink-0">
+              {s.status}
             </span>
           </div>
           {s.currentTask && (
