@@ -24,6 +24,8 @@ make dev          # dev mode (frontend dev server + go run)
 - イシュー管理は **gh issue** (GitHub Issues) を全面的に使用する
 - 新規イシューは `gh issue create` で起票
 - 進捗管理は `gh issue list` で確認
+- issueに取り掛かるときは、agentに作業をdispatchするとよい。また、その際にはworktreeを使って作業が干渉しないようにすること
+- 動作確認するときは、PRのブランチをチェックアウトし、`make restart` でサーバーを読み込んでから動作確認に入る。処理の確認には agmux CLI を利用し、Webアプリの画面を見る必要があるときは agent browser を利用する。どちらもskillがあるので利用する際には参照すること
 
 ## 仕様策定ルール
 
