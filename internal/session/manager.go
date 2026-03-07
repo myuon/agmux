@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,6 +35,44 @@ func NewManager(db *sql.DB, tmuxClient *tmux.Client, claudeCommand string, apiPo
 		claudeCommand:   claudeCommand,
 		apiPort:         apiPort,
 		streamProcesses: make(map[string]*StreamProcess),
+	}
+}
+
+// RecoverStreamProcesses restarts stream processes for all working stream sessions.
+// This should be called at server startup to recover sessions that were running
+// before the server was restarted.
+func (m *Manager) RecoverStreamProcesses() {
+	rows, err := m.db.Query(
+		`SELECT id, project_path FROM sessions WHERE status = ? AND output_mode = ?`,
+		string(StatusWorking), string(OutputModeStream),
+	)
+	if err != nil {
+		log.Printf("recover stream processes: query: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, projectPath string
+		if err := rows.Scan(&id, &projectPath); err != nil {
+			log.Printf("recover stream processes: scan: %v", err)
+			continue
+		}
+		mcpPath, err := writeMCPConfig(id, m.apiPort)
+		if err != nil {
+			log.Printf("recover stream processes: mcp config for %s: %v", id, err)
+			continue
+		}
+		claudeSessionID := ReadClaudeSessionID(id)
+		sp, err := StartStreamProcess(id, projectPath, mcpPath, true, false, claudeSessionID)
+		if err != nil {
+			log.Printf("recover stream processes: start %s: %v", id, err)
+			continue
+		}
+		m.streamMu.Lock()
+		m.streamProcesses[id] = sp
+		m.streamMu.Unlock()
+		log.Printf("recovered stream process for session %s", id)
 	}
 }
 

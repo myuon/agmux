@@ -107,6 +107,9 @@ func serveCmd() *cobra.Command {
 			defer cancel()
 			go checker.Start(ctx)
 
+			// Recover stream processes for working sessions
+			mgr.RecoverStreamProcesses()
+
 			// Create controller session (singleton)
 			controllerDir, err := db.ControllerDir()
 			if err != nil {
