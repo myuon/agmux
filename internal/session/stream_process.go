@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -196,7 +196,7 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		log.Printf("stream process reader error: %v", err)
+		slog.Default().Error("stream process reader error", "error", err)
 	}
 }
 
@@ -295,7 +295,7 @@ func (sp *StreamProcess) Stop() {
 		// Process exited gracefully
 	case <-time.After(5 * time.Second):
 		// Force kill
-		log.Printf("stream process did not exit gracefully, killing")
+		slog.Default().Warn("stream process did not exit gracefully, killing")
 		sp.cmd.Process.Kill()
 		<-waitDone
 	}

@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -41,7 +43,7 @@ func main() {
 	}
 }
 
-func initManager(cfg *config.Config) (*session.Manager, *sql.DB, error) {
+func initManager(cfg *config.Config, logger *slog.Logger) (*session.Manager, *sql.DB, error) {
 	dbPath, err := db.DefaultDBPath()
 	if err != nil {
 		return nil, nil, err
@@ -50,7 +52,7 @@ func initManager(cfg *config.Config) (*session.Manager, *sql.DB, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return session.NewManager(database, tmux.NewClient(), cfg.Session.ClaudeCommand, cfg.Server.Port), database, nil
+	return session.NewManager(database, tmux.NewClient(), cfg.Session.ClaudeCommand, cfg.Server.Port, logger), database, nil
 }
 
 func serveCmd() *cobra.Command {
@@ -71,17 +73,31 @@ func serveCmd() *cobra.Command {
 				port = cfg.Server.Port
 			}
 
-			mgr, _, err := initManager(cfg)
-			if err != nil {
-				return err
-			}
-
-			// Logger
+			// Daemon logger (slog → stderr + ~/.agmux/agmux.log)
 			logFile, logger, err := logging.Setup()
 			if err != nil {
 				return fmt.Errorf("setup logging: %w", err)
 			}
 			defer logFile.Close()
+
+			// Server logger (log.Logger → stdout + ~/.agmux/server.log)
+			serverLogFile, srvLogger, err := logging.SetupServerLog()
+			if err != nil {
+				return fmt.Errorf("setup server log: %w", err)
+			}
+			defer serverLogFile.Close()
+
+			// Set slog default so stream_process etc. use daemon logger
+			slog.SetDefault(logger)
+			// Redirect standard log (used by chi middleware.Logger) to server log
+			log.SetOutput(srvLogger.Writer())
+			// Set server logger for WS hub
+			server.SetServerLog(srvLogger)
+
+			mgr, _, err := initManager(cfg, logger)
+			if err != nil {
+				return err
+			}
 
 			tmuxClient := tmux.NewClient()
 			hub := server.NewHub()
@@ -138,8 +154,8 @@ func serveCmd() *cobra.Command {
 			}
 
 			addr := fmt.Sprintf(":%d", port)
-			logger.Info(fmt.Sprintf("Starting agmux on http://localhost:%d", port))
-			logger.Info(fmt.Sprintf("Config: check interval=%s", cfg.Daemon.Interval))
+			srvLogger.Printf("Starting agmux on http://localhost:%d", port)
+			srvLogger.Printf("Config: check interval=%s", cfg.Daemon.Interval)
 
 			httpSrv := srv.NewHTTPServer(addr)
 
@@ -164,14 +180,14 @@ func serveCmd() *cobra.Command {
 				hub.Broadcast(server.Message{
 					Type: "server_started",
 				})
-				logger.Info("Server started, notification sent")
+				srvLogger.Println("Server started, notification sent")
 			}()
 
 			select {
 			case err := <-errCh:
 				return err
 			case sig := <-shutdownCh:
-				logger.Info(fmt.Sprintf("Received %s, shutting down gracefully...", sig))
+				srvLogger.Printf("Received %s, shutting down gracefully...", sig)
 				mgr.StopAllStreamProcesses()
 				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer shutdownCancel()
@@ -218,7 +234,7 @@ func sessionCreateCmd() *cobra.Command {
 				return fmt.Errorf("invalid mode %q: must be 'terminal' or 'stream'", mode)
 			}
 			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg)
+			mgr, _, err := initManager(cfg, nil)
 			if err != nil {
 				return err
 			}
@@ -245,7 +261,7 @@ func sessionListCmd() *cobra.Command {
 		Short: "List all sessions",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg)
+			mgr, _, err := initManager(cfg, nil)
 			if err != nil {
 				return err
 			}
@@ -277,7 +293,7 @@ func sessionStopCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg)
+			mgr, _, err := initManager(cfg, nil)
 			if err != nil {
 				return err
 			}
@@ -301,7 +317,7 @@ func sessionDeleteCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg)
+			mgr, _, err := initManager(cfg, nil)
 			if err != nil {
 				return err
 			}
@@ -325,7 +341,7 @@ func sessionSendCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg)
+			mgr, _, err := initManager(cfg, nil)
 			if err != nil {
 				return err
 			}
@@ -360,7 +376,7 @@ func sessionCaptureCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg)
+			mgr, _, err := initManager(cfg, nil)
 			if err != nil {
 				return err
 			}

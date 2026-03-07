@@ -9,6 +9,17 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+var (
+	// serverLog is the server-specific logger for HTTP/WS related logs.
+	// Set via SetServerLog during initialization.
+	serverLog = log.Default()
+)
+
+// SetServerLog sets the server-specific logger for HTTP/WS related logs.
+func SetServerLog(l *log.Logger) {
+	serverLog = l
+}
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
@@ -59,7 +70,7 @@ func (h *Hub) Run() {
 		case msg := <-h.broadcast:
 			data, err := json.Marshal(msg)
 			if err != nil {
-				log.Printf("ws marshal error: %v", err)
+				serverLog.Printf("ws marshal error: %v", err)
 				continue
 			}
 			h.mu.RLock()
@@ -80,14 +91,14 @@ func (h *Hub) Broadcast(msg Message) {
 	select {
 	case h.broadcast <- msg:
 	default:
-		log.Println("ws broadcast channel full, dropping message")
+		serverLog.Println("ws broadcast channel full, dropping message")
 	}
 }
 
 func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("ws upgrade error: %v", err)
+		serverLog.Printf("ws upgrade error: %v", err)
 		return
 	}
 

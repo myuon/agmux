@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"database/sql"
 	"fmt"
-	"log"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -24,11 +24,15 @@ type Manager struct {
 	apiPort         int
 	streamProcesses map[string]*StreamProcess
 	streamMu        sync.Mutex
+	logger          *slog.Logger
 }
 
-func NewManager(db *sql.DB, tmuxClient *tmux.Client, claudeCommand string, apiPort int) *Manager {
+func NewManager(db *sql.DB, tmuxClient *tmux.Client, claudeCommand string, apiPort int, logger *slog.Logger) *Manager {
 	if claudeCommand == "" {
 		claudeCommand = "claude --dangerously-skip-permissions"
+	}
+	if logger == nil {
+		logger = slog.Default()
 	}
 	return &Manager{
 		db:              db,
@@ -36,6 +40,7 @@ func NewManager(db *sql.DB, tmuxClient *tmux.Client, claudeCommand string, apiPo
 		claudeCommand:   claudeCommand,
 		apiPort:         apiPort,
 		streamProcesses: make(map[string]*StreamProcess),
+		logger:          logger.With("component", "session_manager"),
 	}
 }
 
@@ -48,7 +53,7 @@ func (m *Manager) RecoverStreamProcesses() {
 		string(StatusWorking), string(OutputModeStream),
 	)
 	if err != nil {
-		log.Printf("recover stream processes: query: %v", err)
+		m.logger.Error("recover stream processes: query failed", "error", err)
 		return
 	}
 	defer rows.Close()
@@ -56,24 +61,24 @@ func (m *Manager) RecoverStreamProcesses() {
 	for rows.Next() {
 		var id, projectPath string
 		if err := rows.Scan(&id, &projectPath); err != nil {
-			log.Printf("recover stream processes: scan: %v", err)
+			m.logger.Error("recover stream processes: scan failed", "error", err)
 			continue
 		}
 		mcpPath, err := writeMCPConfig(id, m.apiPort)
 		if err != nil {
-			log.Printf("recover stream processes: mcp config for %s: %v", id, err)
+			m.logger.Error("recover stream processes: mcp config failed", "sessionId", id, "error", err)
 			continue
 		}
 		claudeSessionID := ReadClaudeSessionID(id)
 		sp, err := StartStreamProcess(id, projectPath, mcpPath, true, false, claudeSessionID)
 		if err != nil {
-			log.Printf("recover stream processes: start %s: %v", id, err)
+			m.logger.Error("recover stream processes: start failed", "sessionId", id, "error", err)
 			continue
 		}
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
 		m.streamMu.Unlock()
-		log.Printf("recovered stream process for session %s", id)
+		m.logger.Info("recovered stream process", "sessionId", id)
 	}
 }
 
@@ -334,7 +339,7 @@ func (m *Manager) StopAllStreamProcesses() {
 	m.streamMu.Unlock()
 
 	for id, sp := range processes {
-		log.Printf("stopping stream process for session %s", id)
+		m.logger.Info("stopping stream process", "sessionId", id)
 		sp.Stop()
 	}
 }
