@@ -75,6 +75,12 @@ export const api = {
   getDiff: (id: string) =>
     request<{ files: DiffFile[] }>(`/sessions/${id}/diff`),
 
+  respondEscalation: (sessionId: string, escalationId: string, response: string) =>
+    request<{ status: string }>(`/sessions/${sessionId}/escalate/respond`, {
+      method: "POST",
+      body: JSON.stringify({ id: escalationId, response }),
+    }),
+
   getConfig: () => request<AppConfig>("/config"),
 
   updateConfig: (data: AppConfig) =>

@@ -23,21 +23,23 @@ import (
 )
 
 type Server struct {
-	sessions *session.Manager
-	hub      *Hub
-	router   chi.Router
-	devMode  bool
-	logPath  string
-	logger   *slog.Logger
+	sessions    *session.Manager
+	hub         *Hub
+	router      chi.Router
+	devMode     bool
+	logPath     string
+	logger      *slog.Logger
+	escalations *EscalationStore
 }
 
 func New(sessions *session.Manager, hub *Hub, devMode bool, logPath string, logger *slog.Logger) *Server {
 	s := &Server{
-		sessions: sessions,
-		hub:      hub,
-		devMode:  devMode,
-		logPath:  logPath,
-		logger:   logger.With("component", "server"),
+		sessions:    sessions,
+		hub:         hub,
+		devMode:     devMode,
+		logPath:     logPath,
+		logger:      logger.With("component", "server"),
+		escalations: NewEscalationStore(),
 	}
 	s.setupRoutes()
 	return s
@@ -74,6 +76,8 @@ func (s *Server) setupRoutes() {
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
 		r.Get("/sessions/{id}/diff", s.getSessionDiff)
+		r.Post("/sessions/{id}/escalate", s.createEscalation)
+		r.Post("/sessions/{id}/escalate/respond", s.respondEscalation)
 		r.Post("/sessions/controller/restart", s.restartController)
 		r.Get("/logs", s.getLogs)
 		r.Get("/config", s.getConfig)
@@ -293,6 +297,84 @@ func (s *Server) completeGoal(w http.ResponseWriter, r *http.Request) {
 		result["parentGoal"] = parent
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+type createEscalationRequest struct {
+	ID      string `json:"id"`
+	Message string `json:"message"`
+}
+
+func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "id")
+	var req createEscalationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Message == "" || req.ID == "" {
+		writeError(w, http.StatusBadRequest, "id and message are required")
+		return
+	}
+
+	// Get session name for notification
+	sess, err := s.sessions.Get(sessionID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	// Create escalation and get response channel
+	ch := s.escalations.Create(req.ID, sessionID, req.Message)
+
+	// Broadcast WebSocket notification
+	s.hub.Broadcast(Message{
+		Type: "escalation",
+		Data: map[string]interface{}{
+			"id":          req.ID,
+			"sessionId":   sessionID,
+			"sessionName": sess.Name,
+			"message":     req.Message,
+		},
+	})
+
+	s.recordSessionAction(sessionID, "escalation", req.Message)
+
+	// Block until user responds (with timeout)
+	select {
+	case response := <-ch:
+		s.escalations.Cleanup(req.ID)
+		writeJSON(w, http.StatusOK, map[string]string{
+			"status":   "responded",
+			"response": response,
+		})
+	case <-r.Context().Done():
+		s.escalations.Cleanup(req.ID)
+		writeError(w, http.StatusGatewayTimeout, "request cancelled")
+	}
+}
+
+type respondEscalationRequest struct {
+	ID       string `json:"id"`
+	Response string `json:"response"`
+}
+
+func (s *Server) respondEscalation(w http.ResponseWriter, r *http.Request) {
+	var req respondEscalationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.ID == "" || req.Response == "" {
+		writeError(w, http.StatusBadRequest, "id and response are required")
+		return
+	}
+
+	if !s.escalations.Respond(req.ID, req.Response) {
+		writeError(w, http.StatusNotFound, "escalation not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) reconnectSession(w http.ResponseWriter, r *http.Request) {

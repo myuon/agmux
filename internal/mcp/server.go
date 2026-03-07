@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/google/uuid"
 )
 
 type Server struct {
@@ -111,6 +113,20 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 						"properties": map[string]interface{}{},
 					},
 				},
+				map[string]interface{}{
+					"name":        "escalate",
+					"description": "ユーザーへのエスカレーション。判断を仰ぎたいときや確認が必要なときに呼んでください。ブラウザ通知が送られ、ユーザーが応答するまでブロックします。",
+					"inputSchema": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"message": map[string]interface{}{
+								"type":        "string",
+								"description": "ユーザーに伝えたいメッセージ（例: 「テストが3件失敗しています。修正方針を教えてください」）",
+							},
+						},
+						"required": []string{"message"},
+					},
+				},
 			},
 		}, nil
 
@@ -138,6 +154,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 	case "set_session_context":
 		// Backward compatibility
 		return s.handleCreateGoal(args)
+	case "escalate":
+		return s.handleEscalate(args)
 	default:
 		return nil, &jsonRPCError{Code: -32602, Message: "unknown tool: " + name}
 	}
@@ -174,6 +192,59 @@ func (s *Server) handleCompleteGoal() (interface{}, *jsonRPCError) {
 		return toolResult(fmt.Sprintf("Goal completed. Returning to parent goal: %s", parent), false), nil
 	}
 	return toolResult("Goal completed. No more goals in the stack.", false), nil
+}
+
+func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCError) {
+	var input struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(args, &input); err != nil {
+		return nil, &jsonRPCError{Code: -32602, Message: "invalid arguments"}
+	}
+	if input.Message == "" {
+		return nil, &jsonRPCError{Code: -32602, Message: "message is required"}
+	}
+
+	response, err := s.apiEscalate(input.Message)
+	if err != nil {
+		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
+	}
+
+	return toolResult(fmt.Sprintf("User responded: %s", response), false), nil
+}
+
+func (s *Server) apiEscalate(message string) (string, error) {
+	escalationID := uuid.New().String()
+	url := fmt.Sprintf("%s/api/sessions/%s/escalate", s.apiURL, s.sessionID)
+	body := fmt.Sprintf(`{"id":%s,"message":%s}`,
+		jsonString(escalationID), jsonString(message))
+
+	req, err := http.NewRequest("POST", url, strings.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// Use a client without timeout since this call blocks until user responds
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Response string `json:"response"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+	return result.Response, nil
 }
 
 func (s *Server) apiCreateGoal(currentTask, goal string, subgoal bool) error {
