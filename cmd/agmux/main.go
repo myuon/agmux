@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -142,13 +143,25 @@ func serveCmd() *cobra.Command {
 
 			httpSrv := srv.NewHTTPServer(addr)
 
+			// Listen first so we can notify clients the moment the server is ready
+			ln, err := net.Listen("tcp", addr)
+			if err != nil {
+				return fmt.Errorf("listen: %w", err)
+			}
+
+			// Notify connected clients that the server has started
+			hub.Broadcast(server.Message{
+				Type: "server_started",
+			})
+			logger.Info("Server started, notification sent")
+
 			// Graceful shutdown on SIGTERM/SIGINT
 			shutdownCh := make(chan os.Signal, 1)
 			signal.Notify(shutdownCh, syscall.SIGTERM, syscall.SIGINT)
 
 			errCh := make(chan error, 1)
 			go func() {
-				errCh <- httpSrv.ListenAndServe()
+				errCh <- httpSrv.Serve(ln)
 			}()
 
 			select {
