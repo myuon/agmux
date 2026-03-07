@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -31,6 +33,7 @@ func main() {
 	rootCmd.AddCommand(sessionCmd())
 	rootCmd.AddCommand(serveCmd())
 	rootCmd.AddCommand(mcpCmd())
+	rootCmd.AddCommand(logsCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -353,4 +356,90 @@ func sessionCaptureCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func logsCmd() *cobra.Command {
+	var follow bool
+	var lines int
+
+	cmd := &cobra.Command{
+		Use:   "logs",
+		Short: "Show daemon logs",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			logPath, err := logging.LogPath()
+			if err != nil {
+				return fmt.Errorf("get log path: %w", err)
+			}
+
+			file, err := os.Open(logPath)
+			if err != nil {
+				return fmt.Errorf("open log file: %w", err)
+			}
+			defer file.Close()
+
+			// Read last N lines
+			tailLines, err := readTailLines(file, lines)
+			if err != nil {
+				return fmt.Errorf("read log file: %w", err)
+			}
+			for _, line := range tailLines {
+				fmt.Println(line)
+			}
+
+			if !follow {
+				return nil
+			}
+
+			// Follow mode: watch for new lines
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			sigCh := make(chan os.Signal, 1)
+			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+			go func() {
+				<-sigCh
+				cancel()
+			}()
+
+			reader := bufio.NewReader(file)
+			for {
+				select {
+				case <-ctx.Done():
+					return nil
+				default:
+					line, err := reader.ReadString('\n')
+					if err != nil {
+						if err == io.EOF {
+							time.Sleep(100 * time.Millisecond)
+							continue
+						}
+						return err
+					}
+					fmt.Print(line)
+				}
+			}
+		},
+	}
+
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output in realtime")
+	cmd.Flags().IntVarP(&lines, "lines", "n", 20, "Number of lines to show")
+
+	return cmd
+}
+
+// readTailLines reads the last n lines from the file.
+func readTailLines(file *os.File, n int) ([]string, error) {
+	scanner := bufio.NewScanner(file)
+	var allLines []string
+	for scanner.Scan() {
+		allLines = append(allLines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	if len(allLines) <= n {
+		return allLines, nil
+	}
+	return allLines[len(allLines)-n:], nil
 }
