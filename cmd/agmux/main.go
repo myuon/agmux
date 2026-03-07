@@ -98,7 +98,7 @@ func serveCmd() *cobra.Command {
 			// Set server logger for WS hub
 			server.SetServerLog(srvLogger)
 
-			mgr, _, err := initManager(cfg, logger)
+			mgr, database, err := initManager(cfg, logger)
 			if err != nil {
 				return err
 			}
@@ -147,7 +147,7 @@ func serveCmd() *cobra.Command {
 			}
 
 			logPath, _ := logging.LogPath()
-			srv := server.New(mgr, hub, devMode, logPath, logger)
+			srv := server.New(mgr, hub, devMode, logPath, logger, database)
 
 			if !devMode {
 				frontendFS, err := agmux.FrontendFS()
@@ -567,4 +567,3 @@ func readTailLines(file *os.File, n int) ([]string, error) {
 	}
 	return allLines[len(allLines)-n:], nil
 }
-// modified
