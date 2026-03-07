@@ -113,5 +113,5 @@ export interface AppConfig {
   server: { port: number };
   daemon: { interval: string };
   session: { claudeCommand: string };
-  prompts?: { statusCheck: string };
+  prompts?: { statusCheck: string; systemPrompt: string };
 }
