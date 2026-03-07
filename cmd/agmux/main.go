@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -397,70 +398,104 @@ func sessionCaptureCmd() *cobra.Command {
 func logsCmd() *cobra.Command {
 	var follow bool
 	var lines int
+	var serverFlag bool
+	var daemonFlag bool
 
 	cmd := &cobra.Command{
-		Use:   "logs",
-		Short: "Show daemon logs",
+		Use:   "logs [session-id]",
+		Short: "Show logs (session, server, or daemon)",
+		Long: `Show logs for a session, the server, or the daemon.
+
+Usage:
+  agmux logs <session-id>   Show session stream log
+  agmux logs --server       Show server log
+  agmux logs --daemon       Show daemon log`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			logPath, err := logging.LogPath()
-			if err != nil {
-				return fmt.Errorf("get log path: %w", err)
-			}
+			var logPath string
 
-			file, err := os.Open(logPath)
-			if err != nil {
-				return fmt.Errorf("open log file: %w", err)
-			}
-			defer file.Close()
-
-			// Read last N lines
-			tailLines, err := readTailLines(file, lines)
-			if err != nil {
-				return fmt.Errorf("read log file: %w", err)
-			}
-			for _, line := range tailLines {
-				fmt.Println(line)
-			}
-
-			if !follow {
-				return nil
-			}
-
-			// Follow mode: watch for new lines
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-
-			sigCh := make(chan os.Signal, 1)
-			signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-			go func() {
-				<-sigCh
-				cancel()
-			}()
-
-			reader := bufio.NewReader(file)
-			for {
-				select {
-				case <-ctx.Done():
-					return nil
-				default:
-					line, err := reader.ReadString('\n')
-					if err != nil {
-						if err == io.EOF {
-							time.Sleep(100 * time.Millisecond)
-							continue
-						}
-						return err
-					}
-					fmt.Print(line)
+			switch {
+			case serverFlag && daemonFlag:
+				return fmt.Errorf("cannot specify both --server and --daemon")
+			case serverFlag:
+				home, err := os.UserHomeDir()
+				if err != nil {
+					return err
 				}
+				logPath = filepath.Join(home, ".agmux", "server.log")
+			case daemonFlag:
+				p, err := logging.LogPath()
+				if err != nil {
+					return fmt.Errorf("get log path: %w", err)
+				}
+				logPath = p
+			case len(args) == 1:
+				streamsDir, err := db.StreamsDir()
+				if err != nil {
+					return fmt.Errorf("get streams dir: %w", err)
+				}
+				logPath = filepath.Join(streamsDir, args[0]+".jsonl")
+			default:
+				return cmd.Help()
 			}
+
+			return tailLogFile(logPath, lines, follow)
 		},
 	}
 
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output in realtime")
 	cmd.Flags().IntVarP(&lines, "lines", "n", 20, "Number of lines to show")
+	cmd.Flags().BoolVar(&serverFlag, "server", false, "Show server log")
+	cmd.Flags().BoolVar(&daemonFlag, "daemon", false, "Show daemon log")
 
 	return cmd
+}
+
+func tailLogFile(logPath string, lines int, follow bool) error {
+	file, err := os.Open(logPath)
+	if err != nil {
+		return fmt.Errorf("open log file: %w", err)
+	}
+	defer file.Close()
+
+	tailLines, err := readTailLines(file, lines)
+	if err != nil {
+		return fmt.Errorf("read log file: %w", err)
+	}
+	for _, line := range tailLines {
+		fmt.Println(line)
+	}
+
+	if !follow {
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		cancel()
+	}()
+
+	reader := bufio.NewReader(file)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				return err
+			}
+			fmt.Print(line)
+		}
+	}
 }
 
 // readTailLines reads the last n lines from the file.
