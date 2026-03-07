@@ -7,6 +7,7 @@ import { LogPanel } from "./components/LogPanel";
 import { SessionList } from "./components/SessionList";
 import { ConfigPage } from "./components/ConfigPage";
 import { useWebSocket } from "./hooks/useWebSocket";
+import { getActiveSessionName } from "./activeSession";
 
 // Register service worker for mobile notifications
 if ("serviceWorker" in navigator) {
@@ -48,6 +49,8 @@ function useGlobalNotifications() {
       const saved = localStorage.getItem("agmux-notify-statuses");
       const statusFilters = saved ? JSON.parse(saved) as Record<string, boolean> : defaultStatuses;
       if (!(statusFilters[data.status] ?? defaultStatuses[data.status] ?? true)) return;
+      // Suppress notification if the user is currently viewing this session
+      if (data.sessionName === getActiveSessionName()) return;
       sendNotification("agmux", `${data.sessionName}: ${data.summary}`);
     }
   }, []);
