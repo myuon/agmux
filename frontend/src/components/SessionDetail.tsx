@@ -806,6 +806,19 @@ export function SessionDetail() {
         placeholder="Send a message..."
         className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
       />
+      {session.status !== "stopped" && session.type !== "controller" && (
+        <button
+          type="button"
+          onClick={async () => {
+            await api.stopSession(session.id);
+            api.getSession(session.id).then(setSession);
+          }}
+          className="px-3 py-2 text-sm text-red-600 bg-red-50 rounded hover:bg-red-100"
+          title="Stop"
+        >
+          <Square className="w-4 h-4" />
+        </button>
+      )}
       <button
         type="submit"
         className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -829,18 +842,6 @@ export function SessionDetail() {
         <span className="text-xs sm:text-sm text-gray-500">{session.status}</span>
         {session.type !== "controller" && (
           <div className="flex gap-1.5 sm:ml-auto">
-            {session.status !== "stopped" && (
-              <button
-                onClick={async () => {
-                  await api.stopSession(session.id);
-                  api.getSession(session.id).then(setSession);
-                }}
-                className="p-1.5 text-yellow-700 bg-yellow-50 rounded hover:bg-yellow-100"
-                title="Stop"
-              >
-                <Square className="w-3.5 h-3.5" />
-              </button>
-            )}
             <button
               onClick={async () => {
                 if (!confirm("Clear session context? This will start a fresh conversation.")) return;
