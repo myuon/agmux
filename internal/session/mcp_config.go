@@ -26,7 +26,8 @@ const agmuxSystemPrompt = `あなたはagmuxで管理されているセッショ
 - タスクの内容や目標が変わったら、その都度 create_goal を呼び出して更新してください
 - タスクが完了したら、complete_goal で完了状態を反映してください
 - サブタスクが発生した場合は create_goal の subgoal=true で親ゴールを保持したままサブゴールを設定してください
-- サブタスクが完了したら complete_goal でポップし、親ゴールに戻ってください`
+- サブタスクが完了したら complete_goal でポップし、親ゴールに戻ってください
+- ユーザーに判断を仰ぎたいときや確認が必要なときは escalate ツールを使ってください。ブラウザ通知が送られ、ユーザーが応答するまで待機します`
 
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
