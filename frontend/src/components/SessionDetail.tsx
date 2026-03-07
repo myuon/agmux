@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff, X, FolderOpen,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2,
-  ListTodo, Target, RotateCcw, Circle, Bot, ImagePlus,
+  ListTodo, Target, RotateCcw, Circle, Bot, ImagePlus, SendHorizonal,
 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
@@ -35,6 +35,7 @@ interface StreamContentBlock {
   name?: string;
   input?: unknown;
   content?: unknown;
+  source?: { type: string; media_type: string; data: string };
 }
 
 // AskUserQuestion input types
@@ -53,6 +54,7 @@ interface AskUserQuestionItem {
 // A display item for the merged stream view
 type StreamDisplayItem =
   | { kind: "text"; text: string }
+  | { kind: "image"; mediaType: string; data: string }
   | { kind: "tool_call"; name: string; input: unknown; result?: string }
   | { kind: "system_event"; eventType: string; label: string; detail?: string };
 
@@ -294,10 +296,12 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
         continue;
       }
 
-      // Only show user text content (tool_results are merged into assistant tool_call items)
+      // Only show user text/image content (tool_results are merged into assistant tool_call items)
       for (const b of blocks) {
         if (b.type === "text" && b.text) {
           items.push({ kind: "text", text: b.text });
+        } else if (b.type === "image" && b.source) {
+          items.push({ kind: "image", mediaType: b.source.media_type, data: b.source.data });
         }
       }
       // user entries with content as plain string
@@ -578,6 +582,15 @@ function CollapsibleText({ text }: { text: string }) {
 function StreamDisplayItemView({ item, onAnswer }: { item: StreamDisplayItem; onAnswer?: (text: string) => void }) {
   if (item.kind === "text") {
     return <CollapsibleText text={item.text} />;
+  }
+  if (item.kind === "image") {
+    return (
+      <img
+        src={`data:${item.mediaType};base64,${item.data}`}
+        alt="attached"
+        className="max-w-xs max-h-48 rounded border border-gray-200"
+      />
+    );
   }
   if (item.kind === "tool_call") {
     return <ToolCallView item={item} onAnswer={onAnswer} />;
@@ -1023,7 +1036,7 @@ export function SessionDetail() {
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="px-3 py-2 text-sm text-gray-500 bg-gray-50 rounded hover:bg-gray-100"
+          className="w-9 h-9 flex items-center justify-center text-gray-500 bg-gray-50 rounded hover:bg-gray-100"
           title="Add image"
         >
           <ImagePlus className="w-4 h-4" />
@@ -1035,7 +1048,7 @@ export function SessionDetail() {
               await api.stopSession(session.id);
               api.getSession(session.id).then(setSession);
             }}
-            className="px-3 py-2 text-sm text-red-600 bg-red-50 rounded hover:bg-red-100"
+            className="w-9 h-9 flex items-center justify-center text-red-600 bg-red-50 rounded hover:bg-red-100"
             title="Stop"
           >
             <Square className="w-4 h-4" />
@@ -1043,9 +1056,9 @@ export function SessionDetail() {
         )}
         <button
           type="submit"
-          className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+          className="w-9 h-9 flex items-center justify-center bg-blue-600 text-white rounded hover:bg-blue-700"
         >
-          Send
+          <SendHorizonal className="w-4 h-4" />
         </button>
       </div>
     </form>
