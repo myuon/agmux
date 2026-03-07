@@ -527,7 +527,8 @@ type configJSON struct {
 }
 
 type configPromptsJSON struct {
-	StatusCheck string `json:"statusCheck"`
+	StatusCheck  string `json:"statusCheck"`
+	SystemPrompt string `json:"systemPrompt"`
 }
 
 type configServerJSON struct {
@@ -564,7 +565,8 @@ func (s *Server) getConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	result := configToJSON(cfg)
 	result.Prompts = &configPromptsJSON{
-		StatusCheck: monitor.StatusPrompt,
+		StatusCheck:  monitor.StatusPrompt,
+		SystemPrompt: s.sessions.SystemPrompt(),
 	}
 	writeJSON(w, http.StatusOK, result)
 }

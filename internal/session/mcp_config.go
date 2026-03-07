@@ -21,7 +21,7 @@ type mcpServerEntry struct {
 	Env     map[string]string `json:"env,omitempty"`
 }
 
-const agmuxSystemPrompt = `あなたはagmuxで管理されているセッションです。以下のルールを守ってください:
+const defaultSystemPrompt = `あなたはagmuxで管理されているセッションです。以下のルールを守ってください:
 - 新しいタスクに着手するとき、create_goal ツールで currentTask と goal を設定してください
 - タスクの内容や目標が変わったら、その都度 create_goal を呼び出して更新してください
 - タスクが完了したら、complete_goal で完了状態を反映してください
