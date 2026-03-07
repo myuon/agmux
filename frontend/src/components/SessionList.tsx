@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { TerminalSquare } from "lucide-react";
 import type { Session } from "../types/session";
 import { StatusDot } from "./StatusBadge";
 
@@ -41,7 +42,18 @@ interface Props {
 
 export function SessionList({ sessions, onStop, onRestartController }: Props) {
   const navigate = useNavigate();
-  const groupedSessions = useMemo(() => groupSessionsByProject(sessions), [sessions]);
+  const groupedSessions = useMemo(() => {
+    const groups = groupSessionsByProject(sessions);
+    // Sort: controller group first
+    const entries = [...groups.entries()].sort(([, a], [, b]) => {
+      const aHasController = a.some(s => s.type === "controller");
+      const bHasController = b.some(s => s.type === "controller");
+      if (aHasController && !bHasController) return -1;
+      if (!aHasController && bHasController) return 1;
+      return 0;
+    });
+    return entries;
+  }, [sessions]);
 
   if (sessions.length === 0) {
     return (
@@ -53,9 +65,12 @@ export function SessionList({ sessions, onStop, onRestartController }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
-      {[...groupedSessions.entries()].map(([projectPath, groupSessions]) => (
+      {groupedSessions.map(([projectPath, groupSessions]) => {
+        const isController = groupSessions.some(s => s.type === "controller");
+        return (
         <div key={projectPath}>
           <div className="flex items-center gap-2 mb-2 px-1">
+            {isController && <TerminalSquare className="w-3.5 h-3.5 text-purple-500" />}
             <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide truncate">
               {projectDisplayName(projectPath)}
             </span>
@@ -115,7 +130,8 @@ export function SessionList({ sessions, onStop, onRestartController }: Props) {
             ))}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
