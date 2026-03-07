@@ -2,13 +2,16 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -234,6 +237,13 @@ func sessionCreateCmd() *cobra.Command {
 			if outputMode != session.OutputModeTerminal && outputMode != session.OutputModeStream {
 				return fmt.Errorf("invalid mode %q: must be 'terminal' or 'stream'", mode)
 			}
+
+			if outputMode == session.OutputModeStream {
+				// Stream mode: delegate to the running agmux server so the
+				// child process outlives this CLI invocation.
+				return createSessionViaAPI(args[0], projectPath, prompt, mode, worktree)
+			}
+
 			cfg, _ := config.Load()
 			mgr, _, err := initManager(cfg, nil)
 			if err != nil {
@@ -254,6 +264,49 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&worktree, "worktree", "w", false, "Create a git worktree for the session")
 
 	return cmd
+}
+
+// createSessionViaAPI sends a POST /api/sessions request to the running agmux server
+// so that the stream process is owned by the server, not this short-lived CLI process.
+func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool) error {
+	cfg, _ := config.Load()
+	port := cfg.Server.Port
+
+	absPath, err := filepath.Abs(projectPath)
+	if err != nil {
+		return fmt.Errorf("resolve project path: %w", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"name":        name,
+		"projectPath": absPath,
+		"prompt":      prompt,
+		"outputMode":  mode,
+		"worktree":    worktree,
+	})
+
+	url := fmt.Sprintf("http://localhost:%d/api/sessions", port)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to connect to agmux server on port %d (is it running?): %w", port, err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		OutputMode string `json:"outputMode"`
+		Error      string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode server response: %w", err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("server error: %s", result.Error)
+	}
+
+	fmt.Printf("Created session: %s (id: %s, mode: %s)\n", result.Name, result.ID, result.OutputMode)
+	return nil
 }
 
 func sessionListCmd() *cobra.Command {
