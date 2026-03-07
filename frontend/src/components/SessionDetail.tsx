@@ -992,8 +992,26 @@ export function SessionDetail() {
   const [pendingImages, setPendingImages] = useState<{ data: string; mediaType: string; preview: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingEscalationId, setPendingEscalationId] = useState<string | null>(null);
+  const [slashCommands, setSlashCommands] = useState<string[]>([]);
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [slashFilter, setSlashFilter] = useState("");
+  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
+
+  // Extract slash_commands from system init messages
+  useEffect(() => {
+    for (const line of streamLines) {
+      const entry = line as Record<string, unknown>;
+      if (entry.type === "system" && entry.subtype === "init") {
+        const cmds = entry.slash_commands as string[] | undefined;
+        if (cmds && cmds.length > 0) {
+          setSlashCommands(cmds);
+        }
+        break;
+      }
+    }
+  }, [streamLines]);
 
   // Track active session name for notification suppression
   useEffect(() => {
@@ -1152,28 +1170,94 @@ export function SessionDetail() {
         </div>
       )}
       <div className="flex gap-2">
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onPaste={(e) => {
-            const items = e.clipboardData?.items;
-            if (!items) return;
-            const imageFiles: File[] = [];
-            for (const item of Array.from(items)) {
-              if (item.type.startsWith("image/")) {
-                const file = item.getAsFile();
-                if (file) imageFiles.push(file);
+        <div className="relative flex-1">
+          {showSlashMenu && (() => {
+            const filtered = slashCommands.filter((cmd) =>
+              slashFilter === "" || cmd.toLowerCase().includes(slashFilter.toLowerCase())
+            );
+            if (filtered.length === 0) return null;
+            return (
+              <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto z-50">
+                {filtered.map((cmd, i) => (
+                  <button
+                    key={cmd}
+                    type="button"
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 ${
+                      i === slashSelectedIndex ? "bg-blue-100 text-blue-800" : "text-gray-700"
+                    }`}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setMessage(`/${cmd} `);
+                      setShowSlashMenu(false);
+                    }}
+                  >
+                    /{cmd}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => {
+              const val = e.target.value;
+              setMessage(val);
+              // Show slash menu when input starts with /
+              if (val.startsWith("/") && slashCommands.length > 0) {
+                const filter = val.slice(1).split(" ")[0];
+                // Only show menu if user hasn't finished typing a command (no space yet)
+                if (!val.includes(" ") || val === "/") {
+                  setSlashFilter(filter);
+                  setSlashSelectedIndex(0);
+                  setShowSlashMenu(true);
+                } else {
+                  setShowSlashMenu(false);
+                }
+              } else {
+                setShowSlashMenu(false);
               }
-            }
-            if (imageFiles.length > 0) {
-              e.preventDefault();
-              addImageFiles(imageFiles);
-            }
-          }}
-          placeholder="Send a message..."
-          className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
-        />
+            }}
+            onKeyDown={(e) => {
+              if (!showSlashMenu) return;
+              const filtered = slashCommands.filter((cmd) =>
+                slashFilter === "" || cmd.toLowerCase().includes(slashFilter.toLowerCase())
+              );
+              if (filtered.length === 0) return;
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setSlashSelectedIndex((prev) => Math.min(prev + 1, filtered.length - 1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setSlashSelectedIndex((prev) => Math.max(prev - 1, 0));
+              } else if (e.key === "Enter" || e.key === "Tab") {
+                e.preventDefault();
+                setMessage(`/${filtered[slashSelectedIndex]} `);
+                setShowSlashMenu(false);
+              } else if (e.key === "Escape") {
+                setShowSlashMenu(false);
+              }
+            }}
+            onBlur={() => setShowSlashMenu(false)}
+            onPaste={(e) => {
+              const items = e.clipboardData?.items;
+              if (!items) return;
+              const imageFiles: File[] = [];
+              for (const item of Array.from(items)) {
+                if (item.type.startsWith("image/")) {
+                  const file = item.getAsFile();
+                  if (file) imageFiles.push(file);
+                }
+              }
+              if (imageFiles.length > 0) {
+                e.preventDefault();
+                addImageFiles(imageFiles);
+              }
+            }}
+            placeholder="Send a message..."
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+          />
+        </div>
         <input
           ref={fileInputRef}
           type="file"
