@@ -91,6 +91,27 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(data),
     }),
+
+  getMetrics: (params?: { name?: string; session_id?: string; since?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.name) qs.set("name", params.name);
+    if (params?.session_id) qs.set("session_id", params.session_id);
+    if (params?.since) qs.set("since", params.since);
+    return request<MetricRow[]>(`/metrics?${qs}`);
+  },
+
+  getMetricsSummary: (since?: string) => {
+    const qs = since ? `?since=${since}` : "";
+    return request<MetricsSummary>(`/metrics/summary${qs}`);
+  },
+
+  getMetricsEvents: (params?: { name?: string; session_id?: string; since?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.name) qs.set("name", params.name);
+    if (params?.session_id) qs.set("session_id", params.session_id);
+    if (params?.since) qs.set("since", params.since);
+    return request<MetricEvent[]>(`/metrics/events?${qs}`);
+  },
 };
 
 export interface DiffFile {
@@ -114,4 +135,32 @@ export interface AppConfig {
   daemon: { interval: string };
   session: { claudeCommand: string };
   prompts?: { statusCheck: string; systemPrompt: string };
+}
+
+export interface MetricRow {
+  id: number;
+  name: string;
+  value: number;
+  attributes: Record<string, string>;
+  sessionId: string;
+  timestamp: string;
+}
+
+export interface MetricsSummary {
+  totalCost: number;
+  totalTokens: Record<string, number>;
+  sessionCount: number;
+  linesOfCode: number;
+  activeTime: number;
+  costBySession: { sessionId: string; cost: number }[];
+  tokensBySession: { sessionId: string; input: number; output: number }[];
+}
+
+export interface MetricEvent {
+  id: number;
+  name: string;
+  body: string;
+  attributes: Record<string, string>;
+  sessionId: string;
+  timestamp: string;
 }

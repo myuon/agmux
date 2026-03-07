@@ -116,6 +116,48 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: create otel_metrics table
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS otel_metrics (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			value REAL NOT NULL,
+			attributes TEXT NOT NULL DEFAULT '{}',
+			resource_attributes TEXT NOT NULL DEFAULT '{}',
+			session_id TEXT,
+			timestamp DATETIME NOT NULL,
+			received_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	// Migration: create otel_events table
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS otel_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			body TEXT NOT NULL DEFAULT '{}',
+			attributes TEXT NOT NULL DEFAULT '{}',
+			resource_attributes TEXT NOT NULL DEFAULT '{}',
+			session_id TEXT,
+			timestamp DATETIME NOT NULL,
+			received_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	// Migration: create indexes for otel tables
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_metrics_name ON otel_metrics(name)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_metrics_session ON otel_metrics(session_id)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_metrics_timestamp ON otel_metrics(timestamp)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_events_name ON otel_events(name)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_events_session ON otel_events(session_id)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_events_timestamp ON otel_events(timestamp)`)
+
 	// Migration: update old status values to new ones
 	_, err = db.Exec(`UPDATE sessions SET status = 'working' WHERE status IN ('running', 'waiting', 'error')`)
 	if err != nil {

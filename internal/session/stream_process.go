@@ -115,6 +115,8 @@ func StartStreamProcess(sessionID, projectPath, mcpConfigPath, systemPrompt stri
 			cmd.Env = append(cmd.Env, env)
 		}
 	}
+	// Inject OTel environment variables for telemetry collection
+	cmd.Env = appendOTelEnv(cmd.Env)
 
 	stdinPipe, err := cmd.StdinPipe()
 	if err != nil {

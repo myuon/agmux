@@ -131,7 +131,8 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 	} else {
 		// Terminal mode: launch claude TUI in tmux
 		time.Sleep(300 * time.Millisecond)
-		claudeCmd := m.claudeCommand + " --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(m.systemPrompt)
+		otelPrefix := otelEnvPrefix(m.apiPort)
+		claudeCmd := otelPrefix + m.claudeCommand + " --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(m.systemPrompt)
 		if err := m.tmux.SendKeysOnce(tmuxSession, claudeCmd); err != nil {
 			return nil, fmt.Errorf("launch claude: %w", err)
 		}
@@ -403,7 +404,8 @@ func (m *Manager) Clear(id string) error {
 		m.streamMu.Unlock()
 	} else {
 		time.Sleep(300 * time.Millisecond)
-		claudeCmd := m.claudeCommand + " --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(m.systemPrompt)
+		otelPrefix := otelEnvPrefix(m.apiPort)
+		claudeCmd := otelPrefix + m.claudeCommand + " --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(m.systemPrompt)
 		if err := m.tmux.SendKeysOnce(s.TmuxSession, claudeCmd); err != nil {
 			return fmt.Errorf("launch claude: %w", err)
 		}
@@ -785,7 +787,8 @@ func (m *Manager) Reconnect(id string) error {
 		m.streamMu.Unlock()
 	} else {
 		time.Sleep(300 * time.Millisecond)
-		claudeCmd := m.claudeCommand + " --resume --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(m.systemPrompt)
+		otelPrefix := otelEnvPrefix(m.apiPort)
+		claudeCmd := otelPrefix + m.claudeCommand + " --resume --session-id " + id + " --mcp-config " + mcpConfigPath + " --append-system-prompt " + shellQuote(m.systemPrompt)
 		if err := m.tmux.SendKeysOnce(s.TmuxSession, claudeCmd); err != nil {
 			return fmt.Errorf("launch claude: %w", err)
 		}

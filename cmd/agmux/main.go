@@ -4,14 +4,17 @@ import (
 	"bufio"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -95,7 +98,7 @@ func serveCmd() *cobra.Command {
 			// Set server logger for WS hub
 			server.SetServerLog(srvLogger)
 
-			mgr, _, err := initManager(cfg, logger)
+			mgr, database, err := initManager(cfg, logger)
 			if err != nil {
 				return err
 			}
@@ -144,7 +147,7 @@ func serveCmd() *cobra.Command {
 			}
 
 			logPath, _ := logging.LogPath()
-			srv := server.New(mgr, hub, devMode, logPath, logger)
+			srv := server.New(mgr, hub, devMode, logPath, logger, database)
 
 			if !devMode {
 				frontendFS, err := agmux.FrontendFS()
@@ -234,6 +237,19 @@ func sessionCreateCmd() *cobra.Command {
 			if outputMode != session.OutputModeTerminal && outputMode != session.OutputModeStream {
 				return fmt.Errorf("invalid mode %q: must be 'terminal' or 'stream'", mode)
 			}
+
+			// For stream mode, delegate to the running server via HTTP API.
+			// The CLI process exits immediately, so child processes (claude)
+			// would be killed. The server keeps them alive.
+			if outputMode == session.OutputModeStream {
+				cfg, _ := config.Load()
+				port := cfg.Server.Port
+				if port == 0 {
+					port = 4321
+				}
+				return createSessionViaAPI(port, args[0], projectPath, prompt, string(outputMode), worktree)
+			}
+
 			cfg, _ := config.Load()
 			mgr, _, err := initManager(cfg, nil)
 			if err != nil {
@@ -393,6 +409,37 @@ func sessionCaptureCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func createSessionViaAPI(port int, name, projectPath, prompt, outputMode string, worktree bool) error {
+	body := fmt.Sprintf(
+		`{"name":%q,"projectPath":%q,"prompt":%q,"outputMode":%q,"worktree":%t}`,
+		name, projectPath, prompt, outputMode, worktree,
+	)
+	resp, err := http.Post(
+		fmt.Sprintf("http://localhost:%d/api/sessions", port),
+		"application/json",
+		strings.NewReader(body),
+	)
+	if err != nil {
+		return fmt.Errorf("connect to agmux server: %w (is agmux serve running?)", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		OutputMode string `json:"outputMode"`
+		Error      string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	if result.Error != "" {
+		return fmt.Errorf("server error: %s", result.Error)
+	}
+	fmt.Printf("Created session: %s (id: %s, mode: %s)\n", result.Name, result.ID, result.OutputMode)
+	return nil
 }
 
 func logsCmd() *cobra.Command {

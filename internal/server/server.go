@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"database/sql"
 	"encoding/json"
 	"io/fs"
 	"log/slog"
@@ -19,27 +20,32 @@ import (
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/logging"
 	"github.com/myuon/agmux/internal/monitor"
+	"github.com/myuon/agmux/internal/otel"
 	"github.com/myuon/agmux/internal/session"
 )
 
 type Server struct {
-	sessions    *session.Manager
-	hub         *Hub
-	router      chi.Router
-	devMode     bool
-	logPath     string
-	logger      *slog.Logger
-	escalations *EscalationStore
+	sessions     *session.Manager
+	hub          *Hub
+	router       chi.Router
+	devMode      bool
+	logPath      string
+	logger       *slog.Logger
+	escalations  *EscalationStore
+	otelReceiver *otel.Receiver
+	sqlDB        *sql.DB
 }
 
-func New(sessions *session.Manager, hub *Hub, devMode bool, logPath string, logger *slog.Logger) *Server {
+func New(sessions *session.Manager, hub *Hub, devMode bool, logPath string, logger *slog.Logger, sqlDB *sql.DB) *Server {
 	s := &Server{
-		sessions:    sessions,
-		hub:         hub,
-		devMode:     devMode,
-		logPath:     logPath,
-		logger:      logger.With("component", "server"),
-		escalations: NewEscalationStore(),
+		sessions:     sessions,
+		hub:          hub,
+		devMode:      devMode,
+		logPath:      logPath,
+		logger:       logger.With("component", "server"),
+		escalations:  NewEscalationStore(),
+		otelReceiver: otel.NewReceiver(sqlDB, logger),
+		sqlDB:        sqlDB,
 	}
 	s.setupRoutes()
 	return s
@@ -60,6 +66,10 @@ func (s *Server) setupRoutes() {
 	}
 
 	r.Get("/ws", s.hub.HandleWS)
+
+	// OTLP receiver endpoints
+	r.Post("/v1/metrics", s.otelReceiver.HandleMetrics)
+	r.Post("/v1/logs", s.otelReceiver.HandleLogs)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Get("/sessions", s.listSessions)
@@ -83,6 +93,9 @@ func (s *Server) setupRoutes() {
 		r.Get("/logs", s.getLogs)
 		r.Get("/config", s.getConfig)
 		r.Put("/config", s.updateConfig)
+		r.Get("/metrics", s.getMetrics)
+		r.Get("/metrics/summary", s.getMetricsSummary)
+		r.Get("/metrics/events", s.getMetricsEvents)
 	})
 
 	s.router = r
@@ -583,6 +596,64 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) getMetrics(w http.ResponseWriter, r *http.Request) {
+	store := otel.NewStore(s.sqlDB)
+	name := r.URL.Query().Get("name")
+	sessionID := r.URL.Query().Get("session_id")
+	var since time.Time
+	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
+		if t, err := time.Parse(time.RFC3339, sinceStr); err == nil {
+			since = t
+		}
+	}
+	metrics, err := store.QueryMetrics(name, sessionID, since)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if metrics == nil {
+		metrics = []otel.MetricRow{}
+	}
+	writeJSON(w, http.StatusOK, metrics)
+}
+
+func (s *Server) getMetricsSummary(w http.ResponseWriter, r *http.Request) {
+	store := otel.NewStore(s.sqlDB)
+	var since time.Time
+	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
+		if t, err := time.Parse(time.RFC3339, sinceStr); err == nil {
+			since = t
+		}
+	}
+	summary, err := store.GetSummary(since)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
+}
+
+func (s *Server) getMetricsEvents(w http.ResponseWriter, r *http.Request) {
+	store := otel.NewStore(s.sqlDB)
+	name := r.URL.Query().Get("name")
+	sessionID := r.URL.Query().Get("session_id")
+	var since time.Time
+	if sinceStr := r.URL.Query().Get("since"); sinceStr != "" {
+		if t, err := time.Parse(time.RFC3339, sinceStr); err == nil {
+			since = t
+		}
+	}
+	events, err := store.QueryEvents(name, sessionID, since)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if events == nil {
+		events = []otel.EventRow{}
+	}
+	writeJSON(w, http.StatusOK, events)
 }
 
 func (s *Server) restartController(w http.ResponseWriter, r *http.Request) {
