@@ -96,12 +96,7 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
   }
 
   if (subtype === "task_started") {
-    const desc = (raw.description as string) || "バックグラウンドタスク";
-    return {
-      kind: "system_event",
-      eventType: "task_started",
-      label: `タスク開始: ${desc}`,
-    };
+    return null;
   }
 
   if (subtype === "init") {
