@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -319,6 +320,21 @@ func (m *Manager) stopStreamProcess(id string) {
 	}
 	m.streamMu.Unlock()
 	if ok {
+		sp.Stop()
+	}
+}
+
+// StopAllStreamProcesses gracefully stops all running stream processes.
+// This should be called during server shutdown to ensure output is flushed.
+func (m *Manager) StopAllStreamProcesses() {
+	m.streamMu.Lock()
+	processes := make(map[string]*StreamProcess, len(m.streamProcesses))
+	maps.Copy(processes, m.streamProcesses)
+	m.streamProcesses = make(map[string]*StreamProcess)
+	m.streamMu.Unlock()
+
+	for id, sp := range processes {
+		log.Printf("stopping stream process for session %s", id)
 		sp.Stop()
 	}
 }

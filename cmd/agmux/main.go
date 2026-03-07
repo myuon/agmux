@@ -153,6 +153,7 @@ func serveCmd() *cobra.Command {
 				return err
 			case sig := <-shutdownCh:
 				logger.Info(fmt.Sprintf("Received %s, shutting down gracefully...", sig))
+				mgr.StopAllStreamProcesses()
 				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer shutdownCancel()
 				return httpSrv.Shutdown(shutdownCtx)
