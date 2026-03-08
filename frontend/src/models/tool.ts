@@ -1,7 +1,7 @@
 import {
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, Bot, AlertTriangle,
 } from "lucide-react";
-import type { AskUserQuestionItem } from "./streamParsing";
+import type { AskUserQuestionItem } from "./stream";
 
 export function toolIcon(name: string) {
   switch (name) {
@@ -65,5 +65,19 @@ export function toolSubDetail(name: string, input: unknown): string | null {
     // descriptionがある場合のみコマンドをサブ詳細として表示
     if ("description" in inp && inp.description) return `$ ${cmd}`;
   }
+  return null;
+}
+
+// --- Todo model ---
+
+export interface TodoItem {
+  content: string;
+  status: "pending" | "in_progress" | "completed";
+  activeForm: string;
+}
+
+export function parseTodoInput(input: unknown): TodoItem[] | null {
+  const inp = input as { todos?: TodoItem[] } | null;
+  if (inp?.todos && Array.isArray(inp.todos)) return inp.todos;
   return null;
 }

@@ -10,9 +10,9 @@ import {
 } from "lucide-react";
 import { Modal } from "./ui/Modal";
 import { CollapsibleText } from "./ui/CollapsibleText";
-import type { StreamEntry, StreamDisplayItem, AskUserQuestionItem } from "./session/streamParsing";
-import { mergeStreamEntries } from "./session/streamParsing";
-import { toolIcon, toolDescription, toolSubDetail } from "./session/toolHelpers";
+import type { StreamEntry, StreamDisplayItem, AskUserQuestionItem } from "../models/stream";
+import { mergeStreamEntries } from "../models/stream";
+import { toolIcon, toolDescription, toolSubDetail, parseTodoInput } from "../models/tool";
 import { Toast } from "./ui/Toast";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import type { Session } from "../types/session";
@@ -361,20 +361,6 @@ function StreamDisplayItemView({ item, onAnswer, sessionId, escalationId, escala
   if (item.kind === "system_event") {
     return <SystemEventView item={item} />;
   }
-  return null;
-}
-
-// --- Todo extraction from stream ---
-
-interface TodoItem {
-  content: string;
-  status: "pending" | "in_progress" | "completed";
-  activeForm: string;
-}
-
-function parseTodoInput(input: unknown): TodoItem[] | null {
-  const inp = input as { todos?: TodoItem[] } | null;
-  if (inp?.todos && Array.isArray(inp.todos)) return inp.todos;
   return null;
 }
 
