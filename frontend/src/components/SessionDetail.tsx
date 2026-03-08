@@ -6,6 +6,7 @@ import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff, X, FolderOpen,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2,
   ListTodo, Target, RotateCcw, Circle, Bot, ImagePlus, SendHorizonal, AlertTriangle, Plus, Slash,
+  Code, Eye,
 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
@@ -1085,6 +1086,8 @@ export function SessionDetail() {
   const [claudeMDOpen, setClaudeMDOpen] = useState(false);
   const [claudeMDContent, setClaudeMDContent] = useState<string | null>(null);
   const [claudeMDLoading, setClaudeMDLoading] = useState(false);
+  const [claudeMDViewMode, setClaudeMDViewMode] = useState<"preview" | "source">("preview");
+  const [claudeMDSelectedLine, setClaudeMDSelectedLine] = useState<number | null>(null);
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
 
@@ -1656,30 +1659,68 @@ export function SessionDetail() {
       )}
 
       {/* CLAUDE.md Modal */}
-      {claudeMDOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setClaudeMDOpen(false)}>
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-5 py-3 border-b">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-purple-500" />
-                <span className="font-semibold text-sm">CLAUDE.md</span>
-              </div>
-              <button onClick={() => setClaudeMDOpen(false)} className="text-gray-400 hover:text-gray-700">
-                <X className="w-4 h-4" />
+      <Modal
+        open={claudeMDOpen}
+        onClose={() => setClaudeMDOpen(false)}
+        title={
+          <span className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-purple-500" />
+            CLAUDE.md
+            <span className="flex items-center gap-0.5 ml-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); setClaudeMDViewMode("preview"); }}
+                className={`p-1 rounded ${claudeMDViewMode === "preview" ? "bg-purple-100 text-purple-700" : "text-gray-400 hover:text-gray-700"}`}
+                title="Preview"
+              >
+                <Eye className="w-3.5 h-3.5" />
               </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setClaudeMDViewMode("source"); }}
+                className={`p-1 rounded ${claudeMDViewMode === "source" ? "bg-purple-100 text-purple-700" : "text-gray-400 hover:text-gray-700"}`}
+                title="Source"
+              >
+                <Code className="w-3.5 h-3.5" />
+              </button>
+            </span>
+          </span>
+        }
+      >
+        {claudeMDLoading ? (
+          <div className="text-gray-400 text-sm">Loading...</div>
+        ) : claudeMDContent ? (
+          claudeMDViewMode === "preview" ? (
+            <div className="prose prose-sm max-w-none">
+              <Markdown remarkPlugins={[remarkGfm]}>{claudeMDContent}</Markdown>
             </div>
-            <div className="overflow-y-auto p-5 prose prose-sm max-w-none">
-              {claudeMDLoading ? (
-                <div className="text-gray-400 text-sm">Loading...</div>
-              ) : claudeMDContent ? (
-                <Markdown remarkPlugins={[remarkGfm]}>{claudeMDContent}</Markdown>
-              ) : (
-                <div className="text-gray-400 text-sm">No content</div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+          ) : (
+            <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap">
+              {claudeMDContent.split("\n").map((line, i) => {
+                const lineNum = i + 1;
+                const isSelected = claudeMDSelectedLine === lineNum;
+                return (
+                  <div
+                    key={i}
+                    className={`flex cursor-pointer ${isSelected ? "bg-yellow-100" : "hover:bg-gray-50"}`}
+                    onClick={() => {
+                      setClaudeMDSelectedLine(isSelected ? null : lineNum);
+                      navigator.clipboard.writeText(`CLAUDE.md:L${lineNum}`);
+                    }}
+                  >
+                    <span
+                      className={`select-none w-10 text-right pr-3 shrink-0 ${isSelected ? "text-yellow-600" : "text-gray-300"}`}
+                    >
+                      {lineNum}
+                    </span>
+                    <span className="flex-1">{line}</span>
+                  </div>
+                );
+              })}
+            </pre>
+          )
+        ) : (
+          <div className="text-gray-400 text-sm">No content</div>
+        )}
+      </Modal>
     </div>
   );
 }
