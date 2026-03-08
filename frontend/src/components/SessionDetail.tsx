@@ -1013,6 +1013,7 @@ export function SessionDetail() {
   const [escalationTimedOut, setEscalationTimedOut] = useState(false);
   const [escalationTimeoutSeconds, setEscalationTimeoutSeconds] = useState(300);
   const [reconnectToast, setReconnectToast] = useState(false);
+  const [clearToast, setClearToast] = useState<"success" | "error" | null>(null);
   const [slashCommands, setSlashCommands] = useState<string[]>([]);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
@@ -1377,6 +1378,18 @@ export function SessionDetail() {
           再接続に成功しました
         </div>
       )}
+      {clearToast === "success" && (
+        <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-4 py-2 rounded shadow-lg text-sm flex items-center gap-2 animate-fade-in">
+          <CheckCircle2 className="w-4 h-4" />
+          セッションをクリアしました
+        </div>
+      )}
+      {clearToast === "error" && (
+        <div className="fixed top-4 right-4 z-50 bg-red-600 text-white px-4 py-2 rounded shadow-lg text-sm flex items-center gap-2 animate-fade-in">
+          <AlertTriangle className="w-4 h-4" />
+          クリアに失敗しました
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 shrink-0">
         <button
           onClick={() => navigate("/")}
@@ -1393,13 +1406,19 @@ export function SessionDetail() {
             <button
               onClick={async () => {
                 if (!confirm("Clear session context? This will start a fresh conversation.")) return;
-                await api.clearSession(session.id);
-                api.getSession(session.id).then(setSession);
-                if (session.outputMode === "stream") {
-                  api.getStreamOutput(session.id).then((resp) => {
-                    setStreamLines(resp.lines);
-                    streamCursorRef.current = resp.total;
-                  }).catch(() => {});
+                try {
+                  await api.clearSession(session.id);
+                  // Optimistic UI update: immediately clear local state
+                  setStreamLines([]);
+                  setOutput("");
+                  streamCursorRef.current = 0;
+                  // Refresh session metadata
+                  api.getSession(session.id).then(setSession);
+                  setClearToast("success");
+                  setTimeout(() => setClearToast(null), 3000);
+                } catch {
+                  setClearToast("error");
+                  setTimeout(() => setClearToast(null), 3000);
                 }
               }}
               className="p-1.5 text-orange-700 bg-orange-50 rounded hover:bg-orange-100"
