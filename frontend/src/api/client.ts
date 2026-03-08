@@ -75,6 +75,9 @@ export const api = {
   getDiff: (id: string) =>
     request<{ files: DiffFile[] }>(`/sessions/${id}/diff`),
 
+  getClaudeMD: (id: string) =>
+    request<{ content: string }>(`/sessions/${id}/claude-md`),
+
   getPendingEscalation: (sessionId: string) =>
     request<{ escalation: { id: string; sessionId: string; message: string; timedOut?: boolean; timeoutSeconds?: number } | null }>(`/sessions/${sessionId}/escalate`),
 
