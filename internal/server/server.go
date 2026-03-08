@@ -345,8 +345,9 @@ func (s *Server) getPendingEscalation(w http.ResponseWriter, r *http.Request) {
 }
 
 type createEscalationRequest struct {
-	ID      string `json:"id"`
-	Message string `json:"message"`
+	ID             string `json:"id"`
+	Message        string `json:"message"`
+	TimeoutSeconds *int   `json:"timeout_seconds,omitempty"`
 }
 
 func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
@@ -368,29 +369,54 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create escalation and get response channel
-	ch := s.escalations.Create(req.ID, sessionID, req.Message)
+	s.recordSessionAction(sessionID, "escalation", req.Message)
 
-	// Broadcast WebSocket notification
+	// Determine timeout duration
+	timeoutSeconds := 300 // default 5 minutes
+	if req.TimeoutSeconds != nil && *req.TimeoutSeconds > 0 {
+		timeoutSeconds = *req.TimeoutSeconds
+	}
+
+	// Create escalation and get response channel
+	ch := s.escalations.Create(req.ID, sessionID, req.Message, timeoutSeconds)
+
+	// Broadcast WebSocket notification (after timeout is determined)
 	s.hub.Broadcast(Message{
 		Type: "escalation",
 		Data: map[string]interface{}{
-			"id":          req.ID,
-			"sessionId":   sessionID,
-			"sessionName": sess.Name,
-			"message":     req.Message,
+			"id":             req.ID,
+			"sessionId":      sessionID,
+			"sessionName":    sess.Name,
+			"message":        req.Message,
+			"timeoutSeconds": timeoutSeconds,
 		},
 	})
-
-	s.recordSessionAction(sessionID, "escalation", req.Message)
+	timeout := time.Duration(timeoutSeconds) * time.Second
 
 	// Block until user responds (with timeout)
 	select {
 	case response := <-ch:
 		s.escalations.Cleanup(req.ID)
-		writeJSON(w, http.StatusOK, map[string]string{
-			"status":   "responded",
-			"response": response,
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":    "responded",
+			"response":  response,
+			"timed_out": false,
+		})
+	case <-time.After(timeout):
+		autoResponse := "ユーザーが未応答のため、あなたの判断で進めてください。判断が却下される可能性があるので、リバート可能な形（コミットを細かく打つなど）で作業を進めてください。"
+		s.escalations.MarkTimedOut(req.ID, autoResponse)
+		// Broadcast timeout notification
+		s.hub.Broadcast(Message{
+			Type: "escalation_timeout",
+			Data: map[string]interface{}{
+				"id":        req.ID,
+				"sessionId": sessionID,
+			},
+		})
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":    "timed_out",
+			"response":  autoResponse,
+			"timed_out": true,
 		})
 	case <-r.Context().Done():
 		s.escalations.Cleanup(req.ID)
