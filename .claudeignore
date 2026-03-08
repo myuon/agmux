@@ -1,0 +1,7 @@
+node_modules/
+dist/
+frontend/dist/
+frontend/node_modules/
+*.lock
+*.min.js
+*.min.css
