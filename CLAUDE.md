@@ -19,6 +19,10 @@ make test         # go test ./...
 make dev          # dev mode (frontend dev server + go run)
 ```
 
+## サーバー
+
+- アプリはポート **4321** で動作する (`http://localhost:4321`)
+
 ## イシュー管理
 
 - イシュー管理は **gh issue** (GitHub Issues) を全面的に使用する
