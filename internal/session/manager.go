@@ -412,7 +412,7 @@ func (m *Manager) Clear(id string) error {
 	}
 
 	// Reset task/goal and set status to working
-	_, err = m.db.Exec("UPDATE sessions SET status = ?, current_task = NULL, goal = NULL, goals = NULL, updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
+	_, err = m.db.Exec("UPDATE sessions SET status = ?, current_task = NULL, goal = NULL, goals = '[]', updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
 	return err
 }
 
