@@ -116,10 +116,11 @@ func serveCmd() *cobra.Command {
 					Data: sessions,
 				})
 			})
-			checker.SetOnNotify(func(sessionName, status, summary string) {
+			checker.SetOnNotify(func(sessionId, sessionName, status, summary string) {
 				hub.Broadcast(server.Message{
 					Type: "notify",
 					Data: map[string]string{
+						"sessionId":   sessionId,
 						"sessionName": sessionName,
 						"status":      status,
 						"summary":     summary,

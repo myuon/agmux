@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff, X, FolderOpen,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2,
-  ListTodo, Target, RotateCcw, Circle, Bot, ImagePlus, SendHorizonal, AlertTriangle,
+  ListTodo, Target, RotateCcw, Circle, Bot, ImagePlus, SendHorizonal, AlertTriangle, Plus, Slash,
 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
@@ -981,8 +981,27 @@ export function SessionDetail() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingEscalationId, setPendingEscalationId] = useState<string | null>(null);
   const [reconnectToast, setReconnectToast] = useState(false);
+  const [slashCommands, setSlashCommands] = useState<string[]>([]);
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [showActionMenu, setShowActionMenu] = useState(false);
+  const [slashFilter, setSlashFilter] = useState("");
+  const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
+
+  // Extract slash_commands from system init messages
+  useEffect(() => {
+    for (const line of streamLines) {
+      const entry = line as Record<string, unknown>;
+      if (entry.type === "system" && entry.subtype === "init") {
+        const cmds = entry.slash_commands as string[] | undefined;
+        if (cmds && cmds.length > 0) {
+          setSlashCommands(cmds);
+        }
+        break;
+      }
+    }
+  }, [streamLines]);
 
   // Track active session name for notification suppression
   useEffect(() => {
@@ -1140,29 +1159,63 @@ export function SessionDetail() {
           ))}
         </div>
       )}
-      <div className="flex gap-2">
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onPaste={(e) => {
-            const items = e.clipboardData?.items;
-            if (!items) return;
-            const imageFiles: File[] = [];
-            for (const item of Array.from(items)) {
-              if (item.type.startsWith("image/")) {
-                const file = item.getAsFile();
-                if (file) imageFiles.push(file);
-              }
-            }
-            if (imageFiles.length > 0) {
-              e.preventDefault();
-              addImageFiles(imageFiles);
-            }
-          }}
-          placeholder="Send a message..."
-          className="flex-1 border border-gray-300 rounded px-3 py-2 text-sm"
-        />
+      <div className="flex gap-2 items-center">
+        {/* Left action menu */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowActionMenu((v) => !v)}
+            className="w-9 h-9 flex items-center justify-center text-gray-500 bg-gray-50 rounded-full hover:bg-gray-100"
+            title="Actions"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+          {showActionMenu && (
+            <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[160px]">
+              <button
+                type="button"
+                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  fileInputRef.current?.click();
+                  setShowActionMenu(false);
+                }}
+              >
+                <ImagePlus className="w-4 h-4" /> Add image
+              </button>
+              {slashCommands.length > 0 && (
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setMessage("/");
+                    setSlashFilter("");
+                    setSlashSelectedIndex(0);
+                    setShowSlashMenu(true);
+                    setShowActionMenu(false);
+                  }}
+                >
+                  <Slash className="w-4 h-4" /> Slash commands
+                </button>
+              )}
+              {session.status !== "stopped" && session.type !== "controller" && (
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                  onMouseDown={async (e) => {
+                    e.preventDefault();
+                    setShowActionMenu(false);
+                    await api.stopSession(session.id);
+                    api.getSession(session.id).then(setSession);
+                  }}
+                >
+                  <Square className="w-4 h-4" /> Stop session
+                </button>
+              )}
+            </div>
+          )}
+        </div>
         <input
           ref={fileInputRef}
           type="file"
@@ -1174,30 +1227,97 @@ export function SessionDetail() {
             e.target.value = "";
           }}
         />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="w-9 h-9 flex items-center justify-center text-gray-500 bg-gray-50 rounded hover:bg-gray-100"
-          title="Add image"
-        >
-          <ImagePlus className="w-4 h-4" />
-        </button>
-        {session.status !== "stopped" && session.type !== "controller" && (
-          <button
-            type="button"
-            onClick={async () => {
-              await api.stopSession(session.id);
-              api.getSession(session.id).then(setSession);
+        {/* Message input with slash command popup */}
+        <div className="relative flex-1">
+          {showSlashMenu && (() => {
+            const filtered = slashCommands.filter((cmd) =>
+              slashFilter === "" || cmd.toLowerCase().includes(slashFilter.toLowerCase())
+            );
+            if (filtered.length === 0) return null;
+            return (
+              <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto z-50">
+                {filtered.map((cmd, i) => (
+                  <button
+                    key={cmd}
+                    type="button"
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-blue-50 ${
+                      i === slashSelectedIndex ? "bg-blue-100 text-blue-800" : "text-gray-700"
+                    }`}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      setMessage(`/${cmd} `);
+                      setShowSlashMenu(false);
+                    }}
+                  >
+                    /{cmd}
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
+          <input
+            type="text"
+            value={message}
+            onChange={(e) => {
+              const val = e.target.value;
+              setMessage(val);
+              if (val.startsWith("/") && slashCommands.length > 0) {
+                const filter = val.slice(1).split(" ")[0];
+                if (!val.includes(" ") || val === "/") {
+                  setSlashFilter(filter);
+                  setSlashSelectedIndex(0);
+                  setShowSlashMenu(true);
+                } else {
+                  setShowSlashMenu(false);
+                }
+              } else {
+                setShowSlashMenu(false);
+              }
             }}
-            className="w-9 h-9 flex items-center justify-center text-red-600 bg-red-50 rounded hover:bg-red-100"
-            title="Stop"
-          >
-            <Square className="w-4 h-4" />
-          </button>
-        )}
+            onKeyDown={(e) => {
+              if (!showSlashMenu) return;
+              const filtered = slashCommands.filter((cmd) =>
+                slashFilter === "" || cmd.toLowerCase().includes(slashFilter.toLowerCase())
+              );
+              if (filtered.length === 0) return;
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setSlashSelectedIndex((prev) => Math.min(prev + 1, filtered.length - 1));
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setSlashSelectedIndex((prev) => Math.max(prev - 1, 0));
+              } else if (e.key === "Enter" || e.key === "Tab") {
+                e.preventDefault();
+                setMessage(`/${filtered[slashSelectedIndex]} `);
+                setShowSlashMenu(false);
+              } else if (e.key === "Escape") {
+                setShowSlashMenu(false);
+              }
+            }}
+            onBlur={() => { setShowSlashMenu(false); setShowActionMenu(false); }}
+            onPaste={(e) => {
+              const items = e.clipboardData?.items;
+              if (!items) return;
+              const imageFiles: File[] = [];
+              for (const item of Array.from(items)) {
+                if (item.type.startsWith("image/")) {
+                  const file = item.getAsFile();
+                  if (file) imageFiles.push(file);
+                }
+              }
+              if (imageFiles.length > 0) {
+                e.preventDefault();
+                addImageFiles(imageFiles);
+              }
+            }}
+            placeholder="Send a message..."
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+          />
+        </div>
+        {/* Send button */}
         <button
           type="submit"
-          className="w-9 h-9 flex items-center justify-center bg-blue-600 text-white rounded hover:bg-blue-700"
+          className="w-9 h-9 flex items-center justify-center bg-blue-600 text-white rounded-full hover:bg-blue-700"
         >
           <SendHorizonal className="w-4 h-4" />
         </button>

@@ -1,12 +1,7 @@
 // Minimal service worker for push notifications
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  event.waitUntil(
-    clients.matchAll({ type: "window" }).then((clientList) => {
-      if (clientList.length > 0) {
-        return clientList[0].focus();
-      }
-      return clients.openWindow("/");
-    })
-  );
+  const sessionId = event.notification.data?.sessionId;
+  const targetUrl = sessionId ? `/sessions/${sessionId}` : "/";
+  event.waitUntil(clients.openWindow(targetUrl));
 });
