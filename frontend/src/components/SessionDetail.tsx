@@ -22,6 +22,7 @@ const roleStyles: Record<string, { bg: string; label: string; text: string }> = 
 
 interface StreamEntry {
   type: string;
+  parent_tool_use_id?: string | null;
   message?: {
     role?: string;
     content?: unknown;
@@ -56,7 +57,7 @@ interface AskUserQuestionItem {
 type StreamDisplayItem =
   | { kind: "text"; text: string }
   | { kind: "image"; mediaType: string; data: string }
-  | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }> }
+  | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; children?: StreamDisplayItem[] }
   | { kind: "system_event"; eventType: string; label: string; detail?: string };
 
 function parseStreamContentBlocks(entry: StreamEntry): StreamContentBlock[] {
@@ -133,7 +134,15 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
   const toolSearchToolIds = new Set<string>();
   const askUserToolIds = new Set<string>();
   const agentToolIds = new Set<string>();
+  // Collect child entries grouped by parent_tool_use_id
+  const childEntriesMap = new Map<string, StreamEntry[]>();
   for (const entry of entries) {
+    // Track entries with parent_tool_use_id
+    if (entry.parent_tool_use_id) {
+      const children = childEntriesMap.get(entry.parent_tool_use_id) || [];
+      children.push(entry);
+      childEntriesMap.set(entry.parent_tool_use_id, children);
+    }
     if (entry.type === "assistant") {
       for (const block of parseStreamContentBlocks(entry)) {
         if (block.type === "tool_use" && block.name === "Skill" && block.id) {
@@ -181,11 +190,47 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
     }
   }
 
+  // Helper: build child tool_call items from child entries of an Agent
+  function buildChildItems(parentToolUseId: string): StreamDisplayItem[] {
+    const childEntries = childEntriesMap.get(parentToolUseId) || [];
+    const items: StreamDisplayItem[] = [];
+    for (const entry of childEntries) {
+      if (entry.type !== "assistant") continue;
+      for (const b of parseStreamContentBlocks(entry)) {
+        if (b.type === "tool_use" && b.name) {
+          const result = b.id ? resultMap.get(b.id) : undefined;
+          const resultImages = b.id ? resultImageMap.get(b.id) : undefined;
+          // Recursively build children if this is also an Agent
+          const children = (b.name === "Agent" && b.id && childEntriesMap.has(b.id))
+            ? buildChildItems(b.id)
+            : undefined;
+          items.push({
+            kind: "tool_call",
+            name: b.name,
+            input: b.input,
+            result,
+            resultImages,
+            toolUseId: b.id,
+            children: children && children.length > 0 ? children : undefined,
+          });
+        } else if (b.type === "text" && b.text) {
+          items.push({ kind: "text", text: b.text });
+        }
+      }
+    }
+    return items;
+  }
+
   // Second pass: build display groups
   const groups: DisplayGroup[] = [];
   const skillSkipIndices = new Set<number>();
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx];
+
+    // Skip entries that belong to a parent Agent that is present in the current data
+    if (entry.parent_tool_use_id && agentToolIds.has(entry.parent_tool_use_id)) {
+      continue;
+    }
 
     // Handle system events
     if (entry.type === "system") {
@@ -281,12 +326,16 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
                 break;
               }
             }
+            // Build child items from entries with parent_tool_use_id matching this Agent
+            const children = buildChildItems(b.id);
             items.push({
               kind: "tool_call",
               name: b.name,
               input: b.input,
               result,
               resultImages,
+              toolUseId: b.id,
+              children: children.length > 0 ? children : undefined,
             });
           } else {
             items.push({
@@ -619,6 +668,7 @@ function ToolCallView({ item, onAnswer, sessionId, escalationId, escalationTimed
   const desc = toolDescription(item.name, item.input);
   const subDetail = toolSubDetail(item.name, item.input);
   const done = item.result !== undefined;
+  const hasChildren = item.children && item.children.length > 0;
 
   return (
     <>
@@ -668,6 +718,19 @@ function ToolCallView({ item, onAnswer, sessionId, escalationId, escalationTimed
           )}
         </div>
       </Modal>
+      {hasChildren && (
+        <div className="ml-4 border-l-2 border-indigo-200 pl-3 space-y-1.5">
+          {item.children!.map((child, i) => (
+            <div key={i}>
+              {child.kind === "tool_call" ? (
+                <ToolCallView item={child} />
+              ) : child.kind === "text" ? (
+                <CollapsibleText text={child.text} />
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }
