@@ -8,6 +8,8 @@ import {
   ListTodo, Target, RotateCcw, Circle, Bot, ImagePlus, SendHorizonal, AlertTriangle, Plus, Slash,
   Code, Eye,
 } from "lucide-react";
+import { Modal } from "./ui/Modal";
+import { CollapsibleText } from "./ui/CollapsibleText";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
 import { StatusDot } from "./StatusBadge";
@@ -449,26 +451,6 @@ function toolSubDetail(name: string, input: unknown): string | null {
   return null;
 }
 
-function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: React.ReactNode; children: React.ReactNode }) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
-      <div className="fixed inset-0 bg-black/30" />
-      <div
-        className="relative bg-white rounded-t-xl sm:rounded-xl shadow-xl w-full sm:max-w-2xl max-h-[80vh] flex flex-col"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
-          <div className="text-sm font-medium text-gray-800 min-w-0 truncate">{title}</div>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 shrink-0">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="overflow-y-auto p-4">{children}</div>
-      </div>
-    </div>
-  );
-}
 
 function ToolInputView({ input }: { input: unknown }) {
   if (input && typeof input === "object" && !Array.isArray(input)) {
@@ -773,40 +755,6 @@ function SystemEventView({ item }: { item: Extract<StreamDisplayItem, { kind: "s
   );
 }
 
-const COLLAPSE_LINE_THRESHOLD = 20;
-
-function CollapsibleText({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const lineCount = text.split("\n").length;
-  const shouldCollapse = lineCount > COLLAPSE_LINE_THRESHOLD;
-
-  if (!shouldCollapse || expanded) {
-    return (
-      <div>
-        <div className="prose prose-xs max-w-none prose-pre:bg-gray-100 prose-pre:text-gray-800 prose-code:text-pink-600">
-          <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
-        </div>
-        {shouldCollapse && (
-          <button onClick={() => setExpanded(false)} className="text-xs text-blue-500 hover:text-blue-700 mt-1">
-            折りたたむ
-          </button>
-        )}
-      </div>
-    );
-  }
-
-  const preview = text.split("\n").slice(0, 5).join("\n");
-  return (
-    <div>
-      <div className="prose prose-xs max-w-none prose-pre:bg-gray-100 prose-pre:text-gray-800 prose-code:text-pink-600 relative overflow-hidden max-h-24">
-        <Markdown remarkPlugins={[remarkGfm]}>{preview}</Markdown>
-      </div>
-      <button onClick={() => setExpanded(true)} className="text-xs text-blue-500 hover:text-blue-700 mt-1">
-        続きを表示 ({lineCount} 行)
-      </button>
-    </div>
-  );
-}
 
 function StreamDisplayItemView({ item, onAnswer, sessionId, escalationId, escalationTimedOut, escalationTimeoutSeconds, onEscalationResponded }: {
   item: StreamDisplayItem;
