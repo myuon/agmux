@@ -15,19 +15,27 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 
-async function sendNotification(title: string, body: string) {
+async function sendNotification(title: string, body: string, sessionId?: string) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
+
+  const data = sessionId ? { sessionId } : undefined;
 
   // Mobile Chrome requires Service Worker for notifications
   if ("serviceWorker" in navigator) {
     const reg = await navigator.serviceWorker.ready.catch(() => null);
     if (reg) {
-      reg.showNotification(title, { body });
+      reg.showNotification(title, { body, data });
       return;
     }
   }
   // Desktop fallback
-  new Notification(title, { body });
+  const n = new Notification(title, { body });
+  if (sessionId) {
+    n.onclick = () => {
+      window.focus();
+      window.location.href = `/sessions/${sessionId}`;
+    };
+  }
 }
 
 type MobileTab = "logs" | "sessions";
@@ -40,24 +48,24 @@ function useGlobalNotifications() {
       return;
     }
     if (msg.type === "escalation") {
-      const data = msg.data as { sessionName: string; message: string };
-      sendNotification("agmux - Escalation", `${data.sessionName}: ${data.message}`);
+      const data = msg.data as { sessionId: string; sessionName: string; message: string };
+      sendNotification("agmux - Escalation", `${data.sessionName}: ${data.message}`, data.sessionId);
       return;
     }
     if (msg.type === "goal_completed") {
       const enabled = localStorage.getItem("agmux-notify-goal-completed") !== "false";
       if (!enabled) return;
-      const data = msg.data as { sessionName: string; currentTask: string; goal: string; durationMs: number };
+      const data = msg.data as { sessionId: string; sessionName: string; currentTask: string; goal: string; durationMs: number };
       const thresholdMin = Number(localStorage.getItem("agmux-notify-goal-threshold-min") || "10");
       if (data.durationMs < thresholdMin * 60 * 1000) return;
       const durationMin = Math.round(data.durationMs / 60000);
-      sendNotification("agmux - Task Completed", `${data.sessionName}: ${data.currentTask} (${durationMin}min)`);
+      sendNotification("agmux - Task Completed", `${data.sessionName}: ${data.currentTask} (${durationMin}min)`, data.sessionId);
       return;
     }
     if (msg.type === "notify") {
       const notify = localStorage.getItem("agmux-notify") === "true";
       if (!notify) return;
-      const data = msg.data as { sessionName: string; status: string; summary: string };
+      const data = msg.data as { sessionId: string; sessionName: string; status: string; summary: string };
       const defaultStatuses: Record<string, boolean> = {
         working: false, idle: true, question_waiting: true,
         alignment_needed: true, paused: false, stopped: false,
@@ -67,7 +75,7 @@ function useGlobalNotifications() {
       if (!(statusFilters[data.status] ?? defaultStatuses[data.status] ?? true)) return;
       // Suppress notification if the user is currently viewing this session
       if (data.sessionName === getActiveSessionName()) return;
-      sendNotification("agmux", `${data.sessionName}: ${data.summary}`);
+      sendNotification("agmux", `${data.sessionName}: ${data.summary}`, data.sessionId);
     }
   }, []);
 
