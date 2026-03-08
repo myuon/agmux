@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client";
 import type { AppConfig } from "../api/client";
-import { Section, Field } from "./ui/Section";
+import { Section, Field } from "../components/ui/Section";
 
 export function ConfigPage() {
   const navigate = useNavigate();

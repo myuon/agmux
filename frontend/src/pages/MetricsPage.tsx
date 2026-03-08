@@ -14,7 +14,7 @@ import {
 import { api } from "../api/client";
 import type { MetricsSummary, MetricRow, MetricEvent } from "../api/client";
 import { useNavigate } from "react-router-dom";
-import { SummaryCard } from "./ui/SummaryCard";
+import { SummaryCard } from "../components/ui/SummaryCard";
 
 type TimeRange = "1h" | "6h" | "24h" | "7d" | "all";
 

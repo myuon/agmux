@@ -8,16 +8,16 @@ import {
   ListTodo, Target, RotateCcw, Circle, ImagePlus, SendHorizonal, AlertTriangle, Plus, Slash,
   Code, Eye,
 } from "lucide-react";
-import { Modal } from "./ui/Modal";
-import { CollapsibleText } from "./ui/CollapsibleText";
+import { Modal } from "../components/ui/Modal";
+import { CollapsibleText } from "../components/ui/CollapsibleText";
 import type { StreamEntry, StreamDisplayItem, AskUserQuestionItem } from "../models/stream";
 import { mergeStreamEntries } from "../models/stream";
 import { toolIcon, toolDescription, toolSubDetail, parseTodoInput } from "../models/tool";
-import { Toast } from "./ui/Toast";
+import { Toast } from "../components/ui/Toast";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
-import { StatusDot } from "./StatusBadge";
+import { StatusDot } from "../components/StatusBadge";
 import { setActiveSessionName } from "../activeSession";
 import { useWebSocket } from "../hooks/useWebSocket";
 
@@ -579,7 +579,7 @@ function DiffDropdown({ files }: { files: DiffFile[] }) {
   );
 }
 
-export function SessionDetail() {
+export function SessionPage() {
   const { id: sessionId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [session, setSession] = useState<Session | null>(null);

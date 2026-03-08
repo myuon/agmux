@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Routes, Route, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
-import { SessionDetail } from "./components/SessionDetail";
+import { SessionPage } from "./pages/SessionPage";
 import { LogPanel } from "./components/LogPanel";
 import { SessionList } from "./components/SessionList";
-import { ConfigPage } from "./components/ConfigPage";
-import { MetricsPage } from "./components/MetricsPage";
+import { ConfigPage } from "./pages/ConfigPage";
+import { MetricsPage } from "./pages/MetricsPage";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { getActiveSessionName } from "./activeSession";
 
@@ -242,7 +242,7 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<Dashboard />} />
-      <Route path="/sessions/:id" element={<SessionDetail />} />
+      <Route path="/sessions/:id" element={<SessionPage />} />
       <Route path="/config" element={<ConfigPage />} />
       <Route path="/metrics" element={<MetricsPage />} />
     </Routes>
