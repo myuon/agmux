@@ -22,6 +22,7 @@ const roleStyles: Record<string, { bg: string; label: string; text: string }> = 
 
 interface StreamEntry {
   type: string;
+  parent_tool_use_id?: string | null;
   message?: {
     role?: string;
     content?: unknown;
@@ -56,7 +57,7 @@ interface AskUserQuestionItem {
 type StreamDisplayItem =
   | { kind: "text"; text: string }
   | { kind: "image"; mediaType: string; data: string }
-  | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }> }
+  | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; children?: StreamDisplayItem[] }
   | { kind: "system_event"; eventType: string; label: string; detail?: string };
 
 function parseStreamContentBlocks(entry: StreamEntry): StreamContentBlock[] {
@@ -133,7 +134,15 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
   const toolSearchToolIds = new Set<string>();
   const askUserToolIds = new Set<string>();
   const agentToolIds = new Set<string>();
+  // Collect child entries grouped by parent_tool_use_id
+  const childEntriesMap = new Map<string, StreamEntry[]>();
   for (const entry of entries) {
+    // Track entries with parent_tool_use_id
+    if (entry.parent_tool_use_id) {
+      const children = childEntriesMap.get(entry.parent_tool_use_id) || [];
+      children.push(entry);
+      childEntriesMap.set(entry.parent_tool_use_id, children);
+    }
     if (entry.type === "assistant") {
       for (const block of parseStreamContentBlocks(entry)) {
         if (block.type === "tool_use" && block.name === "Skill" && block.id) {
@@ -181,11 +190,47 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
     }
   }
 
+  // Helper: build child tool_call items from child entries of an Agent
+  function buildChildItems(parentToolUseId: string): StreamDisplayItem[] {
+    const childEntries = childEntriesMap.get(parentToolUseId) || [];
+    const items: StreamDisplayItem[] = [];
+    for (const entry of childEntries) {
+      if (entry.type !== "assistant") continue;
+      for (const b of parseStreamContentBlocks(entry)) {
+        if (b.type === "tool_use" && b.name) {
+          const result = b.id ? resultMap.get(b.id) : undefined;
+          const resultImages = b.id ? resultImageMap.get(b.id) : undefined;
+          // Recursively build children if this is also an Agent
+          const children = (b.name === "Agent" && b.id && childEntriesMap.has(b.id))
+            ? buildChildItems(b.id)
+            : undefined;
+          items.push({
+            kind: "tool_call",
+            name: b.name,
+            input: b.input,
+            result,
+            resultImages,
+            toolUseId: b.id,
+            children: children && children.length > 0 ? children : undefined,
+          });
+        } else if (b.type === "text" && b.text) {
+          items.push({ kind: "text", text: b.text });
+        }
+      }
+    }
+    return items;
+  }
+
   // Second pass: build display groups
   const groups: DisplayGroup[] = [];
   const skillSkipIndices = new Set<number>();
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx];
+
+    // Skip entries that belong to a parent Agent that is present in the current data
+    if (entry.parent_tool_use_id && agentToolIds.has(entry.parent_tool_use_id)) {
+      continue;
+    }
 
     // Handle system events
     if (entry.type === "system") {
@@ -281,12 +326,16 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
                 break;
               }
             }
+            // Build child items from entries with parent_tool_use_id matching this Agent
+            const children = buildChildItems(b.id);
             items.push({
               kind: "tool_call",
               name: b.name,
               input: b.input,
               result,
               resultImages,
+              toolUseId: b.id,
+              children: children.length > 0 ? children : undefined,
             });
           } else {
             items.push({
@@ -619,6 +668,7 @@ function ToolCallView({ item, onAnswer, sessionId, escalationId, escalationTimed
   const desc = toolDescription(item.name, item.input);
   const subDetail = toolSubDetail(item.name, item.input);
   const done = item.result !== undefined;
+  const hasChildren = item.children && item.children.length > 0;
 
   return (
     <>
@@ -668,6 +718,19 @@ function ToolCallView({ item, onAnswer, sessionId, escalationId, escalationTimed
           )}
         </div>
       </Modal>
+      {hasChildren && (
+        <div className="ml-4 border-l-2 border-indigo-200 pl-3 space-y-1.5">
+          {item.children!.map((child, i) => (
+            <div key={i}>
+              {child.kind === "tool_call" ? (
+                <ToolCallView item={child} />
+              ) : child.kind === "text" ? (
+                <CollapsibleText text={child.text} />
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }
@@ -1178,11 +1241,9 @@ export function SessionDetail() {
     }, 500);
   };
 
-  if (!session) return <div className="p-8">Loading...</div>;
+  const isStream = session?.outputMode === "stream";
 
-  const isStream = session.outputMode === "stream";
-
-  const sendForm = (
+  const sendForm = session ? (
     <form onSubmit={handleSend} className="shrink-0 sticky bottom-0 bg-white pt-2 pb-4 px-4 sm:px-8 -mx-4 sm:-mx-8 border-t border-gray-100">
       {pendingImages.length > 0 && (
         <div className="flex gap-2 mb-2 flex-wrap">
@@ -1368,7 +1429,7 @@ export function SessionDetail() {
         </button>
       </div>
     </form>
-  );
+  ) : null;
 
   return (
     <div className="h-dvh flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 max-w-4xl mx-auto">
@@ -1398,10 +1459,19 @@ export function SessionDetail() {
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <StatusDot status={session.status} />
-        <h2 className="text-xl sm:text-2xl font-bold">{session.name}</h2>
-        <span className="text-xs text-gray-400">{session.status}</span>
-        {session.type !== "controller" && (
+        {session ? (
+          <>
+            <StatusDot status={session.status} />
+            <h2 className="text-xl sm:text-2xl font-bold">{session.name}</h2>
+            <span className="text-xs text-gray-400">{session.status}</span>
+          </>
+        ) : (
+          <>
+            <div className="w-3 h-3 rounded-full bg-gray-200 animate-pulse" />
+            <div className="h-7 w-40 bg-gray-200 rounded animate-pulse" />
+          </>
+        )}
+        {session && session.type !== "controller" && (
           <div className="flex gap-1.5 sm:ml-auto">
             <button
               onClick={async () => {
@@ -1457,9 +1527,10 @@ export function SessionDetail() {
           </div>
         )}
       </div>
-      <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm text-gray-500">
-        <FolderOpen className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-        <span className="truncate" title={session.projectPath}>{session.projectPath}</span>
+      {session ? (
+        <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm text-gray-500">
+          <FolderOpen className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+          <span className="truncate" title={session.projectPath}>{session.projectPath}</span>
         {session.githubUrl && (
           <a
             href={session.githubUrl}
@@ -1471,8 +1542,14 @@ export function SessionDetail() {
             <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
           </a>
         )}
-      </div>
-      {(session.branch || (session.pullRequests && session.pullRequests.length > 0) || diffFiles.length > 0) && (
+        </div>
+      ) : (
+        <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm">
+          <FolderOpen className="w-3.5 h-3.5 text-gray-300 shrink-0" />
+          <div className="h-4 w-60 bg-gray-200 rounded animate-pulse" />
+        </div>
+      )}
+      {session && (session.branch || (session.pullRequests && session.pullRequests.length > 0) || diffFiles.length > 0) && (
         <div className="flex flex-wrap items-center gap-2 mb-2 shrink-0">
           {session.branch && (
             <>
@@ -1502,7 +1579,7 @@ export function SessionDetail() {
         </div>
       )}
 
-      {(session.currentTask || session.goal) && (
+      {session && (session.currentTask || session.goal) && (
         <div className="border-l-2 border-gray-300 bg-gray-50 rounded-r-lg px-3 py-2 mb-3 space-y-1">
           {session.goals && session.goals.length > 1 && (
             <div className="text-[10px] text-gray-400 ml-5">
@@ -1530,7 +1607,16 @@ export function SessionDetail() {
         </div>
       )}
 
-      {isStream ? (
+      {!session ? (
+        <div className="flex flex-col flex-1 min-h-0 items-center justify-center">
+          <div className="space-y-3 w-full max-w-2xl px-4">
+            <div className="h-4 bg-gray-200 rounded animate-pulse w-3/4" />
+            <div className="h-4 bg-gray-200 rounded animate-pulse w-full" />
+            <div className="h-4 bg-gray-200 rounded animate-pulse w-5/6" />
+            <div className="h-4 bg-gray-200 rounded animate-pulse w-2/3" />
+          </div>
+        </div>
+      ) : isStream ? (
         <div className="flex flex-col flex-1 min-h-0">
           <StreamOutputView lines={streamLines} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={() => { setPendingEscalationId(null); setEscalationTimedOut(false); }} onAnswer={async (text) => {
             if (!sessionId) return;
