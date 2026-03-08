@@ -29,13 +29,16 @@ type EventRow struct {
 
 // MetricSummary holds aggregated metric data.
 type MetricSummary struct {
-	TotalCost       float64            `json:"totalCost"`
-	TotalTokens     map[string]float64 `json:"totalTokens"`
-	SessionCount    float64            `json:"sessionCount"`
-	LinesOfCode     float64            `json:"linesOfCode"`
-	ActiveTime      float64            `json:"activeTime"`
-	CostBySession   []SessionCost      `json:"costBySession"`
-	TokensBySession []SessionTokens    `json:"tokensBySession"`
+	TotalCost         float64            `json:"totalCost"`
+	TotalTokens       map[string]float64 `json:"totalTokens"`
+	SessionCount      float64            `json:"sessionCount"`
+	LinesOfCode       float64            `json:"linesOfCode"`
+	ActiveTime        float64            `json:"activeTime"`
+	CommitCount       float64            `json:"commitCount"`
+	PullRequestCount  float64            `json:"pullRequestCount"`
+	CodeEditDecisions float64            `json:"codeEditDecisions"`
+	CostBySession     []SessionCost      `json:"costBySession"`
+	TokensBySession   []SessionTokens    `json:"tokensBySession"`
 }
 
 type SessionCost struct {
@@ -204,6 +207,36 @@ func (s *Store) GetSummary(since time.Time) (*MetricSummary, error) {
 	).Scan(&at)
 	if at.Valid {
 		summary.ActiveTime = at.Float64
+	}
+
+	// Commit count
+	var cc sql.NullFloat64
+	s.db.QueryRow(
+		`SELECT SUM(value) FROM otel_metrics WHERE name = 'claude_code.commit.count' AND (? = '' OR timestamp >= ?)`,
+		since.Format(time.RFC3339), since,
+	).Scan(&cc)
+	if cc.Valid {
+		summary.CommitCount = cc.Float64
+	}
+
+	// Pull request count
+	var prc sql.NullFloat64
+	s.db.QueryRow(
+		`SELECT SUM(value) FROM otel_metrics WHERE name = 'claude_code.pull_request.count' AND (? = '' OR timestamp >= ?)`,
+		since.Format(time.RFC3339), since,
+	).Scan(&prc)
+	if prc.Valid {
+		summary.PullRequestCount = prc.Float64
+	}
+
+	// Code edit decisions
+	var ced sql.NullFloat64
+	s.db.QueryRow(
+		`SELECT SUM(value) FROM otel_metrics WHERE name = 'claude_code.code_edit_tool.decision' AND (? = '' OR timestamp >= ?)`,
+		since.Format(time.RFC3339), since,
+	).Scan(&ced)
+	if ced.Valid {
+		summary.CodeEditDecisions = ced.Float64
 	}
 
 	// Cost by session

@@ -142,6 +142,14 @@ func (r *Receiver) HandleLogs(w http.ResponseWriter, req *http.Request) {
 					}
 				}
 
+				// Fallback: extract session.id from log record attributes if not in resource
+				logSessionID := sessionID
+				if logSessionID == "" {
+					if v, ok := attrs["session.id"]; ok {
+						logSessionID = v
+					}
+				}
+
 				attrsJSON, _ := json.Marshal(attrs)
 				resJSON, _ := json.Marshal(resourceAttrs)
 				ts := time.Unix(0, int64(lr.TimeUnixNano))
@@ -149,7 +157,7 @@ func (r *Receiver) HandleLogs(w http.ResponseWriter, req *http.Request) {
 				_, err := r.db.Exec(
 					`INSERT INTO otel_events (name, body, attributes, resource_attributes, session_id, timestamp)
 					 VALUES (?, ?, ?, ?, ?, ?)`,
-					eventName, bodyStr, string(attrsJSON), string(resJSON), sessionID, ts,
+					eventName, bodyStr, string(attrsJSON), string(resJSON), logSessionID, ts,
 				)
 				if err != nil {
 					r.logger.Error("insert event", "error", err, "name", eventName)

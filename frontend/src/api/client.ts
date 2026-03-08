@@ -152,6 +152,9 @@ export interface MetricsSummary {
   sessionCount: number;
   linesOfCode: number;
   activeTime: number;
+  commitCount: number;
+  pullRequestCount: number;
+  codeEditDecisions: number;
   costBySession: { sessionId: string; cost: number }[];
   tokensBySession: { sessionId: string; input: number; output: number }[];
 }

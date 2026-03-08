@@ -158,6 +158,15 @@ func migrate(db *sql.DB) error {
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_events_session ON otel_events(session_id)`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_events_timestamp ON otel_events(timestamp)`)
 
+	// Migration: backfill session_id from event attributes where missing
+	_, _ = db.Exec(`
+		UPDATE otel_events
+		SET session_id = json_extract(attributes, '$."session.id"')
+		WHERE (session_id IS NULL OR session_id = '')
+		  AND json_extract(attributes, '$."session.id"') IS NOT NULL
+		  AND json_extract(attributes, '$."session.id"') != ''
+	`)
+
 	// Migration: update old status values to new ones
 	_, err = db.Exec(`UPDATE sessions SET status = 'working' WHERE status IN ('running', 'waiting', 'error')`)
 	if err != nil {
