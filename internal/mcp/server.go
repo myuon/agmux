@@ -123,6 +123,11 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 								"type":        "string",
 								"description": "ユーザーに伝えたいメッセージ（例: 「テストが3件失敗しています。修正方針を教えてください」）",
 							},
+							"timeout_seconds": map[string]interface{}{
+								"type":        "integer",
+								"description": "タイムアウト秒数。指定時間内にユーザーが応答しない場合、自動的にあなたの判断で進めるよう指示されます。デフォルト: 300秒（5分）",
+								"default":     300,
+							},
 						},
 						"required": []string{"message"},
 					},
@@ -196,7 +201,8 @@ func (s *Server) handleCompleteGoal() (interface{}, *jsonRPCError) {
 
 func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCError) {
 	var input struct {
-		Message string `json:"message"`
+		Message        string `json:"message"`
+		TimeoutSeconds *int   `json:"timeout_seconds,omitempty"`
 	}
 	if err := json.Unmarshal(args, &input); err != nil {
 		return nil, &jsonRPCError{Code: -32602, Message: "invalid arguments"}
@@ -205,23 +211,31 @@ func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCErro
 		return nil, &jsonRPCError{Code: -32602, Message: "message is required"}
 	}
 
-	response, err := s.apiEscalate(input.Message)
+	timeoutSeconds := 300 // default 5 minutes
+	if input.TimeoutSeconds != nil {
+		timeoutSeconds = *input.TimeoutSeconds
+	}
+
+	response, timedOut, err := s.apiEscalate(input.Message, timeoutSeconds)
 	if err != nil {
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
 
+	if timedOut {
+		return toolResult(fmt.Sprintf("[TIMED OUT] %s", response), false), nil
+	}
 	return toolResult(fmt.Sprintf("User responded: %s", response), false), nil
 }
 
-func (s *Server) apiEscalate(message string) (string, error) {
+func (s *Server) apiEscalate(message string, timeoutSeconds int) (string, bool, error) {
 	escalationID := uuid.New().String()
 	url := fmt.Sprintf("%s/api/sessions/%s/escalate", s.apiURL, s.sessionID)
-	body := fmt.Sprintf(`{"id":%s,"message":%s}`,
-		jsonString(escalationID), jsonString(message))
+	body := fmt.Sprintf(`{"id":%s,"message":%s,"timeout_seconds":%d}`,
+		jsonString(escalationID), jsonString(message), timeoutSeconds)
 
 	req, err := http.NewRequest("POST", url, strings.NewReader(body))
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -229,22 +243,23 @@ func (s *Server) apiEscalate(message string) (string, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+		return "", false, fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	var result struct {
 		Response string `json:"response"`
+		TimedOut bool   `json:"timed_out"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decode response: %w", err)
+		return "", false, fmt.Errorf("decode response: %w", err)
 	}
-	return result.Response, nil
+	return result.Response, result.TimedOut, nil
 }
 
 func (s *Server) apiCreateGoal(currentTask, goal string, subgoal bool) error {

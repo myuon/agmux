@@ -11,6 +11,7 @@ type Escalation struct {
 	Message   string `json:"message"`
 	Response  string `json:"response,omitempty"`
 	Resolved  bool   `json:"resolved"`
+	TimedOut  bool   `json:"timedOut"`
 }
 
 // EscalationStore manages pending escalations with channels for blocking.
@@ -80,6 +81,26 @@ func (es *EscalationStore) GetBySession(sessionID string) *Escalation {
 		}
 	}
 	return nil
+}
+
+// MarkTimedOut marks an escalation as timed out with an auto-response.
+func (es *EscalationStore) MarkTimedOut(id, autoResponse string) {
+	es.mu.Lock()
+	defer es.mu.Unlock()
+
+	esc, ok := es.escalations[id]
+	if !ok {
+		return
+	}
+	esc.Response = autoResponse
+	esc.Resolved = true
+	esc.TimedOut = true
+
+	// Close the response channel if it exists
+	if ch, ok := es.responseCh[id]; ok {
+		close(ch)
+		delete(es.responseCh, id)
+	}
 }
 
 // Cleanup removes resolved escalations to prevent memory leaks.
