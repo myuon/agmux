@@ -665,11 +665,13 @@ function ToolCallView({ item, onAnswer, sessionId, escalationId, escalationTimed
   }
 
   const [open, setOpen] = useState(false);
+  const [childrenExpanded, setChildrenExpanded] = useState(false);
   const Icon = toolIcon(item.name);
   const desc = toolDescription(item.name, item.input);
   const subDetail = toolSubDetail(item.name, item.input);
   const done = item.result !== undefined;
   const hasChildren = item.children && item.children.length > 0;
+  const CHILD_DISPLAY_LIMIT = 5;
 
   return (
     <>
@@ -719,19 +721,44 @@ function ToolCallView({ item, onAnswer, sessionId, escalationId, escalationTimed
           )}
         </div>
       </Modal>
-      {hasChildren && (
-        <div className="ml-4 border-l-2 border-indigo-200 pl-3 space-y-1.5">
-          {item.children!.map((child, i) => (
-            <div key={i}>
-              {child.kind === "tool_call" ? (
-                <ToolCallView item={child} />
-              ) : child.kind === "text" ? (
-                <CollapsibleText text={child.text} />
-              ) : null}
-            </div>
-          ))}
-        </div>
-      )}
+      {hasChildren && (() => {
+        const allChildren = item.children!;
+        const totalCount = allChildren.length;
+        const hasHidden = totalCount > CHILD_DISPLAY_LIMIT && !childrenExpanded;
+        const hiddenCount = totalCount - CHILD_DISPLAY_LIMIT;
+        const visibleChildren = hasHidden
+          ? allChildren.slice(totalCount - CHILD_DISPLAY_LIMIT)
+          : allChildren;
+        return (
+          <div className="ml-4 border-l-2 border-indigo-200 pl-3 space-y-1.5">
+            {hasHidden && (
+              <button
+                onClick={() => setChildrenExpanded(true)}
+                className="text-xs text-blue-500 hover:text-blue-700 py-0.5"
+              >
+                他 {hiddenCount} 件を表示
+              </button>
+            )}
+            {childrenExpanded && totalCount > CHILD_DISPLAY_LIMIT && (
+              <button
+                onClick={() => setChildrenExpanded(false)}
+                className="text-xs text-blue-500 hover:text-blue-700 py-0.5"
+              >
+                折りたたむ
+              </button>
+            )}
+            {visibleChildren.map((child, i) => (
+              <div key={hasHidden ? i + hiddenCount : i}>
+                {child.kind === "tool_call" ? (
+                  <ToolCallView item={child} />
+                ) : child.kind === "text" ? (
+                  <CollapsibleText text={child.text} />
+                ) : null}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
     </>
   );
 }
