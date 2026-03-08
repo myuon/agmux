@@ -103,11 +103,7 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
   }
 
   if (subtype === "init") {
-    return {
-      kind: "system_event",
-      eventType: "session_resumed",
-      label: "セッション再開",
-    };
+    return null;
   }
 
   if (subtype === "task_notification") {
@@ -188,19 +184,11 @@ function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
   // Second pass: build display groups
   const groups: DisplayGroup[] = [];
   const skillSkipIndices = new Set<number>();
-  let initCount = 0;
-
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx];
 
     // Handle system events
     if (entry.type === "system") {
-      // Track init count; skip the first one (session start)
-      const raw = entry as unknown as Record<string, unknown>;
-      if (raw.subtype === "init") {
-        initCount++;
-        if (initCount === 1) continue;
-      }
       const sysItem = parseSystemEvent(entry);
       if (sysItem) {
         groups.push({ role: "system", items: [sysItem] });
@@ -992,6 +980,7 @@ export function SessionDetail() {
   const [pendingImages, setPendingImages] = useState<{ data: string; mediaType: string; preview: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingEscalationId, setPendingEscalationId] = useState<string | null>(null);
+  const [reconnectToast, setReconnectToast] = useState(false);
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
 
@@ -1218,6 +1207,12 @@ export function SessionDetail() {
 
   return (
     <div className="h-dvh flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 max-w-4xl mx-auto">
+      {reconnectToast && (
+        <div className="fixed top-4 right-4 z-50 bg-green-600 text-white px-4 py-2 rounded shadow-lg text-sm flex items-center gap-2 animate-fade-in">
+          <CheckCircle2 className="w-4 h-4" />
+          再接続に成功しました
+        </div>
+      )}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 shrink-0">
         <button
           onClick={() => navigate("/")}
@@ -1250,8 +1245,15 @@ export function SessionDetail() {
             </button>
             <button
               onClick={async () => {
-                await api.reconnectSession(session.id);
-                api.getSession(session.id).then(setSession);
+                if (!confirm("セッションを再接続しますか？")) return;
+                try {
+                  await api.reconnectSession(session.id);
+                  api.getSession(session.id).then(setSession);
+                  setReconnectToast(true);
+                  setTimeout(() => setReconnectToast(false), 3000);
+                } catch {
+                  alert("再接続に失敗しました");
+                }
               }}
               className="p-1.5 text-indigo-700 bg-indigo-50 rounded hover:bg-indigo-100"
               title="Reconnect"
