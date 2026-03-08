@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -86,6 +87,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
 		r.Get("/sessions/{id}/diff", s.getSessionDiff)
+		r.Get("/sessions/{id}/claude-md", s.getClaudeMD)
 		r.Get("/sessions/{id}/escalate", s.getPendingEscalation)
 		r.Post("/sessions/{id}/escalate", s.createEscalation)
 		r.Post("/sessions/{id}/escalate/respond", s.respondEscalation)
@@ -813,6 +815,28 @@ func (s *Server) getSessionDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"files": files})
+}
+
+func (s *Server) getClaudeMD(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	sess, err := s.sessions.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	claudeMDPath := filepath.Join(sess.ProjectPath, "CLAUDE.md")
+	content, err := os.ReadFile(claudeMDPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeError(w, http.StatusNotFound, "CLAUDE.md not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"content": string(content)})
 }
 
 func getWorkingTreeDiff(projectPath string) ([]diffFileEntry, error) {

@@ -6,6 +6,7 @@ import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FileDiff, X, FolderOpen,
   Terminal, FileText, FilePen, PenLine, Search, Sparkles, Globe, Wrench, CheckCircle2,
   ListTodo, Target, RotateCcw, Circle, Bot, ImagePlus, SendHorizonal, AlertTriangle, Plus, Slash,
+  Code, Eye,
 } from "lucide-react";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
@@ -1082,6 +1083,11 @@ export function SessionDetail() {
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [slashFilter, setSlashFilter] = useState("");
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
+  const [claudeMDOpen, setClaudeMDOpen] = useState(false);
+  const [claudeMDContent, setClaudeMDContent] = useState<string | null>(null);
+  const [claudeMDLoading, setClaudeMDLoading] = useState(false);
+  const [claudeMDViewMode, setClaudeMDViewMode] = useState<"preview" | "source">("preview");
+  const [claudeMDSelectedLine, setClaudeMDSelectedLine] = useState<number | null>(null);
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
 
@@ -1542,6 +1548,25 @@ export function SessionDetail() {
             <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
           </a>
         )}
+        <button
+          onClick={() => {
+            setClaudeMDOpen(true);
+            if (claudeMDContent === null && !claudeMDLoading) {
+              setClaudeMDLoading(true);
+              api.getClaudeMD(session.id).then((res) => {
+                setClaudeMDContent(res.content);
+              }).catch(() => {
+                setClaudeMDContent("CLAUDE.md not found");
+              }).finally(() => {
+                setClaudeMDLoading(false);
+              });
+            }
+          }}
+          className="text-gray-400 hover:text-purple-600 shrink-0 ml-0.5"
+          title="Show CLAUDE.md"
+        >
+          <Sparkles className="w-3.5 h-3.5" />
+        </button>
         </div>
       ) : (
         <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm">
@@ -1633,6 +1658,69 @@ export function SessionDetail() {
         </div>
       )}
 
+      {/* CLAUDE.md Modal */}
+      <Modal
+        open={claudeMDOpen}
+        onClose={() => setClaudeMDOpen(false)}
+        title={
+          <span className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-purple-500" />
+            CLAUDE.md
+            <span className="flex items-center gap-0.5 ml-2">
+              <button
+                onClick={(e) => { e.stopPropagation(); setClaudeMDViewMode("preview"); }}
+                className={`p-1 rounded ${claudeMDViewMode === "preview" ? "bg-purple-100 text-purple-700" : "text-gray-400 hover:text-gray-700"}`}
+                title="Preview"
+              >
+                <Eye className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setClaudeMDViewMode("source"); }}
+                className={`p-1 rounded ${claudeMDViewMode === "source" ? "bg-purple-100 text-purple-700" : "text-gray-400 hover:text-gray-700"}`}
+                title="Source"
+              >
+                <Code className="w-3.5 h-3.5" />
+              </button>
+            </span>
+          </span>
+        }
+      >
+        {claudeMDLoading ? (
+          <div className="text-gray-400 text-sm">Loading...</div>
+        ) : claudeMDContent ? (
+          claudeMDViewMode === "preview" ? (
+            <div className="prose prose-sm max-w-none">
+              <Markdown remarkPlugins={[remarkGfm]}>{claudeMDContent}</Markdown>
+            </div>
+          ) : (
+            <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap">
+              {claudeMDContent.split("\n").map((line, i) => {
+                const lineNum = i + 1;
+                const isSelected = claudeMDSelectedLine === lineNum;
+                return (
+                  <div
+                    key={i}
+                    className={`flex cursor-pointer ${isSelected ? "bg-yellow-100" : "hover:bg-gray-50"}`}
+                    onClick={() => {
+                      setClaudeMDSelectedLine(isSelected ? null : lineNum);
+                      navigator.clipboard.writeText(`CLAUDE.md:L${lineNum}`);
+                    }}
+                  >
+                    <span
+                      className={`select-none w-10 text-right pr-3 shrink-0 ${isSelected ? "text-yellow-600" : "text-gray-300"}`}
+                    >
+                      {lineNum}
+                    </span>
+                    <span className="flex-1">{line}</span>
+                  </div>
+                );
+              })}
+            </pre>
+          )
+        ) : (
+          <div className="text-gray-400 text-sm">No content</div>
+        )}
+      </Modal>
     </div>
   );
 }
