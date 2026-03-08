@@ -30,7 +30,7 @@ func Setup() (*os.File, *slog.Logger, error) {
 
 	writer := io.MultiWriter(os.Stderr, file)
 	logger := slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: slog.LevelInfo,
 	}))
 
 	return file, logger, nil
