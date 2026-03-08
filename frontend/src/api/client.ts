@@ -76,7 +76,7 @@ export const api = {
     request<{ files: DiffFile[] }>(`/sessions/${id}/diff`),
 
   getPendingEscalation: (sessionId: string) =>
-    request<{ escalation: { id: string; sessionId: string; message: string; timedOut?: boolean } | null }>(`/sessions/${sessionId}/escalate`),
+    request<{ escalation: { id: string; sessionId: string; message: string; timedOut?: boolean; timeoutSeconds?: number } | null }>(`/sessions/${sessionId}/escalate`),
 
   respondEscalation: (sessionId: string, escalationId: string, response: string) =>
     request<{ status: string }>(`/sessions/${sessionId}/escalate/respond`, {

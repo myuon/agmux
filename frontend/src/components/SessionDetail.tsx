@@ -496,11 +496,20 @@ function AskUserQuestionCallView({ item, onAnswer }: { item: Extract<StreamDispl
   );
 }
 
-function EscalateCallView({ item, sessionId, escalationId, timedOut, onResponded }: {
+function formatTimeout(seconds: number): string {
+  if (seconds >= 60) {
+    const min = Math.floor(seconds / 60);
+    return `${min}分`;
+  }
+  return `${seconds}秒`;
+}
+
+function EscalateCallView({ item, sessionId, escalationId, timedOut, timeoutSeconds, onResponded }: {
   item: Extract<StreamDisplayItem, { kind: "tool_call" }>;
   sessionId?: string;
   escalationId?: string;
   timedOut?: boolean;
+  timeoutSeconds?: number;
   onResponded?: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
@@ -536,6 +545,11 @@ function EscalateCallView({ item, sessionId, escalationId, timedOut, onResponded
         <div className="flex items-center gap-2">
           <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />
           <span className="font-medium text-xs text-red-800">Escalation</span>
+          {timeoutSeconds && !isResolved && !timedOut && (
+            <span className="text-xs text-gray-500">
+              (タイムアウト: {formatTimeout(timeoutSeconds)})
+            </span>
+          )}
           {timedOut && !isResolved && (
             <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
               タイムアウト - エージェントは自動続行しました
@@ -581,12 +595,13 @@ function EscalateCallView({ item, sessionId, escalationId, timedOut, onResponded
   );
 }
 
-function ToolCallView({ item, onAnswer, sessionId, escalationId, escalationTimedOut, onEscalationResponded }: {
+function ToolCallView({ item, onAnswer, sessionId, escalationId, escalationTimedOut, escalationTimeoutSeconds, onEscalationResponded }: {
   item: Extract<StreamDisplayItem, { kind: "tool_call" }>;
   onAnswer?: (text: string) => void;
   sessionId?: string;
   escalationId?: string;
   escalationTimedOut?: boolean;
+  escalationTimeoutSeconds?: number;
   onEscalationResponded?: () => void;
 }) {
   if (item.name === "TodoWrite") {
@@ -596,7 +611,7 @@ function ToolCallView({ item, onAnswer, sessionId, escalationId, escalationTimed
     return <AskUserQuestionCallView item={item} onAnswer={onAnswer} />;
   }
   if (item.name === "mcp__agmux__escalate") {
-    return <EscalateCallView item={item} sessionId={sessionId} escalationId={escalationId} timedOut={escalationTimedOut} onResponded={onEscalationResponded} />;
+    return <EscalateCallView item={item} sessionId={sessionId} escalationId={escalationId} timedOut={escalationTimedOut} timeoutSeconds={escalationTimeoutSeconds} onResponded={onEscalationResponded} />;
   }
 
   const [open, setOpen] = useState(false);
@@ -702,12 +717,13 @@ function CollapsibleText({ text }: { text: string }) {
   );
 }
 
-function StreamDisplayItemView({ item, onAnswer, sessionId, escalationId, escalationTimedOut, onEscalationResponded }: {
+function StreamDisplayItemView({ item, onAnswer, sessionId, escalationId, escalationTimedOut, escalationTimeoutSeconds, onEscalationResponded }: {
   item: StreamDisplayItem;
   onAnswer?: (text: string) => void;
   sessionId?: string;
   escalationId?: string;
   escalationTimedOut?: boolean;
+  escalationTimeoutSeconds?: number;
   onEscalationResponded?: () => void;
 }) {
   if (item.kind === "text") {
@@ -723,7 +739,7 @@ function StreamDisplayItemView({ item, onAnswer, sessionId, escalationId, escala
     );
   }
   if (item.kind === "tool_call") {
-    return <ToolCallView item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} escalationTimedOut={escalationTimedOut} onEscalationResponded={onEscalationResponded} />;
+    return <ToolCallView item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={onEscalationResponded} />;
   }
   if (item.kind === "system_event") {
     return <SystemEventView item={item} />;
@@ -826,13 +842,14 @@ function useAutoScroll(dep: unknown) {
   return { ref, onScroll };
 }
 
-function StreamOutputView({ lines, className, onAnswer, sessionId, escalationId, escalationTimedOut, onEscalationResponded }: {
+function StreamOutputView({ lines, className, onAnswer, sessionId, escalationId, escalationTimedOut, escalationTimeoutSeconds, onEscalationResponded }: {
   lines: unknown[];
   className?: string;
   onAnswer?: (text: string) => void;
   sessionId?: string;
   escalationId?: string;
   escalationTimedOut?: boolean;
+  escalationTimeoutSeconds?: number;
   onEscalationResponded?: () => void;
 }) {
   const { ref, onScroll } = useAutoScroll(lines);
@@ -873,7 +890,7 @@ function StreamOutputView({ lines, className, onAnswer, sessionId, escalationId,
               return (
                 <div key={i}>
                   {group.items.map((item, j) => (
-                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} escalationTimedOut={escalationTimedOut} onEscalationResponded={onEscalationResponded} />
+                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={onEscalationResponded} />
                   ))}
                 </div>
               );
@@ -888,7 +905,7 @@ function StreamOutputView({ lines, className, onAnswer, sessionId, escalationId,
                 </div>
                 <div className="text-gray-800 break-words text-xs space-y-2">
                   {group.items.map((item, j) => (
-                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} escalationTimedOut={escalationTimedOut} onEscalationResponded={onEscalationResponded} />
+                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={onEscalationResponded} />
                   ))}
                 </div>
               </div>
@@ -994,6 +1011,7 @@ export function SessionDetail() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingEscalationId, setPendingEscalationId] = useState<string | null>(null);
   const [escalationTimedOut, setEscalationTimedOut] = useState(false);
+  const [escalationTimeoutSeconds, setEscalationTimeoutSeconds] = useState(300);
   const [reconnectToast, setReconnectToast] = useState(false);
   const [slashCommands, setSlashCommands] = useState<string[]>([]);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
@@ -1027,10 +1045,11 @@ export function SessionDetail() {
   // Listen for escalation WebSocket messages
   const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === "escalation") {
-      const data = msg.data as { id: string; sessionId: string };
+      const data = msg.data as { id: string; sessionId: string; timeoutSeconds?: number };
       if (data.sessionId === sessionId) {
         setPendingEscalationId(data.id);
         setEscalationTimedOut(false);
+        setEscalationTimeoutSeconds(data.timeoutSeconds ?? 300);
       }
     }
     if (msg.type === "escalation_timeout") {
@@ -1094,6 +1113,7 @@ export function SessionDetail() {
       if (r.escalation) {
         setPendingEscalationId(r.escalation.id);
         setEscalationTimedOut(r.escalation.timedOut ?? false);
+        setEscalationTimeoutSeconds(r.escalation.timeoutSeconds ?? 300);
       }
     }).catch(() => {});
 
@@ -1493,7 +1513,7 @@ export function SessionDetail() {
 
       {isStream ? (
         <div className="flex flex-col flex-1 min-h-0">
-          <StreamOutputView lines={streamLines} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} escalationTimedOut={escalationTimedOut} onEscalationResponded={() => { setPendingEscalationId(null); setEscalationTimedOut(false); }} onAnswer={async (text) => {
+          <StreamOutputView lines={streamLines} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={() => { setPendingEscalationId(null); setEscalationTimedOut(false); }} onAnswer={async (text) => {
             if (!sessionId) return;
             await api.sendToSession(sessionId, text);
           }} />

@@ -6,12 +6,13 @@ import (
 
 // Escalation represents a pending escalation from an agent to a user.
 type Escalation struct {
-	ID        string `json:"id"`
-	SessionID string `json:"sessionId"`
-	Message   string `json:"message"`
-	Response  string `json:"response,omitempty"`
-	Resolved  bool   `json:"resolved"`
-	TimedOut  bool   `json:"timedOut"`
+	ID             string `json:"id"`
+	SessionID      string `json:"sessionId"`
+	Message        string `json:"message"`
+	Response       string `json:"response,omitempty"`
+	Resolved       bool   `json:"resolved"`
+	TimedOut       bool   `json:"timedOut"`
+	TimeoutSeconds int    `json:"timeoutSeconds"`
 }
 
 // EscalationStore manages pending escalations with channels for blocking.
@@ -29,15 +30,16 @@ func NewEscalationStore() *EscalationStore {
 }
 
 // Create adds a new escalation and returns a channel that will receive the user response.
-func (es *EscalationStore) Create(id, sessionID, message string) chan string {
+func (es *EscalationStore) Create(id, sessionID, message string, timeoutSeconds int) chan string {
 	es.mu.Lock()
 	defer es.mu.Unlock()
 
 	ch := make(chan string, 1)
 	es.escalations[id] = &Escalation{
-		ID:        id,
-		SessionID: sessionID,
-		Message:   message,
+		ID:             id,
+		SessionID:      sessionID,
+		Message:        message,
+		TimeoutSeconds: timeoutSeconds,
 	}
 	es.responseCh[id] = ch
 	return ch

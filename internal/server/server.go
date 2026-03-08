@@ -369,20 +369,6 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create escalation and get response channel
-	ch := s.escalations.Create(req.ID, sessionID, req.Message)
-
-	// Broadcast WebSocket notification
-	s.hub.Broadcast(Message{
-		Type: "escalation",
-		Data: map[string]interface{}{
-			"id":          req.ID,
-			"sessionId":   sessionID,
-			"sessionName": sess.Name,
-			"message":     req.Message,
-		},
-	})
-
 	s.recordSessionAction(sessionID, "escalation", req.Message)
 
 	// Determine timeout duration
@@ -390,6 +376,21 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 	if req.TimeoutSeconds != nil && *req.TimeoutSeconds > 0 {
 		timeoutSeconds = *req.TimeoutSeconds
 	}
+
+	// Create escalation and get response channel
+	ch := s.escalations.Create(req.ID, sessionID, req.Message, timeoutSeconds)
+
+	// Broadcast WebSocket notification (after timeout is determined)
+	s.hub.Broadcast(Message{
+		Type: "escalation",
+		Data: map[string]interface{}{
+			"id":             req.ID,
+			"sessionId":      sessionID,
+			"sessionName":    sess.Name,
+			"message":        req.Message,
+			"timeoutSeconds": timeoutSeconds,
+		},
+	})
 	timeout := time.Duration(timeoutSeconds) * time.Second
 
 	// Block until user responds (with timeout)
