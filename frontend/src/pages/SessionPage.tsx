@@ -421,6 +421,17 @@ export function SessionPage() {
             <StatusDot status={session.status} />
             <h2 className="text-xl sm:text-2xl font-bold">{session.name}</h2>
             <span className="text-xs text-gray-400">{session.status}</span>
+            {session.provider && (
+              <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${
+                session.provider === "codex"
+                  ? "bg-green-100 text-green-700"
+                  : session.provider === "claude"
+                    ? "bg-blue-100 text-blue-700"
+                    : "bg-gray-100 text-gray-600"
+              }`}>
+                {session.provider.charAt(0).toUpperCase() + session.provider.slice(1)}
+              </span>
+            )}
           </>
         ) : (
           <>

@@ -7,6 +7,7 @@ interface Props {
     projectPath: string;
     prompt?: string;
     outputMode?: "terminal" | "stream";
+    provider?: string;
   }) => void;
 }
 
@@ -15,10 +16,11 @@ export function CreateSession({ onClose, onCreate }: Props) {
   const [projectPath, setProjectPath] = useState("");
   const [prompt, setPrompt] = useState("");
   const [outputMode, setOutputMode] = useState<"terminal" | "stream">("terminal");
+  const [provider, setProvider] = useState("claude");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onCreate({ name, projectPath, prompt: prompt || undefined, outputMode });
+    onCreate({ name, projectPath, prompt: prompt || undefined, outputMode, provider });
   };
 
   return (
@@ -90,6 +92,19 @@ export function CreateSession({ onClose, onCreate }: Props) {
                 Stream
               </label>
             </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Provider
+            </label>
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+            >
+              <option value="claude">Claude</option>
+              <option value="codex">Codex</option>
+            </select>
           </div>
           <div className="flex justify-end gap-2">
             <button
