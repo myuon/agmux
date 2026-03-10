@@ -56,7 +56,9 @@ func initManager(cfg *config.Config, logger *slog.Logger) (*session.Manager, *sq
 	if err != nil {
 		return nil, nil, err
 	}
-	return session.NewManager(database, tmux.NewClient(), cfg.Session.ClaudeCommand, cfg.Server.Port, logger, cfg.Session.SystemPrompt), database, nil
+	mgr := session.NewManager(database, tmux.NewClient(), cfg.Session.ClaudeCommand, cfg.Server.Port, logger, cfg.Session.SystemPrompt)
+	mgr.SetCodexCommand(cfg.Session.CodexCommand)
+	return mgr, database, nil
 }
 
 func serveCmd() *cobra.Command {

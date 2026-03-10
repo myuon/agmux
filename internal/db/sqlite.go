@@ -116,6 +116,12 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add provider column if missing
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN provider TEXT NOT NULL DEFAULT 'claude'`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: create otel_metrics table
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS otel_metrics (
