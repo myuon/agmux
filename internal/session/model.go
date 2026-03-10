@@ -31,19 +31,20 @@ const (
 )
 
 type Session struct {
-	ID            string      `json:"id"`
-	Name          string      `json:"name"`
-	ProjectPath   string      `json:"projectPath"`
-	InitialPrompt string      `json:"initialPrompt,omitempty"`
-	TmuxSession   string      `json:"tmuxSession"`
-	Status        Status      `json:"status"`
-	Type          SessionType `json:"type"`
-	OutputMode    OutputMode  `json:"outputMode"`
-	CurrentTask   string      `json:"currentTask,omitempty"`
-	Goal          string      `json:"goal,omitempty"`
-	Goals         GoalStack   `json:"goals,omitempty"`
-	CreatedAt     time.Time   `json:"createdAt"`
-	UpdatedAt     time.Time   `json:"updatedAt"`
+	ID            string       `json:"id"`
+	Name          string       `json:"name"`
+	ProjectPath   string       `json:"projectPath"`
+	InitialPrompt string       `json:"initialPrompt,omitempty"`
+	TmuxSession   string       `json:"tmuxSession"`
+	Status        Status       `json:"status"`
+	Type          SessionType  `json:"type"`
+	OutputMode    OutputMode   `json:"outputMode"`
+	Provider      ProviderName `json:"provider"`
+	CurrentTask   string       `json:"currentTask,omitempty"`
+	Goal          string       `json:"goal,omitempty"`
+	Goals         GoalStack    `json:"goals,omitempty"`
+	CreatedAt     time.Time    `json:"createdAt"`
+	UpdatedAt     time.Time    `json:"updatedAt"`
 }
 
 type GoalEntry struct {

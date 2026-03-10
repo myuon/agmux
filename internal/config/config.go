@@ -25,6 +25,7 @@ type DaemonConfig struct {
 
 type SessionConfig struct {
 	ClaudeCommand string `toml:"claude_command"`
+	CodexCommand  string `toml:"codex_command"`
 	SystemPrompt  string `toml:"system_prompt"`
 }
 
@@ -46,6 +47,7 @@ func Default() *Config {
 		},
 		Session: SessionConfig{
 			ClaudeCommand: "claude --dangerously-skip-permissions",
+			CodexCommand:  "codex",
 		},
 	}
 }
