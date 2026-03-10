@@ -83,17 +83,22 @@ func (p *CodexProvider) ParseSessionID(jsonlLine []byte) (string, bool) {
 }
 
 func (p *CodexProvider) BuildTerminalCommand(opts TerminalOpts) string {
-	cmd := p.command + " exec --json --sandbox danger-full-access"
+	otelPrefix := p.OTelEnvPrefix(opts.APIPort)
+
+	var cmd string
 	if opts.Resume {
-		// TODO: terminal resume for Codex is not yet fully supported
-		cmd += " resume " + opts.SessionID
+		cmd = otelPrefix + p.command + " resume " + opts.SessionID + " --sandbox danger-full-access"
+	} else {
+		cmd = otelPrefix + p.command + " --sandbox danger-full-access"
 	}
+
 	if opts.MCPConfigPath != "" {
 		cmd += " --mcp-config " + opts.MCPConfigPath
 	}
 	if opts.SystemPrompt != "" {
 		cmd += " --instructions " + shellQuote(opts.SystemPrompt)
 	}
+
 	return cmd
 }
 
