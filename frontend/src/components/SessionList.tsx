@@ -36,11 +36,10 @@ function groupSessionsByProject(sessions: Session[]): Map<string, Session[]> {
 
 interface Props {
   sessions: Session[];
-  onStop: (id: string) => void;
   onRestartController: () => void;
 }
 
-export function SessionList({ sessions, onStop, onRestartController }: Props) {
+export function SessionList({ sessions, onRestartController }: Props) {
   const navigate = useNavigate();
   const groupedSessions = useMemo(() => {
     const groups = groupSessionsByProject(sessions);
@@ -108,14 +107,6 @@ export function SessionList({ sessions, onStop, onRestartController }: Props) {
                     {timeAgo(s.createdAt)}
                   </span>
                   <div className="flex gap-1.5">
-                    {(s.status === "working" || s.status === "idle" || s.status === "question_waiting") && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onStop(s.id); }}
-                        className="px-2 py-0.5 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100"
-                      >
-                        Stop
-                      </button>
-                    )}
                     {s.type === "controller" && s.status === "stopped" && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onRestartController(); }}

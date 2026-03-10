@@ -107,15 +107,6 @@ function Dashboard() {
 
   useWebSocket(handleWsMessage);
 
-  const handleStop = async (id: string) => {
-    try {
-      await api.stopSession(id);
-      loadSessions();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Failed to stop session");
-    }
-  };
-
   const handleRestartController = async () => {
     try {
       await api.restartController();
@@ -226,7 +217,6 @@ function Dashboard() {
           </h2>
           <SessionList
             sessions={sessions}
-            onStop={handleStop}
             onRestartController={handleRestartController}
           />
         </div>
