@@ -227,7 +227,7 @@ export function SessionPage() {
           ))}
         </div>
       )}
-      <div className="flex gap-2 items-end">
+      <div className="flex gap-2 items-center">
         {/* Left action menu */}
         <div className="relative">
           <button
@@ -324,8 +324,14 @@ export function SessionPage() {
             );
           })()}
           <textarea
+            ref={(el) => {
+              if (el) {
+                el.style.height = "36px";
+                el.style.height = Math.max(36, Math.min(el.scrollHeight, 120)) + "px";
+              }
+            }}
             value={message}
-            rows={3}
+            rows={1}
             onChange={(e) => {
               const val = e.target.value;
               setMessage(val);
@@ -383,7 +389,7 @@ export function SessionPage() {
               }
             }}
             placeholder="Send a message..."
-            className="w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none"
+            className="block w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none h-9 overflow-auto"
           />
         </div>
         {/* Send button */}
