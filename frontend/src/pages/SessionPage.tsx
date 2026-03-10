@@ -323,9 +323,15 @@ export function SessionPage() {
               </div>
             );
           })()}
-          <input
-            type="text"
+          <textarea
+            ref={(el) => {
+              if (el) {
+                el.style.height = "36px";
+                el.style.height = Math.max(36, Math.min(el.scrollHeight, 120)) + "px";
+              }
+            }}
             value={message}
+            rows={1}
             onChange={(e) => {
               const val = e.target.value;
               setMessage(val);
@@ -343,6 +349,10 @@ export function SessionPage() {
               }
             }}
             onKeyDown={(e) => {
+              if (e.key === "Enter" && !showSlashMenu) {
+                // Allow default newline behavior; do not submit
+                return;
+              }
               if (!showSlashMenu) return;
               const filtered = slashCommands.filter((cmd) =>
                 slashFilter === "" || cmd.toLowerCase().includes(slashFilter.toLowerCase())
@@ -379,7 +389,7 @@ export function SessionPage() {
               }
             }}
             placeholder="Send a message..."
-            className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+            className="block w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none h-9 overflow-auto"
           />
         </div>
         {/* Send button */}

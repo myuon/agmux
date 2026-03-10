@@ -5,12 +5,6 @@
 agmux - 複数のAI agentセッションを同時に実行・監視・制御するための統合管理ツール。
 詳細は MVP.md を参照。
 
-## 技術スタック
-
-- バックエンド: Go (chi, cobra, gorilla/websocket, SQLite)
-- フロントエンド: TypeScript + React + Vite + Tailwind CSS
-- ビルド: `make build` で single binary にビルド（Go embed）
-
 ## ビルド・テスト
 
 ```bash
