@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -249,4 +250,80 @@ func joinArgs(args []string) string {
 		result += a
 	}
 	return result
+}
+
+func TestCodexBuildTerminalCommand_New(t *testing.T) {
+	p := NewCodexProvider("")
+	cmd := p.BuildTerminalCommand(TerminalOpts{
+		SessionID:     "sess-123",
+		MCPConfigPath: "/tmp/mcp.json",
+	})
+
+	if !strings.Contains(cmd, "codex") {
+		t.Errorf("expected codex command, got %s", cmd)
+	}
+	if !strings.Contains(cmd, "--sandbox danger-full-access") {
+		t.Errorf("expected --sandbox flag, got %s", cmd)
+	}
+	if !strings.Contains(cmd, "--mcp-config /tmp/mcp.json") {
+		t.Errorf("expected --mcp-config flag, got %s", cmd)
+	}
+	if strings.Contains(cmd, "resume") {
+		t.Errorf("new session should not contain resume, got %s", cmd)
+	}
+}
+
+func TestCodexBuildTerminalCommand_Resume(t *testing.T) {
+	p := NewCodexProvider("")
+	cmd := p.BuildTerminalCommand(TerminalOpts{
+		SessionID:     "sess-456",
+		MCPConfigPath: "/tmp/mcp.json",
+		Resume:        true,
+	})
+
+	if !strings.Contains(cmd, "codex resume sess-456") {
+		t.Errorf("expected resume with session ID, got %s", cmd)
+	}
+	if !strings.Contains(cmd, "--sandbox danger-full-access") {
+		t.Errorf("expected --sandbox flag, got %s", cmd)
+	}
+}
+
+func TestCodexBuildTerminalCommand_WithSystemPrompt(t *testing.T) {
+	p := NewCodexProvider("")
+	cmd := p.BuildTerminalCommand(TerminalOpts{
+		SessionID:     "sess-789",
+		MCPConfigPath: "/tmp/mcp.json",
+		SystemPrompt:  "You are a helpful assistant",
+	})
+
+	if !strings.Contains(cmd, "--instructions") {
+		t.Errorf("expected --instructions flag, got %s", cmd)
+	}
+	if !strings.Contains(cmd, "You are a helpful assistant") {
+		t.Errorf("expected system prompt in command, got %s", cmd)
+	}
+}
+
+func TestCodexBuildTerminalCommand_CustomCommand(t *testing.T) {
+	p := NewCodexProvider("my-codex")
+	cmd := p.BuildTerminalCommand(TerminalOpts{
+		SessionID:     "sess-100",
+		MCPConfigPath: "/tmp/mcp.json",
+	})
+
+	if !strings.HasPrefix(cmd, "my-codex") {
+		t.Errorf("expected custom command, got %s", cmd)
+	}
+}
+
+func TestCodexBuildTerminalCommand_NoMCPConfig(t *testing.T) {
+	p := NewCodexProvider("")
+	cmd := p.BuildTerminalCommand(TerminalOpts{
+		SessionID: "sess-200",
+	})
+
+	if strings.Contains(cmd, "--mcp-config") {
+		t.Errorf("should not have --mcp-config when path is empty, got %s", cmd)
+	}
 }
