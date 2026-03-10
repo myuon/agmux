@@ -92,6 +92,15 @@ export function SessionList({ sessions, onRestartController }: Props) {
                       Controller
                     </span>
                   )}
+                  {s.provider && s.provider !== "claude" && (
+                    <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${
+                      s.provider === "codex"
+                        ? "bg-green-100 text-green-700"
+                        : "bg-gray-100 text-gray-600"
+                    }`}>
+                      {s.provider.charAt(0).toUpperCase() + s.provider.slice(1)}
+                    </span>
+                  )}
                   <span className="text-xs text-gray-400 ml-auto shrink-0">
                     {s.status}
                   </span>

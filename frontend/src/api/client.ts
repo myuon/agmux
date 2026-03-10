@@ -25,6 +25,7 @@ export const api = {
     projectPath: string;
     prompt?: string;
     outputMode?: "terminal" | "stream";
+    provider?: string;
   }) =>
     request<Session>("/sessions", {
       method: "POST",
