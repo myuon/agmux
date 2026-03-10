@@ -817,6 +817,30 @@ func (s *Server) getSessionDiff(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"files": files})
 }
 
+// parseAtReferences extracts file paths from @filename references in CLAUDE.md content.
+// It looks for lines starting with @ followed by a filename (e.g., "@RTK.md").
+func parseAtReferences(content string, baseDir string) []string {
+	var refs []string
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "@") && len(line) > 1 {
+			ref := strings.TrimPrefix(line, "@")
+			// Remove any trailing whitespace or comments
+			ref = strings.Fields(ref)[0]
+			refPath := filepath.Join(baseDir, ref)
+			if _, err := os.Stat(refPath); err == nil {
+				refs = append(refs, refPath)
+			}
+		}
+	}
+	return refs
+}
+
+type claudeMDFile struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
+}
+
 func (s *Server) getClaudeMD(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	sess, err := s.sessions.Get(id)
@@ -825,18 +849,52 @@ func (s *Server) getClaudeMD(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	claudeMDPath := filepath.Join(sess.ProjectPath, "CLAUDE.md")
-	content, err := os.ReadFile(claudeMDPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			writeError(w, http.StatusNotFound, "CLAUDE.md not found")
-			return
+	var files []claudeMDFile
+
+	// Candidate paths for CLAUDE.md files
+	candidates := []string{
+		filepath.Join(sess.ProjectPath, "CLAUDE.md"),
+		filepath.Join(sess.ProjectPath, ".claude", "CLAUDE.md"),
+	}
+
+	seen := map[string]bool{}
+
+	for _, candidate := range candidates {
+		if seen[candidate] {
+			continue
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		content, err := os.ReadFile(candidate)
+		if err != nil {
+			continue
+		}
+		seen[candidate] = true
+
+		// Compute relative path from project root for display
+		relPath, _ := filepath.Rel(sess.ProjectPath, candidate)
+		files = append(files, claudeMDFile{Path: relPath, Content: string(content)})
+
+		// Parse @references and include referenced files
+		refs := parseAtReferences(string(content), filepath.Dir(candidate))
+		for _, ref := range refs {
+			if seen[ref] {
+				continue
+			}
+			seen[ref] = true
+			refContent, err := os.ReadFile(ref)
+			if err != nil {
+				continue
+			}
+			refRelPath, _ := filepath.Rel(sess.ProjectPath, ref)
+			files = append(files, claudeMDFile{Path: refRelPath, Content: string(refContent)})
+		}
+	}
+
+	if len(files) == 0 {
+		writeError(w, http.StatusNotFound, "CLAUDE.md not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"content": string(content)})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"files": files})
 }
 
 func getWorkingTreeDiff(projectPath string) ([]diffFileEntry, error) {
