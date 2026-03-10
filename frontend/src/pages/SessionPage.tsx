@@ -40,7 +40,7 @@ export function SessionPage() {
   const [slashFilter, setSlashFilter] = useState("");
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
   const [claudeMDOpen, setClaudeMDOpen] = useState(false);
-  const [claudeMDContent, setClaudeMDContent] = useState<string | null>(null);
+  const [claudeMDFiles, setClaudeMDFiles] = useState<{ path: string; content: string }[] | null>(null);
   const [claudeMDLoading, setClaudeMDLoading] = useState(false);
   const [claudeMDViewMode, setClaudeMDViewMode] = useState<"preview" | "source">("preview");
   const [claudeMDSelectedLine, setClaudeMDSelectedLine] = useState<number | null>(null);
@@ -492,12 +492,12 @@ export function SessionPage() {
         <button
           onClick={() => {
             setClaudeMDOpen(true);
-            if (claudeMDContent === null && !claudeMDLoading) {
+            if (claudeMDFiles === null && !claudeMDLoading) {
               setClaudeMDLoading(true);
               api.getClaudeMD(session.id).then((res) => {
-                setClaudeMDContent(res.content);
+                setClaudeMDFiles(res.files);
               }).catch(() => {
-                setClaudeMDContent("CLAUDE.md not found");
+                setClaudeMDFiles([{ path: "CLAUDE.md", content: "CLAUDE.md not found" }]);
               }).finally(() => {
                 setClaudeMDLoading(false);
               });
@@ -628,36 +628,47 @@ export function SessionPage() {
       >
         {claudeMDLoading ? (
           <div className="text-gray-400 text-sm">Loading...</div>
-        ) : claudeMDContent ? (
-          claudeMDViewMode === "preview" ? (
-            <div className="prose prose-sm max-w-none">
-              <Markdown remarkPlugins={[remarkGfm]}>{claudeMDContent}</Markdown>
-            </div>
-          ) : (
-            <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap">
-              {claudeMDContent.split("\n").map((line, i) => {
-                const lineNum = i + 1;
-                const isSelected = claudeMDSelectedLine === lineNum;
-                return (
-                  <div
-                    key={i}
-                    className={`flex cursor-pointer ${isSelected ? "bg-yellow-100" : "hover:bg-gray-50"}`}
-                    onClick={() => {
-                      setClaudeMDSelectedLine(isSelected ? null : lineNum);
-                      navigator.clipboard.writeText(`CLAUDE.md:L${lineNum}`);
-                    }}
-                  >
-                    <span
-                      className={`select-none w-10 text-right pr-3 shrink-0 ${isSelected ? "text-yellow-600" : "text-gray-300"}`}
-                    >
-                      {lineNum}
-                    </span>
-                    <span className="flex-1">{line}</span>
+        ) : claudeMDFiles && claudeMDFiles.length > 0 ? (
+          <div className="space-y-6">
+            {claudeMDFiles.map((file, fileIdx) => (
+              <div key={fileIdx}>
+                {claudeMDFiles.length > 1 && (
+                  <div className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded-t border border-b-0 border-gray-200">
+                    {file.path}
                   </div>
-                );
-              })}
-            </pre>
-          )
+                )}
+                {claudeMDViewMode === "preview" ? (
+                  <div className={`prose prose-sm max-w-none ${claudeMDFiles.length > 1 ? "border border-gray-200 rounded-b p-3" : ""}`}>
+                    <Markdown remarkPlugins={[remarkGfm]}>{file.content}</Markdown>
+                  </div>
+                ) : (
+                  <pre className={`text-xs leading-relaxed font-mono whitespace-pre-wrap ${claudeMDFiles.length > 1 ? "border border-gray-200 rounded-b" : ""}`}>
+                    {file.content.split("\n").map((line, i) => {
+                      const lineNum = i + 1;
+                      const isSelected = claudeMDSelectedLine === lineNum;
+                      return (
+                        <div
+                          key={i}
+                          className={`flex cursor-pointer ${isSelected ? "bg-yellow-100" : "hover:bg-gray-50"}`}
+                          onClick={() => {
+                            setClaudeMDSelectedLine(isSelected ? null : lineNum);
+                            navigator.clipboard.writeText(`${file.path}:L${lineNum}`);
+                          }}
+                        >
+                          <span
+                            className={`select-none w-10 text-right pr-3 shrink-0 ${isSelected ? "text-yellow-600" : "text-gray-300"}`}
+                          >
+                            {lineNum}
+                          </span>
+                          <span className="flex-1">{line}</span>
+                        </div>
+                      );
+                    })}
+                  </pre>
+                )}
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="text-gray-400 text-sm">No content</div>
         )}
