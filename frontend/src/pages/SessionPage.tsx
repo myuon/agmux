@@ -227,7 +227,7 @@ export function SessionPage() {
           ))}
         </div>
       )}
-      <div className="flex gap-2 items-center">
+      <div className="flex gap-2 items-end">
         {/* Left action menu */}
         <div className="relative">
           <button
@@ -323,9 +323,9 @@ export function SessionPage() {
               </div>
             );
           })()}
-          <input
-            type="text"
+          <textarea
             value={message}
+            rows={3}
             onChange={(e) => {
               const val = e.target.value;
               setMessage(val);
@@ -343,6 +343,10 @@ export function SessionPage() {
               }
             }}
             onKeyDown={(e) => {
+              if (e.key === "Enter" && !showSlashMenu) {
+                // Allow default newline behavior; do not submit
+                return;
+              }
               if (!showSlashMenu) return;
               const filtered = slashCommands.filter((cmd) =>
                 slashFilter === "" || cmd.toLowerCase().includes(slashFilter.toLowerCase())
@@ -379,7 +383,7 @@ export function SessionPage() {
               }
             }}
             placeholder="Send a message..."
-            className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+            className="w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none"
           />
         </div>
         {/* Send button */}
