@@ -44,18 +44,17 @@ func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 		)
 	}
 
-	// Codex CLI does not support --mcp-config flag.
-	// MCP servers are managed via `codex mcp add/remove` commands instead.
-
-	if opts.SystemPrompt != "" {
-		args = append(args, "--instructions", opts.SystemPrompt)
-	}
+	// Codex CLI does not support --mcp-config or --instructions flags.
 
 	// For non-resume, the prompt is required as the last positional argument.
+	// If SystemPrompt is set, prepend it to the prompt.
 	if !(opts.Resume && opts.CLISessionID != "") {
 		prompt := opts.InitialPrompt
 		if prompt == "" {
 			prompt = "Follow the instructions given via stdin"
+		}
+		if opts.SystemPrompt != "" {
+			prompt = opts.SystemPrompt + "\n\n" + prompt
 		}
 		args = append(args, prompt)
 	}
@@ -100,10 +99,7 @@ func (p *CodexProvider) BuildTerminalCommand(opts TerminalOpts) string {
 		cmd = otelPrefix + p.command + " --sandbox danger-full-access"
 	}
 
-	// Codex CLI does not support --mcp-config flag.
-	if opts.SystemPrompt != "" {
-		cmd += " --instructions " + shellQuote(opts.SystemPrompt)
-	}
+	// Codex CLI does not support --mcp-config or --instructions flags.
 
 	return cmd
 }

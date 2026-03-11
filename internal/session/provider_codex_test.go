@@ -96,15 +96,15 @@ func TestCodexProvider_BuildStreamCommand_WithInstructions(t *testing.T) {
 	})
 
 	args := cmd.Args
-	found := false
-	for i, a := range args {
-		if a == "--instructions" && i+1 < len(args) && args[i+1] == "be helpful" {
-			found = true
-			break
-		}
+	// SystemPrompt should be prepended to the prompt, not as --instructions flag
+	lastArg := args[len(args)-1]
+	if !strings.Contains(lastArg, "be helpful") {
+		t.Errorf("expected system prompt in prompt arg, got: %v", args)
 	}
-	if !found {
-		t.Errorf("expected --instructions 'be helpful' in args, got: %v", args)
+	for _, a := range args {
+		if a == "--instructions" {
+			t.Errorf("--instructions flag should not be used, got: %v", args)
+		}
 	}
 }
 
@@ -347,11 +347,9 @@ func TestCodexBuildTerminalCommand_WithSystemPrompt(t *testing.T) {
 		SystemPrompt:  "You are a helpful assistant",
 	})
 
-	if !strings.Contains(cmd, "--instructions") {
-		t.Errorf("expected --instructions flag, got %s", cmd)
-	}
-	if !strings.Contains(cmd, "You are a helpful assistant") {
-		t.Errorf("expected system prompt in command, got %s", cmd)
+	// Codex CLI does not support --instructions; system prompt is not passed in terminal mode
+	if strings.Contains(cmd, "--instructions") {
+		t.Errorf("--instructions should not be used in Codex terminal mode, got %s", cmd)
 	}
 }
 
