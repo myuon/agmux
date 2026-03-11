@@ -150,16 +150,25 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 			continue
 		}
 
-		// Capture session_id via provider
+		// Capture session_id via provider (before normalization so
+		// provider-specific events like thread.started are still visible).
 		if sid, ok := sp.provider.ParseSessionID([]byte(line)); ok {
 			sp.mu.Lock()
 			sp.sessionID = sid
 			sp.mu.Unlock()
 		}
 
+		// Normalize the line into Claude-compatible format.
+		normalized := sp.provider.NormalizeStreamLine([]byte(line))
+		if normalized == nil {
+			// Provider says to drop this line (e.g. in-progress events).
+			continue
+		}
+		normalizedStr := string(normalized)
+
 		sp.mu.Lock()
-		sp.lines = append(sp.lines, line)
-		sp.file.WriteString(line + "\n")
+		sp.lines = append(sp.lines, normalizedStr)
+		sp.file.WriteString(normalizedStr + "\n")
 		sp.file.Sync()
 		sp.mu.Unlock()
 	}

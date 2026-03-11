@@ -124,6 +124,103 @@ func (p *CodexProvider) OTelEnvPrefix(port int) string {
 	return ""
 }
 
+// NormalizeStreamLine converts a Codex JSONL event into Claude-compatible
+// stream-json format so the frontend can render it uniformly.
+func (p *CodexProvider) NormalizeStreamLine(line []byte) []byte {
+	var envelope struct {
+		Type string          `json:"type"`
+		Item json.RawMessage `json:"item"`
+	}
+	if json.Unmarshal(line, &envelope) != nil {
+		return line
+	}
+
+	switch envelope.Type {
+	case "item.completed":
+		return p.normalizeItemCompleted(envelope.Item, line)
+	case "item.started":
+		// Skip in-progress events; they have no useful content yet.
+		return nil
+	default:
+		// thread.started, turn.started, turn.completed, etc. – keep as-is.
+		return line
+	}
+}
+
+func (p *CodexProvider) normalizeItemCompleted(raw json.RawMessage, original []byte) []byte {
+	var item struct {
+		Type             string  `json:"type"`
+		Text             string  `json:"text"`
+		Command          string  `json:"command"`
+		AggregatedOutput string  `json:"aggregated_output"`
+		ExitCode         *int    `json:"exit_code"`
+		Status           string  `json:"status"`
+	}
+	if json.Unmarshal(raw, &item) != nil {
+		return original
+	}
+
+	switch item.Type {
+	case "agent_message":
+		return p.buildAssistantText(item.Text)
+	case "command_execution":
+		return p.buildAssistantToolUse(item.Command, item.AggregatedOutput)
+	default:
+		return original
+	}
+}
+
+func (p *CodexProvider) buildAssistantText(text string) []byte {
+	msg := struct {
+		Type    string `json:"type"`
+		Message struct {
+			Role    string `json:"role"`
+			Content []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"message"`
+	}{Type: "assistant"}
+	msg.Message.Role = "assistant"
+	msg.Message.Content = []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}{{Type: "text", Text: text}}
+	b, _ := json.Marshal(msg)
+	return b
+}
+
+func (p *CodexProvider) buildAssistantToolUse(command, output string) []byte {
+	type toolUseBlock struct {
+		Type  string            `json:"type"`
+		Name  string            `json:"name,omitempty"`
+		Input map[string]string `json:"input,omitempty"`
+	}
+	type toolResultBlock struct {
+		Type    string `json:"type"`
+		Content string `json:"content"`
+	}
+
+	// We need a heterogeneous content array, so use json.RawMessage.
+	tu := toolUseBlock{Type: "tool_use", Name: "Bash", Input: map[string]string{"command": command}}
+	tr := toolResultBlock{Type: "tool_result", Content: output}
+
+	tuJSON, _ := json.Marshal(tu)
+	trJSON, _ := json.Marshal(tr)
+
+	msg := struct {
+		Type    string `json:"type"`
+		Message struct {
+			Role    string            `json:"role"`
+			Content []json.RawMessage `json:"content"`
+		} `json:"message"`
+	}{Type: "assistant"}
+	msg.Message.Role = "assistant"
+	msg.Message.Content = []json.RawMessage{tuJSON, trJSON}
+	b, _ := json.Marshal(msg)
+	return b
+}
+
 // NewCodexThreadStartedJSON creates a JSONL line for a thread.started event (for testing).
 func NewCodexThreadStartedJSON(threadID string) string {
 	evt := struct {

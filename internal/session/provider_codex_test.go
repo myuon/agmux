@@ -327,3 +327,97 @@ func TestCodexBuildTerminalCommand_NoMCPConfig(t *testing.T) {
 		t.Errorf("should not have --mcp-config when path is empty, got %s", cmd)
 	}
 }
+
+func TestCodexProvider_NormalizeStreamLine(t *testing.T) {
+	p := NewCodexProvider("")
+
+	tests := []struct {
+		name     string
+		input    string
+		wantNil  bool   // true if the line should be dropped
+		wantJSON string // expected JSON (empty means keep original)
+	}{
+		{
+			name:  "agent_message becomes assistant text",
+			input: `{"type":"item.completed","item":{"type":"agent_message","text":"Hello world"}}`,
+			wantJSON: `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Hello world"}]}}`,
+		},
+		{
+			name:  "command_execution becomes tool_use + tool_result",
+			input: `{"type":"item.completed","item":{"type":"command_execution","command":"ls","aggregated_output":"file1\nfile2","exit_code":0,"status":"completed"}}`,
+			wantJSON: `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"ls"}},{"type":"tool_result","content":"file1\nfile2"}]}}`,
+		},
+		{
+			name:    "item.started is dropped",
+			input:   `{"type":"item.started","item":{"type":"command_execution","command":"ls","aggregated_output":"","exit_code":null,"status":"in_progress"}}`,
+			wantNil: true,
+		},
+		{
+			name:  "turn.started passes through",
+			input: `{"type":"turn.started"}`,
+		},
+		{
+			name:  "turn.completed passes through",
+			input: `{"type":"turn.completed","usage":{"input_tokens":123,"output_tokens":456}}`,
+		},
+		{
+			name:  "thread.started passes through",
+			input: `{"type":"thread.started","thread":{"id":"thr_xxx"}}`,
+		},
+		{
+			name:  "invalid JSON passes through",
+			input: `not json at all`,
+		},
+		{
+			name:  "unknown item type passes through",
+			input: `{"type":"item.completed","item":{"type":"unknown_type","data":"something"}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := p.NormalizeStreamLine([]byte(tt.input))
+
+			if tt.wantNil {
+				if result != nil {
+					t.Errorf("expected nil, got %s", string(result))
+				}
+				return
+			}
+
+			if result == nil {
+				t.Fatal("expected non-nil result")
+			}
+
+			if tt.wantJSON != "" {
+				// Compare as parsed JSON for stable comparison
+				var got, want interface{}
+				if err := json.Unmarshal(result, &got); err != nil {
+					t.Fatalf("failed to parse result JSON: %v\nresult: %s", err, string(result))
+				}
+				if err := json.Unmarshal([]byte(tt.wantJSON), &want); err != nil {
+					t.Fatalf("failed to parse expected JSON: %v", err)
+				}
+				gotBytes, _ := json.Marshal(got)
+				wantBytes, _ := json.Marshal(want)
+				if string(gotBytes) != string(wantBytes) {
+					t.Errorf("JSON mismatch\ngot:  %s\nwant: %s", string(gotBytes), string(wantBytes))
+				}
+			} else {
+				// Should be unchanged
+				if string(result) != tt.input {
+					t.Errorf("expected line to pass through unchanged\ngot:  %s\nwant: %s", string(result), tt.input)
+				}
+			}
+		})
+	}
+}
+
+func TestClaudeProvider_NormalizeStreamLine(t *testing.T) {
+	p := NewClaudeProvider("")
+	input := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}}`
+	result := p.NormalizeStreamLine([]byte(input))
+	if string(result) != input {
+		t.Errorf("ClaudeProvider should pass through unchanged\ngot:  %s\nwant: %s", string(result), input)
+	}
+}
