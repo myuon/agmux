@@ -203,6 +203,61 @@ func TestNewCodexThreadStartedJSON(t *testing.T) {
 	}
 }
 
+func TestCodexProvider_BuildStreamCommand_WithInitialPrompt(t *testing.T) {
+	p := NewCodexProvider("codex")
+	cmd := p.BuildStreamCommand(StreamOpts{
+		SessionID:      "sess-1",
+		ProjectPath:    "/tmp/project",
+		InitialPrompt:  "hello world",
+	})
+
+	args := cmd.Args
+	// The last arg should be the initial prompt, not the placeholder
+	lastArg := args[len(args)-1]
+	if lastArg != "hello world" {
+		t.Errorf("expected last arg to be initial prompt %q, got %q", "hello world", lastArg)
+	}
+}
+
+func TestCodexProvider_BuildStreamCommand_ResumeWithFollowup(t *testing.T) {
+	p := NewCodexProvider("codex")
+	cmd := p.BuildStreamCommand(StreamOpts{
+		SessionID:      "sess-1",
+		ProjectPath:    "/tmp/project",
+		Resume:         true,
+		CLISessionID:   "thr_abc123",
+		InitialPrompt:  "follow up message",
+	})
+
+	args := cmd.Args
+	// Should contain resume and session ID
+	if !containsArg(args, "resume") {
+		t.Errorf("expected args to contain 'resume', got: %v", args)
+	}
+	if !containsArg(args, "thr_abc123") {
+		t.Errorf("expected args to contain session ID, got: %v", args)
+	}
+	// Last arg should be the followup message
+	lastArg := args[len(args)-1]
+	if lastArg != "follow up message" {
+		t.Errorf("expected last arg to be followup message %q, got %q", "follow up message", lastArg)
+	}
+}
+
+func TestCodexProvider_BuildStreamCommand_DefaultPlaceholder(t *testing.T) {
+	p := NewCodexProvider("codex")
+	cmd := p.BuildStreamCommand(StreamOpts{
+		SessionID:   "sess-1",
+		ProjectPath: "/tmp/project",
+	})
+
+	args := cmd.Args
+	lastArg := args[len(args)-1]
+	if lastArg != "Follow the instructions given via stdin" {
+		t.Errorf("expected default placeholder prompt, got %q", lastArg)
+	}
+}
+
 func TestCodexProvider_EnvFiltersCLAUDECODE(t *testing.T) {
 	p := NewCodexProvider("codex")
 	cmd := p.BuildStreamCommand(StreamOpts{

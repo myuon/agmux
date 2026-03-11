@@ -139,21 +139,34 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 
 	if outputMode == OutputModeStream {
 		// Stream mode: start Go subprocess instead of CLI TUI
-		sp, err := StartStreamProcess(id, projectPath, mcpConfigPath, m.systemPrompt, false, worktree, provider)
-		if err != nil {
-			_ = m.tmux.KillSession(name)
-			return nil, fmt.Errorf("start stream process: %w", err)
+		var sp *StreamProcess
+		if pn == ProviderCodex && prompt != "" {
+			// Codex: pass initial prompt as command-line argument (not stdin)
+			var err error
+			sp, err = StartStreamProcessWithPrompt(id, projectPath, mcpConfigPath, m.systemPrompt, prompt, false, worktree, provider)
+			if err != nil {
+				_ = m.tmux.KillSession(name)
+				return nil, fmt.Errorf("start stream process: %w", err)
+			}
+			// Record the user message in the stream for UI display
+			sp.recordUserMessage(prompt)
+		} else {
+			var err error
+			sp, err = StartStreamProcess(id, projectPath, mcpConfigPath, m.systemPrompt, false, worktree, provider)
+			if err != nil {
+				_ = m.tmux.KillSession(name)
+				return nil, fmt.Errorf("start stream process: %w", err)
+			}
+			// Send initial prompt via stream process (stdin for Claude)
+			if prompt != "" {
+				if err := sp.Send(prompt); err != nil {
+					return nil, fmt.Errorf("send initial prompt: %w", err)
+				}
+			}
 		}
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
 		m.streamMu.Unlock()
-
-		// Send initial prompt via stream process
-		if prompt != "" {
-			if err := sp.Send(prompt); err != nil {
-				return nil, fmt.Errorf("send initial prompt: %w", err)
-			}
-		}
 	} else {
 		// Terminal mode: launch CLI TUI in tmux
 		time.Sleep(300 * time.Millisecond)
