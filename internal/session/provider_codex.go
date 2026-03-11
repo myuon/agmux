@@ -32,9 +32,10 @@ func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 
 	if opts.Resume && opts.CLISessionID != "" {
 		// Resume an existing session
-		args = append(args, "exec", "resume", opts.CLISessionID,
+		// Note: --sandbox is not supported for exec resume
+		args = append(args, "exec", "resume",
 			"--json",
-			"--sandbox", "danger-full-access",
+			opts.CLISessionID,
 		)
 	} else {
 		// Start a new session
