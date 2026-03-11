@@ -50,6 +50,11 @@ type Provider interface {
 	OTelEnvPrefix(port int) string
 	// Name returns the provider name.
 	Name() ProviderName
+	// NormalizeStreamLine converts a provider-specific JSONL line into
+	// Claude-compatible stream-json format. If the line should be kept as-is,
+	// it returns the original bytes unchanged. If the line should be dropped,
+	// it returns nil.
+	NormalizeStreamLine(line []byte) []byte
 }
 
 // GetProvider returns a Provider instance for the given name.

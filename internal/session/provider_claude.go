@@ -141,6 +141,11 @@ func (p *ClaudeProvider) AppendOTelEnv(env []string, port int) []string {
 	return env
 }
 
+func (p *ClaudeProvider) NormalizeStreamLine(line []byte) []byte {
+	// Claude lines are already in the expected format; return as-is.
+	return line
+}
+
 func (p *ClaudeProvider) OTelEnvPrefix(port int) string {
 	if port == 0 {
 		port = 4321
