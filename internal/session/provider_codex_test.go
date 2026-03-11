@@ -119,7 +119,7 @@ func TestCodexProvider_ParseSessionID(t *testing.T) {
 	}{
 		{
 			name:   "thread.started event",
-			input:  `{"type":"thread.started","thread":{"id":"thr_abc123"}}`,
+			input:  `{"type":"thread.started","thread_id":"thr_abc123"}`,
 			wantID: "thr_abc123",
 			wantOK: true,
 		},
@@ -137,7 +137,7 @@ func TestCodexProvider_ParseSessionID(t *testing.T) {
 		},
 		{
 			name:   "thread.started without id",
-			input:  `{"type":"thread.started","thread":{}}`,
+			input:  `{"type":"thread.started","thread_id":""}`,
 			wantID: "",
 			wantOK: false,
 		},
@@ -410,7 +410,7 @@ func TestCodexProvider_NormalizeStreamLine(t *testing.T) {
 		},
 		{
 			name:  "thread.started passes through",
-			input: `{"type":"thread.started","thread":{"id":"thr_xxx"}}`,
+			input: `{"type":"thread.started","thread_id":"thr_xxx"}`,
 		},
 		{
 			name:  "invalid JSON passes through",

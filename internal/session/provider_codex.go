@@ -76,15 +76,13 @@ func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 }
 
 func (p *CodexProvider) ParseSessionID(jsonlLine []byte) (string, bool) {
-	// Codex emits: {"type":"thread.started","thread":{"id":"thr_xxx"}}
+	// Codex emits: {"type":"thread.started","thread_id":"019cdd4c-..."}
 	var msg struct {
-		Type   string `json:"type"`
-		Thread struct {
-			ID string `json:"id"`
-		} `json:"thread"`
+		Type     string `json:"type"`
+		ThreadID string `json:"thread_id"`
 	}
-	if json.Unmarshal(jsonlLine, &msg) == nil && msg.Type == "thread.started" && msg.Thread.ID != "" {
-		return msg.Thread.ID, true
+	if json.Unmarshal(jsonlLine, &msg) == nil && msg.Type == "thread.started" && msg.ThreadID != "" {
+		return msg.ThreadID, true
 	}
 	return "", false
 }
