@@ -122,6 +122,12 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add cli_session_id column if missing (for Codex session resume)
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN cli_session_id TEXT NOT NULL DEFAULT ''`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: create otel_metrics table
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS otel_metrics (

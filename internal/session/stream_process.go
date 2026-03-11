@@ -28,6 +28,10 @@ type StreamProcess struct {
 
 	// Fields for Codex followup support (process restart on new messages)
 	streamOpts StreamOpts // saved opts for rebuilding commands
+
+	// onSessionID is called when the CLI session ID is first captured from stdout.
+	// This allows the manager to persist it to the DB.
+	onSessionID func(cliSessionID string)
 }
 
 // ReadCLISessionID reads the CLI-assigned session ID from a stream JSONL file.
@@ -187,7 +191,11 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 		if sid, ok := sp.provider.ParseSessionID([]byte(line)); ok {
 			sp.mu.Lock()
 			sp.sessionID = sid
+			cb := sp.onSessionID
 			sp.mu.Unlock()
+			if cb != nil {
+				cb(sid)
+			}
 		}
 
 		// Normalize the line into Claude-compatible format.
@@ -215,6 +223,13 @@ func (sp *StreamProcess) SessionID() string {
 	sp.mu.RLock()
 	defer sp.mu.RUnlock()
 	return sp.sessionID
+}
+
+// SetOnSessionID sets a callback that fires when the CLI session ID is captured from stdout.
+func (sp *StreamProcess) SetOnSessionID(fn func(cliSessionID string)) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.onSessionID = fn
 }
 
 // ImageData represents a base64-encoded image to be sent with a message.

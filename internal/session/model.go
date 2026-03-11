@@ -40,6 +40,7 @@ type Session struct {
 	Type          SessionType  `json:"type"`
 	OutputMode    OutputMode   `json:"outputMode"`
 	Provider      ProviderName `json:"provider"`
+	CliSessionID  string       `json:"cliSessionId,omitempty"`
 	CurrentTask   string       `json:"currentTask,omitempty"`
 	Goal          string       `json:"goal,omitempty"`
 	Goals         GoalStack    `json:"goals,omitempty"`
