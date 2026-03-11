@@ -143,6 +143,7 @@ func startStreamProcessWithOpts(opts StreamOpts, provider Provider) (*StreamProc
 		stdin:      stdinPipe,
 		done:       make(chan struct{}),
 		file:       f,
+		sessionID:  opts.CLISessionID, // Initialize from opts so resume/recovery can use it immediately
 		provider:   provider,
 		streamOpts: opts,
 	}

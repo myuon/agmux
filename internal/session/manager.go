@@ -496,7 +496,22 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			provider := m.getProvider(s.Provider)
 			mcpPath, _ := provider.SetupMCP(s.ID, m.apiPort)
 			cliSessionID := ReadCLISessionID(s.ID, provider)
+
 			var err error
+			if s.Provider == ProviderCodex && cliSessionID != "" {
+				// For Codex, start resume directly with the prompt as a positional arg.
+				// Codex exec exits after processing, so we can't send via stdin later.
+				sp, err = StartStreamProcessWithPrompt(s.ID, s.ProjectPath, mcpPath, m.systemPrompt, text, true, false, provider, cliSessionID)
+				if err != nil {
+					return fmt.Errorf("restart stream process: %w", err)
+				}
+				sp.recordUserMessage(text)
+				m.streamMu.Lock()
+				m.streamProcesses[id] = sp
+				m.streamMu.Unlock()
+				return nil
+			}
+
 			sp, err = StartStreamProcess(s.ID, s.ProjectPath, mcpPath, m.systemPrompt, true, false, provider, cliSessionID)
 			if err != nil {
 				return fmt.Errorf("restart stream process: %w", err)

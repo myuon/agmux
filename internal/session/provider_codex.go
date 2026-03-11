@@ -223,14 +223,15 @@ func (p *CodexProvider) buildAssistantToolUse(command, output string) []byte {
 }
 
 // NewCodexThreadStartedJSON creates a JSONL line for a thread.started event (for testing).
+// Matches real Codex CLI output format: {"type":"thread.started","thread_id":"..."}
 func NewCodexThreadStartedJSON(threadID string) string {
 	evt := struct {
-		Type   string `json:"type"`
-		Thread struct {
-			ID string `json:"id"`
-		} `json:"thread"`
-	}{Type: "thread.started"}
-	evt.Thread.ID = threadID
+		Type     string `json:"type"`
+		ThreadID string `json:"thread_id"`
+	}{
+		Type:     "thread.started",
+		ThreadID: threadID,
+	}
 	b, _ := json.Marshal(evt)
 	return string(b)
 }
