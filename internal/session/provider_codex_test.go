@@ -182,10 +182,8 @@ func TestCodexProvider_BuildTerminalCommand(t *testing.T) {
 func TestNewCodexThreadStartedJSON(t *testing.T) {
 	line := NewCodexThreadStartedJSON("thr_test123")
 	var evt struct {
-		Type   string `json:"type"`
-		Thread struct {
-			ID string `json:"id"`
-		} `json:"thread"`
+		Type     string `json:"type"`
+		ThreadID string `json:"thread_id"`
 	}
 	if err := json.Unmarshal([]byte(line), &evt); err != nil {
 		t.Fatalf("failed to unmarshal: %v", err)
@@ -193,8 +191,21 @@ func TestNewCodexThreadStartedJSON(t *testing.T) {
 	if evt.Type != "thread.started" {
 		t.Errorf("expected type 'thread.started', got %q", evt.Type)
 	}
-	if evt.Thread.ID != "thr_test123" {
-		t.Errorf("expected thread.id 'thr_test123', got %q", evt.Thread.ID)
+	if evt.ThreadID != "thr_test123" {
+		t.Errorf("expected thread_id 'thr_test123', got %q", evt.ThreadID)
+	}
+}
+
+func TestNewCodexThreadStartedJSON_ParseSessionID(t *testing.T) {
+	// Verify that NewCodexThreadStartedJSON output is parseable by ParseSessionID
+	p := NewCodexProvider("")
+	line := NewCodexThreadStartedJSON("019cdd95-78da-7f33-8521-ae4ca1eb40d7")
+	id, ok := p.ParseSessionID([]byte(line))
+	if !ok {
+		t.Fatal("ParseSessionID should return true for NewCodexThreadStartedJSON output")
+	}
+	if id != "019cdd95-78da-7f33-8521-ae4ca1eb40d7" {
+		t.Errorf("expected thread ID '019cdd95-78da-7f33-8521-ae4ca1eb40d7', got %q", id)
 	}
 }
 
