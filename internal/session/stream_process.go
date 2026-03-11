@@ -25,6 +25,9 @@ type StreamProcess struct {
 	file      *os.File
 	sessionID string // CLI session ID (may differ from agmux session ID after resume)
 	provider  Provider
+
+	// Fields for Codex followup support (process restart on new messages)
+	streamOpts StreamOpts // saved opts for rebuilding commands
 }
 
 // ReadCLISessionID reads the CLI-assigned session ID from a stream JSONL file.
@@ -57,18 +60,8 @@ func ReadCLISessionID(agmuxSessionID string, provider Provider) string {
 // If resume is true, it uses --resume to continue an existing conversation;
 // otherwise it uses --session-id to start a new one.
 // cliSessionID is only used when resume=true -- it's the CLI-assigned session ID.
+// initialPrompt is an optional initial prompt (used by Codex as positional arg).
 func StartStreamProcess(sessionID, projectPath, mcpConfigPath, systemPrompt string, resume bool, worktree bool, provider Provider, cliSessionID ...string) (*StreamProcess, error) {
-	streamsDir, err := db.StreamsDir()
-	if err != nil {
-		return nil, fmt.Errorf("get streams dir: %w", err)
-	}
-
-	streamPath := filepath.Join(streamsDir, sessionID+".jsonl")
-	f, err := os.OpenFile(streamPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("open stream file: %w", err)
-	}
-
 	csid := ""
 	if len(cliSessionID) > 0 {
 		csid = cliSessionID[0]
@@ -82,6 +75,43 @@ func StartStreamProcess(sessionID, projectPath, mcpConfigPath, systemPrompt stri
 		Resume:        resume,
 		Worktree:      worktree,
 		CLISessionID:  csid,
+	}
+
+	return startStreamProcessWithOpts(opts, provider)
+}
+
+// StartStreamProcessWithPrompt is like StartStreamProcess but also sets the initial prompt.
+// This is used by Codex provider to pass the prompt as a command-line argument.
+func StartStreamProcessWithPrompt(sessionID, projectPath, mcpConfigPath, systemPrompt, initialPrompt string, resume bool, worktree bool, provider Provider, cliSessionID ...string) (*StreamProcess, error) {
+	csid := ""
+	if len(cliSessionID) > 0 {
+		csid = cliSessionID[0]
+	}
+
+	opts := StreamOpts{
+		SessionID:      sessionID,
+		ProjectPath:    projectPath,
+		MCPConfigPath:  mcpConfigPath,
+		SystemPrompt:   systemPrompt,
+		InitialPrompt:  initialPrompt,
+		Resume:         resume,
+		Worktree:       worktree,
+		CLISessionID:   csid,
+	}
+
+	return startStreamProcessWithOpts(opts, provider)
+}
+
+func startStreamProcessWithOpts(opts StreamOpts, provider Provider) (*StreamProcess, error) {
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		return nil, fmt.Errorf("get streams dir: %w", err)
+	}
+
+	streamPath := filepath.Join(streamsDir, opts.SessionID+".jsonl")
+	f, err := os.OpenFile(streamPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("open stream file: %w", err)
 	}
 
 	cmd := provider.BuildStreamCommand(opts)
@@ -109,11 +139,12 @@ func StartStreamProcess(sessionID, projectPath, mcpConfigPath, systemPrompt stri
 	}
 
 	sp := &StreamProcess{
-		cmd:      cmd,
-		stdin:    stdinPipe,
-		done:     make(chan struct{}),
-		file:     f,
-		provider: provider,
+		cmd:        cmd,
+		stdin:      stdinPipe,
+		done:       make(chan struct{}),
+		file:       f,
+		provider:   provider,
+		streamOpts: opts,
 	}
 
 	// Read existing lines from file for continuity
@@ -199,7 +230,20 @@ func (sp *StreamProcess) Send(message string) error {
 // SendWithImages writes a user message with optional images to the process stdin in stream-json format.
 // When images are provided, content is sent as an array of content blocks (text + image blocks).
 // When no images are provided, content is sent as a plain string for backward compatibility.
+//
+// For Codex provider: since codex exec exits after processing, followup messages
+// require restarting the process with "codex exec resume <session_id> <message>".
 func (sp *StreamProcess) SendWithImages(message string, images []ImageData) error {
+	// For Codex, check if the process has finished and restart for followup.
+	if sp.provider.Name() == ProviderCodex {
+		return sp.sendCodex(message)
+	}
+
+	return sp.sendClaude(message, images)
+}
+
+// sendClaude handles message sending for Claude provider (stdin-based).
+func (sp *StreamProcess) sendClaude(message string, images []ImageData) error {
 	var data []byte
 	var err error
 
@@ -274,6 +318,114 @@ func (sp *StreamProcess) SendWithImages(message string, images []ImageData) erro
 
 	_, err = fmt.Fprintf(sp.stdin, "%s\n", data)
 	return err
+}
+
+// sendCodex handles message sending for Codex provider.
+// Codex exec exits after each prompt, so followup messages require
+// spawning a new "codex exec resume <session_id> <message>" process.
+func (sp *StreamProcess) sendCodex(message string) error {
+	// Record the user message to memory buffer and JSONL file
+	userMsg := struct {
+		Type    string `json:"type"`
+		Message struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"message"`
+	}{Type: "user"}
+	userMsg.Message.Role = "user"
+	userMsg.Message.Content = message
+	data, err := json.Marshal(userMsg)
+	if err != nil {
+		return fmt.Errorf("marshal message: %w", err)
+	}
+	line := string(data)
+	sp.mu.Lock()
+	sp.lines = append(sp.lines, line)
+	sp.file.WriteString(line + "\n")
+	sp.file.Sync()
+	sp.mu.Unlock()
+
+	// Wait for current process to finish (with timeout)
+	select {
+	case <-sp.done:
+		// Process has finished, we can restart
+	case <-time.After(10 * time.Minute):
+		return fmt.Errorf("timeout waiting for codex process to finish")
+	}
+
+	// Get the CLI session ID for resume
+	sp.mu.RLock()
+	cliSessionID := sp.sessionID
+	sp.mu.RUnlock()
+
+	if cliSessionID == "" {
+		return fmt.Errorf("no CLI session ID available for codex resume")
+	}
+
+	return sp.restartForCodex(message, cliSessionID)
+}
+
+// restartForCodex spawns a new codex exec resume process for a followup message.
+func (sp *StreamProcess) restartForCodex(message, cliSessionID string) error {
+	// Clean up the old process (already exited since done channel was closed)
+	sp.stdin.Close()
+	_ = sp.cmd.Wait()
+
+	opts := sp.streamOpts
+	opts.Resume = true
+	opts.CLISessionID = cliSessionID
+	opts.InitialPrompt = message
+
+	cmd := sp.provider.BuildStreamCommand(opts)
+	cmd.Env = sp.provider.AppendOTelEnv(cmd.Env, 0)
+
+	stdinPipe, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("stdin pipe for codex resume: %w", err)
+	}
+
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("stdout pipe for codex resume: %w", err)
+	}
+
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start codex resume process: %w", err)
+	}
+
+	sp.mu.Lock()
+	sp.cmd = cmd
+	sp.stdin = stdinPipe
+	sp.done = make(chan struct{})
+	sp.mu.Unlock()
+
+	go sp.readLoop(stdoutPipe)
+
+	return nil
+}
+
+// recordUserMessage records a user message to the stream file and memory buffer
+// without sending it to stdin. Used when the prompt is passed as a command-line arg.
+func (sp *StreamProcess) recordUserMessage(message string) {
+	msg := struct {
+		Type    string `json:"type"`
+		Message struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"message"`
+	}{Type: "user"}
+	msg.Message.Role = "user"
+	msg.Message.Content = message
+	data, _ := json.Marshal(msg)
+	line := string(data)
+
+	sp.mu.Lock()
+	sp.lines = append(sp.lines, line)
+	sp.file.WriteString(line + "\n")
+	sp.file.Sync()
+	sp.mu.Unlock()
 }
 
 // GetLines returns the last N lines from the accumulated output.

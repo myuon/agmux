@@ -52,9 +52,17 @@ func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 	}
 
 	// For non-resume, the prompt is required as the last positional argument.
-	// We pass an initial prompt via stdin, so use a placeholder here.
 	if !(opts.Resume && opts.CLISessionID != "") {
-		args = append(args, "Follow the instructions given via stdin")
+		prompt := opts.InitialPrompt
+		if prompt == "" {
+			prompt = "Follow the instructions given via stdin"
+		}
+		args = append(args, prompt)
+	}
+
+	// For resume, a follow-up message can be passed as the last positional arg.
+	if opts.Resume && opts.CLISessionID != "" && opts.InitialPrompt != "" {
+		args = append(args, opts.InitialPrompt)
 	}
 
 	cmd := exec.Command(p.command, args...)
