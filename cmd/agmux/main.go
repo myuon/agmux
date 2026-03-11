@@ -230,6 +230,7 @@ func sessionCreateCmd() *cobra.Command {
 	var prompt string
 	var mode string
 	var worktree bool
+	var provider string
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -244,7 +245,7 @@ func sessionCreateCmd() *cobra.Command {
 			if outputMode == session.OutputModeStream {
 				// Stream mode: delegate to the running agmux server so the
 				// child process outlives this CLI invocation.
-				return createSessionViaAPI(args[0], projectPath, prompt, mode, worktree)
+				return createSessionViaAPI(args[0], projectPath, prompt, mode, worktree, provider)
 			}
 
 			cfg, _ := config.Load()
@@ -252,7 +253,7 @@ func sessionCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s, err := mgr.Create(args[0], projectPath, prompt, outputMode, worktree)
+			s, err := mgr.Create(args[0], projectPath, prompt, outputMode, worktree, session.ProviderName(provider))
 			if err != nil {
 				return err
 			}
@@ -265,13 +266,14 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&prompt, "message", "m", "", "Initial prompt to send")
 	cmd.Flags().StringVar(&mode, "mode", "stream", "Output mode: terminal or stream")
 	cmd.Flags().BoolVarP(&worktree, "worktree", "w", false, "Create a git worktree for the session")
+	cmd.Flags().StringVar(&provider, "provider", "claude", "Provider: claude or codex")
 
 	return cmd
 }
 
 // createSessionViaAPI sends a POST /api/sessions request to the running agmux server
 // so that the stream process is owned by the server, not this short-lived CLI process.
-func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool) error {
+func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, provider string) error {
 	cfg, _ := config.Load()
 	port := cfg.Server.Port
 
@@ -286,6 +288,7 @@ func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool) 
 		"prompt":      prompt,
 		"outputMode":  mode,
 		"worktree":    worktree,
+		"provider":    provider,
 	})
 
 	url := fmt.Sprintf("http://localhost:%d/api/sessions", port)

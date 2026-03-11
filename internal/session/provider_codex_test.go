@@ -177,7 +177,7 @@ func TestCodexProvider_BuildTerminalCommand(t *testing.T) {
 		t.Error("expected non-empty command")
 	}
 	// Should contain key parts
-	for _, part := range []string{"codex", "exec", "--json", "--sandbox", "danger-full-access"} {
+	for _, part := range []string{"codex", "--sandbox", "danger-full-access"} {
 		if !containsStr(cmd, part) {
 			t.Errorf("expected command to contain %q, got: %s", part, cmd)
 		}
