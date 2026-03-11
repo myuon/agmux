@@ -78,7 +78,7 @@ func (m *Manager) SystemPrompt() string {
 // before the server was restarted.
 func (m *Manager) RecoverStreamProcesses() {
 	rows, err := m.db.Query(
-		`SELECT id, project_path, provider FROM sessions WHERE status = ? AND output_mode = ?`,
+		`SELECT id, project_path, provider, cli_session_id FROM sessions WHERE status = ? AND output_mode = ?`,
 		string(StatusWorking), string(OutputModeStream),
 	)
 	if err != nil {
@@ -88,8 +88,8 @@ func (m *Manager) RecoverStreamProcesses() {
 	defer rows.Close()
 
 	for rows.Next() {
-		var id, projectPath, providerStr string
-		if err := rows.Scan(&id, &projectPath, &providerStr); err != nil {
+		var id, projectPath, providerStr, dbCliSessionID string
+		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID); err != nil {
 			m.logger.Error("recover stream processes: scan failed", "error", err)
 			continue
 		}
@@ -99,12 +99,17 @@ func (m *Manager) RecoverStreamProcesses() {
 			m.logger.Error("recover stream processes: mcp config failed", "sessionId", id, "error", err)
 			continue
 		}
-		cliSessionID := ReadCLISessionID(id, provider)
+		// Prefer DB-stored cli_session_id; fall back to JSONL file scan
+		cliSessionID := dbCliSessionID
+		if cliSessionID == "" {
+			cliSessionID = ReadCLISessionID(id, provider)
+		}
 		sp, err := StartStreamProcess(id, projectPath, mcpPath, m.systemPrompt, true, false, provider, cliSessionID)
 		if err != nil {
 			m.logger.Error("recover stream processes: start failed", "sessionId", id, "error", err)
 			continue
 		}
+		m.wireSessionIDCallback(id, sp)
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
 		m.streamMu.Unlock()
@@ -164,6 +169,7 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 				}
 			}
 		}
+		m.wireSessionIDCallback(id, sp)
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
 		m.streamMu.Unlock()
@@ -222,7 +228,7 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, current_task, goal, goals, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, cli_session_id, current_task, goal, goals, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -238,7 +244,7 @@ func (m *Manager) List() ([]Session, error) {
 		var outputMode string
 		var providerStr string
 		var prompt, currentTask, goal, goalsJSON sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &s.CliSessionID, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = Status(status)
@@ -312,9 +318,9 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var providerStr string
 	var prompt, currentTask, goal, goalsJSON sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, current_task, goal, goals, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, cli_session_id, current_task, goal, goals, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &s.CliSessionID, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -381,6 +387,16 @@ func (m *Manager) Delete(id string) error {
 
 	_, err = m.db.Exec("DELETE FROM sessions WHERE id = ?", id)
 	return err
+}
+
+// wireSessionIDCallback sets up the onSessionID callback on a stream process
+// so that when the CLI session ID is captured, it gets persisted to the DB.
+func (m *Manager) wireSessionIDCallback(sessionID string, sp *StreamProcess) {
+	sp.SetOnSessionID(func(cliSessionID string) {
+		if err := m.UpdateCliSessionID(sessionID, cliSessionID); err != nil {
+			m.logger.Error("failed to persist cli session id", "sessionId", sessionID, "cliSessionId", cliSessionID, "error", err)
+		}
+	})
 }
 
 func (m *Manager) stopStreamProcess(id string) {
@@ -456,6 +472,7 @@ func (m *Manager) Clear(id string) error {
 		if err != nil {
 			return fmt.Errorf("start stream process: %w", err)
 		}
+		m.wireSessionIDCallback(id, sp)
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
 		m.streamMu.Unlock()
@@ -473,8 +490,8 @@ func (m *Manager) Clear(id string) error {
 		}
 	}
 
-	// Reset task/goal and set status to working
-	_, err = m.db.Exec("UPDATE sessions SET status = ?, current_task = NULL, goal = NULL, goals = '[]', updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
+	// Reset task/goal/cli_session_id and set status to working
+	_, err = m.db.Exec("UPDATE sessions SET status = ?, current_task = NULL, goal = NULL, goals = '[]', cli_session_id = '', updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
 	return err
 }
 
@@ -495,7 +512,11 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			// Auto-recover: restart stream process after server restart
 			provider := m.getProvider(s.Provider)
 			mcpPath, _ := provider.SetupMCP(s.ID, m.apiPort)
-			cliSessionID := ReadCLISessionID(s.ID, provider)
+			// Prefer DB-stored cli_session_id; fall back to JSONL file scan
+			cliSessionID := s.CliSessionID
+			if cliSessionID == "" {
+				cliSessionID = ReadCLISessionID(s.ID, provider)
+			}
 
 			var err error
 			if s.Provider == ProviderCodex && cliSessionID != "" {
@@ -506,6 +527,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 					return fmt.Errorf("restart stream process: %w", err)
 				}
 				sp.recordUserMessage(text)
+				m.wireSessionIDCallback(id, sp)
 				m.streamMu.Lock()
 				m.streamProcesses[id] = sp
 				m.streamMu.Unlock()
@@ -516,6 +538,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			if err != nil {
 				return fmt.Errorf("restart stream process: %w", err)
 			}
+			m.wireSessionIDCallback(id, sp)
 			m.streamMu.Lock()
 			m.streamProcesses[id] = sp
 			m.streamMu.Unlock()
@@ -676,9 +699,9 @@ func (m *Manager) GetController() (*Session, error) {
 	var providerStr string
 	var prompt, currentTask, goal, goalsJSON sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, current_task, goal, goals, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, cli_session_id, current_task, goal, goals, created_at, updated_at
 		 FROM sessions WHERE type = ? LIMIT 1`, string(TypeController),
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &s.CliSessionID, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -745,6 +768,7 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 		_ = m.tmux.KillSession(name)
 		return nil, fmt.Errorf("start stream process for controller: %w", err)
 	}
+	m.wireSessionIDCallback(id, sp)
 	m.streamMu.Lock()
 	m.streamProcesses[id] = sp
 	m.streamMu.Unlock()
@@ -778,6 +802,12 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 
 func (m *Manager) UpdateStatus(id string, status Status) error {
 	_, err := m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(status), time.Now(), id)
+	return err
+}
+
+// UpdateCliSessionID persists the CLI-assigned session ID to the database.
+func (m *Manager) UpdateCliSessionID(id string, cliSessionID string) error {
+	_, err := m.db.Exec("UPDATE sessions SET cli_session_id = ?, updated_at = ? WHERE id = ?", cliSessionID, time.Now(), id)
 	return err
 }
 
@@ -878,11 +908,16 @@ func (m *Manager) Reconnect(id string) error {
 	}
 
 	if s.OutputMode == OutputModeStream {
-		cliSessionID := ReadCLISessionID(id, provider)
+		// Prefer DB-stored cli_session_id; fall back to JSONL file scan
+		cliSessionID := s.CliSessionID
+		if cliSessionID == "" {
+			cliSessionID = ReadCLISessionID(id, provider)
+		}
 		sp, err := StartStreamProcess(id, s.ProjectPath, mcpConfigPath, m.systemPrompt, true, false, provider, cliSessionID)
 		if err != nil {
 			return fmt.Errorf("start stream process: %w", err)
 		}
+		m.wireSessionIDCallback(id, sp)
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
 		m.streamMu.Unlock()
