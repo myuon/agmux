@@ -44,9 +44,9 @@ func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 		)
 	}
 
-	if opts.MCPConfigPath != "" {
-		args = append(args, "--mcp-config", opts.MCPConfigPath)
-	}
+	// Codex CLI does not support --mcp-config flag.
+	// MCP servers are managed via `codex mcp add/remove` commands instead.
+
 	if opts.SystemPrompt != "" {
 		args = append(args, "--instructions", opts.SystemPrompt)
 	}
@@ -100,9 +100,7 @@ func (p *CodexProvider) BuildTerminalCommand(opts TerminalOpts) string {
 		cmd = otelPrefix + p.command + " --sandbox danger-full-access"
 	}
 
-	if opts.MCPConfigPath != "" {
-		cmd += " --mcp-config " + opts.MCPConfigPath
-	}
+	// Codex CLI does not support --mcp-config flag.
 	if opts.SystemPrompt != "" {
 		cmd += " --instructions " + shellQuote(opts.SystemPrompt)
 	}

@@ -71,7 +71,7 @@ func TestCodexProvider_BuildStreamCommand_Resume(t *testing.T) {
 	}
 }
 
-func TestCodexProvider_BuildStreamCommand_WithMCP(t *testing.T) {
+func TestCodexProvider_BuildStreamCommand_MCPIgnored(t *testing.T) {
 	p := NewCodexProvider("codex")
 	cmd := p.BuildStreamCommand(StreamOpts{
 		SessionID:     "sess-1",
@@ -80,15 +80,10 @@ func TestCodexProvider_BuildStreamCommand_WithMCP(t *testing.T) {
 	})
 
 	args := cmd.Args
-	found := false
-	for i, a := range args {
-		if a == "--mcp-config" && i+1 < len(args) && args[i+1] == "/tmp/mcp.json" {
-			found = true
-			break
+	for _, a := range args {
+		if a == "--mcp-config" {
+			t.Errorf("--mcp-config should not be in args for Codex, got: %v", args)
 		}
-	}
-	if !found {
-		t.Errorf("expected --mcp-config /tmp/mcp.json in args, got: %v", args)
 	}
 }
 
@@ -320,8 +315,8 @@ func TestCodexBuildTerminalCommand_New(t *testing.T) {
 	if !strings.Contains(cmd, "--sandbox danger-full-access") {
 		t.Errorf("expected --sandbox flag, got %s", cmd)
 	}
-	if !strings.Contains(cmd, "--mcp-config /tmp/mcp.json") {
-		t.Errorf("expected --mcp-config flag, got %s", cmd)
+	if strings.Contains(cmd, "--mcp-config") {
+		t.Errorf("--mcp-config should not be in Codex command, got %s", cmd)
 	}
 	if strings.Contains(cmd, "resume") {
 		t.Errorf("new session should not contain resume, got %s", cmd)
