@@ -361,12 +361,26 @@ func (sp *StreamProcess) sendCodex(message string) error {
 	sp.file.Sync()
 	sp.mu.Unlock()
 
-	// Wait for current process to finish (with timeout)
+	// Read the done channel under lock to avoid races with restartForCodex
+	sp.mu.RLock()
+	doneCh := sp.done
+	sp.mu.RUnlock()
+
+	// Check if the process has already finished (non-blocking).
+	// If it has, skip the wait and proceed directly to restart.
 	select {
-	case <-sp.done:
-		// Process has finished, we can restart
-	case <-time.After(10 * time.Minute):
-		return fmt.Errorf("timeout waiting for codex process to finish")
+	case <-doneCh:
+		// Process already finished, proceed to restart immediately
+		slog.Default().Info("codex process already finished, restarting for followup")
+	default:
+		// Process still running, wait with timeout
+		slog.Default().Info("codex process still running, waiting for it to finish")
+		select {
+		case <-doneCh:
+			slog.Default().Info("codex process finished, proceeding to restart")
+		case <-time.After(10 * time.Minute):
+			return fmt.Errorf("timeout waiting for codex process to finish")
+		}
 	}
 
 	// Get the CLI session ID for resume
@@ -378,14 +392,21 @@ func (sp *StreamProcess) sendCodex(message string) error {
 		return fmt.Errorf("no CLI session ID available for codex resume")
 	}
 
+	slog.Default().Info("restarting codex for followup", "cliSessionID", cliSessionID, "message", message)
 	return sp.restartForCodex(message, cliSessionID)
 }
 
 // restartForCodex spawns a new codex exec resume process for a followup message.
 func (sp *StreamProcess) restartForCodex(message, cliSessionID string) error {
-	// Clean up the old process (already exited since done channel was closed)
-	sp.stdin.Close()
-	_ = sp.cmd.Wait()
+	// Clean up the old process (already exited since done channel was closed).
+	// Read cmd/stdin under lock for safety, then perform blocking ops outside lock.
+	sp.mu.RLock()
+	oldCmd := sp.cmd
+	oldStdin := sp.stdin
+	sp.mu.RUnlock()
+
+	oldStdin.Close()
+	_ = oldCmd.Wait()
 
 	opts := sp.streamOpts
 	opts.Resume = true
@@ -410,6 +431,8 @@ func (sp *StreamProcess) restartForCodex(message, cliSessionID string) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start codex resume process: %w", err)
 	}
+
+	slog.Default().Info("codex resume process started", "pid", cmd.Process.Pid, "cliSessionID", cliSessionID)
 
 	sp.mu.Lock()
 	sp.cmd = cmd
@@ -511,5 +534,7 @@ func (sp *StreamProcess) Stop() {
 
 // Done returns a channel that is closed when the process exits.
 func (sp *StreamProcess) Done() <-chan struct{} {
+	sp.mu.RLock()
+	defer sp.mu.RUnlock()
 	return sp.done
 }

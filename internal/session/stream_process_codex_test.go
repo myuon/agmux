@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/myuon/agmux/internal/db"
@@ -240,6 +241,123 @@ func TestStreamProcess_SessionIDUpdatedByReadLoop(t *testing.T) {
 	}
 	if len(fileContent) == 0 {
 		t.Fatal("stream file is empty, expected thread.started event")
+	}
+}
+
+// TestSendCodex_FollowupAfterProcessExit verifies that sendCodex correctly
+// restarts the process when the initial Codex process has already exited.
+// This is the core bug fix for issue #199.
+func TestSendCodex_FollowupAfterProcessExit(t *testing.T) {
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sessionID := "test-codex-followup-" + t.Name()
+	streamPath := filepath.Join(streamsDir, sessionID+".jsonl")
+	defer os.Remove(streamPath)
+
+	threadID := "019cdd95-followup-test-thread"
+	// Provider that outputs thread.started then exits (simulates initial Codex run)
+	provider := &stubCodexProviderWithOutput{
+		CodexProvider: *NewCodexProvider(""),
+		output:        `{"type":"thread.started","thread_id":"` + threadID + `"}`,
+	}
+
+	// Start the initial process (simulates session creation)
+	sp, err := StartStreamProcess(sessionID, t.TempDir(), "", "", false, false, provider)
+	if err != nil {
+		t.Fatalf("StartStreamProcess failed: %v", err)
+	}
+	defer sp.Stop()
+
+	// Wait for initial process to finish (simulates Codex exec completing)
+	<-sp.Done()
+
+	// Verify session ID was captured
+	if got := sp.SessionID(); got != threadID {
+		t.Fatalf("SessionID() = %q, want %q", got, threadID)
+	}
+
+	// Now send a followup message (this is the bug scenario from #199)
+	// Switch to a provider that also outputs something for the followup
+	provider.output = `{"type":"thread.started","thread_id":"` + threadID + `"}
+{"type":"item.completed","item":{"type":"agent_message","text":"followup response"}}`
+
+	err = sp.sendCodex("followup message")
+	if err != nil {
+		t.Fatalf("sendCodex() returned error: %v", err)
+	}
+
+	// Wait for the restarted process to finish
+	<-sp.Done()
+
+	// Verify stream file contains the followup user message and response
+	content, err := os.ReadFile(streamPath)
+	if err != nil {
+		t.Fatalf("failed to read stream file: %v", err)
+	}
+
+	contentStr := string(content)
+	if !strings.Contains(contentStr, `"followup message"`) {
+		t.Errorf("stream file should contain followup user message, got:\n%s", contentStr)
+	}
+	if !strings.Contains(contentStr, `followup response`) {
+		t.Errorf("stream file should contain followup response, got:\n%s", contentStr)
+	}
+}
+
+// TestSendCodex_MultipleFollowups verifies that multiple followup messages work.
+func TestSendCodex_MultipleFollowups(t *testing.T) {
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sessionID := "test-codex-multi-followup-" + t.Name()
+	streamPath := filepath.Join(streamsDir, sessionID+".jsonl")
+	defer os.Remove(streamPath)
+
+	threadID := "019cdd95-multi-followup-thread"
+	provider := &stubCodexProviderWithOutput{
+		CodexProvider: *NewCodexProvider(""),
+		output:        `{"type":"thread.started","thread_id":"` + threadID + `"}`,
+	}
+
+	sp, err := StartStreamProcess(sessionID, t.TempDir(), "", "", false, false, provider)
+	if err != nil {
+		t.Fatalf("StartStreamProcess failed: %v", err)
+	}
+	defer sp.Stop()
+
+	<-sp.Done()
+
+	// Send first followup
+	provider.output = `{"type":"thread.started","thread_id":"` + threadID + `"}`
+	if err := sp.sendCodex("first followup"); err != nil {
+		t.Fatalf("first sendCodex() returned error: %v", err)
+	}
+	<-sp.Done()
+
+	// Send second followup
+	provider.output = `{"type":"thread.started","thread_id":"` + threadID + `"}`
+	if err := sp.sendCodex("second followup"); err != nil {
+		t.Fatalf("second sendCodex() returned error: %v", err)
+	}
+	<-sp.Done()
+
+	// Verify both messages are in the stream file
+	content, err := os.ReadFile(streamPath)
+	if err != nil {
+		t.Fatalf("failed to read stream file: %v", err)
+	}
+
+	contentStr := string(content)
+	if !strings.Contains(contentStr, `"first followup"`) {
+		t.Errorf("stream file should contain first followup message")
+	}
+	if !strings.Contains(contentStr, `"second followup"`) {
+		t.Errorf("stream file should contain second followup message")
 	}
 }
 
