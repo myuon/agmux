@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -905,7 +906,9 @@ func (s *Server) restartServer(w http.ResponseWriter, r *http.Request) {
 	// Respond immediately before triggering restart
 	writeJSON(w, http.StatusOK, map[string]string{"status": "restarting"})
 
-	// Trigger rebuild and restart via `make restart` in the background
+	// Trigger rebuild and restart via `make restart` in a detached process.
+	// We must use Start (not Run) and Setpgid so the make process survives
+	// when `make restart` kills this server process via lsof/kill.
 	go func() {
 		time.Sleep(500 * time.Millisecond) // give the response time to flush
 
@@ -913,9 +916,8 @@ func (s *Server) restartServer(w http.ResponseWriter, r *http.Request) {
 
 		restartCmd := exec.Command("make", "restart")
 		restartCmd.Dir = findProjectRoot()
-		restartCmd.Stdout = os.Stderr
-		restartCmd.Stderr = os.Stderr
-		if err := restartCmd.Run(); err != nil {
+		restartCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := restartCmd.Start(); err != nil {
 			s.logger.Error("restart_server: make restart failed", "error", err)
 		}
 	}()
