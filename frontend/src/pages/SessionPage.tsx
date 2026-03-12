@@ -481,17 +481,19 @@ export function SessionPage() {
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
-            <button
-              onClick={async () => {
-                if (!confirm("Delete this session?")) return;
-                await api.deleteSession(session.id);
-                navigate("/");
-              }}
-              className="p-1.5 text-red-600 bg-red-50 rounded hover:bg-red-100"
-              title="Delete"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            {session.type !== "controller" && (
+              <button
+                onClick={async () => {
+                  if (!confirm("Delete this session?")) return;
+                  await api.deleteSession(session.id);
+                  navigate("/");
+                }}
+                className="p-1.5 text-red-600 bg-red-50 rounded hover:bg-red-100"
+                title="Delete"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         )}
       </div>
