@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -906,44 +905,19 @@ func (s *Server) restartServer(w http.ResponseWriter, r *http.Request) {
 	// Respond immediately before triggering restart
 	writeJSON(w, http.StatusOK, map[string]string{"status": "restarting"})
 
-	// Trigger rebuild and restart in the background
+	// Trigger rebuild and restart via `make restart` in the background
 	go func() {
 		time.Sleep(500 * time.Millisecond) // give the response time to flush
 
-		s.logger.Info("restart_server: rebuilding and restarting", "requester", req.SessionID)
+		s.logger.Info("restart_server: running make restart", "requester", req.SessionID)
 
-		// Rebuild
-		buildCmd := exec.Command("make", "install")
-		// Use the project root (where the Makefile lives). We find it via
-		// the agmux binary path heuristic or fall back to cwd.
-		buildCmd.Dir = findProjectRoot()
-		buildCmd.Stdout = os.Stderr
-		buildCmd.Stderr = os.Stderr
-		if err := buildCmd.Run(); err != nil {
-			s.logger.Error("restart_server: build failed", "error", err)
-			return
+		restartCmd := exec.Command("make", "restart")
+		restartCmd.Dir = findProjectRoot()
+		restartCmd.Stdout = os.Stderr
+		restartCmd.Stderr = os.Stderr
+		if err := restartCmd.Run(); err != nil {
+			s.logger.Error("restart_server: make restart failed", "error", err)
 		}
-
-		// Send SIGTERM to ourselves so the graceful shutdown path runs,
-		// then the external process manager (nohup / systemd / make restart)
-		// or the post-build re-launch below will start a new server.
-		// First, spawn the new server process so it's ready after we exit.
-		nohupCmd := exec.Command("agmux", "serve")
-		nohupCmd.Stdout = nil
-		nohupCmd.Stderr = nil
-		nohupCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		if err := nohupCmd.Start(); err != nil {
-			s.logger.Error("restart_server: start new process failed", "error", err)
-			return
-		}
-		// Detach — we don't wait for the child
-		go nohupCmd.Wait()
-
-		// Give the new process a moment to bind, then kill ourselves
-		time.Sleep(1 * time.Second)
-
-		p, _ := os.FindProcess(os.Getpid())
-		p.Signal(syscall.SIGTERM)
 	}()
 }
 
