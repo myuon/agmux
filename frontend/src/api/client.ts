@@ -42,6 +42,9 @@ export const api = {
   getClaudeVersion: () =>
     request<{ version: string }>("/claude/version"),
 
+  getCodexVersion: () =>
+    request<{ version: string }>("/codex/version"),
+
   getSession: (id: string) => request<Session>(`/sessions/${id}`),
 
   stopSession: (id: string) =>

@@ -102,6 +102,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/config", s.getConfig)
 		r.Put("/config", s.updateConfig)
 		r.Get("/codex/models", s.getCodexModels)
+		r.Get("/codex/version", s.getCodexVersion)
 		r.Get("/metrics", s.getMetrics)
 		r.Get("/metrics/summary", s.getMetricsSummary)
 		r.Get("/metrics/events", s.getMetricsEvents)
@@ -908,6 +909,18 @@ func (s *Server) getClaudeVersion(w http.ResponseWriter, r *http.Request) {
 	out, err := cmd.Output()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to get claude version: "+err.Error())
+		return
+	}
+	version := strings.TrimSpace(string(out))
+	writeJSON(w, http.StatusOK, map[string]string{"version": version})
+}
+
+// getCodexVersion runs "codex --version" and returns the parsed version string.
+func (s *Server) getCodexVersion(w http.ResponseWriter, r *http.Request) {
+	cmd := exec.Command("codex", "--version")
+	out, err := cmd.Output()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get codex version: "+err.Error())
 		return
 	}
 	version := strings.TrimSpace(string(out))
