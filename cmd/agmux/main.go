@@ -136,6 +136,11 @@ func serveCmd() *cobra.Command {
 			defer cancel()
 			go checker.Start(ctx)
 
+			// Initialize server first so SetOnNewLines callback is wired
+			// before RecoverStreamProcesses runs
+			logPath, _ := logging.LogPath()
+			srv := server.New(mgr, hub, devMode, logPath, logger, database)
+
 			// Recover stream processes for working sessions
 			mgr.RecoverStreamProcesses()
 
@@ -150,9 +155,6 @@ func serveCmd() *cobra.Command {
 			} else {
 				logger.Info("controller session ready", "id", controllerSess.ID)
 			}
-
-			logPath, _ := logging.LogPath()
-			srv := server.New(mgr, hub, devMode, logPath, logger, database)
 
 			if !devMode {
 				frontendFS, err := agmux.FrontendFS()
