@@ -38,7 +38,7 @@ async function sendNotification(title: string, body: string, sessionId?: string)
   }
 }
 
-type MobileTab = "logs" | "sessions";
+type MobileTab = "sessions" | "logs";
 
 // Global notification hook — runs regardless of which page is active
 function useGlobalNotifications() {
@@ -86,7 +86,7 @@ function Dashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
-  const mobileTab: MobileTab = searchParams.get("tab") === "sessions" ? "sessions" : "logs";
+  const mobileTab: MobileTab = searchParams.get("tab") === "logs" ? "logs" : "sessions";
   const navigate = useNavigate();
   const loadSessions = () => {
     api.listSessions().then((data) => {
@@ -176,16 +176,6 @@ function Dashboard() {
         <button
           onClick={() => setSearchParams({})}
           className={`flex-1 py-2.5 text-sm font-medium text-center ${
-            mobileTab === "logs"
-              ? "text-blue-600 border-b-2 border-blue-600"
-              : "text-gray-500"
-          }`}
-        >
-          Logs
-        </button>
-        <button
-          onClick={() => setSearchParams({ tab: "sessions" })}
-          className={`flex-1 py-2.5 text-sm font-medium text-center ${
             mobileTab === "sessions"
               ? "text-blue-600 border-b-2 border-blue-600"
               : "text-gray-500"
@@ -193,23 +183,24 @@ function Dashboard() {
         >
           Sessions ({sessions.length})
         </button>
+        <button
+          onClick={() => setSearchParams({ tab: "logs" })}
+          className={`flex-1 py-2.5 text-sm font-medium text-center ${
+            mobileTab === "logs"
+              ? "text-blue-600 border-b-2 border-blue-600"
+              : "text-gray-500"
+          }`}
+        >
+          Logs
+        </button>
       </div>
 
       {/* Main content */}
       <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-        {/* Log panel - desktop: always visible, mobile: only when tab active */}
+        {/* Session list - desktop: always visible (main area), mobile: only when tab active */}
         <div
-          className={`flex-1 min-h-0 p-3 md:p-4 ${
-            mobileTab === "logs" ? "flex flex-col" : "hidden md:flex md:flex-col"
-          }`}
-        >
-          <LogPanel />
-        </div>
-
-        {/* Session sidebar - desktop: always visible, mobile: only when tab active */}
-        <div
-          className={`md:w-80 md:border-l border-gray-200 bg-white overflow-y-auto p-3 md:p-4 ${
-            mobileTab === "sessions" ? "flex-1" : "hidden md:block"
+          className={`flex-1 min-h-0 overflow-y-auto p-3 md:p-4 ${
+            mobileTab === "sessions" ? "block" : "hidden md:block"
           }`}
         >
           <h2 className="text-sm font-semibold text-gray-700 mb-3 hidden md:block">
@@ -219,6 +210,15 @@ function Dashboard() {
             sessions={sessions}
             onRestartController={handleRestartController}
           />
+        </div>
+
+        {/* Log panel - desktop: always visible (sidebar), mobile: only when tab active */}
+        <div
+          className={`md:w-[480px] md:border-l border-gray-200 bg-white min-h-0 p-3 md:p-4 ${
+            mobileTab === "logs" ? "flex-1 flex flex-col" : "hidden md:flex md:flex-col"
+          }`}
+        >
+          <LogPanel />
         </div>
       </div>
 
