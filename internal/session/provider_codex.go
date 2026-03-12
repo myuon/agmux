@@ -47,6 +47,11 @@ func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 
 	// Codex CLI does not support --mcp-config or --instructions flags.
 
+	// Add --model flag if specified
+	if opts.Model != "" {
+		args = append(args, "--model", opts.Model)
+	}
+
 	// For non-resume, the prompt is required as the last positional argument.
 	// If SystemPrompt is set, prepend it to the prompt.
 	if !(opts.Resume && opts.CLISessionID != "") {

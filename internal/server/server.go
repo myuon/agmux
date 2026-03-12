@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -95,6 +96,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/logs", s.getLogs)
 		r.Get("/config", s.getConfig)
 		r.Put("/config", s.updateConfig)
+		r.Get("/codex/models", s.getCodexModels)
 		r.Get("/metrics", s.getMetrics)
 		r.Get("/metrics/summary", s.getMetricsSummary)
 		r.Get("/metrics/events", s.getMetricsEvents)
@@ -138,6 +140,7 @@ type createSessionRequest struct {
 	OutputMode  string `json:"outputMode,omitempty"`
 	Worktree    bool   `json:"worktree,omitempty"`
 	Provider    string `json:"provider,omitempty"`
+	Model       string `json:"model,omitempty"`
 }
 
 type sendImageData struct {
@@ -177,7 +180,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and projectPath are required")
 		return
 	}
-	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, session.OutputMode(req.OutputMode), req.Worktree, session.ProviderName(req.Provider))
+	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, session.OutputMode(req.OutputMode), req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -646,6 +649,116 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) getCodexModels(w http.ResponseWriter, r *http.Request) {
+	models, err := fetchCodexModels()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, models)
+}
+
+// codexModel represents a model returned by the Codex app-server model/list method.
+type codexModel struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Description     string `json:"description,omitempty"`
+	IsDefault       bool   `json:"isDefault,omitempty"`
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+}
+
+// fetchCodexModels starts a codex app-server process and performs the JSON-RPC
+// handshake to retrieve the model list.
+func fetchCodexModels() ([]codexModel, error) {
+	cmd := exec.Command("codex", "app-server", "--listen", "stdio://")
+	cmd.Stderr = nil
+
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("stdin pipe: %w", err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start codex app-server: %w", err)
+	}
+
+	// Ensure process is cleaned up
+	defer func() {
+		stdin.Close()
+		cmd.Process.Kill()
+		cmd.Wait()
+	}()
+
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+
+	// Send initialize
+	initReq := `{"method":"initialize","id":1,"params":{"clientInfo":{"name":"agmux","version":"0.1"}}}`
+	if _, err := fmt.Fprintf(stdin, "%s\n", initReq); err != nil {
+		return nil, fmt.Errorf("send initialize: %w", err)
+	}
+
+	// Read initialize response
+	if !scanner.Scan() {
+		return nil, fmt.Errorf("no response from codex app-server for initialize")
+	}
+
+	// Send initialized notification
+	if _, err := fmt.Fprintf(stdin, "%s\n", `{"method":"initialized"}`); err != nil {
+		return nil, fmt.Errorf("send initialized: %w", err)
+	}
+
+	// Send model/list request
+	modelListReq := `{"method":"model/list","id":2,"params":{}}`
+	if _, err := fmt.Fprintf(stdin, "%s\n", modelListReq); err != nil {
+		return nil, fmt.Errorf("send model/list: %w", err)
+	}
+
+	// Read lines until we get the model/list response (id: 2)
+	for scanner.Scan() {
+		line := scanner.Text()
+		var resp struct {
+			ID     int             `json:"id"`
+			Result json.RawMessage `json:"result"`
+		}
+		if json.Unmarshal([]byte(line), &resp) == nil && resp.ID == 2 && resp.Result != nil {
+			// Parse the result which contains a models array
+			var result struct {
+				Models []struct {
+					ID              string `json:"id"`
+					Name            string `json:"name"`
+					Description     string `json:"description"`
+					IsDefault       bool   `json:"isDefault"`
+					ReasoningEffort string `json:"reasoningEffort"`
+				} `json:"models"`
+			}
+			if err := json.Unmarshal(resp.Result, &result); err != nil {
+				return nil, fmt.Errorf("parse model/list result: %w", err)
+			}
+			var models []codexModel
+			for _, m := range result.Models {
+				models = append(models, codexModel{
+					ID:              m.ID,
+					Name:            m.Name,
+					Description:     m.Description,
+					IsDefault:       m.IsDefault,
+					ReasoningEffort: m.ReasoningEffort,
+				})
+			}
+			if models == nil {
+				models = []codexModel{}
+			}
+			return models, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no model/list response received from codex app-server")
 }
 
 func (s *Server) getMetrics(w http.ResponseWriter, r *http.Request) {

@@ -26,11 +26,15 @@ export const api = {
     prompt?: string;
     outputMode?: "terminal" | "stream";
     provider?: string;
+    model?: string;
   }) =>
     request<Session>("/sessions", {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  getCodexModels: () =>
+    request<CodexModel[]>("/codex/models"),
 
   getSession: (id: string) => request<Session>(`/sessions/${id}`),
 
@@ -117,6 +121,14 @@ export const api = {
     return request<MetricEvent[]>(`/metrics/events?${qs}`);
   },
 };
+
+export interface CodexModel {
+  id: string;
+  name: string;
+  description?: string;
+  isDefault?: boolean;
+  reasoningEffort?: string;
+}
 
 export interface DiffFile {
   path: string;

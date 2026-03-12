@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { api, type CodexModel } from "../api/client";
 
 interface Props {
   onClose: () => void;
@@ -8,6 +9,7 @@ interface Props {
     prompt?: string;
     outputMode?: "terminal" | "stream";
     provider?: string;
+    model?: string;
   }) => void;
 }
 
@@ -17,10 +19,38 @@ export function CreateSession({ onClose, onCreate }: Props) {
   const [prompt, setPrompt] = useState("");
   const [outputMode, setOutputMode] = useState<"terminal" | "stream">("terminal");
   const [provider, setProvider] = useState("claude");
+  const [model, setModel] = useState("");
+  const [codexModels, setCodexModels] = useState<CodexModel[]>([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+
+  useEffect(() => {
+    if (provider === "codex") {
+      setLoadingModels(true);
+      api.getCodexModels()
+        .then((models) => {
+          setCodexModels(models);
+          const defaultModel = models.find((m) => m.isDefault);
+          if (defaultModel && !model) {
+            setModel(defaultModel.id);
+          }
+        })
+        .catch(() => setCodexModels([]))
+        .finally(() => setLoadingModels(false));
+    } else {
+      setModel("");
+    }
+  }, [provider]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onCreate({ name, projectPath, prompt: prompt || undefined, outputMode, provider });
+    onCreate({
+      name,
+      projectPath,
+      prompt: prompt || undefined,
+      outputMode,
+      provider,
+      model: provider === "codex" && model ? model : undefined,
+    });
   };
 
   return (
@@ -106,6 +136,30 @@ export function CreateSession({ onClose, onCreate }: Props) {
               <option value="codex">Codex</option>
             </select>
           </div>
+          {provider === "codex" && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Model
+              </label>
+              {loadingModels ? (
+                <p className="text-sm text-gray-500">Loading models...</p>
+              ) : (
+                <select
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                >
+                  <option value="">Default</option>
+                  {codexModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name || m.id}
+                      {m.isDefault ? " (default)" : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
           <div className="flex justify-end gap-2">
             <button
               type="button"

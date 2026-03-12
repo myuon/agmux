@@ -432,6 +432,11 @@ export function SessionPage() {
                 {session.provider.charAt(0).toUpperCase() + session.provider.slice(1)}
               </span>
             )}
+            {session.model && (
+              <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700">
+                {session.model}
+              </span>
+            )}
           </>
         ) : (
           <>

@@ -22,6 +22,7 @@ type StreamOpts struct {
 	Worktree       bool
 	CLISessionID   string // provider-specific session ID (for resume)
 	InitialPrompt  string // initial user prompt (used by Codex as positional arg)
+	Model          string // model name (used by Codex --model flag)
 }
 
 // TerminalOpts contains parameters for building a terminal-mode command.
