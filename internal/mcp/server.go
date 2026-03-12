@@ -106,6 +106,14 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 					},
 				},
 				map[string]interface{}{
+					"name":        "get_goal",
+					"description": "現在のゴール情報を取得します。currentTask、goal、goalsスタックを返します。コンテキストが圧縮された後などに自分が何をやっていたか確認するのに使えます。",
+					"inputSchema": map[string]interface{}{
+						"type":       "object",
+						"properties": map[string]interface{}{},
+					},
+				},
+				map[string]interface{}{
 					"name":        "complete_goal",
 					"description": "現在のゴールを達成済みとしてポップします。親ゴールがあればそれがアクティブになります。",
 					"inputSchema": map[string]interface{}{
@@ -154,6 +162,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 	switch name {
 	case "create_goal":
 		return s.handleCreateGoal(args)
+	case "get_goal":
+		return s.handleGetGoal()
 	case "complete_goal":
 		return s.handleCompleteGoal()
 	case "set_session_context":
@@ -185,6 +195,28 @@ func (s *Server) handleCreateGoal(args json.RawMessage) (interface{}, *jsonRPCEr
 		msg = "Subgoal created successfully."
 	}
 	return toolResult(msg, false), nil
+}
+
+func (s *Server) handleGetGoal() (interface{}, *jsonRPCError) {
+	result, err := s.apiGetGoal()
+	if err != nil {
+		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
+	}
+
+	if result.CurrentTask == "" && result.Goal == "" && len(result.Goals) == 0 {
+		return toolResult("No goal is currently set.", false), nil
+	}
+
+	lines := []string{}
+	lines = append(lines, fmt.Sprintf("currentTask: %s", result.CurrentTask))
+	lines = append(lines, fmt.Sprintf("goal: %s", result.Goal))
+	if len(result.Goals) > 0 {
+		lines = append(lines, fmt.Sprintf("goal stack (%d entries):", len(result.Goals)))
+		for i, g := range result.Goals {
+			lines = append(lines, fmt.Sprintf("  [%d] %s — %s", i, g.CurrentTask, g.Goal))
+		}
+	}
+	return toolResult(strings.Join(lines, "\n"), false), nil
 }
 
 func (s *Server) handleCompleteGoal() (interface{}, *jsonRPCError) {
@@ -260,6 +292,41 @@ func (s *Server) apiEscalate(message string, timeoutSeconds int) (string, bool, 
 		return "", false, fmt.Errorf("decode response: %w", err)
 	}
 	return result.Response, result.TimedOut, nil
+}
+
+type goalResponse struct {
+	CurrentTask string `json:"currentTask"`
+	Goal        string `json:"goal"`
+	Goals       []struct {
+		CurrentTask string `json:"currentTask"`
+		Goal        string `json:"goal"`
+	} `json:"goals"`
+}
+
+func (s *Server) apiGetGoal() (*goalResponse, error) {
+	url := fmt.Sprintf("%s/api/sessions/%s/goals", s.apiURL, s.sessionID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result goalResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	return &result, nil
 }
 
 func (s *Server) apiCreateGoal(currentTask, goal string, subgoal bool) error {
