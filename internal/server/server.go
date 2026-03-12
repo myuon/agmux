@@ -98,11 +98,13 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/escalate/respond", s.respondEscalation)
 		r.Post("/sessions/controller/restart", s.restartController)
 		r.Get("/claude/models", s.getClaudeModels)
+		r.Get("/claude/version", s.getClaudeVersion)
 		r.Get("/logs", s.getLogs)
 		r.Get("/config", s.getConfig)
 		r.Put("/config", s.updateConfig)
 		r.Post("/restart", s.restartServer)
 		r.Get("/codex/models", s.getCodexModels)
+		r.Get("/codex/version", s.getCodexVersion)
 		r.Get("/metrics", s.getMetrics)
 		r.Get("/metrics/summary", s.getMetricsSummary)
 		r.Get("/metrics/events", s.getMetricsEvents)
@@ -957,6 +959,30 @@ func (s *Server) getClaudeModels(w http.ResponseWriter, r *http.Request) {
 		{ID: "claude-haiku-4-5", Name: "Claude Haiku 4.5"},
 	}
 	writeJSON(w, http.StatusOK, models)
+}
+
+// getClaudeVersion runs "claude --version" and returns the parsed version string.
+func (s *Server) getClaudeVersion(w http.ResponseWriter, r *http.Request) {
+	cmd := exec.Command("claude", "--version")
+	out, err := cmd.Output()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get claude version: "+err.Error())
+		return
+	}
+	version := strings.TrimSpace(string(out))
+	writeJSON(w, http.StatusOK, map[string]string{"version": version})
+}
+
+// getCodexVersion runs "codex --version" and returns the parsed version string.
+func (s *Server) getCodexVersion(w http.ResponseWriter, r *http.Request) {
+	cmd := exec.Command("codex", "--version")
+	out, err := cmd.Output()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to get codex version: "+err.Error())
+		return
+	}
+	version := strings.TrimSpace(string(out))
+	writeJSON(w, http.StatusOK, map[string]string{"version": version})
 }
 
 // helpers

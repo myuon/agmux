@@ -21,6 +21,7 @@ import (
 
 	agmux "github.com/myuon/agmux"
 	"github.com/myuon/agmux/internal/config"
+	"github.com/myuon/agmux/internal/daemon"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/logging"
 	"github.com/myuon/agmux/internal/mcp"
@@ -41,6 +42,7 @@ func main() {
 	rootCmd.AddCommand(serveCmd())
 	rootCmd.AddCommand(mcpCmd())
 	rootCmd.AddCommand(logsCmd())
+	rootCmd.AddCommand(daemonCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -619,6 +621,31 @@ func tailLogFile(logPath string, lines int, follow bool) error {
 			fmt.Print(line)
 		}
 	}
+}
+
+func daemonCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "daemon",
+		Short: "Manage agmux as a macOS launchd agent",
+	}
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "install",
+		Short: "Install and load launchd agent for agmux serve",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return daemon.Install()
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "uninstall",
+		Short: "Unload and remove launchd agent",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return daemon.Uninstall()
+		},
+	})
+
+	return cmd
 }
 
 // readTailLines reads the last n lines from the file.

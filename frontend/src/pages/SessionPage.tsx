@@ -44,6 +44,7 @@ export function SessionPage() {
   const [claudeMDLoading, setClaudeMDLoading] = useState(false);
   const [claudeMDViewMode, setClaudeMDViewMode] = useState<"preview" | "source">("preview");
   const [claudeMDSelectedLine, setClaudeMDSelectedLine] = useState<number | null>(null);
+  const [providerVersion, setProviderVersion] = useState<string | null>(null);
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
 
@@ -133,6 +134,8 @@ export function SessionPage() {
       } else {
         api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
       }
+      const versionFn = s.provider === "codex" ? api.getCodexVersion : api.getClaudeVersion;
+      versionFn().then((r) => setProviderVersion(r.version)).catch(() => {});
     });
     api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
     api.getPendingEscalation(sessionId).then((r) => {
@@ -430,6 +433,7 @@ export function SessionPage() {
                     : "bg-gray-100 text-gray-600"
               }`}>
                 {session.provider.charAt(0).toUpperCase() + session.provider.slice(1)}
+                {providerVersion && ` ${providerVersion.match(/\d+\.\d+\.\d+/)?.[0] ?? ""}`}
               </span>
             )}
             {session.model && (
