@@ -219,6 +219,7 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 			SystemPrompt:  m.systemPrompt,
 			Resume:        false,
 			APIPort:       m.apiPort,
+			Model:         model,
 		})
 		if err := m.tmux.SendKeysOnce(tmuxSession, claudeCmd); err != nil {
 			return nil, fmt.Errorf("launch cli: %w", err)
@@ -529,6 +530,7 @@ func (m *Manager) Clear(id string) error {
 			SystemPrompt:  m.systemPrompt,
 			Resume:        false,
 			APIPort:       m.apiPort,
+			Model:         s.Model,
 		})
 		if err := m.tmux.SendKeysOnce(s.TmuxSession, claudeCmd); err != nil {
 			return fmt.Errorf("launch cli: %w", err)
@@ -1004,6 +1006,7 @@ func (m *Manager) Reconnect(id string) error {
 			SystemPrompt:  m.systemPrompt,
 			Resume:        true,
 			APIPort:       m.apiPort,
+			Model:         s.Model,
 		})
 		if err := m.tmux.SendKeysOnce(s.TmuxSession, claudeCmd); err != nil {
 			return fmt.Errorf("launch cli: %w", err)

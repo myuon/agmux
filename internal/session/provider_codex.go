@@ -103,6 +103,11 @@ func (p *CodexProvider) BuildTerminalCommand(opts TerminalOpts) string {
 		cmd = otelPrefix + p.command + " --sandbox danger-full-access"
 	}
 
+	// Add --model flag if specified
+	if opts.Model != "" {
+		cmd += " --model " + opts.Model
+	}
+
 	// Codex CLI does not support --mcp-config or --instructions flags.
 
 	return cmd

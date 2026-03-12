@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -18,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/gorilla/websocket"
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/logging"
@@ -669,20 +671,23 @@ type codexModel struct {
 	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 }
 
-// fetchCodexModels starts a codex app-server process and performs the JSON-RPC
-// handshake to retrieve the model list.
+// fetchCodexModels starts a codex app-server process in WebSocket mode and
+// performs the JSON-RPC handshake to retrieve the model list.
+// The stdio transport does not work reliably with codex-cli 0.111.0+, so we
+// use the WebSocket transport instead.
 func fetchCodexModels() ([]codexModel, error) {
-	cmd := exec.Command("codex", "app-server", "--listen", "stdio://")
-	cmd.Stderr = nil
+	// Find a free port for the WebSocket server
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, fmt.Errorf("find free port: %w", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
 
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, fmt.Errorf("stdin pipe: %w", err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("stdout pipe: %w", err)
-	}
+	listenAddr := fmt.Sprintf("ws://127.0.0.1:%d", port)
+	cmd := exec.Command("codex", "app-server", "--listen", listenAddr)
+	cmd.Stderr = nil
+	cmd.Stdout = nil
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start codex app-server: %w", err)
@@ -690,65 +695,95 @@ func fetchCodexModels() ([]codexModel, error) {
 
 	// Ensure process is cleaned up
 	defer func() {
-		stdin.Close()
 		cmd.Process.Kill()
 		cmd.Wait()
 	}()
 
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	// Wait for the WebSocket server to be ready
+	wsURL := fmt.Sprintf("ws://127.0.0.1:%d", port)
+	var conn *websocket.Conn
+	for i := 0; i < 30; i++ {
+		time.Sleep(100 * time.Millisecond)
+		c, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		if err == nil {
+			conn = c
+			break
+		}
+	}
+	if conn == nil {
+		return nil, fmt.Errorf("could not connect to codex app-server WebSocket on port %d", port)
+	}
+	defer conn.Close()
 
-	// Send initialize
-	initReq := `{"method":"initialize","id":1,"params":{"clientInfo":{"name":"agmux","version":"0.1"}}}`
-	if _, err := fmt.Fprintf(stdin, "%s\n", initReq); err != nil {
+	// Send initialize request
+	initReq := map[string]interface{}{
+		"method": "initialize",
+		"id":     1,
+		"params": map[string]interface{}{
+			"clientInfo": map[string]interface{}{
+				"name":    "agmux",
+				"version": "0.1",
+			},
+		},
+	}
+	if err := conn.WriteJSON(initReq); err != nil {
 		return nil, fmt.Errorf("send initialize: %w", err)
 	}
 
 	// Read initialize response
-	if !scanner.Scan() {
-		return nil, fmt.Errorf("no response from codex app-server for initialize")
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, _, err = conn.ReadMessage()
+	if err != nil {
+		return nil, fmt.Errorf("read initialize response: %w", err)
 	}
 
 	// Send initialized notification
-	if _, err := fmt.Fprintf(stdin, "%s\n", `{"method":"initialized"}`); err != nil {
+	if err := conn.WriteJSON(map[string]interface{}{"method": "initialized"}); err != nil {
 		return nil, fmt.Errorf("send initialized: %w", err)
 	}
 
 	// Send model/list request
-	modelListReq := `{"method":"model/list","id":2,"params":{}}`
-	if _, err := fmt.Fprintf(stdin, "%s\n", modelListReq); err != nil {
+	if err := conn.WriteJSON(map[string]interface{}{"method": "model/list", "id": 2, "params": map[string]interface{}{}}); err != nil {
 		return nil, fmt.Errorf("send model/list: %w", err)
 	}
 
-	// Read lines until we get the model/list response (id: 2)
-	for scanner.Scan() {
-		line := scanner.Text()
+	// Read responses until we get the model/list response (id: 2)
+	for i := 0; i < 20; i++ {
+		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			return nil, fmt.Errorf("read model/list response: %w", err)
+		}
 		var resp struct {
 			ID     int             `json:"id"`
 			Result json.RawMessage `json:"result"`
 		}
-		if json.Unmarshal([]byte(line), &resp) == nil && resp.ID == 2 && resp.Result != nil {
-			// Parse the result which contains a models array
+		if json.Unmarshal(msg, &resp) == nil && resp.ID == 2 && resp.Result != nil {
+			// Parse the result which contains a data array
 			var result struct {
-				Models []struct {
-					ID              string `json:"id"`
-					Name            string `json:"name"`
-					Description     string `json:"description"`
-					IsDefault       bool   `json:"isDefault"`
-					ReasoningEffort string `json:"reasoningEffort"`
-				} `json:"models"`
+				Data []struct {
+					ID                     string `json:"id"`
+					DisplayName            string `json:"displayName"`
+					Description            string `json:"description"`
+					IsDefault              bool   `json:"isDefault"`
+					Hidden                 bool   `json:"hidden"`
+					DefaultReasoningEffort string `json:"defaultReasoningEffort"`
+				} `json:"data"`
 			}
 			if err := json.Unmarshal(resp.Result, &result); err != nil {
 				return nil, fmt.Errorf("parse model/list result: %w", err)
 			}
 			var models []codexModel
-			for _, m := range result.Models {
+			for _, m := range result.Data {
+				if m.Hidden {
+					continue
+				}
 				models = append(models, codexModel{
 					ID:              m.ID,
-					Name:            m.Name,
+					Name:            m.DisplayName,
 					Description:     m.Description,
 					IsDefault:       m.IsDefault,
-					ReasoningEffort: m.ReasoningEffort,
+					ReasoningEffort: m.DefaultReasoningEffort,
 				})
 			}
 			if models == nil {

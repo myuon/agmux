@@ -32,6 +32,7 @@ type TerminalOpts struct {
 	SystemPrompt  string
 	Resume        bool
 	APIPort       int
+	Model         string // model name (used by Codex --model flag)
 }
 
 // Provider abstracts CLI-specific behavior so agmux can support multiple AI CLIs.
