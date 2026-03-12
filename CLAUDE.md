@@ -23,11 +23,11 @@ make dev          # dev mode (frontend dev server + go run)
 - 新規イシューは `gh issue create` で起票
 - 進捗管理は `gh issue list` で確認
 - 複数イシューの振り分け・実装は `/dispatch` スキルを使う
-- 動作確認するときは、PRのブランチをチェックアウトし、`make restart` でサーバーを読み込んでから動作確認に入る。処理の確認には agmux CLI を利用し、Webアプリの画面を見る必要があるときは agent browser を利用する。どちらもskillがあるので利用する際には参照すること
+- 動作確認するときは、PRのブランチをチェックアウトし、`restart_server` MCPツールでサーバーを再起動してから動作確認に入る。処理の確認には agmux CLI を利用し、Webアプリの画面を見る必要があるときは agent browser を利用する。どちらもskillがあるので利用する際には参照すること
 
 ## エージェントの自律性ルール
 
-- `make restart`, `make build`, コンフリクト解消など技術的に自明な作業は自己判断で進める
+- `restart_server` MCPツール, `make build`, コンフリクト解消など技術的に自明な作業は自己判断で進める
 - 動作確認も可能な限り自分で行う（agmux CLI、agent-browser等を活用）
 - escalateは「ユーザーの判断が本当に必要なとき」のみ使う（設計判断、目視確認が不可避な場合など）
 - 「〇〇しますか？」「〇〇していいですか？」は基本不要。やるべきことは黙ってやる
