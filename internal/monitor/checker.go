@@ -132,20 +132,21 @@ func (sc *StatusChecker) check() {
 					sc.onNotify(s.ID, s.Name, string(result.Status), summary)
 				}
 			}
+		}
 
-			// Auto-resume paused sessions
-			if result.Status == session.StatusPaused {
-				sc.logger.Info(fmt.Sprintf("%s (%s): auto-resuming paused session",
-					s.Name, shortID),
-					slog.String("category", "status_checker"),
-					slog.String("sessionId", s.ID),
-				)
-				if err := sc.sessions.SendKeys(s.ID, "作業を進めてください"); err != nil {
-					sc.logger.Error("status checker: auto-resume error", "name", s.Name, "sessionId", s.ID, "error", err)
-				} else {
-					_ = sc.sessions.UpdateStatus(s.ID, session.StatusWorking)
-					s.Status = session.StatusWorking
-				}
+		// Nudge: send "作業を進めてください" if last event is tool_use and 30+ min old
+		if sc.monitor.ShouldNudge(s) {
+			sc.logger.Info(fmt.Sprintf("%s (%s): nudging stalled session (tool_use + 30min)",
+				s.Name, shortID),
+				slog.String("category", "status_checker"),
+				slog.String("sessionId", s.ID),
+			)
+			if err := sc.sessions.SendKeys(s.ID, "作業を進めてください"); err != nil {
+				sc.logger.Error("status checker: nudge error", "name", s.Name, "sessionId", s.ID, "error", err)
+			} else {
+				_ = sc.sessions.UpdateStatus(s.ID, session.StatusWorking)
+				s.Status = session.StatusWorking
+				changed = true
 			}
 		}
 	}

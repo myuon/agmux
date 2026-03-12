@@ -3,6 +3,7 @@ package monitor
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -229,6 +230,70 @@ func filterEnv(env []string, exclude string) []string {
 		}
 	}
 	return filtered
+}
+
+// ShouldNudge checks if a session should receive a nudge message.
+// Returns true when both conditions are met:
+// 1. The last JSONL event contains a tool_use content block
+// 2. The JSONL file was last modified 30+ minutes ago
+func (m *Monitor) ShouldNudge(s *session.Session) bool {
+	if s.OutputMode != session.OutputModeStream {
+		return false
+	}
+
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		return false
+	}
+	jsonlPath := filepath.Join(streamsDir, s.ID+".jsonl")
+
+	info, err := os.Stat(jsonlPath)
+	if err != nil {
+		return false
+	}
+
+	// Condition 2: last modified 30+ minutes ago
+	if time.Since(info.ModTime()) < 30*time.Minute {
+		return false
+	}
+
+	// Condition 1: last line contains tool_use
+	lastLine := readLastLine(jsonlPath)
+	if lastLine == "" {
+		return false
+	}
+
+	return lastLineHasToolUse(lastLine)
+}
+
+// lastLineHasToolUse checks if a JSONL line contains a tool_use content block.
+func lastLineHasToolUse(line string) bool {
+	var event struct {
+		Type    string `json:"type"`
+		Message struct {
+			Content json.RawMessage `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(line), &event); err != nil {
+		return false
+	}
+	if event.Type != "assistant" {
+		return false
+	}
+
+	var contentBlocks []struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(event.Message.Content, &contentBlocks); err != nil {
+		return false
+	}
+
+	for _, block := range contentBlocks {
+		if block.Type == "tool_use" {
+			return true
+		}
+	}
+	return false
 }
 
 func truncate(s string, n int) string {
