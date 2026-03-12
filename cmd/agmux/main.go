@@ -231,6 +231,7 @@ func sessionCreateCmd() *cobra.Command {
 	var mode string
 	var worktree bool
 	var provider string
+	var model string
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -245,7 +246,7 @@ func sessionCreateCmd() *cobra.Command {
 			if outputMode == session.OutputModeStream {
 				// Stream mode: delegate to the running agmux server so the
 				// child process outlives this CLI invocation.
-				return createSessionViaAPI(args[0], projectPath, prompt, mode, worktree, provider)
+				return createSessionViaAPI(args[0], projectPath, prompt, mode, worktree, provider, model)
 			}
 
 			cfg, _ := config.Load()
@@ -253,7 +254,7 @@ func sessionCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s, err := mgr.Create(args[0], projectPath, prompt, outputMode, worktree, session.ProviderName(provider))
+			s, err := mgr.Create(args[0], projectPath, prompt, outputMode, worktree, session.CreateOpts{Provider: session.ProviderName(provider), Model: model})
 			if err != nil {
 				return err
 			}
@@ -267,13 +268,14 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&mode, "mode", "stream", "Output mode: terminal or stream")
 	cmd.Flags().BoolVarP(&worktree, "worktree", "w", false, "Create a git worktree for the session")
 	cmd.Flags().StringVar(&provider, "provider", "claude", "Provider: claude or codex")
+	cmd.Flags().StringVar(&model, "model", "", "Model to use (for codex provider)")
 
 	return cmd
 }
 
 // createSessionViaAPI sends a POST /api/sessions request to the running agmux server
 // so that the stream process is owned by the server, not this short-lived CLI process.
-func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, provider string) error {
+func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, provider, model string) error {
 	cfg, _ := config.Load()
 	port := cfg.Server.Port
 
@@ -289,6 +291,7 @@ func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, 
 		"outputMode":  mode,
 		"worktree":    worktree,
 		"provider":    provider,
+		"model":       model,
 	})
 
 	url := fmt.Sprintf("http://localhost:%d/api/sessions", port)

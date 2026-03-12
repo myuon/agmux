@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -17,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/gorilla/websocket"
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/logging"
@@ -96,6 +99,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/logs", s.getLogs)
 		r.Get("/config", s.getConfig)
 		r.Put("/config", s.updateConfig)
+		r.Get("/codex/models", s.getCodexModels)
 		r.Get("/metrics", s.getMetrics)
 		r.Get("/metrics/summary", s.getMetricsSummary)
 		r.Get("/metrics/events", s.getMetricsEvents)
@@ -139,6 +143,7 @@ type createSessionRequest struct {
 	OutputMode  string `json:"outputMode,omitempty"`
 	Worktree    bool   `json:"worktree,omitempty"`
 	Provider    string `json:"provider,omitempty"`
+	Model       string `json:"model,omitempty"`
 }
 
 type sendImageData struct {
@@ -178,7 +183,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and projectPath are required")
 		return
 	}
-	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, session.OutputMode(req.OutputMode), req.Worktree, session.ProviderName(req.Provider))
+	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, session.OutputMode(req.OutputMode), req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -661,6 +666,149 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) getCodexModels(w http.ResponseWriter, r *http.Request) {
+	models, err := fetchCodexModels()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, models)
+}
+
+// codexModel represents a model returned by the Codex app-server model/list method.
+type codexModel struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Description     string `json:"description,omitempty"`
+	IsDefault       bool   `json:"isDefault,omitempty"`
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
+}
+
+// fetchCodexModels starts a codex app-server process in WebSocket mode and
+// performs the JSON-RPC handshake to retrieve the model list.
+// The stdio transport does not work reliably with codex-cli 0.111.0+, so we
+// use the WebSocket transport instead.
+func fetchCodexModels() ([]codexModel, error) {
+	// Find a free port for the WebSocket server
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return nil, fmt.Errorf("find free port: %w", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+
+	listenAddr := fmt.Sprintf("ws://127.0.0.1:%d", port)
+	cmd := exec.Command("codex", "app-server", "--listen", listenAddr)
+	cmd.Stderr = nil
+	cmd.Stdout = nil
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start codex app-server: %w", err)
+	}
+
+	// Ensure process is cleaned up
+	defer func() {
+		cmd.Process.Kill()
+		cmd.Wait()
+	}()
+
+	// Wait for the WebSocket server to be ready
+	wsURL := fmt.Sprintf("ws://127.0.0.1:%d", port)
+	var conn *websocket.Conn
+	for i := 0; i < 30; i++ {
+		time.Sleep(100 * time.Millisecond)
+		c, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		if err == nil {
+			conn = c
+			break
+		}
+	}
+	if conn == nil {
+		return nil, fmt.Errorf("could not connect to codex app-server WebSocket on port %d", port)
+	}
+	defer conn.Close()
+
+	// Send initialize request
+	initReq := map[string]interface{}{
+		"method": "initialize",
+		"id":     1,
+		"params": map[string]interface{}{
+			"clientInfo": map[string]interface{}{
+				"name":    "agmux",
+				"version": "0.1",
+			},
+		},
+	}
+	if err := conn.WriteJSON(initReq); err != nil {
+		return nil, fmt.Errorf("send initialize: %w", err)
+	}
+
+	// Read initialize response
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, _, err = conn.ReadMessage()
+	if err != nil {
+		return nil, fmt.Errorf("read initialize response: %w", err)
+	}
+
+	// Send initialized notification
+	if err := conn.WriteJSON(map[string]interface{}{"method": "initialized"}); err != nil {
+		return nil, fmt.Errorf("send initialized: %w", err)
+	}
+
+	// Send model/list request
+	if err := conn.WriteJSON(map[string]interface{}{"method": "model/list", "id": 2, "params": map[string]interface{}{}}); err != nil {
+		return nil, fmt.Errorf("send model/list: %w", err)
+	}
+
+	// Read responses until we get the model/list response (id: 2)
+	for i := 0; i < 20; i++ {
+		conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			return nil, fmt.Errorf("read model/list response: %w", err)
+		}
+		var resp struct {
+			ID     int             `json:"id"`
+			Result json.RawMessage `json:"result"`
+		}
+		if json.Unmarshal(msg, &resp) == nil && resp.ID == 2 && resp.Result != nil {
+			// Parse the result which contains a data array
+			var result struct {
+				Data []struct {
+					ID                     string `json:"id"`
+					DisplayName            string `json:"displayName"`
+					Description            string `json:"description"`
+					IsDefault              bool   `json:"isDefault"`
+					Hidden                 bool   `json:"hidden"`
+					DefaultReasoningEffort string `json:"defaultReasoningEffort"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(resp.Result, &result); err != nil {
+				return nil, fmt.Errorf("parse model/list result: %w", err)
+			}
+			var models []codexModel
+			for _, m := range result.Data {
+				if m.Hidden {
+					continue
+				}
+				models = append(models, codexModel{
+					ID:              m.ID,
+					Name:            m.DisplayName,
+					Description:     m.Description,
+					IsDefault:       m.IsDefault,
+					ReasoningEffort: m.DefaultReasoningEffort,
+				})
+			}
+			if models == nil {
+				models = []codexModel{}
+			}
+			return models, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no model/list response received from codex app-server")
 }
 
 func (s *Server) getMetrics(w http.ResponseWriter, r *http.Request) {

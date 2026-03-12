@@ -7,6 +7,7 @@ export interface Session {
   status: "working" | "idle" | "paused" | "question_waiting" | "alignment_needed" | "stopped";
   type: "worker" | "controller";
   provider: string;
+  model?: string;
   outputMode: "terminal" | "stream";
   currentTask?: string;
   goal?: string;

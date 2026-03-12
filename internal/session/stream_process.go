@@ -106,6 +106,11 @@ func StartStreamProcessWithPrompt(sessionID, projectPath, mcpConfigPath, systemP
 	return startStreamProcessWithOpts(opts, provider)
 }
 
+// StartStreamProcessWithOpts starts a CLI subprocess using the given StreamOpts.
+func StartStreamProcessWithOpts(opts StreamOpts, provider Provider) (*StreamProcess, error) {
+	return startStreamProcessWithOpts(opts, provider)
+}
+
 func startStreamProcessWithOpts(opts StreamOpts, provider Provider) (*StreamProcess, error) {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {

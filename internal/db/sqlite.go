@@ -128,6 +128,12 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add model column if missing (for Codex model selection)
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: create otel_metrics table
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS otel_metrics (
