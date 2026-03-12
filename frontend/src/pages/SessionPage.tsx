@@ -439,7 +439,7 @@ export function SessionPage() {
             <div className="h-7 w-40 bg-gray-200 rounded animate-pulse" />
           </>
         )}
-        {session && session.type !== "controller" && (
+        {session && (
           <div className="flex gap-1.5 sm:ml-auto">
             <button
               onClick={async () => {
@@ -481,17 +481,19 @@ export function SessionPage() {
             >
               <RefreshCw className="w-3.5 h-3.5" />
             </button>
-            <button
-              onClick={async () => {
-                if (!confirm("Delete this session?")) return;
-                await api.deleteSession(session.id);
-                navigate("/");
-              }}
-              className="p-1.5 text-red-600 bg-red-50 rounded hover:bg-red-100"
-              title="Delete"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            {session.type !== "controller" && (
+              <button
+                onClick={async () => {
+                  if (!confirm("Delete this session?")) return;
+                  await api.deleteSession(session.id);
+                  navigate("/");
+                }}
+                className="p-1.5 text-red-600 bg-red-50 rounded hover:bg-red-100"
+                title="Delete"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         )}
       </div>
