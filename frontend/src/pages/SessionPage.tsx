@@ -69,7 +69,7 @@ export function SessionPage() {
     };
   }, []);
 
-  // Listen for escalation WebSocket messages
+  // Listen for WebSocket messages (escalation + stream updates)
   const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === "escalation") {
       const data = msg.data as { id: string; sessionId: string; timeoutSeconds?: number };
@@ -85,8 +85,33 @@ export function SessionPage() {
         setEscalationTimedOut(true);
       }
     }
+    if (msg.type === "stream_update") {
+      const data = msg.data as { sessionId: string; lines: unknown[]; total: number };
+      if (data.sessionId === sessionId && data.lines.length > 0) {
+        setStreamLines((prev) => [...prev, ...data.lines]);
+        streamCursorRef.current = data.total;
+      }
+    }
   }, [sessionId]);
-  useWebSocket(handleWsMessage);
+  const { connectionState } = useWebSocket(handleWsMessage);
+  const prevConnectionState = useRef<string>(connectionState);
+
+  // On WebSocket reconnection, do a full sync to catch up on missed messages
+  useEffect(() => {
+    if (prevConnectionState.current === "disconnected" && connectionState === "connected" && sessionId) {
+      const cursor = streamCursorRef.current;
+      if (cursor !== null) {
+        api.getStreamOutputDelta(sessionId, cursor).then((resp) => {
+          if (resp.lines.length > 0) {
+            setStreamLines((prev) => [...prev, ...resp.lines]);
+          }
+          streamCursorRef.current = resp.total;
+        }).catch(() => {});
+      }
+      api.getSession(sessionId).then(setSession).catch(() => {});
+    }
+    prevConnectionState.current = connectionState;
+  }, [connectionState, sessionId]);
 
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -146,32 +171,16 @@ export function SessionPage() {
       }
     }).catch(() => {});
 
+    // Polling as fallback (stream updates are primarily via WebSocket)
     const interval = setInterval(() => {
       api.getSession(sessionId).then((s) => {
         setSession(s);
-        if (s.outputMode === "stream") {
-          const cursor = streamCursorRef.current;
-          if (cursor !== null) {
-            // Delta fetch: only get new lines
-            api.getStreamOutputDelta(sessionId, cursor).then((resp) => {
-              if (resp.lines.length > 0) {
-                setStreamLines((prev) => [...prev, ...resp.lines]);
-              }
-              streamCursorRef.current = resp.total;
-            }).catch(() => {});
-          } else {
-            // Fallback to full fetch if cursor not initialized
-            api.getStreamOutput(sessionId).then((resp) => {
-              setStreamLines(resp.lines);
-              streamCursorRef.current = resp.total;
-            }).catch(() => {});
-          }
-        } else {
+        if (s.outputMode !== "stream") {
           api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
         }
       });
       api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
-    }, 3000);
+    }, 10000);
     return () => clearInterval(interval);
   }, [sessionId]);
 
@@ -184,26 +193,13 @@ export function SessionPage() {
     await api.sendToSession(sessionId, message, images);
     setMessage("");
     setPendingImages([]);
-    setTimeout(() => {
-      if (session?.outputMode === "stream") {
-        const cursor = streamCursorRef.current;
-        if (cursor !== null) {
-          api.getStreamOutputDelta(sessionId, cursor).then((resp) => {
-            if (resp.lines.length > 0) {
-              setStreamLines((prev) => [...prev, ...resp.lines]);
-            }
-            streamCursorRef.current = resp.total;
-          }).catch(() => {});
-        } else {
-          api.getStreamOutput(sessionId).then((resp) => {
-            setStreamLines(resp.lines);
-            streamCursorRef.current = resp.total;
-          }).catch(() => {});
-        }
-      } else {
+    // For non-stream mode, fetch output after a short delay
+    if (session?.outputMode !== "stream") {
+      setTimeout(() => {
         api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
-      }
-    }, 500);
+      }, 500);
+    }
+    // Stream mode updates arrive via WebSocket automatically
   };
 
   const isStream = session?.outputMode === "stream";

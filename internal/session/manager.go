@@ -27,6 +27,7 @@ type Manager struct {
 	streamProcesses map[string]*StreamProcess
 	streamMu        sync.Mutex
 	logger          *slog.Logger
+	onNewLines      func(sessionID string, newLines []string, total int)
 }
 
 func NewManager(db *sql.DB, tmuxClient *tmux.Client, claudeCommand string, apiPort int, logger *slog.Logger, systemPrompt string) *Manager {
@@ -56,6 +57,11 @@ func (m *Manager) SetCodexCommand(cmd string) {
 	if cmd != "" {
 		m.codexCommand = cmd
 	}
+}
+
+// SetOnNewLines sets a callback that fires when new stream lines arrive for any session.
+func (m *Manager) SetOnNewLines(fn func(sessionID string, newLines []string, total int)) {
+	m.onNewLines = fn
 }
 
 // getProvider returns a Provider for the given provider name.
@@ -427,6 +433,9 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *StreamProcess) {
 			m.logger.Error("failed to persist cli session id", "sessionId", sessionID, "cliSessionId", cliSessionID, "error", err)
 		}
 	})
+	if m.onNewLines != nil {
+		sp.SetOnNewLines(m.onNewLines)
+	}
 }
 
 func (m *Manager) stopStreamProcess(id string) {

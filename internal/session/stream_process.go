@@ -32,6 +32,10 @@ type StreamProcess struct {
 	// onSessionID is called when the CLI session ID is first captured from stdout.
 	// This allows the manager to persist it to the DB.
 	onSessionID func(cliSessionID string)
+
+	// onNewLines is called when new lines are appended to the stream.
+	// The callback receives the session ID and the new lines.
+	onNewLines func(sessionID string, newLines []string, total int)
 }
 
 // ReadCLISessionID reads the CLI-assigned session ID from a stream JSONL file.
@@ -209,9 +213,15 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 
 		sp.mu.Lock()
 		sp.lines = append(sp.lines, normalizedStr)
+		total := len(sp.lines)
 		sp.file.WriteString(normalizedStr + "\n")
 		sp.file.Sync()
+		cb := sp.onNewLines
 		sp.mu.Unlock()
+
+		if cb != nil {
+			cb(sp.streamOpts.SessionID, []string{normalizedStr}, total)
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -231,6 +241,13 @@ func (sp *StreamProcess) SetOnSessionID(fn func(cliSessionID string)) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.onSessionID = fn
+}
+
+// SetOnNewLines sets a callback that fires when new lines are appended to the stream.
+func (sp *StreamProcess) SetOnNewLines(fn func(sessionID string, newLines []string, total int)) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.onNewLines = fn
 }
 
 // ImageData represents a base64-encoded image to be sent with a message.
@@ -329,9 +346,15 @@ func (sp *StreamProcess) sendClaude(message string, images []ImageData) error {
 	line := string(data)
 	sp.mu.Lock()
 	sp.lines = append(sp.lines, line)
+	total := len(sp.lines)
 	sp.file.WriteString(line + "\n")
 	sp.file.Sync()
+	cb := sp.onNewLines
 	sp.mu.Unlock()
+
+	if cb != nil {
+		cb(sp.streamOpts.SessionID, []string{line}, total)
+	}
 
 	_, err = fmt.Fprintf(sp.stdin, "%s\n", data)
 	return err
@@ -358,9 +381,15 @@ func (sp *StreamProcess) sendCodex(message string) error {
 	line := string(data)
 	sp.mu.Lock()
 	sp.lines = append(sp.lines, line)
+	total := len(sp.lines)
 	sp.file.WriteString(line + "\n")
 	sp.file.Sync()
+	cb := sp.onNewLines
 	sp.mu.Unlock()
+
+	if cb != nil {
+		cb(sp.streamOpts.SessionID, []string{line}, total)
+	}
 
 	// Read the done channel under lock to avoid races with restartForCodex
 	sp.mu.RLock()
@@ -463,9 +492,15 @@ func (sp *StreamProcess) recordUserMessage(message string) {
 
 	sp.mu.Lock()
 	sp.lines = append(sp.lines, line)
+	total := len(sp.lines)
 	sp.file.WriteString(line + "\n")
 	sp.file.Sync()
+	cb := sp.onNewLines
 	sp.mu.Unlock()
+
+	if cb != nil {
+		cb(sp.streamOpts.SessionID, []string{line}, total)
+	}
 }
 
 // GetLines returns the last N lines from the accumulated output.

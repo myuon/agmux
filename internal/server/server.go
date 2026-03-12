@@ -52,6 +52,24 @@ func New(sessions *session.Manager, hub *Hub, devMode bool, logPath string, logg
 		otelReceiver: otel.NewReceiver(sqlDB, logger),
 		sqlDB:        sqlDB,
 	}
+
+	// Wire real-time stream updates via WebSocket
+	sessions.SetOnNewLines(func(sessionID string, newLines []string, total int) {
+		// Convert lines to json.RawMessage for proper JSON encoding
+		rawLines := make([]json.RawMessage, len(newLines))
+		for i, line := range newLines {
+			rawLines[i] = json.RawMessage(line)
+		}
+		hub.Broadcast(Message{
+			Type: "stream_update",
+			Data: map[string]interface{}{
+				"sessionId": sessionID,
+				"lines":     rawLines,
+				"total":     total,
+			},
+		})
+	})
+
 	s.setupRoutes()
 	return s
 }
