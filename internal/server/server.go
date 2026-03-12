@@ -80,6 +80,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/stop", s.stopSession)
 		r.Post("/sessions/{id}/send", s.sendToSession)
 		r.Put("/sessions/{id}/context", s.updateSessionContext)
+		r.Get("/sessions/{id}/goals", s.getGoals)
 		r.Post("/sessions/{id}/goals", s.createGoal)
 		r.Post("/sessions/{id}/goals/complete", s.completeGoal)
 		r.Post("/sessions/{id}/reconnect", s.reconnectSession)
@@ -286,6 +287,20 @@ type createGoalRequest struct {
 	CurrentTask string `json:"currentTask"`
 	Goal        string `json:"goal"`
 	Subgoal     bool   `json:"subgoal"`
+}
+
+func (s *Server) getGoals(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	sess, err := s.sessions.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"currentTask": sess.CurrentTask,
+		"goal":        sess.Goal,
+		"goals":       sess.Goals,
+	})
 }
 
 func (s *Server) createGoal(w http.ResponseWriter, r *http.Request) {
