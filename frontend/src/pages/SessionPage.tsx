@@ -44,6 +44,7 @@ export function SessionPage() {
   const [claudeMDLoading, setClaudeMDLoading] = useState(false);
   const [claudeMDViewMode, setClaudeMDViewMode] = useState<"preview" | "source">("preview");
   const [claudeMDSelectedLine, setClaudeMDSelectedLine] = useState<number | null>(null);
+  const [claudeVersion, setClaudeVersion] = useState<string | null>(null);
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
 
@@ -135,6 +136,7 @@ export function SessionPage() {
       }
     });
     api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
+    api.getClaudeVersion().then((r) => setClaudeVersion(r.version)).catch(() => {});
     api.getPendingEscalation(sessionId).then((r) => {
       if (r.escalation) {
         setPendingEscalationId(r.escalation.id);
@@ -536,6 +538,11 @@ export function SessionPage() {
         >
           <Sparkles className="w-3.5 h-3.5" />
         </button>
+        {claudeVersion && (
+          <span className="ml-auto text-xs text-gray-400 font-mono shrink-0" title="Claude Code version">
+            {claudeVersion}
+          </span>
+        )}
         </div>
       ) : (
         <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm">

@@ -39,6 +39,9 @@ export const api = {
   getClaudeModels: () =>
     request<{ id: string; name: string; default?: boolean }[]>("/claude/models"),
 
+  getClaudeVersion: () =>
+    request<{ version: string }>("/claude/version"),
+
   getSession: (id: string) => request<Session>(`/sessions/${id}`),
 
   stopSession: (id: string) =>
