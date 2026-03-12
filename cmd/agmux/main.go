@@ -409,6 +409,18 @@ func sessionSendCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// For stream mode sessions, delegate to the server API so the
+			// spawned process is owned by the long-lived server, not this
+			// short-lived CLI process.
+			s, err := mgr.Get(id)
+			if err != nil {
+				return err
+			}
+			if s.OutputMode == session.OutputModeStream {
+				return sendSessionViaAPI(id, args[1], cfg.Server.Port)
+			}
+
 			if err := mgr.SendKeys(id, args[1]); err != nil {
 				return err
 			}
@@ -416,6 +428,35 @@ func sessionSendCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+// sendSessionViaAPI sends a message to a stream session via the server API
+// so that the process is owned by the server, not this short-lived CLI process.
+func sendSessionViaAPI(id, text string, port int) error {
+	body, _ := json.Marshal(map[string]string{
+		"text": text,
+	})
+
+	url := fmt.Sprintf("http://localhost:%d/api/sessions/%s/send", port, id)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to connect to agmux server on port %d (is it running?): %w", port, err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode server response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server error: %s", result.Error)
+	}
+
+	fmt.Println("Text sent.")
+	return nil
 }
 
 func mcpCmd() *cobra.Command {
