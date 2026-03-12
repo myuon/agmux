@@ -439,7 +439,7 @@ export function SessionPage() {
             <div className="h-7 w-40 bg-gray-200 rounded animate-pulse" />
           </>
         )}
-        {session && session.type !== "controller" && (
+        {session && (
           <div className="flex gap-1.5 sm:ml-auto">
             <button
               onClick={async () => {
