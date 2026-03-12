@@ -268,7 +268,7 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&mode, "mode", "stream", "Output mode: terminal or stream")
 	cmd.Flags().BoolVarP(&worktree, "worktree", "w", false, "Create a git worktree for the session")
 	cmd.Flags().StringVar(&provider, "provider", "claude", "Provider: claude or codex")
-	cmd.Flags().StringVar(&model, "model", "", "Model to use (for codex provider)")
+	cmd.Flags().StringVar(&model, "model", "", "Model to use (e.g. claude-sonnet-4-5, o4-mini)")
 
 	return cmd
 }
@@ -284,15 +284,18 @@ func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, 
 		return fmt.Errorf("resolve project path: %w", err)
 	}
 
-	body, _ := json.Marshal(map[string]interface{}{
+	payload := map[string]interface{}{
 		"name":        name,
 		"projectPath": absPath,
 		"prompt":      prompt,
 		"outputMode":  mode,
 		"worktree":    worktree,
 		"provider":    provider,
-		"model":       model,
-	})
+	}
+	if model != "" {
+		payload["model"] = model
+	}
+	body, _ := json.Marshal(payload)
 
 	url := fmt.Sprintf("http://localhost:%d/api/sessions", port)
 	resp, err := http.Post(url, "application/json", bytes.NewReader(body))

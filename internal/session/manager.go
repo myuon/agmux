@@ -162,19 +162,19 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 
 	if outputMode == OutputModeStream {
 		// Stream mode: start Go subprocess instead of CLI TUI
+		streamOpts := StreamOpts{
+			SessionID:     id,
+			ProjectPath:   projectPath,
+			MCPConfigPath: mcpConfigPath,
+			SystemPrompt:  m.systemPrompt,
+			Resume:        false,
+			Worktree:      worktree,
+			Model:         model,
+		}
 		var sp *StreamProcess
 		if pn == ProviderCodex && prompt != "" {
 			// Codex: pass initial prompt as command-line argument (not stdin)
-			streamOpts := StreamOpts{
-				SessionID:     id,
-				ProjectPath:   projectPath,
-				MCPConfigPath: mcpConfigPath,
-				SystemPrompt:  m.systemPrompt,
-				InitialPrompt: prompt,
-				Resume:        false,
-				Worktree:      worktree,
-				Model:         model,
-			}
+			streamOpts.InitialPrompt = prompt
 			var err error
 			sp, err = StartStreamProcessWithOpts(streamOpts, provider)
 			if err != nil {
@@ -184,15 +184,6 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 			// Record the user message in the stream for UI display
 			sp.recordUserMessage(prompt)
 		} else {
-			streamOpts := StreamOpts{
-				SessionID:     id,
-				ProjectPath:   projectPath,
-				MCPConfigPath: mcpConfigPath,
-				SystemPrompt:  m.systemPrompt,
-				Resume:        false,
-				Worktree:      worktree,
-				Model:         model,
-			}
 			var err error
 			sp, err = StartStreamProcessWithOpts(streamOpts, provider)
 			if err != nil {
