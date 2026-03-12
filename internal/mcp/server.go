@@ -122,6 +122,14 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 					},
 				},
 				map[string]interface{}{
+					"name":        "restart_server",
+					"description": "agmuxサーバーを再ビルド・再起動します。再起動完了後、このセッションに自動通知されます。",
+					"inputSchema": map[string]interface{}{
+						"type":       "object",
+						"properties": map[string]interface{}{},
+					},
+				},
+				map[string]interface{}{
 					"name":        "escalate",
 					"description": "ユーザーへのエスカレーション。判断を仰ぎたいときや確認が必要なときに呼んでください。ブラウザ通知が送られ、ユーザーが応答するまでブロックします。",
 					"inputSchema": map[string]interface{}{
@@ -171,6 +179,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 		return s.handleCreateGoal(args)
 	case "escalate":
 		return s.handleEscalate(args)
+	case "restart_server":
+		return s.handleRestartServer()
 	default:
 		return nil, &jsonRPCError{Code: -32602, Message: "unknown tool: " + name}
 	}
@@ -257,6 +267,36 @@ func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCErro
 		return toolResult(fmt.Sprintf("[TIMED OUT] %s", response), false), nil
 	}
 	return toolResult(fmt.Sprintf("User responded: %s", response), false), nil
+}
+
+func (s *Server) handleRestartServer() (interface{}, *jsonRPCError) {
+	if err := s.apiRestartServer(); err != nil {
+		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
+	}
+	return toolResult("サーバーの再起動を開始しました。再ビルド・再起動が完了すると、このセッションに自動通知されます。しばらくお待ちください。", false), nil
+}
+
+func (s *Server) apiRestartServer() error {
+	url := fmt.Sprintf("%s/api/restart", s.apiURL)
+	body := fmt.Sprintf(`{"sessionId":%s}`, jsonString(s.sessionID))
+
+	req, err := http.NewRequest("POST", url, strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
 }
 
 func (s *Server) apiEscalate(message string, timeoutSeconds int) (string, bool, error) {

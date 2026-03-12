@@ -139,6 +139,23 @@ func serveCmd() *cobra.Command {
 			// Recover stream processes for working sessions
 			mgr.RecoverStreamProcesses()
 
+			// Notify the session that requested a restart (if any)
+			if requesterID, err := session.LoadRestartRequester(); err != nil {
+				logger.Warn("load restart requester", "error", err)
+			} else if requesterID != "" {
+				logger.Info("notifying restart requester", "sessionId", requesterID)
+				go func() {
+					// Small delay to ensure stream processes are fully ready
+					time.Sleep(2 * time.Second)
+					msg := "サーバーの再起動が完了しました。作業を続けてください。"
+					if err := mgr.SendKeys(requesterID, msg); err != nil {
+						logger.Error("notify restart requester", "error", err, "sessionId", requesterID)
+					} else {
+						logger.Info("restart notification sent", "sessionId", requesterID)
+					}
+				}()
+			}
+
 			// Create controller session (singleton)
 			controllerDir, err := db.ControllerDir()
 			if err != nil {
