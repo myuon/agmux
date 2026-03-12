@@ -128,7 +128,7 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
-	// Migration: add model column if missing (for Codex model selection)
+	// Migration: add model column if missing (for model selection)
 	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`)
 	if err != nil && !isAlterTableDuplicate(err) {
 		return err

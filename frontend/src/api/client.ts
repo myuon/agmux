@@ -36,6 +36,9 @@ export const api = {
   getCodexModels: () =>
     request<CodexModel[]>("/codex/models"),
 
+  getClaudeModels: () =>
+    request<{ id: string; name: string; default?: boolean }[]>("/claude/models"),
+
   getSession: (id: string) => request<Session>(`/sessions/${id}`),
 
   stopSession: (id: string) =>

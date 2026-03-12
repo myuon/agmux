@@ -50,6 +50,9 @@ func (p *ClaudeProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 		sessionFlag, resumeID,
 		"--dangerously-skip-permissions",
 	}
+	if opts.Model != "" {
+		args = append(args, "--model", opts.Model)
+	}
 	if opts.MCPConfigPath != "" {
 		args = append(args, "--mcp-config", opts.MCPConfigPath)
 	}
@@ -87,6 +90,9 @@ func (p *ClaudeProvider) BuildTerminalCommand(opts TerminalOpts) string {
 		cmd += " --resume --session-id " + opts.SessionID
 	} else {
 		cmd += " --session-id " + opts.SessionID
+	}
+	if opts.Model != "" {
+		cmd += " --model " + opts.Model
 	}
 	cmd += " --mcp-config " + opts.MCPConfigPath
 	cmd += " --append-system-prompt " + shellQuote(opts.SystemPrompt)

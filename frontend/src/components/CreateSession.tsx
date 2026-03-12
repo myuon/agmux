@@ -13,6 +13,12 @@ interface Props {
   }) => void;
 }
 
+interface ModelOption {
+  id: string;
+  name: string;
+  default?: boolean;
+}
+
 export function CreateSession({ onClose, onCreate }: Props) {
   const [name, setName] = useState("");
   const [projectPath, setProjectPath] = useState("");
@@ -21,6 +27,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
   const [provider, setProvider] = useState("claude");
   const [model, setModel] = useState("");
   const [codexModels, setCodexModels] = useState<CodexModel[]>([]);
+  const [claudeModels, setClaudeModels] = useState<ModelOption[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
 
   useEffect(() => {
@@ -36,6 +43,16 @@ export function CreateSession({ onClose, onCreate }: Props) {
         })
         .catch(() => setCodexModels([]))
         .finally(() => setLoadingModels(false));
+    } else if (provider === "claude") {
+      api.getClaudeModels().then((models) => {
+        setClaudeModels(models);
+        const defaultModel = models.find((m) => m.default);
+        if (defaultModel && !model) {
+          setModel(defaultModel.id);
+        }
+      }).catch(() => {
+        // Fallback if API is not available
+      });
     } else {
       setModel("");
     }
@@ -49,7 +66,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
       prompt: prompt || undefined,
       outputMode,
       provider,
-      model: provider === "codex" && model ? model : undefined,
+      model: (provider === "codex" || provider === "claude") && model ? model : undefined,
     });
   };
 
@@ -158,6 +175,24 @@ export function CreateSession({ onClose, onCreate }: Props) {
                   ))}
                 </select>
               )}
+            </div>
+          )}
+          {provider === "claude" && claudeModels.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Model
+              </label>
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              >
+                {claudeModels.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
           <div className="flex justify-end gap-2">

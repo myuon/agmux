@@ -96,6 +96,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/escalate", s.createEscalation)
 		r.Post("/sessions/{id}/escalate/respond", s.respondEscalation)
 		r.Post("/sessions/controller/restart", s.restartController)
+		r.Get("/claude/models", s.getClaudeModels)
 		r.Get("/logs", s.getLogs)
 		r.Get("/config", s.getConfig)
 		r.Put("/config", s.updateConfig)
@@ -882,6 +883,22 @@ func (s *Server) restartController(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordSessionAction(sess.ID, "controller_restart", "")
 	writeJSON(w, http.StatusOK, sess)
+}
+
+// getClaudeModels returns a hardcoded list of available Claude models.
+func (s *Server) getClaudeModels(w http.ResponseWriter, r *http.Request) {
+	type modelInfo struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Default bool   `json:"default,omitempty"`
+	}
+	models := []modelInfo{
+		{ID: "claude-sonnet-4-5", Name: "Claude Sonnet 4.5", Default: true},
+		{ID: "claude-opus-4-6", Name: "Claude Opus 4.6"},
+		{ID: "claude-sonnet-4-6", Name: "Claude Sonnet 4.6"},
+		{ID: "claude-haiku-4-5", Name: "Claude Haiku 4.5"},
+	}
+	writeJSON(w, http.StatusOK, models)
 }
 
 // helpers

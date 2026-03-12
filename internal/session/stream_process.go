@@ -81,7 +81,7 @@ func StartStreamProcess(sessionID, projectPath, mcpConfigPath, systemPrompt stri
 		CLISessionID:  csid,
 	}
 
-	return startStreamProcessWithOpts(opts, provider)
+	return StartStreamProcessWithOpts(opts, provider)
 }
 
 // StartStreamProcessWithPrompt is like StartStreamProcess but also sets the initial prompt.
@@ -103,15 +103,11 @@ func StartStreamProcessWithPrompt(sessionID, projectPath, mcpConfigPath, systemP
 		CLISessionID:   csid,
 	}
 
-	return startStreamProcessWithOpts(opts, provider)
+	return StartStreamProcessWithOpts(opts, provider)
 }
 
 // StartStreamProcessWithOpts starts a CLI subprocess using the given StreamOpts.
 func StartStreamProcessWithOpts(opts StreamOpts, provider Provider) (*StreamProcess, error) {
-	return startStreamProcessWithOpts(opts, provider)
-}
-
-func startStreamProcessWithOpts(opts StreamOpts, provider Provider) (*StreamProcess, error) {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
 		return nil, fmt.Errorf("get streams dir: %w", err)
