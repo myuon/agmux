@@ -595,10 +595,13 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 		lines = lines[len(lines)-limit:]
 	}
 
-	// Parse JSON lines into raw objects
+	// Parse JSON lines into raw objects, skipping invalid JSON
 	var logs []json.RawMessage
 	for _, line := range lines {
-		logs = append(logs, json.RawMessage(line))
+		raw := json.RawMessage(line)
+		if json.Valid(raw) {
+			logs = append(logs, raw)
+		}
 	}
 	if logs == nil {
 		logs = []json.RawMessage{}
