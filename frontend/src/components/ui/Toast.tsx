@@ -1,9 +1,11 @@
 import { CheckCircle2, AlertTriangle } from "lucide-react";
 
-export function Toast({ message, variant = "success" }: { message: string; variant?: "success" | "error" }) {
+export function Toast({ message, variant = "success" }: { message: string; variant?: "success" | "error" | "warning" }) {
   const styles = variant === "success"
     ? "bg-green-600"
-    : "bg-red-600";
+    : variant === "warning"
+      ? "bg-yellow-500"
+      : "bg-red-600";
   const Icon = variant === "success" ? CheckCircle2 : AlertTriangle;
 
   return (

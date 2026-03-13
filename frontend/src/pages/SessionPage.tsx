@@ -34,6 +34,7 @@ export function SessionPage() {
   const [escalationTimedOut, setEscalationTimedOut] = useState(false);
   const [escalationTimeoutSeconds, setEscalationTimeoutSeconds] = useState(300);
   const [reconnectToast, setReconnectToast] = useState(false);
+  const [disconnectToast, setDisconnectToast] = useState(false);
   const [clearToast, setClearToast] = useState<"success" | "error" | null>(null);
   const [slashCommands, setSlashCommands] = useState<string[]>([]);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
@@ -116,6 +117,17 @@ export function SessionPage() {
     }
     prevConnectionState.current = connectionState;
   }, [connectionState, sessionId]);
+
+  // Show toasts on WebSocket connection state changes
+  useEffect(() => {
+    if (connectionState === "disconnected") {
+      setDisconnectToast(true);
+    } else if (connectionState === "connected" && disconnectToast) {
+      setDisconnectToast(false);
+      setReconnectToast(true);
+      setTimeout(() => setReconnectToast(false), 3000);
+    }
+  }, [connectionState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -470,6 +482,7 @@ export function SessionPage() {
 
   return (
     <div className="h-dvh flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 max-w-4xl mx-auto">
+      {disconnectToast && <Toast message="WebSocket接続が切断されました。再接続を試みています..." variant="warning" />}
       {reconnectToast && <Toast message="再接続に成功しました" />}
       {clearToast === "success" && <Toast message="セッションをクリアしました" />}
       {clearToast === "error" && <Toast message="クリアに失敗しました" variant="error" />}
@@ -624,6 +637,19 @@ export function SessionPage() {
               <span>{session.goal}</span>
             </div>
           )}
+        </div>
+      )}
+
+      {session && connectionState !== "connected" && (
+        <div className="flex items-center gap-1.5 mb-2 shrink-0">
+          <span className={`inline-block w-2 h-2 rounded-full ${
+            connectionState === "connecting" ? "bg-yellow-500 animate-pulse" : "bg-red-500"
+          }`} />
+          <span className={`text-xs ${
+            connectionState === "connecting" ? "text-yellow-600" : "text-red-600"
+          }`}>
+            {connectionState === "connecting" ? "Connecting..." : "Disconnected"}
+          </span>
         </div>
       )}
 
