@@ -23,12 +23,9 @@ install: build-frontend
 	go install ./cmd/agmux
 
 restart: install
-	-lsof -ti :$(PORT) | xargs kill
-	@echo "Waiting for port $(PORT) to be released..."
-	@while lsof -ti :$(PORT) > /dev/null 2>&1; do sleep 1; done
-	@nohup agmux serve --port $(PORT) > /tmp/agmux-$(PORT).log 2>&1 &
+	@launchctl kickstart -k "gui/$$(id -u)/com.myuon.agmux"
 	@sleep 2
-	@if lsof -ti :$(PORT) > /dev/null 2>&1; then echo "agmux restarted on port $(PORT) (pid $$(lsof -ti :$(PORT)))"; else echo "ERROR: agmux failed to start. Check /tmp/agmux-$(PORT).log"; cat /tmp/agmux-$(PORT).log; exit 1; fi
+	@if lsof -ti :$(PORT) > /dev/null 2>&1; then echo "agmux restarted via launchd (pid $$(lsof -ti :$(PORT)))"; else echo "ERROR: agmux failed to start. Check ~/.agmux/agmux.log"; tail -20 ~/.agmux/agmux.log; exit 1; fi
 
 preview:
 ifndef PR

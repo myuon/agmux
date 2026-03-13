@@ -25,6 +25,11 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>{{ .Path }}</string>
+    </dict>
     <key>StandardOutPath</key>
     <string>{{ .StdoutLog }}</string>
     <key>StandardErrorPath</key>
@@ -36,6 +41,7 @@ const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 type plistData struct {
 	Label      string
 	BinaryPath string
+	Path       string
 	StdoutLog  string
 	StderrLog  string
 }
@@ -74,6 +80,7 @@ func Install() error {
 	data := plistData{
 		Label:      plistLabel,
 		BinaryPath: binPath,
+		Path:       os.Getenv("PATH"),
 		StdoutLog:  filepath.Join(logd, "server.log"),
 		StderrLog:  filepath.Join(logd, "agmux.log"),
 	}
