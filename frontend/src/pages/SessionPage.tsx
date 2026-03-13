@@ -678,27 +678,15 @@ export function SessionPage() {
         {claudeMDLoading ? (
           <div className="text-gray-400 text-sm">Loading...</div>
         ) : claudeMDFiles && claudeMDFiles.length > 0 ? (
-          claudeMDViewMode === "preview" ? (
-            <div className="space-y-6">
-              {claudeMDFiles.map((file, fileIdx) => (
-                <div key={fileIdx}>
-                  {claudeMDFiles.length > 1 && (
-                    <div className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded-t border border-b-0 border-gray-200">
-                      {file.path}
-                    </div>
-                  )}
-                  <div className={`prose prose-sm max-w-none ${claudeMDFiles.length > 1 ? "border border-gray-200 rounded-b p-3" : ""}`}>
-                    <Markdown remarkPlugins={[remarkGfm]}>{file.content}</Markdown>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <FileCodeViewer
-              files={claudeMDFiles.map((f) => ({ name: f.path, content: f.content }))}
-              lineClickable
-            />
-          )
+          <FileCodeViewer
+            files={claudeMDFiles.map((f) => ({ name: f.path, content: f.content }))}
+            lineClickable={claudeMDViewMode === "source"}
+            renderContent={claudeMDViewMode === "preview" ? (content) => (
+              <div className="prose prose-sm max-w-none">
+                <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
+              </div>
+            ) : undefined}
+          />
         ) : (
           <div className="text-gray-400 text-sm">No content</div>
         )}
