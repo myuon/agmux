@@ -13,5 +13,18 @@
       "Bash(ls *)",
       "Skill(commit)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/preview-hook.sh"
+          }
+        ]
+      }
+    ]
   }
 }
