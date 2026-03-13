@@ -1192,23 +1192,27 @@ func (s *Server) getSettingsJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	settingsPath := filepath.Join(sess.ProjectPath, ".claude", "settings.json")
-	content, err := os.ReadFile(settingsPath)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "settings.json not found")
-		return
+	type settingsFile struct {
+		Name    string `json:"name"`
+		Content string `json:"content,omitempty"`
 	}
 
-	// Validate that it's valid JSON
-	var parsed json.RawMessage
-	if err := json.Unmarshal(content, &parsed); err != nil {
-		writeError(w, http.StatusInternalServerError, "settings.json is not valid JSON")
-		return
+	files := []settingsFile{}
+	for _, name := range []string{"settings.json", "settings.local.json"} {
+		p := filepath.Join(sess.ProjectPath, ".claude", name)
+		content, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var parsed json.RawMessage
+		if err := json.Unmarshal(content, &parsed); err != nil {
+			continue
+		}
+		files = append(files, settingsFile{Name: name, Content: string(content)})
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"path":    ".claude/settings.json",
-		"content": string(content),
+		"files": files,
 	})
 }
 

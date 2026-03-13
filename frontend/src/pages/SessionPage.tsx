@@ -45,8 +45,9 @@ export function SessionPage() {
   const [claudeMDViewMode, setClaudeMDViewMode] = useState<"preview" | "source">("preview");
   const [claudeMDSelectedLine, setClaudeMDSelectedLine] = useState<number | null>(null);
   const [settingsJSONOpen, setSettingsJSONOpen] = useState(false);
-  const [settingsJSONContent, setSettingsJSONContent] = useState<string | null>(null);
+  const [settingsJSONFiles, setSettingsJSONFiles] = useState<{ name: string; content: string }[]>([]);
   const [settingsJSONLoading, setSettingsJSONLoading] = useState(false);
+  const [settingsJSONTab, setSettingsJSONTab] = useState(0);
   const [providerVersion, setProviderVersion] = useState<string | null>(null);
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
@@ -543,10 +544,11 @@ export function SessionPage() {
           onClick={() => {
             setSettingsJSONOpen(true);
             setSettingsJSONLoading(true);
+            setSettingsJSONTab(0);
             api.getSettingsJSON(session.id).then((res) => {
-              setSettingsJSONContent(res.content);
+              setSettingsJSONFiles(res.files);
             }).catch(() => {
-              setSettingsJSONContent("settings.json not found");
+              setSettingsJSONFiles([]);
             }).finally(() => {
               setSettingsJSONLoading(false);
             });
@@ -735,18 +737,33 @@ export function SessionPage() {
       >
         {settingsJSONLoading ? (
           <div className="text-gray-400 text-sm">Loading...</div>
-        ) : settingsJSONContent ? (
-          <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap bg-gray-50 rounded p-3 border border-gray-200 overflow-auto">
-            {(() => {
-              try {
-                return JSON.stringify(JSON.parse(settingsJSONContent), null, 2);
-              } catch {
-                return settingsJSONContent;
-              }
-            })()}
-          </pre>
+        ) : settingsJSONFiles.length > 0 ? (
+          <>
+            <div className="flex gap-1 mb-3">
+              {settingsJSONFiles.map((file, i) => (
+                <button
+                  key={file.name}
+                  onClick={() => setSettingsJSONTab(i)}
+                  className={`px-2 py-1 text-xs rounded ${settingsJSONTab === i ? "bg-blue-100 text-blue-700 font-medium" : "text-gray-500 hover:bg-gray-100"}`}
+                >
+                  {file.name}
+                </button>
+              ))}
+            </div>
+            <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap bg-gray-50 rounded p-3 border border-gray-200 overflow-auto">
+              {(() => {
+                const content = settingsJSONFiles[settingsJSONTab]?.content;
+                if (!content) return "";
+                try {
+                  return JSON.stringify(JSON.parse(content), null, 2);
+                } catch {
+                  return content;
+                }
+              })()}
+            </pre>
+          </>
         ) : (
-          <div className="text-gray-400 text-sm">No content</div>
+          <div className="text-gray-400 text-sm">No settings files found</div>
         )}
       </Modal>
     </div>
