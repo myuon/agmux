@@ -542,16 +542,14 @@ export function SessionPage() {
         <button
           onClick={() => {
             setSettingsJSONOpen(true);
-            if (settingsJSONContent === null && !settingsJSONLoading) {
-              setSettingsJSONLoading(true);
-              api.getSettingsJSON(session.id).then((res) => {
-                setSettingsJSONContent(res.content);
-              }).catch(() => {
-                setSettingsJSONContent("settings.json not found");
-              }).finally(() => {
-                setSettingsJSONLoading(false);
-              });
-            }
+            setSettingsJSONLoading(true);
+            api.getSettingsJSON(session.id).then((res) => {
+              setSettingsJSONContent(res.content);
+            }).catch(() => {
+              setSettingsJSONContent("settings.json not found");
+            }).finally(() => {
+              setSettingsJSONLoading(false);
+            });
           }}
           className="text-gray-400 hover:text-blue-600 shrink-0 ml-0.5"
           title="Show settings.json"
