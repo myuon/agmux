@@ -64,9 +64,16 @@ func logDir() (string, error) {
 
 // Install generates the launchd plist and loads the agent.
 func Install() error {
-	binPath, err := exec.LookPath("agmux")
+	// Use the currently running binary so the plist always references
+	// the installed agmux that the user actually invoked.
+	binPath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("agmux binary not found in PATH; install it first or specify the path manually")
+		return fmt.Errorf("failed to determine current executable path: %w", err)
+	}
+	// Resolve symlinks to get the real path
+	binPath, err = filepath.EvalSymlinks(binPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve executable path: %w", err)
 	}
 
 	logd, err := logDir()
