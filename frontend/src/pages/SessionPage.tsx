@@ -4,7 +4,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FolderOpen,
-  Sparkles,
+  Sparkles, Settings,
   ListTodo, Target, RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
   Code, Eye, X,
 } from "lucide-react";
@@ -44,6 +44,9 @@ export function SessionPage() {
   const [claudeMDLoading, setClaudeMDLoading] = useState(false);
   const [claudeMDViewMode, setClaudeMDViewMode] = useState<"preview" | "source">("preview");
   const [claudeMDSelectedLine, setClaudeMDSelectedLine] = useState<number | null>(null);
+  const [settingsJSONOpen, setSettingsJSONOpen] = useState(false);
+  const [settingsJSONContent, setSettingsJSONContent] = useState<string | null>(null);
+  const [settingsJSONLoading, setSettingsJSONLoading] = useState(false);
   const [providerVersion, setProviderVersion] = useState<string | null>(null);
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
@@ -536,6 +539,25 @@ export function SessionPage() {
         >
           <Sparkles className="w-3.5 h-3.5" />
         </button>
+        <button
+          onClick={() => {
+            setSettingsJSONOpen(true);
+            if (settingsJSONContent === null && !settingsJSONLoading) {
+              setSettingsJSONLoading(true);
+              api.getSettingsJSON(session.id).then((res) => {
+                setSettingsJSONContent(res.content);
+              }).catch(() => {
+                setSettingsJSONContent("settings.json not found");
+              }).finally(() => {
+                setSettingsJSONLoading(false);
+              });
+            }
+          }}
+          className="text-gray-400 hover:text-blue-600 shrink-0 ml-0.5"
+          title="Show settings.json"
+        >
+          <Settings className="w-3.5 h-3.5" />
+        </button>
         </div>
       ) : (
         <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm">
@@ -697,6 +719,34 @@ export function SessionPage() {
               </div>
             ))}
           </div>
+        ) : (
+          <div className="text-gray-400 text-sm">No content</div>
+        )}
+      </Modal>
+
+      {/* settings.json Modal */}
+      <Modal
+        open={settingsJSONOpen}
+        onClose={() => setSettingsJSONOpen(false)}
+        title={
+          <span className="flex items-center gap-2">
+            <Settings className="w-4 h-4 text-blue-500" />
+            settings.json
+          </span>
+        }
+      >
+        {settingsJSONLoading ? (
+          <div className="text-gray-400 text-sm">Loading...</div>
+        ) : settingsJSONContent ? (
+          <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap bg-gray-50 rounded p-3 border border-gray-200 overflow-auto">
+            {(() => {
+              try {
+                return JSON.stringify(JSON.parse(settingsJSONContent), null, 2);
+              } catch {
+                return settingsJSONContent;
+              }
+            })()}
+          </pre>
         ) : (
           <div className="text-gray-400 text-sm">No content</div>
         )}

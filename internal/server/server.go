@@ -111,6 +111,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
 		r.Get("/sessions/{id}/diff", s.getSessionDiff)
 		r.Get("/sessions/{id}/claude-md", s.getClaudeMD)
+		r.Get("/sessions/{id}/settings-json", s.getSettingsJSON)
 		r.Get("/sessions/{id}/escalate", s.getPendingEscalation)
 		r.Post("/sessions/{id}/escalate", s.createEscalation)
 		r.Post("/sessions/{id}/escalate/respond", s.respondEscalation)
@@ -1181,6 +1182,34 @@ func (s *Server) getClaudeMD(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"files": files})
+}
+
+func (s *Server) getSettingsJSON(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	sess, err := s.sessions.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	settingsPath := filepath.Join(sess.ProjectPath, ".claude", "settings.json")
+	content, err := os.ReadFile(settingsPath)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "settings.json not found")
+		return
+	}
+
+	// Validate that it's valid JSON
+	var parsed json.RawMessage
+	if err := json.Unmarshal(content, &parsed); err != nil {
+		writeError(w, http.StatusInternalServerError, "settings.json is not valid JSON")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"path":    ".claude/settings.json",
+		"content": string(content),
+	})
 }
 
 func getWorkingTreeDiff(projectPath string) ([]diffFileEntry, error) {

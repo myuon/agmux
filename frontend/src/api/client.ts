@@ -92,6 +92,9 @@ export const api = {
   getClaudeMD: (id: string) =>
     request<{ files: { path: string; content: string }[] }>(`/sessions/${id}/claude-md`),
 
+  getSettingsJSON: (id: string) =>
+    request<{ path: string; content: string }>(`/sessions/${id}/settings-json`),
+
   getPendingEscalation: (sessionId: string) =>
     request<{ escalation: { id: string; sessionId: string; message: string; timedOut?: boolean; timeoutSeconds?: number } | null }>(`/sessions/${sessionId}/escalate`),
 
