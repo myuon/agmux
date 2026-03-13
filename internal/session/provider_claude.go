@@ -47,6 +47,7 @@ func (p *ClaudeProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 		"--verbose",
 		"--output-format", "stream-json",
 		"--input-format", "stream-json",
+		"--include-partial-messages",
 		sessionFlag, resumeID,
 		"--dangerously-skip-permissions",
 	}

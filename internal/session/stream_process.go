@@ -192,6 +192,17 @@ func (sp *StreamProcess) loadExistingLines(path string) {
 	}
 }
 
+// isStreamEvent returns true if the JSON line has "type": "stream_event".
+func isStreamEvent(line []byte) bool {
+	var peek struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(line, &peek); err != nil {
+		return false
+	}
+	return peek.Type == "stream_event"
+}
+
 func (sp *StreamProcess) readLoop(stdout io.Reader) {
 	defer close(sp.done)
 
@@ -222,6 +233,19 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 			continue
 		}
 		normalizedStr := string(normalized)
+
+		// stream_event lines are delivered via WebSocket only —
+		// skip file persistence and lines slice to prevent bloat.
+		if isStreamEvent([]byte(normalizedStr)) {
+			sp.mu.Lock()
+			total := len(sp.lines)
+			cb := sp.onNewLines
+			sp.mu.Unlock()
+			if cb != nil {
+				cb(sp.streamOpts.SessionID, []string{normalizedStr}, total)
+			}
+			continue
+		}
 
 		sp.mu.Lock()
 		sp.lines = append(sp.lines, normalizedStr)
