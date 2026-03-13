@@ -30,6 +30,20 @@ func DefaultDBPath() (string, error) {
 	return filepath.Join(dir, "agmux.db"), nil
 }
 
+// DBPathForPort returns the DB file path based on the port number.
+// For the default port (4321), it returns ~/.agmux/agmux.db (backward compatible).
+// For other ports, it returns ~/.agmux/agmux-<port>.db.
+func DBPathForPort(port int) (string, error) {
+	dir, err := AgmuxDir()
+	if err != nil {
+		return "", err
+	}
+	if port == 4321 {
+		return filepath.Join(dir, "agmux.db"), nil
+	}
+	return filepath.Join(dir, fmt.Sprintf("agmux-%d.db", port)), nil
+}
+
 func StreamsDir() (string, error) {
 	dir, err := AgmuxDir()
 	if err != nil {

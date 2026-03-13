@@ -32,6 +32,26 @@ func TestOpenAndMigrate(t *testing.T) {
 	assert.Equal(t, 0, count)
 }
 
+func TestDBPathForPort(t *testing.T) {
+	tests := []struct {
+		name     string
+		port     int
+		wantFile string
+	}{
+		{"default port returns agmux.db", 4321, "agmux.db"},
+		{"custom port returns agmux-<port>.db", 5000, "agmux-5000.db"},
+		{"another custom port", 8080, "agmux-8080.db"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path, err := DBPathForPort(tt.port)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantFile, filepath.Base(path))
+			assert.Contains(t, path, ".agmux")
+		})
+	}
+}
+
 func TestMigrateIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")

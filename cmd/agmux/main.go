@@ -49,8 +49,8 @@ func main() {
 	}
 }
 
-func initManager(cfg *config.Config, logger *slog.Logger) (*session.Manager, *sql.DB, error) {
-	dbPath, err := db.DefaultDBPath()
+func initManager(cfg *config.Config, port int, logger *slog.Logger) (*session.Manager, *sql.DB, error) {
+	dbPath, err := db.DBPathForPort(port)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -102,7 +102,7 @@ func serveCmd() *cobra.Command {
 			// Set server logger for WS hub
 			server.SetServerLog(srvLogger)
 
-			mgr, database, err := initManager(cfg, logger)
+			mgr, database, err := initManager(cfg, port, logger)
 			if err != nil {
 				return err
 			}
@@ -269,7 +269,7 @@ func sessionCreateCmd() *cobra.Command {
 			}
 
 			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, nil)
+			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
@@ -346,7 +346,7 @@ func sessionListCmd() *cobra.Command {
 		Short: "List all sessions",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, nil)
+			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
@@ -378,7 +378,7 @@ func sessionStopCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, nil)
+			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
@@ -402,7 +402,7 @@ func sessionDeleteCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, nil)
+			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
@@ -426,7 +426,7 @@ func sessionSendCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, nil)
+			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
@@ -502,7 +502,7 @@ func sessionCaptureCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, nil)
+			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
