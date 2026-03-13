@@ -50,6 +50,7 @@ export function SessionPage() {
   const [settingsJSONLoading, setSettingsJSONLoading] = useState(false);
 
   const [providerVersion, setProviderVersion] = useState<string | null>(null);
+  const [incrementalText, setIncrementalText] = useState("");
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
 
@@ -93,7 +94,30 @@ export function SessionPage() {
     if (msg.type === "stream_update") {
       const data = msg.data as { sessionId: string; lines: unknown[]; total: number };
       if (data.sessionId === sessionId && data.lines.length > 0) {
-        setStreamLines((prev) => [...prev, ...data.lines]);
+        const regularLines: unknown[] = [];
+        for (const line of data.lines) {
+          const entry = line as Record<string, unknown>;
+          if (entry.type === "stream_event") {
+            // Extract incremental text from content_block_delta events
+            const event = entry.event as { type: string; delta?: { type: string; text?: string } } | undefined;
+            if (event?.type === "content_block_delta" && event.delta?.type === "text_delta" && event.delta.text) {
+              setIncrementalText((prev) => prev + event.delta!.text!);
+            }
+            // message_stop signals the end of streaming; the complete assistant message will follow
+            if (event?.type === "message_stop") {
+              setIncrementalText("");
+            }
+          } else {
+            // Clear incremental text when a complete assistant message arrives
+            if (entry.type === "assistant") {
+              setIncrementalText("");
+            }
+            regularLines.push(line);
+          }
+        }
+        if (regularLines.length > 0) {
+          setStreamLines((prev) => [...prev, ...regularLines]);
+        }
         streamCursorRef.current = data.total;
       }
     }
@@ -664,7 +688,7 @@ export function SessionPage() {
         </div>
       ) : isStream ? (
         <div className="flex flex-col flex-1 min-h-0">
-          <StreamOutputView lines={streamLines} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={() => { setPendingEscalationId(null); setEscalationTimedOut(false); }} onAnswer={async (text) => {
+          <StreamOutputView lines={streamLines} incrementalText={incrementalText} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={() => { setPendingEscalationId(null); setEscalationTimedOut(false); }} onAnswer={async (text) => {
             if (!sessionId) return;
             await api.sendToSession(sessionId, text);
           }} />

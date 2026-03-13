@@ -1,5 +1,16 @@
 // --- Stream mode types and helpers ---
 
+export interface StreamEvent {
+  type: "stream_event";
+  event: {
+    type: "message_start" | "content_block_start" | "content_block_delta" | "content_block_stop" | "message_delta" | "message_stop";
+    index?: number;
+    delta?: { type: string; text?: string };
+  };
+  session_id: string;
+  parent_tool_use_id: string | null;
+}
+
 export interface StreamEntry {
   type: string;
   parent_tool_use_id?: string | null;
@@ -36,7 +47,7 @@ export interface AskUserQuestionItem {
 
 // A display item for the merged stream view
 export type StreamDisplayItem =
-  | { kind: "text"; text: string }
+  | { kind: "text"; text: string; streaming?: boolean }
   | { kind: "image"; mediaType: string; data: string }
   | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; children?: StreamDisplayItem[] }
   | { kind: "thinking"; text: string }
@@ -111,7 +122,7 @@ export type DisplayGroup =
   | { role: "system"; items: StreamDisplayItem[] };
 
 // Merge assistant/user entries into display items, pairing tool_use with tool_result by id
-export function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
+export function mergeStreamEntries(entries: StreamEntry[], incrementalText?: string): DisplayGroup[] {
   // First pass: collect all tool_results keyed by tool_use_id, and track Skill tool IDs
   const resultMap = new Map<string, string>();
   const resultImageMap = new Map<string, Array<{ mediaType: string; data: string }>>();
@@ -365,6 +376,16 @@ export function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
       } else {
         groups.push({ role, items });
       }
+    }
+  }
+
+  // Append incremental text buffer as a streaming text item in the last assistant group
+  if (incrementalText) {
+    const last = groups[groups.length - 1];
+    if (last && last.role === "assistant") {
+      last.items.push({ kind: "text", text: incrementalText, streaming: true });
+    } else {
+      groups.push({ role: "assistant", items: [{ kind: "text", text: incrementalText, streaming: true }] });
     }
   }
 

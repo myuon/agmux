@@ -22,6 +22,14 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, escalationId,
   onEscalationResponded?: () => void;
 }) {
   if (item.kind === "text") {
+    if (item.streaming) {
+      return (
+        <span className="whitespace-pre-wrap">
+          {item.text}
+          <span className="inline-block w-[2px] h-[1em] bg-green-500 align-middle animate-pulse ml-[1px]" />
+        </span>
+      );
+    }
     return <CollapsibleText text={item.text} />;
   }
   if (item.kind === "thinking") {
