@@ -6,7 +6,7 @@ import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FolderOpen,
   Sparkles, Settings,
   ListTodo, Target, RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
-  Code, Eye, X, Wifi, WifiOff,
+  Code, Eye, X,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
@@ -499,19 +499,6 @@ export function SessionPage() {
             <StatusDot status={session.status} />
             <h2 className="text-xl sm:text-2xl font-bold">{session.name}</h2>
             <span className="text-xs text-gray-400">{session.status}</span>
-            <span
-              className="relative group shrink-0"
-              title={connectionState === "connecting" ? "Connecting..." : connectionState === "connected" ? "Connected" : "Disconnected"}
-            >
-              {connectionState === "disconnected" ? (
-                <WifiOff className="w-3.5 h-3.5 text-red-500" />
-              ) : (
-                <Wifi className={`w-3.5 h-3.5 ${connectionState === "connecting" ? "text-yellow-500" : "text-green-500"}`} />
-              )}
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-0.5 text-[10px] text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                {connectionState === "connecting" ? "Connecting..." : connectionState === "connected" ? "Connected" : "Disconnected"}
-              </span>
-            </span>
             {session.provider && (
               <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${
                 session.provider === "codex"
@@ -650,6 +637,19 @@ export function SessionPage() {
               <span>{session.goal}</span>
             </div>
           )}
+        </div>
+      )}
+
+      {session && connectionState !== "connected" && (
+        <div className="flex items-center gap-1.5 mb-2 shrink-0">
+          <span className={`inline-block w-2 h-2 rounded-full ${
+            connectionState === "connecting" ? "bg-yellow-500 animate-pulse" : "bg-red-500"
+          }`} />
+          <span className={`text-xs ${
+            connectionState === "connecting" ? "text-yellow-600" : "text-red-600"
+          }`}>
+            {connectionState === "connecting" ? "Connecting..." : "Disconnected"}
+          </span>
         </div>
       )}
 
