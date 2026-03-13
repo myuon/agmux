@@ -221,6 +221,10 @@ export function ToolCallView({ item, onAnswer, sessionId, escalationId, escalati
   escalationTimeoutSeconds?: number;
   onEscalationResponded?: () => void;
 }) {
+  // Hooks must be called before any conditional returns (React Rules of Hooks)
+  const [open, setOpen] = useState(false);
+  const [childrenExpanded, setChildrenExpanded] = useState(false);
+
   if (item.name === "TodoWrite") {
     return <TodoCallView item={item} />;
   }
@@ -230,9 +234,6 @@ export function ToolCallView({ item, onAnswer, sessionId, escalationId, escalati
   if (item.name === "mcp__agmux__escalate") {
     return <EscalateCallView item={item} sessionId={sessionId} escalationId={escalationId} timedOut={escalationTimedOut} timeoutSeconds={escalationTimeoutSeconds} onResponded={onEscalationResponded} />;
   }
-
-  const [open, setOpen] = useState(false);
-  const [childrenExpanded, setChildrenExpanded] = useState(false);
   const Icon = toolIcon(item.name);
   const desc = toolDescription(item.name, item.input);
   const subDetail = toolSubDetail(item.name, item.input);
