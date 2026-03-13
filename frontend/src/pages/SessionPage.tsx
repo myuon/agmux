@@ -9,6 +9,7 @@ import {
   Code, Eye, X,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
+import { FileCodeViewer } from "../components/ui/FileCodeViewer";
 import { Toast } from "../components/ui/Toast";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import type { Session } from "../types/session";
@@ -43,11 +44,10 @@ export function SessionPage() {
   const [claudeMDFiles, setClaudeMDFiles] = useState<{ path: string; content: string }[] | null>(null);
   const [claudeMDLoading, setClaudeMDLoading] = useState(false);
   const [claudeMDViewMode, setClaudeMDViewMode] = useState<"preview" | "source">("preview");
-  const [claudeMDSelectedLine, setClaudeMDSelectedLine] = useState<number | null>(null);
   const [settingsJSONOpen, setSettingsJSONOpen] = useState(false);
   const [settingsJSONFiles, setSettingsJSONFiles] = useState<{ name: string; content: string }[]>([]);
   const [settingsJSONLoading, setSettingsJSONLoading] = useState(false);
-  const [settingsJSONTab, setSettingsJSONTab] = useState(0);
+
   const [providerVersion, setProviderVersion] = useState<string | null>(null);
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
@@ -544,7 +544,6 @@ export function SessionPage() {
           onClick={() => {
             setSettingsJSONOpen(true);
             setSettingsJSONLoading(true);
-            setSettingsJSONTab(0);
             api.getSettingsJSON(session.id).then((res) => {
               setSettingsJSONFiles(res.files);
             }).catch(() => {
@@ -679,46 +678,27 @@ export function SessionPage() {
         {claudeMDLoading ? (
           <div className="text-gray-400 text-sm">Loading...</div>
         ) : claudeMDFiles && claudeMDFiles.length > 0 ? (
-          <div className="space-y-6">
-            {claudeMDFiles.map((file, fileIdx) => (
-              <div key={fileIdx}>
-                {claudeMDFiles.length > 1 && (
-                  <div className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded-t border border-b-0 border-gray-200">
-                    {file.path}
-                  </div>
-                )}
-                {claudeMDViewMode === "preview" ? (
+          claudeMDViewMode === "preview" ? (
+            <div className="space-y-6">
+              {claudeMDFiles.map((file, fileIdx) => (
+                <div key={fileIdx}>
+                  {claudeMDFiles.length > 1 && (
+                    <div className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded-t border border-b-0 border-gray-200">
+                      {file.path}
+                    </div>
+                  )}
                   <div className={`prose prose-sm max-w-none ${claudeMDFiles.length > 1 ? "border border-gray-200 rounded-b p-3" : ""}`}>
                     <Markdown remarkPlugins={[remarkGfm]}>{file.content}</Markdown>
                   </div>
-                ) : (
-                  <pre className={`text-xs leading-relaxed font-mono whitespace-pre-wrap ${claudeMDFiles.length > 1 ? "border border-gray-200 rounded-b" : ""}`}>
-                    {file.content.split("\n").map((line, i) => {
-                      const lineNum = i + 1;
-                      const isSelected = claudeMDSelectedLine === lineNum;
-                      return (
-                        <div
-                          key={i}
-                          className={`flex cursor-pointer ${isSelected ? "bg-yellow-100" : "hover:bg-gray-50"}`}
-                          onClick={() => {
-                            setClaudeMDSelectedLine(isSelected ? null : lineNum);
-                            navigator.clipboard.writeText(`${file.path}:L${lineNum}`);
-                          }}
-                        >
-                          <span
-                            className={`select-none w-10 text-right pr-3 shrink-0 ${isSelected ? "text-yellow-600" : "text-gray-300"}`}
-                          >
-                            {lineNum}
-                          </span>
-                          <span className="flex-1">{line}</span>
-                        </div>
-                      );
-                    })}
-                  </pre>
-                )}
-              </div>
-            ))}
-          </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <FileCodeViewer
+              files={claudeMDFiles.map((f) => ({ name: f.path, content: f.content }))}
+              lineClickable
+            />
+          )
         ) : (
           <div className="text-gray-400 text-sm">No content</div>
         )}
@@ -737,33 +717,18 @@ export function SessionPage() {
       >
         {settingsJSONLoading ? (
           <div className="text-gray-400 text-sm">Loading...</div>
-        ) : settingsJSONFiles.length > 0 ? (
-          <>
-            <div className="flex gap-1 mb-3">
-              {settingsJSONFiles.map((file, i) => (
-                <button
-                  key={file.name}
-                  onClick={() => setSettingsJSONTab(i)}
-                  className={`px-2 py-1 text-xs rounded ${settingsJSONTab === i ? "bg-blue-100 text-blue-700 font-medium" : "text-gray-500 hover:bg-gray-100"}`}
-                >
-                  {file.name}
-                </button>
-              ))}
-            </div>
-            <pre className="text-xs leading-relaxed font-mono whitespace-pre-wrap bg-gray-50 rounded p-3 border border-gray-200 overflow-auto">
-              {(() => {
-                const content = settingsJSONFiles[settingsJSONTab]?.content;
-                if (!content) return "";
-                try {
-                  return JSON.stringify(JSON.parse(content), null, 2);
-                } catch {
-                  return content;
-                }
-              })()}
-            </pre>
-          </>
         ) : (
-          <div className="text-gray-400 text-sm">No settings files found</div>
+          <FileCodeViewer
+            files={settingsJSONFiles}
+            formatContent={(content) => {
+              try {
+                return JSON.stringify(JSON.parse(content), null, 2);
+              } catch {
+                return content;
+              }
+            }}
+            emptyMessage="No settings files found"
+          />
         )}
       </Modal>
     </div>
