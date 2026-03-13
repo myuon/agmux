@@ -6,7 +6,7 @@ import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FolderOpen,
   Sparkles, Settings,
   ListTodo, Target, RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
-  Code, Eye, X,
+  Code, Eye, X, Wifi, WifiOff,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
@@ -34,6 +34,7 @@ export function SessionPage() {
   const [escalationTimedOut, setEscalationTimedOut] = useState(false);
   const [escalationTimeoutSeconds, setEscalationTimeoutSeconds] = useState(300);
   const [reconnectToast, setReconnectToast] = useState(false);
+  const [disconnectToast, setDisconnectToast] = useState(false);
   const [clearToast, setClearToast] = useState<"success" | "error" | null>(null);
   const [slashCommands, setSlashCommands] = useState<string[]>([]);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
@@ -116,6 +117,17 @@ export function SessionPage() {
     }
     prevConnectionState.current = connectionState;
   }, [connectionState, sessionId]);
+
+  // Show toasts on WebSocket connection state changes
+  useEffect(() => {
+    if (connectionState === "disconnected") {
+      setDisconnectToast(true);
+    } else if (connectionState === "connected" && disconnectToast) {
+      setDisconnectToast(false);
+      setReconnectToast(true);
+      setTimeout(() => setReconnectToast(false), 3000);
+    }
+  }, [connectionState]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -470,6 +482,7 @@ export function SessionPage() {
 
   return (
     <div className="h-dvh flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 max-w-4xl mx-auto">
+      {disconnectToast && <Toast message="WebSocket接続が切断されました。再接続を試みています..." variant="warning" />}
       {reconnectToast && <Toast message="再接続に成功しました" />}
       {clearToast === "success" && <Toast message="セッションをクリアしました" />}
       {clearToast === "error" && <Toast message="クリアに失敗しました" variant="error" />}
@@ -486,6 +499,19 @@ export function SessionPage() {
             <StatusDot status={session.status} />
             <h2 className="text-xl sm:text-2xl font-bold">{session.name}</h2>
             <span className="text-xs text-gray-400">{session.status}</span>
+            <span
+              className="relative group shrink-0"
+              title={connectionState === "connecting" ? "Connecting..." : connectionState === "connected" ? "Connected" : "Disconnected"}
+            >
+              {connectionState === "disconnected" ? (
+                <WifiOff className="w-3.5 h-3.5 text-red-500" />
+              ) : (
+                <Wifi className={`w-3.5 h-3.5 ${connectionState === "connecting" ? "text-yellow-500" : "text-green-500"}`} />
+              )}
+              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-0.5 text-[10px] text-white bg-gray-800 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                {connectionState === "connecting" ? "Connecting..." : connectionState === "connected" ? "Connected" : "Disconnected"}
+              </span>
+            </span>
             {session.provider && (
               <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${
                 session.provider === "codex"
