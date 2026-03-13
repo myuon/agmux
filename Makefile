@@ -44,6 +44,18 @@ endif
 	echo "Building in worktree..."; \
 	$(MAKE) -C "$$WORKTREE_DIR" build || exit 1; \
 	PREVIEW_PORT=$$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()"); \
+	echo "Copying main DB snapshot for preview..."; \
+	if ! command -v sqlite3 > /dev/null 2>&1; then \
+		echo "ERROR: sqlite3 is not installed. Please install sqlite3 to use preview."; \
+		git worktree remove "$$WORKTREE_DIR" --force; \
+		exit 1; \
+	fi; \
+	AGMUX_DIR="$$HOME/.agmux"; \
+	sqlite3 "$$AGMUX_DIR/agmux.db" ".backup $$AGMUX_DIR/agmux-$$PREVIEW_PORT.db" || { \
+		echo "ERROR: Failed to create DB snapshot."; \
+		git worktree remove "$$WORKTREE_DIR" --force; \
+		exit 1; \
+	}; \
 	echo "Starting server on port $$PREVIEW_PORT..."; \
 	nohup "$$WORKTREE_DIR/agmux" serve --port "$$PREVIEW_PORT" > /tmp/agmux-preview-$(PR).log 2>&1 & \
 	echo $$! > "$$WORKTREE_DIR.pid"; \
@@ -77,6 +89,10 @@ endif
 	if [ -n "$$PREVIEW_PORT" ]; then \
 		echo "Waiting for port $$PREVIEW_PORT to be released..."; \
 		while lsof -ti :"$$PREVIEW_PORT" > /dev/null 2>&1; do sleep 1; done; \
+	fi; \
+	if [ -n "$$PREVIEW_PORT" ]; then \
+		echo "Removing snapshot DB (~/.agmux/agmux-$$PREVIEW_PORT.db)..."; \
+		rm -f "$$HOME/.agmux/agmux-$$PREVIEW_PORT.db"; \
 	fi; \
 	echo "Removing worktree..."; \
 	git worktree remove "$$WORKTREE_DIR" --force 2>/dev/null || true; \
