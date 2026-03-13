@@ -48,7 +48,7 @@ export function toolDescription(name: string, input: unknown): string | null {
   if (name === "Agent" && inp && "description" in inp) {
     return String(inp.description);
   }
-  if (name === "AskUserQuestion" && inp && "questions" in inp) {
+  if (name === "AskUserQuestion" && inp && "questions" in inp && Array.isArray(inp.questions)) {
     const questions = inp.questions as AskUserQuestionItem[];
     return questions[0]?.question?.slice(0, 60) || null;
   }
