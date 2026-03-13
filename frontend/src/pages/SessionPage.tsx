@@ -409,6 +409,11 @@ export function SessionPage() {
               }
             }}
             onKeyDown={(e) => {
+              if (e.key === "Enter" && e.metaKey && !showSlashMenu) {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+                return;
+              }
               if (e.key === "Enter" && !showSlashMenu) {
                 // Allow default newline behavior; do not submit
                 return;
