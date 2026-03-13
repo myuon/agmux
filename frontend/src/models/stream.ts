@@ -17,6 +17,7 @@ export interface StreamContentBlock {
   name?: string;
   input?: unknown;
   content?: unknown;
+  thinking?: string;
   source?: { type: string; media_type: string; data: string };
 }
 
@@ -38,10 +39,14 @@ export type StreamDisplayItem =
   | { kind: "text"; text: string }
   | { kind: "image"; mediaType: string; data: string }
   | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; children?: StreamDisplayItem[] }
+  | { kind: "thinking"; text: string }
   | { kind: "system_event"; eventType: string; label: string; detail?: string };
 
 export function parseStreamContentBlocks(entry: StreamEntry): StreamContentBlock[] {
-  const content = entry.message?.content;
+  // Check both entry.message.content and top-level entry.content (some entries
+  // have content at the top level without a message wrapper)
+  const raw = entry as unknown as Record<string, unknown>;
+  const content = entry.message?.content ?? raw.content;
   if (!content) return [];
   if (typeof content === "string") {
     return content ? [{ type: "text", text: content }] : [];
@@ -193,6 +198,8 @@ export function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
             toolUseId: b.id,
             children: children && children.length > 0 ? children : undefined,
           });
+        } else if (b.type === "thinking" && b.thinking) {
+          items.push({ kind: "thinking", text: b.thinking });
         } else if (b.type === "text" && b.text) {
           items.push({ kind: "text", text: b.text });
         }
@@ -228,7 +235,9 @@ export function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
 
     if (entry.type === "assistant") {
       for (const b of blocks) {
-        if (b.type === "text" && b.text) {
+        if (b.type === "thinking" && b.thinking) {
+          items.push({ kind: "thinking", text: b.thinking });
+        } else if (b.type === "text" && b.text) {
           items.push({ kind: "text", text: b.text });
         } else if (b.type === "tool_use") {
           // Detect plan mode transitions
