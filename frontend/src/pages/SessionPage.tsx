@@ -4,7 +4,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FolderOpen,
-  Sparkles, Settings,
+  Sparkles, Settings, Lock, Unlock,
   ListTodo, Target, RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
   Code, Eye, X,
 } from "lucide-react";
@@ -324,6 +324,23 @@ export function SessionPage() {
               >
                 <RefreshCw className="w-4 h-4" /> Reconnect
               </button>
+              <button
+                type="button"
+                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                onMouseDown={async (e) => {
+                  e.preventDefault();
+                  setShowActionMenu(false);
+                  try {
+                    const updated = await api.updateReadOnly(session.id, !session.readOnly);
+                    setSession(updated);
+                  } catch {
+                    alert("Failed to update read-only mode");
+                  }
+                }}
+              >
+                {session.readOnly ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                {session.readOnly ? "Disable Read Only" : "Enable Read Only"}
+              </button>
               {session.status !== "stopped" && session.type !== "controller" && (
                 <button
                   type="button"
@@ -514,6 +531,11 @@ export function SessionPage() {
             {session.model && (
               <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700">
                 {session.model}
+              </span>
+            )}
+            {session.readOnly && (
+              <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">
+                Read Only
               </span>
             )}
           </>

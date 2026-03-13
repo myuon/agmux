@@ -92,6 +92,11 @@ export function SessionList({ sessions, onRestartController }: Props) {
                       Controller
                     </span>
                   )}
+                  {s.readOnly && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">
+                      Read Only
+                    </span>
+                  )}
                   {s.provider && s.provider !== "claude" && (
                     <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${
                       s.provider === "codex"

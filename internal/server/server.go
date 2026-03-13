@@ -105,6 +105,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/sessions/{id}/goals", s.getGoals)
 		r.Post("/sessions/{id}/goals", s.createGoal)
 		r.Post("/sessions/{id}/goals/complete", s.completeGoal)
+		r.Put("/sessions/{id}/read-only", s.updateSessionReadOnly)
 		r.Post("/sessions/{id}/reconnect", s.reconnectSession)
 		r.Post("/sessions/{id}/clear", s.clearSession)
 		r.Get("/sessions/{id}/output", s.getSessionOutput)
@@ -168,6 +169,7 @@ type createSessionRequest struct {
 	Worktree    bool   `json:"worktree,omitempty"`
 	Provider    string `json:"provider,omitempty"`
 	Model       string `json:"model,omitempty"`
+	ReadOnly    bool   `json:"readOnly,omitempty"`
 }
 
 type sendImageData struct {
@@ -207,7 +209,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and projectPath are required")
 		return
 	}
-	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, session.OutputMode(req.OutputMode), req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model})
+	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, session.OutputMode(req.OutputMode), req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model, ReadOnly: req.ReadOnly})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -493,6 +495,27 @@ func (s *Server) respondEscalation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) updateSessionReadOnly(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req struct {
+		ReadOnly bool `json:"readOnly"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if err := s.sessions.UpdateReadOnly(id, req.ReadOnly); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	sess, err := s.sessions.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sess)
 }
 
 func (s *Server) reconnectSession(w http.ResponseWriter, r *http.Request) {

@@ -12,6 +12,7 @@ export interface Session {
   currentTask?: string;
   goal?: string;
   goals?: { currentTask: string; goal: string }[];
+  readOnly: boolean;
   createdAt: string;
   updatedAt: string;
   githubUrl?: string;

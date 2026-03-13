@@ -43,6 +43,7 @@ func main() {
 	rootCmd.AddCommand(mcpCmd())
 	rootCmd.AddCommand(logsCmd())
 	rootCmd.AddCommand(daemonCmd())
+	rootCmd.AddCommand(hookCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -240,6 +241,7 @@ func sessionCmd() *cobra.Command {
 	cmd.AddCommand(sessionDeleteCmd())
 	cmd.AddCommand(sessionSendCmd())
 	cmd.AddCommand(sessionCaptureCmd())
+	cmd.AddCommand(sessionReadOnlyCmd())
 
 	return cmd
 }
@@ -251,6 +253,7 @@ func sessionCreateCmd() *cobra.Command {
 	var worktree bool
 	var provider string
 	var model string
+	var readOnly bool
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -265,7 +268,7 @@ func sessionCreateCmd() *cobra.Command {
 			if outputMode == session.OutputModeStream {
 				// Stream mode: delegate to the running agmux server so the
 				// child process outlives this CLI invocation.
-				return createSessionViaAPI(args[0], projectPath, prompt, mode, worktree, provider, model)
+				return createSessionViaAPI(args[0], projectPath, prompt, mode, worktree, provider, model, readOnly)
 			}
 
 			cfg, _ := config.Load()
@@ -273,7 +276,7 @@ func sessionCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s, err := mgr.Create(args[0], projectPath, prompt, outputMode, worktree, session.CreateOpts{Provider: session.ProviderName(provider), Model: model})
+			s, err := mgr.Create(args[0], projectPath, prompt, outputMode, worktree, session.CreateOpts{Provider: session.ProviderName(provider), Model: model, ReadOnly: readOnly})
 			if err != nil {
 				return err
 			}
@@ -288,13 +291,14 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&worktree, "worktree", "w", false, "Create a git worktree for the session")
 	cmd.Flags().StringVar(&provider, "provider", "claude", "Provider: claude or codex")
 	cmd.Flags().StringVar(&model, "model", "", "Model to use (e.g. claude-sonnet-4-5, o4-mini)")
+	cmd.Flags().BoolVar(&readOnly, "read-only", false, "Create session in read-only mode (blocks file modifications)")
 
 	return cmd
 }
 
 // createSessionViaAPI sends a POST /api/sessions request to the running agmux server
 // so that the stream process is owned by the server, not this short-lived CLI process.
-func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, provider, model string) error {
+func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, provider, model string, readOnly bool) error {
 	cfg, _ := config.Load()
 	port := cfg.Server.Port
 
@@ -313,6 +317,9 @@ func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, 
 	}
 	if model != "" {
 		payload["model"] = model
+	}
+	if readOnly {
+		payload["readOnly"] = true
 	}
 	body, _ := json.Marshal(payload)
 
@@ -518,6 +525,41 @@ func sessionCaptureCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func sessionReadOnlyCmd() *cobra.Command {
+	var off bool
+
+	cmd := &cobra.Command{
+		Use:   "read-only <id>",
+		Short: "Enable or disable read-only mode for a session",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, _ := config.Load()
+			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			if err != nil {
+				return err
+			}
+			id, err := mgr.ResolveID(args[0])
+			if err != nil {
+				return err
+			}
+			readOnly := !off
+			if err := mgr.UpdateReadOnly(id, readOnly); err != nil {
+				return err
+			}
+			if readOnly {
+				fmt.Println("Read-only mode enabled.")
+			} else {
+				fmt.Println("Read-only mode disabled.")
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&off, "off", false, "Disable read-only mode")
+
+	return cmd
 }
 
 func logsCmd() *cobra.Command {

@@ -10,6 +10,7 @@ interface Props {
     outputMode?: "terminal" | "stream";
     provider?: string;
     model?: string;
+    readOnly?: boolean;
   }) => void;
 }
 
@@ -26,6 +27,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
   const [outputMode, setOutputMode] = useState<"terminal" | "stream">("terminal");
   const [provider, setProvider] = useState("claude");
   const [model, setModel] = useState("");
+  const [readOnly, setReadOnly] = useState(false);
   const [codexModels, setCodexModels] = useState<CodexModel[]>([]);
   const [claudeModels, setClaudeModels] = useState<ModelOption[]>([]);
   const [loadingModels, setLoadingModels] = useState(false);
@@ -67,6 +69,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
       outputMode,
       provider,
       model: (provider === "codex" || provider === "claude") && model ? model : undefined,
+      readOnly: readOnly || undefined,
     });
   };
 
@@ -195,6 +198,17 @@ export function CreateSession({ onClose, onCreate }: Props) {
               </select>
             </div>
           )}
+          <div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={readOnly}
+                onChange={(e) => setReadOnly(e.target.checked)}
+              />
+              <span className="font-medium text-gray-700">Read Only</span>
+              <span className="text-gray-400 text-xs">(blocks file modifications)</span>
+            </label>
+          </div>
           <div className="flex justify-end gap-2">
             <button
               type="button"

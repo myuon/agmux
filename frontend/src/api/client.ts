@@ -27,10 +27,17 @@ export const api = {
     outputMode?: "terminal" | "stream";
     provider?: string;
     model?: string;
+    readOnly?: boolean;
   }) =>
     request<Session>("/sessions", {
       method: "POST",
       body: JSON.stringify(data),
+    }),
+
+  updateReadOnly: (id: string, readOnly: boolean) =>
+    request<Session>(`/sessions/${id}/read-only`, {
+      method: "PUT",
+      body: JSON.stringify({ readOnly }),
     }),
 
   getCodexModels: () =>

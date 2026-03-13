@@ -45,6 +45,7 @@ type Session struct {
 	CurrentTask   string       `json:"currentTask,omitempty"`
 	Goal          string       `json:"goal,omitempty"`
 	Goals         GoalStack    `json:"goals,omitempty"`
+	ReadOnly      bool         `json:"readOnly"`
 	CreatedAt     time.Time    `json:"createdAt"`
 	UpdatedAt     time.Time    `json:"updatedAt"`
 }
