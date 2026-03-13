@@ -1,3 +1,5 @@
+PORT ?= 4321
+
 .PHONY: build build-frontend dev clean test install restart
 
 build: build-frontend
@@ -21,8 +23,9 @@ install: build-frontend
 	go install ./cmd/agmux
 
 restart: install
-	-lsof -ti :4321 | xargs kill
-	@echo "Waiting for port 4321 to be released..."
-	@while lsof -ti :4321 > /dev/null 2>&1; do sleep 1; done
-	@nohup agmux serve > /dev/null 2>&1 &
-	@echo "agmux restarted"
+	-lsof -ti :$(PORT) | xargs kill
+	@echo "Waiting for port $(PORT) to be released..."
+	@while lsof -ti :$(PORT) > /dev/null 2>&1; do sleep 1; done
+	@nohup agmux serve --port $(PORT) > /tmp/agmux-$(PORT).log 2>&1 &
+	@sleep 2
+	@if lsof -ti :$(PORT) > /dev/null 2>&1; then echo "agmux restarted on port $(PORT) (pid $$(lsof -ti :$(PORT)))"; else echo "ERROR: agmux failed to start. Check /tmp/agmux-$(PORT).log"; cat /tmp/agmux-$(PORT).log; exit 1; fi
