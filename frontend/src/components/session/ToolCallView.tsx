@@ -91,7 +91,7 @@ function AskUserQuestionCallView({ item, onAnswer }: { item: Extract<StreamDispl
           )}
         </div>
       </button>
-      {expanded && inp?.questions && (
+      {expanded && Array.isArray(inp?.questions) && (
         <div className="px-3 pb-3 space-y-3">
           {inp.questions.map((q, qi) => (
             <div key={qi}>
