@@ -436,6 +436,34 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *StreamProcess) {
 	if m.onNewLines != nil {
 		sp.SetOnNewLines(m.onNewLines)
 	}
+	sp.SetOnProcessExit(func(sid string, exitErr error) {
+		errMsg := "<nil>"
+		if exitErr != nil {
+			errMsg = exitErr.Error()
+		}
+		m.logger.Warn("claude process exited unexpectedly, updating status to stopped",
+			"sessionId", sid,
+			"exitError", errMsg,
+		)
+		if err := m.UpdateStatus(sid, StatusStopped); err != nil {
+			m.logger.Error("failed to update status after process exit", "sessionId", sid, "error", err)
+		}
+		// Clean up the stream process from the map
+		m.streamMu.Lock()
+		delete(m.streamProcesses, sid)
+		m.streamMu.Unlock()
+	})
+}
+
+// IsStreamProcessAlive returns true if a stream process exists and has not exited.
+func (m *Manager) IsStreamProcessAlive(id string) bool {
+	m.streamMu.Lock()
+	sp, ok := m.streamProcesses[id]
+	m.streamMu.Unlock()
+	if !ok {
+		return false
+	}
+	return !sp.IsExited()
 }
 
 func (m *Manager) stopStreamProcess(id string) {

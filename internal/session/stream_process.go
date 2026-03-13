@@ -21,13 +21,17 @@ type StreamProcess struct {
 	stdin     io.WriteCloser
 	lines     []string
 	mu        sync.RWMutex
-	done      chan struct{}
+	done      chan struct{} // closed when readLoop finishes (stdout EOF)
+	exited    chan struct{} // closed when the process has fully exited (Wait returned)
 	file      *os.File
 	sessionID string // CLI session ID (may differ from agmux session ID after resume)
 	provider  Provider
 
 	// Fields for Codex followup support (process restart on new messages)
 	streamOpts StreamOpts // saved opts for rebuilding commands
+
+	// stopped is true when Stop() was called explicitly (not an unexpected exit)
+	stopped bool
 
 	// onSessionID is called when the CLI session ID is first captured from stdout.
 	// This allows the manager to persist it to the DB.
@@ -36,6 +40,10 @@ type StreamProcess struct {
 	// onNewLines is called when new lines are appended to the stream.
 	// The callback receives the session ID and the new lines.
 	onNewLines func(sessionID string, newLines []string, total int)
+
+	// onProcessExit is called when the CLI process exits unexpectedly.
+	// The callback receives the agmux session ID and the exit error (nil if exited cleanly).
+	onProcessExit func(sessionID string, exitErr error)
 }
 
 // ReadCLISessionID reads the CLI-assigned session ID from a stream JSONL file.
@@ -151,6 +159,7 @@ func StartStreamProcessWithOpts(opts StreamOpts, provider Provider) (*StreamProc
 		cmd:        cmd,
 		stdin:      stdinPipe,
 		done:       make(chan struct{}),
+		exited:     make(chan struct{}),
 		file:       f,
 		sessionID:  opts.CLISessionID, // Initialize from opts so resume/recovery can use it immediately
 		provider:   provider,
@@ -162,6 +171,9 @@ func StartStreamProcessWithOpts(opts StreamOpts, provider Provider) (*StreamProc
 
 	// Start stdout reader goroutine
 	go sp.readLoop(stdoutPipe)
+
+	// Start process exit monitor goroutine
+	go sp.monitorExit()
 
 	return sp, nil
 }
@@ -229,6 +241,39 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 	}
 }
 
+// monitorExit waits for the process to exit and fires the onProcessExit callback
+// if the exit was unexpected (i.e., Stop() was not called).
+func (sp *StreamProcess) monitorExit() {
+	// Wait for readLoop to finish first (stdout is closed)
+	<-sp.done
+
+	// Wait for the process to actually exit and capture the exit error
+	exitErr := sp.cmd.Wait()
+
+	defer close(sp.exited)
+
+	sp.mu.RLock()
+	stopped := sp.stopped
+	cb := sp.onProcessExit
+	sp.mu.RUnlock()
+
+	// Only fire callback if this was NOT an explicit Stop()
+	if !stopped && cb != nil {
+		agmuxSessionID := sp.streamOpts.SessionID
+		if exitErr != nil {
+			slog.Default().Warn("stream process exited unexpectedly",
+				"sessionId", agmuxSessionID,
+				"error", exitErr,
+			)
+		} else {
+			slog.Default().Warn("stream process exited unexpectedly with exit code 0",
+				"sessionId", agmuxSessionID,
+			)
+		}
+		cb(agmuxSessionID, exitErr)
+	}
+}
+
 // SessionID returns the CLI session ID assigned by the process.
 func (sp *StreamProcess) SessionID() string {
 	sp.mu.RLock()
@@ -248,6 +293,13 @@ func (sp *StreamProcess) SetOnNewLines(fn func(sessionID string, newLines []stri
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.onNewLines = fn
+}
+
+// SetOnProcessExit sets a callback that fires when the CLI process exits unexpectedly.
+func (sp *StreamProcess) SetOnProcessExit(fn func(sessionID string, exitErr error)) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.onProcessExit = fn
 }
 
 // ImageData represents a base64-encoded image to be sent with a message.
@@ -391,10 +443,12 @@ func (sp *StreamProcess) sendCodex(message string) error {
 		cb(sp.streamOpts.SessionID, []string{line}, total)
 	}
 
-	// Read the done channel under lock to avoid races with restartForCodex
-	sp.mu.RLock()
+	// Mark as stopped to prevent monitorExit from firing the callback
+	// (Codex process exit is expected; we will restart it)
+	sp.mu.Lock()
+	sp.stopped = true
 	doneCh := sp.done
-	sp.mu.RUnlock()
+	sp.mu.Unlock()
 
 	// Check if the process has already finished (non-blocking).
 	// If it has, skip the wait and proceed directly to restart.
@@ -429,14 +483,14 @@ func (sp *StreamProcess) sendCodex(message string) error {
 // restartForCodex spawns a new codex exec resume process for a followup message.
 func (sp *StreamProcess) restartForCodex(message, cliSessionID string) error {
 	// Clean up the old process (already exited since done channel was closed).
-	// Read cmd/stdin under lock for safety, then perform blocking ops outside lock.
+	// Wait for monitorExit to finish calling Wait() before proceeding.
 	sp.mu.RLock()
-	oldCmd := sp.cmd
 	oldStdin := sp.stdin
+	exitedCh := sp.exited
 	sp.mu.RUnlock()
 
 	oldStdin.Close()
-	_ = oldCmd.Wait()
+	<-exitedCh // wait for monitorExit to call Wait() and close exited
 
 	opts := sp.streamOpts
 	opts.Resume = true
@@ -468,9 +522,12 @@ func (sp *StreamProcess) restartForCodex(message, cliSessionID string) error {
 	sp.cmd = cmd
 	sp.stdin = stdinPipe
 	sp.done = make(chan struct{})
+	sp.exited = make(chan struct{})
+	sp.stopped = false // reset so monitorExit can detect unexpected exits on the new process
 	sp.mu.Unlock()
 
 	go sp.readLoop(stdoutPipe)
+	go sp.monitorExit()
 
 	return nil
 }
@@ -546,23 +603,23 @@ func (sp *StreamProcess) TotalLines() int {
 
 // Stop gracefully stops the stream process.
 func (sp *StreamProcess) Stop() {
+	// Mark as explicitly stopped so monitorExit won't fire the callback
+	sp.mu.Lock()
+	sp.stopped = true
+	sp.mu.Unlock()
+
 	// Close stdin to signal EOF to the process
 	sp.stdin.Close()
 
-	// Wait for process to exit with timeout
-	waitDone := make(chan error, 1)
-	go func() {
-		waitDone <- sp.cmd.Wait()
-	}()
-
+	// Wait for process to exit with timeout (monitorExit calls Wait and closes exited)
 	select {
-	case <-waitDone:
+	case <-sp.exited:
 		// Process exited gracefully
 	case <-time.After(5 * time.Second):
 		// Force kill
 		slog.Default().Warn("stream process did not exit gracefully, killing")
 		sp.cmd.Process.Kill()
-		<-waitDone
+		<-sp.exited
 	}
 
 	sp.file.Close()
@@ -573,4 +630,17 @@ func (sp *StreamProcess) Done() <-chan struct{} {
 	sp.mu.RLock()
 	defer sp.mu.RUnlock()
 	return sp.done
+}
+
+// IsExited returns true if the process has fully exited (Wait returned).
+func (sp *StreamProcess) IsExited() bool {
+	sp.mu.RLock()
+	ch := sp.exited
+	sp.mu.RUnlock()
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
 }
