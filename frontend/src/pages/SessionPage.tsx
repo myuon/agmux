@@ -266,6 +266,48 @@ export function SessionPage() {
                   <Slash className="w-4 h-4" /> Slash commands
                 </button>
               )}
+              <button
+                type="button"
+                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                onMouseDown={async (e) => {
+                  e.preventDefault();
+                  setShowActionMenu(false);
+                  if (!confirm("Clear session context? This will start a fresh conversation.")) return;
+                  try {
+                    await api.clearSession(session.id);
+                    setStreamLines([]);
+                    setOutput("");
+                    streamCursorRef.current = 0;
+                    api.getSession(session.id).then(setSession);
+                    setClearToast("success");
+                    setTimeout(() => setClearToast(null), 3000);
+                  } catch {
+                    setClearToast("error");
+                    setTimeout(() => setClearToast(null), 3000);
+                  }
+                }}
+              >
+                <RotateCcw className="w-4 h-4" /> Clear context
+              </button>
+              <button
+                type="button"
+                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                onMouseDown={async (e) => {
+                  e.preventDefault();
+                  setShowActionMenu(false);
+                  if (!confirm("セッションを再接続しますか？")) return;
+                  try {
+                    await api.reconnectSession(session.id);
+                    api.getSession(session.id).then(setSession);
+                    setReconnectToast(true);
+                    setTimeout(() => setReconnectToast(false), 3000);
+                  } catch {
+                    alert("再接続に失敗しました");
+                  }
+                }}
+              >
+                <RefreshCw className="w-4 h-4" /> Reconnect
+              </button>
               {session.status !== "stopped" && session.type !== "controller" && (
                 <button
                   type="button"
@@ -278,6 +320,21 @@ export function SessionPage() {
                   }}
                 >
                   <Square className="w-4 h-4" /> Stop session
+                </button>
+              )}
+              {session.type !== "controller" && (
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                  onMouseDown={async (e) => {
+                    e.preventDefault();
+                    setShowActionMenu(false);
+                    if (!confirm("Delete this session?")) return;
+                    await api.deleteSession(session.id);
+                    navigate("/");
+                  }}
+                >
+                  <Trash2 className="w-4 h-4" /> Delete session
                 </button>
               )}
             </div>
@@ -443,63 +500,6 @@ export function SessionPage() {
             <div className="w-3 h-3 rounded-full bg-gray-200 animate-pulse" />
             <div className="h-7 w-40 bg-gray-200 rounded animate-pulse" />
           </>
-        )}
-        {session && (
-          <div className="flex gap-1.5 sm:ml-auto">
-            <button
-              onClick={async () => {
-                if (!confirm("Clear session context? This will start a fresh conversation.")) return;
-                try {
-                  await api.clearSession(session.id);
-                  // Optimistic UI update: immediately clear local state
-                  setStreamLines([]);
-                  setOutput("");
-                  streamCursorRef.current = 0;
-                  // Refresh session metadata
-                  api.getSession(session.id).then(setSession);
-                  setClearToast("success");
-                  setTimeout(() => setClearToast(null), 3000);
-                } catch {
-                  setClearToast("error");
-                  setTimeout(() => setClearToast(null), 3000);
-                }
-              }}
-              className="p-1.5 text-orange-700 bg-orange-50 rounded hover:bg-orange-100"
-              title="Clear"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={async () => {
-                if (!confirm("セッションを再接続しますか？")) return;
-                try {
-                  await api.reconnectSession(session.id);
-                  api.getSession(session.id).then(setSession);
-                  setReconnectToast(true);
-                  setTimeout(() => setReconnectToast(false), 3000);
-                } catch {
-                  alert("再接続に失敗しました");
-                }
-              }}
-              className="p-1.5 text-indigo-700 bg-indigo-50 rounded hover:bg-indigo-100"
-              title="Reconnect"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-            </button>
-            {session.type !== "controller" && (
-              <button
-                onClick={async () => {
-                  if (!confirm("Delete this session?")) return;
-                  await api.deleteSession(session.id);
-                  navigate("/");
-                }}
-                className="p-1.5 text-red-600 bg-red-50 rounded hover:bg-red-100"
-                title="Delete"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
         )}
       </div>
       {session ? (
