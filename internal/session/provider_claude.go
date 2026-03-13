@@ -115,10 +115,10 @@ func (p *ClaudeProvider) CleanupMCP(sessionID string) error {
 func (p *ClaudeProvider) AppendOTelEnv(env []string, port int) []string {
 	if port == 0 {
 		cfg, err := config.Load()
-		if err == nil && cfg.Server.Port != 0 {
+		if err == nil {
 			port = cfg.Server.Port
 		} else {
-			port = 4321
+			port = config.Default().Server.Port
 		}
 	}
 
@@ -154,7 +154,12 @@ func (p *ClaudeProvider) NormalizeStreamLine(line []byte) []byte {
 
 func (p *ClaudeProvider) OTelEnvPrefix(port int) string {
 	if port == 0 {
-		port = 4321
+		cfg, err := config.Load()
+		if err == nil {
+			port = cfg.Server.Port
+		} else {
+			port = config.Default().Server.Port
+		}
 	}
 	return fmt.Sprintf(
 		"CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_LOGS_EXPORTER=otlp OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:%d ",
