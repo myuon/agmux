@@ -50,7 +50,8 @@ endif
 		git worktree remove "$$WORKTREE_DIR" --force; \
 		exit 1; \
 	fi; \
-	sqlite3 ~/.agmux/agmux.db ".backup ~/.agmux/agmux-$$PREVIEW_PORT.db" || { \
+	AGMUX_DIR="$$HOME/.agmux"; \
+	sqlite3 "$$AGMUX_DIR/agmux.db" ".backup $$AGMUX_DIR/agmux-$$PREVIEW_PORT.db" || { \
 		echo "ERROR: Failed to create DB snapshot."; \
 		git worktree remove "$$WORKTREE_DIR" --force; \
 		exit 1; \
