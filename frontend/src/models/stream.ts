@@ -21,6 +21,19 @@ export interface StreamContentBlock {
   source?: { type: string; media_type: string; data: string };
 }
 
+// stream_event from --include-partial-messages (real-time deltas via WebSocket only)
+export interface StreamEvent {
+  type: "stream_event";
+  event: {
+    type: string;
+    index?: number;
+    delta?: {
+      type: string;
+      text?: string;
+    };
+  };
+}
+
 // AskUserQuestion input types
 export interface AskUserQuestionOption {
   label: string;
@@ -111,7 +124,8 @@ export type DisplayGroup =
   | { role: "system"; items: StreamDisplayItem[] };
 
 // Merge assistant/user entries into display items, pairing tool_use with tool_result by id
-export function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
+// partialText: incremental text from stream_event deltas (shown as "typing" in the last assistant group)
+export function mergeStreamEntries(entries: StreamEntry[], partialText?: string): DisplayGroup[] {
   // First pass: collect all tool_results keyed by tool_use_id, and track Skill tool IDs
   const resultMap = new Map<string, string>();
   const resultImageMap = new Map<string, Array<{ mediaType: string; data: string }>>();
@@ -365,6 +379,17 @@ export function mergeStreamEntries(entries: StreamEntry[]): DisplayGroup[] {
       } else {
         groups.push({ role, items });
       }
+    }
+  }
+
+  // Append incremental partial text to the last assistant group (or create one)
+  if (partialText) {
+    const last = groups[groups.length - 1];
+    const partialItem: StreamDisplayItem = { kind: "text", text: partialText };
+    if (last && last.role === "assistant") {
+      last.items.push(partialItem);
+    } else {
+      groups.push({ role: "assistant", items: [partialItem] });
     }
   }
 

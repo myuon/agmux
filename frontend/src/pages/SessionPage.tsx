@@ -27,6 +27,7 @@ export function SessionPage() {
   const [output, setOutput] = useState("");
   const [message, setMessage] = useState("");
   const [streamLines, setStreamLines] = useState<unknown[]>([]);
+  const [partialText, setPartialText] = useState("");
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>([]);
   const [pendingImages, setPendingImages] = useState<{ data: string; mediaType: string; preview: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -93,7 +94,26 @@ export function SessionPage() {
     if (msg.type === "stream_update") {
       const data = msg.data as { sessionId: string; lines: unknown[]; total: number };
       if (data.sessionId === sessionId && data.lines.length > 0) {
-        setStreamLines((prev) => [...prev, ...data.lines]);
+        const regular: unknown[] = [];
+        for (const line of data.lines) {
+          const entry = line as Record<string, unknown>;
+          if (entry.type === "stream_event") {
+            // Extract text delta from content_block_delta events
+            const evt = entry.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
+            if (evt?.type === "content_block_delta" && evt.delta?.type === "text_delta" && evt.delta.text) {
+              setPartialText((prev) => prev + evt.delta!.text!);
+            }
+          } else {
+            // Clear partial text when a complete assistant message arrives
+            if (entry.type === "assistant") {
+              setPartialText("");
+            }
+            regular.push(line);
+          }
+        }
+        if (regular.length > 0) {
+          setStreamLines((prev) => [...prev, ...regular]);
+        }
         streamCursorRef.current = data.total;
       }
     }
@@ -292,6 +312,7 @@ export function SessionPage() {
                   try {
                     await api.clearSession(session.id);
                     setStreamLines([]);
+                    setPartialText("");
                     setOutput("");
                     streamCursorRef.current = 0;
                     api.getSession(session.id).then(setSession);
@@ -664,7 +685,7 @@ export function SessionPage() {
         </div>
       ) : isStream ? (
         <div className="flex flex-col flex-1 min-h-0">
-          <StreamOutputView lines={streamLines} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={() => { setPendingEscalationId(null); setEscalationTimedOut(false); }} onAnswer={async (text) => {
+          <StreamOutputView lines={streamLines} partialText={partialText} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={() => { setPendingEscalationId(null); setEscalationTimedOut(false); }} onAnswer={async (text) => {
             if (!sessionId) return;
             await api.sendToSession(sessionId, text);
           }} />
