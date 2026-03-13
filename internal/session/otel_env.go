@@ -17,7 +17,7 @@ func appendOTelEnv(env []string) []string {
 
 	port := cfg.Server.Port
 	if port == 0 {
-		port = 4321
+		port = config.Default().Server.Port
 	}
 
 	otelVars := map[string]string{
@@ -51,7 +51,12 @@ func appendOTelEnv(env []string) []string {
 func otelEnvPrefix(apiPort int) string {
 	port := apiPort
 	if port == 0 {
-		port = 4321
+		cfg, err := config.Load()
+		if err == nil {
+			port = cfg.Server.Port
+		} else {
+			port = config.Default().Server.Port
+		}
 	}
 
 	return fmt.Sprintf(
