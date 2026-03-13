@@ -4,11 +4,12 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FolderOpen,
-  Sparkles,
+  Sparkles, Settings,
   ListTodo, Target, RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
   Code, Eye, X,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
+import { FileCodeViewer } from "../components/ui/FileCodeViewer";
 import { Toast } from "../components/ui/Toast";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import type { Session } from "../types/session";
@@ -43,7 +44,10 @@ export function SessionPage() {
   const [claudeMDFiles, setClaudeMDFiles] = useState<{ path: string; content: string }[] | null>(null);
   const [claudeMDLoading, setClaudeMDLoading] = useState(false);
   const [claudeMDViewMode, setClaudeMDViewMode] = useState<"preview" | "source">("preview");
-  const [claudeMDSelectedLine, setClaudeMDSelectedLine] = useState<number | null>(null);
+  const [settingsJSONOpen, setSettingsJSONOpen] = useState(false);
+  const [settingsJSONFiles, setSettingsJSONFiles] = useState<{ name: string; content: string }[]>([]);
+  const [settingsJSONLoading, setSettingsJSONLoading] = useState(false);
+
   const [providerVersion, setProviderVersion] = useState<string | null>(null);
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
@@ -536,6 +540,23 @@ export function SessionPage() {
         >
           <Sparkles className="w-3.5 h-3.5" />
         </button>
+        <button
+          onClick={() => {
+            setSettingsJSONOpen(true);
+            setSettingsJSONLoading(true);
+            api.getSettingsJSON(session.id).then((res) => {
+              setSettingsJSONFiles(res.files);
+            }).catch(() => {
+              setSettingsJSONFiles([]);
+            }).finally(() => {
+              setSettingsJSONLoading(false);
+            });
+          }}
+          className="text-gray-400 hover:text-blue-600 shrink-0 ml-0.5"
+          title="Show settings.json"
+        >
+          <Settings className="w-3.5 h-3.5" />
+        </button>
         </div>
       ) : (
         <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm">
@@ -657,48 +678,45 @@ export function SessionPage() {
         {claudeMDLoading ? (
           <div className="text-gray-400 text-sm">Loading...</div>
         ) : claudeMDFiles && claudeMDFiles.length > 0 ? (
-          <div className="space-y-6">
-            {claudeMDFiles.map((file, fileIdx) => (
-              <div key={fileIdx}>
-                {claudeMDFiles.length > 1 && (
-                  <div className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded-t border border-b-0 border-gray-200">
-                    {file.path}
-                  </div>
-                )}
-                {claudeMDViewMode === "preview" ? (
-                  <div className={`prose prose-sm max-w-none ${claudeMDFiles.length > 1 ? "border border-gray-200 rounded-b p-3" : ""}`}>
-                    <Markdown remarkPlugins={[remarkGfm]}>{file.content}</Markdown>
-                  </div>
-                ) : (
-                  <pre className={`text-xs leading-relaxed font-mono whitespace-pre-wrap ${claudeMDFiles.length > 1 ? "border border-gray-200 rounded-b" : ""}`}>
-                    {file.content.split("\n").map((line, i) => {
-                      const lineNum = i + 1;
-                      const isSelected = claudeMDSelectedLine === lineNum;
-                      return (
-                        <div
-                          key={i}
-                          className={`flex cursor-pointer ${isSelected ? "bg-yellow-100" : "hover:bg-gray-50"}`}
-                          onClick={() => {
-                            setClaudeMDSelectedLine(isSelected ? null : lineNum);
-                            navigator.clipboard.writeText(`${file.path}:L${lineNum}`);
-                          }}
-                        >
-                          <span
-                            className={`select-none w-10 text-right pr-3 shrink-0 ${isSelected ? "text-yellow-600" : "text-gray-300"}`}
-                          >
-                            {lineNum}
-                          </span>
-                          <span className="flex-1">{line}</span>
-                        </div>
-                      );
-                    })}
-                  </pre>
-                )}
+          <FileCodeViewer
+            files={claudeMDFiles.map((f) => ({ name: f.path, content: f.content }))}
+            lineClickable={claudeMDViewMode === "source"}
+            renderContent={claudeMDViewMode === "preview" ? (content) => (
+              <div className="prose prose-sm max-w-none">
+                <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
               </div>
-            ))}
-          </div>
+            ) : undefined}
+          />
         ) : (
           <div className="text-gray-400 text-sm">No content</div>
+        )}
+      </Modal>
+
+      {/* settings.json Modal */}
+      <Modal
+        open={settingsJSONOpen}
+        onClose={() => setSettingsJSONOpen(false)}
+        title={
+          <span className="flex items-center gap-2">
+            <Settings className="w-4 h-4 text-blue-500" />
+            settings.json
+          </span>
+        }
+      >
+        {settingsJSONLoading ? (
+          <div className="text-gray-400 text-sm">Loading...</div>
+        ) : (
+          <FileCodeViewer
+            files={settingsJSONFiles}
+            formatContent={(content) => {
+              try {
+                return JSON.stringify(JSON.parse(content), null, 2);
+              } catch {
+                return content;
+              }
+            }}
+            emptyMessage="No settings files found"
+          />
         )}
       </Modal>
     </div>

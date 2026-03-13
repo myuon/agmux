@@ -111,6 +111,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
 		r.Get("/sessions/{id}/diff", s.getSessionDiff)
 		r.Get("/sessions/{id}/claude-md", s.getClaudeMD)
+		r.Get("/sessions/{id}/settings-json", s.getSettingsJSON)
 		r.Get("/sessions/{id}/escalate", s.getPendingEscalation)
 		r.Post("/sessions/{id}/escalate", s.createEscalation)
 		r.Post("/sessions/{id}/escalate/respond", s.respondEscalation)
@@ -1181,6 +1182,38 @@ func (s *Server) getClaudeMD(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"files": files})
+}
+
+func (s *Server) getSettingsJSON(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	sess, err := s.sessions.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	type settingsFile struct {
+		Name    string `json:"name"`
+		Content string `json:"content,omitempty"`
+	}
+
+	files := []settingsFile{}
+	for _, name := range []string{"settings.json", "settings.local.json"} {
+		p := filepath.Join(sess.ProjectPath, ".claude", name)
+		content, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var parsed json.RawMessage
+		if err := json.Unmarshal(content, &parsed); err != nil {
+			continue
+		}
+		files = append(files, settingsFile{Name: name, Content: string(content)})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"files": files,
+	})
 }
 
 func getWorkingTreeDiff(projectPath string) ([]diffFileEntry, error) {
