@@ -931,8 +931,8 @@ func (s *Server) restartServer(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "restarting"})
 
 	// Trigger rebuild and restart via `make restart` in a detached process.
-	// We must use Start (not Run) and Setpgid so the make process survives
-	// when `make restart` kills this server process via lsof/kill.
+	// `make restart` rebuilds the binary and uses launchctl kickstart to
+	// restart the launchd-managed agmux service.
 	go func() {
 		time.Sleep(500 * time.Millisecond) // give the response time to flush
 
