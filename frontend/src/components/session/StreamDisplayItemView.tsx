@@ -24,6 +24,14 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, escalationId,
   if (item.kind === "text") {
     return <CollapsibleText text={item.text} />;
   }
+  if (item.kind === "thinking") {
+    return (
+      <details className="text-xs text-gray-400">
+        <summary className="cursor-pointer select-none hover:text-gray-600">Thinking...</summary>
+        <pre className="mt-1 whitespace-pre-wrap text-gray-500 bg-gray-50 rounded p-2 overflow-x-auto">{item.text}</pre>
+      </details>
+    );
+  }
   if (item.kind === "image") {
     return (
       <img
