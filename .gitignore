@@ -10,3 +10,6 @@ frontend/dist/
 
 # Dependencies
 frontend/node_modules/
+
+# Preview worktrees
+.worktrees/
