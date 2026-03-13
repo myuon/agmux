@@ -223,11 +223,25 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 		}
 		normalizedStr := string(normalized)
 
+		// stream_event lines are only delivered via WebSocket (real-time),
+		// not persisted to .jsonl or included in the lines slice.
+		isStreamEvent := false
+		if len(normalized) > 0 && normalized[0] == '{' {
+			var peek struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(normalized, &peek) == nil && peek.Type == "stream_event" {
+				isStreamEvent = true
+			}
+		}
+
 		sp.mu.Lock()
-		sp.lines = append(sp.lines, normalizedStr)
+		if !isStreamEvent {
+			sp.lines = append(sp.lines, normalizedStr)
+			sp.file.WriteString(normalizedStr + "\n")
+			sp.file.Sync()
+		}
 		total := len(sp.lines)
-		sp.file.WriteString(normalizedStr + "\n")
-		sp.file.Sync()
 		cb := sp.onNewLines
 		sp.mu.Unlock()
 

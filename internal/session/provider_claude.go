@@ -49,6 +49,7 @@ func (p *ClaudeProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 		"--input-format", "stream-json",
 		sessionFlag, resumeID,
 		"--dangerously-skip-permissions",
+		"--include-partial-messages",
 	}
 	if opts.Model != "" {
 		args = append(args, "--model", opts.Model)
