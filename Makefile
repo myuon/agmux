@@ -20,7 +20,8 @@ test:
 	go test ./...
 
 install: build-frontend
-	go install -a ./cmd/agmux
+	go clean -cache
+	go install ./cmd/agmux
 
 restart: install
 	@launchctl kickstart -k "gui/$$(id -u)/com.myuon.agmux"
