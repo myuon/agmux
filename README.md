@@ -13,6 +13,10 @@
 
 ![Session Detail](docs/screenshot-session-detail.png)
 
+### メトリクス
+
+![Metrics](docs/screenshot-metrics.png)
+
 ## 主な機能
 
 - **セッション管理** — Web UIまたはCLIからClaude Codeセッションを作成・停止・削除
