@@ -10,6 +10,16 @@
       "source": "myuon/agent-skills",
       "sourceType": "github",
       "computedHash": "da4c3a82a798bd83a364b3261c53a0a592e277f69466fae85a74a7333b584d72"
+    },
+    "react-no-useeffect": {
+      "source": "myuon/agent-skills",
+      "sourceType": "github",
+      "computedHash": "a3408a5fac65959a0e788fa60af6c3a1f08425bb1ef60404455a00c9fc9b7fb8"
+    },
+    "react-router-loader": {
+      "source": "myuon/agent-skills",
+      "sourceType": "github",
+      "computedHash": "3c95dad19f00a4c265857d565cd06dda45fe57980065f46b9a0f91efc5f1d94d"
     }
   }
 }
