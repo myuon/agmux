@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"strings"
 
 	"github.com/google/uuid"
@@ -272,26 +273,22 @@ func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCErro
 
 func (s *Server) handleRestartServer() (interface{}, *jsonRPCError) {
 	if err := s.apiRestartServer(); err != nil {
-		// API call failed (server may be down); fall back to launchctl kickstart
+		// API呼び出し失敗（サーバーダウンの可能性）; launchctl kickstart にフォールバック
 		if kickErr := s.launchctlKickstart(); kickErr != nil {
-			return toolResult(fmt.Sprintf("Error: API=%v, launchctl=%v", err, kickErr), true), nil
+			return toolResult(fmt.Sprintf("エラー: API=%v, launchctl=%v", err, kickErr), true), nil
 		}
 		return toolResult("APIへの接続に失敗しましたが、launchctlで再起動をキックしました。しばらくお待ちください。", false), nil
 	}
-
-	// Also run launchctl kickstart to ensure the service is restarted
-	_ = s.launchctlKickstart()
 
 	return toolResult("サーバーの再起動を開始しました。再ビルド・再起動が完了すると、このセッションに自動通知されます。しばらくお待ちください。", false), nil
 }
 
 func (s *Server) launchctlKickstart() error {
-	uid, err := exec.Command("id", "-u").Output()
+	u, err := user.Current()
 	if err != nil {
-		return fmt.Errorf("failed to get uid: %w", err)
+		return fmt.Errorf("UIDの取得に失敗しました: %w", err)
 	}
-	uidStr := strings.TrimSpace(string(uid))
-	serviceTarget := fmt.Sprintf("gui/%s/com.myuon.agmux", uidStr)
+	serviceTarget := fmt.Sprintf("gui/%s/com.myuon.agmux", u.Uid)
 	return exec.Command("launchctl", "kickstart", "-k", serviceTarget).Run()
 }
 
