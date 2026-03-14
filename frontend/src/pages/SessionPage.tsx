@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLoaderData } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -23,7 +23,8 @@ import { DiffDropdown } from "../components/session/DiffDropdown";
 export function SessionPage() {
   const { id: sessionId } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [session, setSession] = useState<Session | null>(null);
+  const { session: initialSession } = useLoaderData() as { session: Session };
+  const [session, setSession] = useState<Session | null>(initialSession);
   const [output, setOutput] = useState("");
   const [message, setMessage] = useState("");
   const [streamLines, setStreamLines] = useState<unknown[]>([]);
@@ -184,20 +185,20 @@ export function SessionPage() {
     // Reset cursor on session change
     streamCursorRef.current = null;
 
-    api.getSession(sessionId).then((s) => {
-      setSession(s);
-      setActiveSessionName(s.name);
-      if (s.outputMode === "stream") {
-        api.getStreamOutput(sessionId).then((resp) => {
-          setStreamLines(resp.lines);
-          streamCursorRef.current = resp.total;
-        }).catch(() => {});
-      } else {
-        api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
-      }
-      const versionFn = s.provider === "codex" ? api.getCodexVersion : api.getClaudeVersion;
-      versionFn().then((r) => setProviderVersion(r.version)).catch(() => {});
-    });
+    // Use initial session from loader (already in state)
+    const s = initialSession;
+    setActiveSessionName(s.name);
+    if (s.outputMode === "stream") {
+      api.getStreamOutput(sessionId).then((resp) => {
+        setStreamLines(resp.lines);
+        streamCursorRef.current = resp.total;
+      }).catch(() => {});
+    } else {
+      api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
+    }
+    const versionFn = s.provider === "codex" ? api.getCodexVersion : api.getClaudeVersion;
+    versionFn().then((r) => setProviderVersion(r.version)).catch(() => {});
+
     api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
     api.getPendingEscalation(sessionId).then((r) => {
       if (r.escalation) {
@@ -218,7 +219,7 @@ export function SessionPage() {
       api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
     }, 10000);
     return () => clearInterval(interval);
-  }, [sessionId]);
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();

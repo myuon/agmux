@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import { api } from "../api/client";
 import type { MetricsSummary, MetricRow, MetricEvent } from "../api/client";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLoaderData } from "react-router-dom";
 import { SummaryCard } from "../components/ui/SummaryCard";
 import {
   ToolDurationRanking,
@@ -38,13 +38,21 @@ function sinceFromRange(range: TimeRange): string | undefined {
   return new Date(Date.now() - ms[range]).toISOString();
 }
 
+interface MetricsLoaderData {
+  summary: MetricsSummary;
+  costTimeline: MetricRow[];
+  tokenTimeline: MetricRow[];
+  events: MetricEvent[];
+}
+
 export function MetricsPage() {
-  const [summary, setSummary] = useState<MetricsSummary | null>(null);
-  const [costTimeline, setCostTimeline] = useState<MetricRow[]>([]);
-  const [tokenTimeline, setTokenTimeline] = useState<MetricRow[]>([]);
-  const [events, setEvents] = useState<MetricEvent[]>([]);
+  const loaderData = useLoaderData() as MetricsLoaderData;
+  const [summary, setSummary] = useState<MetricsSummary | null>(loaderData.summary);
+  const [costTimeline, setCostTimeline] = useState<MetricRow[]>(loaderData.costTimeline);
+  const [tokenTimeline, setTokenTimeline] = useState<MetricRow[]>(loaderData.tokenTimeline);
+  const [events, setEvents] = useState<MetricEvent[]>(loaderData.events);
   const [range, setRange] = useState<TimeRange>("24h");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
@@ -68,6 +76,7 @@ export function MetricsPage() {
     }
   }, [range]);
 
+  // Re-fetch when range changes from the default (loader already provided "24h" data)
   useEffect(() => {
     load();
   }, [load]);
