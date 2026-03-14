@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -11,9 +10,8 @@ import {
   Line,
   Legend,
 } from "recharts";
-import { api } from "../api/client";
 import type { MetricsSummary, MetricRow, MetricEvent } from "../api/client";
-import { useNavigate, useLoaderData } from "react-router-dom";
+import { useNavigate, useLoaderData, useSearchParams } from "react-router-dom";
 import { SummaryCard } from "../components/ui/SummaryCard";
 import {
   ToolDurationRanking,
@@ -27,59 +25,19 @@ import {
 
 type TimeRange = "1h" | "6h" | "24h" | "7d" | "all";
 
-function sinceFromRange(range: TimeRange): string | undefined {
-  if (range === "all") return undefined;
-  const ms: Record<string, number> = {
-    "1h": 3600_000,
-    "6h": 21600_000,
-    "24h": 86400_000,
-    "7d": 604800_000,
-  };
-  return new Date(Date.now() - ms[range]).toISOString();
-}
-
 interface MetricsLoaderData {
   summary: MetricsSummary;
   costTimeline: MetricRow[];
   tokenTimeline: MetricRow[];
   events: MetricEvent[];
+  range: string;
 }
 
 export function MetricsPage() {
-  const loaderData = useLoaderData() as MetricsLoaderData;
-  const [summary, setSummary] = useState<MetricsSummary | null>(loaderData.summary);
-  const [costTimeline, setCostTimeline] = useState<MetricRow[]>(loaderData.costTimeline);
-  const [tokenTimeline, setTokenTimeline] = useState<MetricRow[]>(loaderData.tokenTimeline);
-  const [events, setEvents] = useState<MetricEvent[]>(loaderData.events);
-  const [range, setRange] = useState<TimeRange>("24h");
-  const [loading, setLoading] = useState(false);
+  const { summary, costTimeline, tokenTimeline, events, range: loaderRange } = useLoaderData<MetricsLoaderData>();
+  const range = (loaderRange ?? "24h") as TimeRange;
+  const [, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    const since = sinceFromRange(range);
-    try {
-      const [s, cost, tokens, evts] = await Promise.all([
-        api.getMetricsSummary(since),
-        api.getMetrics({ name: "claude_code.cost.usage", since }),
-        api.getMetrics({ name: "claude_code.token.usage", since }),
-        api.getMetricsEvents({ since }),
-      ]);
-      setSummary(s);
-      setCostTimeline(cost);
-      setTokenTimeline(tokens);
-      setEvents(evts);
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, [range]);
-
-  // Re-fetch when range changes from the default (loader already provided "24h" data)
-  useEffect(() => {
-    load();
-  }, [load]);
 
   // Build cost chart data: group by timestamp (minute buckets)
   const costChartData = (() => {
@@ -132,7 +90,7 @@ export function MetricsPage() {
           {(["1h", "6h", "24h", "7d", "all"] as TimeRange[]).map((r) => (
             <button
               key={r}
-              onClick={() => setRange(r)}
+              onClick={() => setSearchParams({ range: r })}
               className={`px-2.5 py-1 text-xs rounded ${
                 range === r
                   ? "bg-blue-600 text-white"
@@ -146,9 +104,7 @@ export function MetricsPage() {
       </header>
 
       <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
-        {loading && !summary ? (
-          <div className="text-center text-gray-500 py-12">Loading...</div>
-        ) : !summary ? (
+        {!summary ? (
           <div className="text-center text-gray-500 py-12">No metrics data yet</div>
         ) : (
           <>

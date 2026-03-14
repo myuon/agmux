@@ -6,7 +6,7 @@ import { Section, Field } from "../components/ui/Section";
 
 export function ConfigPage() {
   const navigate = useNavigate();
-  const { config: initialConfig } = useLoaderData() as { config: AppConfig };
+  const { config: initialConfig } = useLoaderData<{ config: AppConfig }>();
   const [config, setConfig] = useState<AppConfig>(initialConfig);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);

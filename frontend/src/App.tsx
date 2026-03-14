@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Outlet, useNavigate, useSearchParams, useMatch } from "react-router-dom";
+import { Outlet, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
 import { LogPanel } from "./components/LogPanel";
@@ -226,10 +226,8 @@ function Dashboard() {
 function App() {
   useGlobalNotifications();
 
-  // If we're at the index route, render Dashboard; otherwise render child route via Outlet
-  const isIndex = useMatch("/");
-
-  return isIndex ? <Dashboard /> : <Outlet />;
+  return <Outlet />;
 }
 
+export { Dashboard };
 export default App;
