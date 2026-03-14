@@ -199,6 +199,12 @@ func migrate(db *sql.DB) error {
 		  AND json_extract(attributes, '$."session.id"') != ''
 	`)
 
+	// Migration: add read_only column if missing
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: update old status values to new ones
 	_, err = db.Exec(`UPDATE sessions SET status = 'working' WHERE status IN ('running', 'waiting', 'error')`)
 	if err != nil {

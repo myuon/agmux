@@ -61,6 +61,10 @@ func (p *ClaudeProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 	if opts.Worktree {
 		args = append(args, "--worktree")
 	}
+	if opts.ReadOnly {
+		settingsJSON := `{"hooks":{"preToolUse":[{"matcher":"Edit|Write|NotebookEdit|Bash","hook":"agmux hook read-only-guard"}]}}`
+		args = append(args, "--settings", settingsJSON)
+	}
 
 	cmd := exec.Command("claude", args...)
 	cmd.Dir = opts.ProjectPath

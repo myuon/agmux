@@ -23,6 +23,7 @@ type StreamOpts struct {
 	CLISessionID   string // provider-specific session ID (for resume)
 	InitialPrompt  string // initial user prompt (used by Codex as positional arg)
 	Model          string // model to use (e.g. "claude-sonnet-4-5", "o4-mini")
+	ReadOnly       bool   // if true, inject read-only guard hook settings
 }
 
 // TerminalOpts contains parameters for building a terminal-mode command.

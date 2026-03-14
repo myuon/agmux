@@ -84,7 +84,7 @@ func (m *Manager) SystemPrompt() string {
 // before the server was restarted.
 func (m *Manager) RecoverStreamProcesses() {
 	rows, err := m.db.Query(
-		`SELECT id, project_path, provider, cli_session_id, model FROM sessions WHERE status = ? AND output_mode = ?`,
+		`SELECT id, project_path, provider, cli_session_id, model, read_only FROM sessions WHERE status = ? AND output_mode = ?`,
 		string(StatusWorking), string(OutputModeStream),
 	)
 	if err != nil {
@@ -95,7 +95,8 @@ func (m *Manager) RecoverStreamProcesses() {
 
 	for rows.Next() {
 		var id, projectPath, providerStr, dbCliSessionID, dbModel string
-		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel); err != nil {
+		var dbReadOnly bool
+		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbReadOnly); err != nil {
 			m.logger.Error("recover stream processes: scan failed", "error", err)
 			continue
 		}
@@ -118,6 +119,7 @@ func (m *Manager) RecoverStreamProcesses() {
 			Resume:        true,
 			CLISessionID:  cliSessionID,
 			Model:         dbModel,
+			ReadOnly:      dbReadOnly,
 		}, provider)
 		if err != nil {
 			m.logger.Error("recover stream processes: start failed", "sessionId", id, "error", err)
@@ -135,6 +137,7 @@ func (m *Manager) RecoverStreamProcesses() {
 type CreateOpts struct {
 	Provider ProviderName
 	Model    string
+	ReadOnly bool
 }
 
 func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode, worktree bool, opts ...CreateOpts) (*Session, error) {
@@ -144,11 +147,13 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 
 	pn := ProviderClaude
 	model := ""
+	readOnly := false
 	if len(opts) > 0 {
 		if opts[0].Provider != "" {
 			pn = opts[0].Provider
 		}
 		model = opts[0].Model
+		readOnly = opts[0].ReadOnly
 	}
 	provider := m.getProvider(pn)
 
@@ -176,6 +181,7 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 			Resume:        false,
 			Worktree:      worktree,
 			Model:         model,
+			ReadOnly:      readOnly,
 		}
 		var sp *StreamProcess
 		if pn == ProviderCodex && prompt != "" {
@@ -245,14 +251,15 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 		OutputMode:    outputMode,
 		Provider:      pn,
 		Model:         model,
+		ReadOnly:      readOnly,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
 
 	if _, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, s.TmuxSession, string(s.Status), string(s.Type), string(s.OutputMode), string(s.Provider), s.Model, s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, read_only, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, s.TmuxSession, string(s.Status), string(s.Type), string(s.OutputMode), string(s.Provider), s.Model, s.ReadOnly, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		// Cleanup tmux session on DB error
 		_ = m.tmux.KillSession(name)
@@ -264,7 +271,7 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, cli_session_id, model, current_task, goal, goals, read_only, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -280,7 +287,7 @@ func (m *Manager) List() ([]Session, error) {
 		var outputMode string
 		var providerStr string
 		var prompt, currentTask, goal, goalsJSON sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.ReadOnly, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = Status(status)
@@ -354,9 +361,9 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var providerStr string
 	var prompt, currentTask, goal, goalsJSON sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, cli_session_id, model, current_task, goal, goals, read_only, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.ReadOnly, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -545,6 +552,7 @@ func (m *Manager) Clear(id string) error {
 			SystemPrompt:  m.systemPrompt,
 			CLISessionID:  freshCLISessionID,
 			Model:         s.Model,
+			ReadOnly:      s.ReadOnly,
 		}, provider)
 		if err != nil {
 			return fmt.Errorf("start stream process: %w", err)
@@ -609,6 +617,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 					Resume:        true,
 					CLISessionID:  cliSessionID,
 					Model:         s.Model,
+					ReadOnly:      s.ReadOnly,
 				}, provider)
 				if err != nil {
 					return fmt.Errorf("restart stream process: %w", err)
@@ -629,6 +638,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 				Resume:        true,
 				CLISessionID:  cliSessionID,
 				Model:         s.Model,
+				ReadOnly:      s.ReadOnly,
 			}, provider)
 			if err != nil {
 				return fmt.Errorf("restart stream process: %w", err)
@@ -794,9 +804,9 @@ func (m *Manager) GetController() (*Session, error) {
 	var providerStr string
 	var prompt, currentTask, goal, goalsJSON sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, cli_session_id, model, current_task, goal, goals, read_only, created_at, updated_at
 		 FROM sessions WHERE type = ? LIMIT 1`, string(TypeController),
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.ReadOnly, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -888,9 +898,9 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 	}
 
 	_, err = m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, s.TmuxSession, string(s.Status), string(s.Type), string(s.OutputMode), string(s.Provider), s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, read_only, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, s.TmuxSession, string(s.Status), string(s.Type), string(s.OutputMode), string(s.Provider), s.ReadOnly, s.CreatedAt, s.UpdatedAt,
 	)
 	if err != nil {
 		_ = m.tmux.KillSession(name)
@@ -902,6 +912,12 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 
 func (m *Manager) UpdateStatus(id string, status Status) error {
 	_, err := m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(status), time.Now(), id)
+	return err
+}
+
+// UpdateReadOnly updates the read_only flag for a session.
+func (m *Manager) UpdateReadOnly(id string, readOnly bool) error {
+	_, err := m.db.Exec("UPDATE sessions SET read_only = ?, updated_at = ? WHERE id = ?", readOnly, time.Now(), id)
 	return err
 }
 
@@ -1021,6 +1037,7 @@ func (m *Manager) Reconnect(id string) error {
 			Resume:        true,
 			CLISessionID:  cliSessionID,
 			Model:         s.Model,
+			ReadOnly:      s.ReadOnly,
 		}, provider)
 		if err != nil {
 			return fmt.Errorf("start stream process: %w", err)
