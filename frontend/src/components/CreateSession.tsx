@@ -37,9 +37,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
         .then((models) => {
           setCodexModels(models);
           const defaultModel = models.find((m) => m.isDefault);
-          if (defaultModel && !model) {
-            setModel(defaultModel.id);
-          }
+          setModel(defaultModel ? defaultModel.id : "");
         })
         .catch(() => setCodexModels([]))
         .finally(() => setLoadingModels(false));
@@ -47,9 +45,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
       api.getClaudeModels().then((models) => {
         setClaudeModels(models);
         const defaultModel = models.find((m) => m.default);
-        if (defaultModel && !model) {
-          setModel(defaultModel.id);
-        }
+        setModel(defaultModel ? defaultModel.id : "");
       }).catch(() => {
         // Fallback if API is not available
       });

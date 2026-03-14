@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useLoaderData } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -44,7 +44,6 @@ export function SessionPage() {
   const [reconnectToast, setReconnectToast] = useState(false);
   const [disconnectToast, setDisconnectToast] = useState(false);
   const [clearToast, setClearToast] = useState<"success" | "error" | null>(null);
-  const [slashCommands, setSlashCommands] = useState<string[]>([]);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [slashFilter, setSlashFilter] = useState("");
@@ -62,17 +61,15 @@ export function SessionPage() {
   const streamCursorRef = useRef<number | null>(null);
 
   // Extract slash_commands from system init messages
-  useEffect(() => {
+  const slashCommands = useMemo(() => {
     for (const line of streamLines) {
       const entry = line as Record<string, unknown>;
       if (entry.type === "system" && entry.subtype === "init") {
         const cmds = entry.slash_commands as string[] | undefined;
-        if (cmds && cmds.length > 0) {
-          setSlashCommands(cmds);
-        }
-        break;
+        return cmds && cmds.length > 0 ? cmds : [];
       }
     }
+    return [];
   }, [streamLines]);
 
   // Track active session name for notification suppression
@@ -149,12 +146,13 @@ export function SessionPage() {
   useEffect(() => {
     if (connectionState === "disconnected") {
       setDisconnectToast(true);
-    } else if (connectionState === "connected" && disconnectToast) {
+    } else if (connectionState === "connected") {
       setDisconnectToast(false);
       setReconnectToast(true);
-      setTimeout(() => setReconnectToast(false), 3000);
+      const timer = setTimeout(() => setReconnectToast(false), 3000);
+      return () => clearTimeout(timer);
     }
-  }, [connectionState, disconnectToast]);
+  }, [connectionState]);
 
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
