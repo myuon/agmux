@@ -435,6 +435,9 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *StreamProcess) {
 	})
 	if m.onNewLines != nil {
 		sp.SetOnNewLines(m.onNewLines)
+		m.logger.Info("onNewLines callback set for session", "sessionId", sessionID)
+	} else {
+		m.logger.Warn("onNewLines callback is nil, WebSocket updates will not work", "sessionId", sessionID)
 	}
 	sp.SetOnProcessExit(func(sid string, exitErr error) {
 		errMsg := "<nil>"

@@ -136,7 +136,23 @@ func serveCmd() *cobra.Command {
 			defer cancel()
 			go checker.Start(ctx)
 
-			// Recover stream processes for working sessions
+			// Create controller session (singleton)
+			controllerDir, err := db.ControllerDir()
+			if err != nil {
+				return fmt.Errorf("controller dir: %w", err)
+			}
+			controllerSess, err := mgr.CreateController(controllerDir)
+			if err != nil {
+				logger.Warn("failed to create controller session", "error", err)
+			} else {
+				logger.Info("controller session ready", "id", controllerSess.ID)
+			}
+
+			logPath, _ := logging.LogPath()
+			srv := server.New(mgr, hub, devMode, logPath, logger, database)
+
+			// Recover stream processes AFTER server.New() so that
+			// SetOnNewLines callback is already registered on the manager.
 			mgr.RecoverStreamProcesses()
 
 			// Notify the session that requested a restart (if any)
@@ -155,21 +171,6 @@ func serveCmd() *cobra.Command {
 					}
 				}()
 			}
-
-			// Create controller session (singleton)
-			controllerDir, err := db.ControllerDir()
-			if err != nil {
-				return fmt.Errorf("controller dir: %w", err)
-			}
-			controllerSess, err := mgr.CreateController(controllerDir)
-			if err != nil {
-				logger.Warn("failed to create controller session", "error", err)
-			} else {
-				logger.Info("controller session ready", "id", controllerSess.ID)
-			}
-
-			logPath, _ := logging.LogPath()
-			srv := server.New(mgr, hub, devMode, logPath, logger, database)
 
 			if !devMode {
 				frontendFS, err := agmux.FrontendFS()
