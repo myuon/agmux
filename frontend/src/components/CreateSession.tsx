@@ -23,7 +23,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
   const [name, setName] = useState("");
   const [projectPath, setProjectPath] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [outputMode, setOutputMode] = useState<"terminal" | "stream">("terminal");
+  const [outputMode, setOutputMode] = useState<"terminal" | "stream">("stream");
   const [provider, setProvider] = useState("claude");
   const [model, setModel] = useState("");
   const [codexModels, setCodexModels] = useState<CodexModel[]>([]);

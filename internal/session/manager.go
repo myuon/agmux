@@ -139,7 +139,7 @@ type CreateOpts struct {
 
 func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode, worktree bool, opts ...CreateOpts) (*Session, error) {
 	if outputMode == "" {
-		outputMode = OutputModeTerminal
+		outputMode = OutputModeStream
 	}
 
 	pn := ProviderClaude
