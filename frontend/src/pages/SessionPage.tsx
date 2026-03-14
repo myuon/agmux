@@ -760,6 +760,7 @@ export function SessionPage() {
         ) : (
           <FileCodeViewer
             files={settingsJSONFiles}
+            collapsible
             formatContent={(content) => {
               try {
                 return JSON.stringify(JSON.parse(content), null, 2);
