@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Routes, Route, useNavigate, useSearchParams } from "react-router-dom";
+import { Outlet, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
-import { SessionPage } from "./pages/SessionPage";
 import { LogPanel } from "./components/LogPanel";
 import { SessionList } from "./components/SessionList";
-import { ConfigPage } from "./pages/ConfigPage";
-import { MetricsPage } from "./pages/MetricsPage";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { getActiveSessionName } from "./activeSession";
 
@@ -229,14 +226,8 @@ function Dashboard() {
 function App() {
   useGlobalNotifications();
 
-  return (
-    <Routes>
-      <Route path="/" element={<Dashboard />} />
-      <Route path="/sessions/:id" element={<SessionPage />} />
-      <Route path="/config" element={<ConfigPage />} />
-      <Route path="/metrics" element={<MetricsPage />} />
-    </Routes>
-  );
+  return <Outlet />;
 }
 
+export { Dashboard };
 export default App;

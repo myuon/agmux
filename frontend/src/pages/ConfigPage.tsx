@@ -1,28 +1,15 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState } from "react";
+import { useNavigate, useLoaderData } from "react-router-dom";
 import { api } from "../api/client";
 import type { AppConfig } from "../api/client";
 import { Section, Field } from "../components/ui/Section";
 
 export function ConfigPage() {
   const navigate = useNavigate();
-  const [config, setConfig] = useState<AppConfig | null>(null);
+  const { config: initialConfig } = useLoaderData<{ config: AppConfig }>();
+  const [config, setConfig] = useState<AppConfig>(initialConfig);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api
-      .getConfig()
-      .then((cfg) => {
-        setConfig(cfg);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setMessage({ type: "error", text: err.message });
-        setLoading(false);
-      });
-  }, []);
 
   const handleSave = async () => {
     if (!config) return;
@@ -37,22 +24,6 @@ export function ConfigPage() {
       setSaving(false);
     }
   };
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-400">Loading...</p>
-      </div>
-    );
-  }
-
-  if (!config) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-red-500">Failed to load config</p>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">

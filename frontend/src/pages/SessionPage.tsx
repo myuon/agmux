@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLoaderData } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -23,12 +23,19 @@ import { DiffDropdown } from "../components/session/DiffDropdown";
 export function SessionPage() {
   const { id: sessionId } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [session, setSession] = useState<Session | null>(null);
-  const [output, setOutput] = useState("");
+  const loaderData = useLoaderData<{
+    session: Session;
+    streamOutput: { lines: unknown[]; total: number; output?: string };
+    diff: { files: DiffFile[] };
+    providerVersion: string | null;
+  }>();
+  const initialSession = loaderData.session;
+  const [session, setSession] = useState<Session | null>(initialSession);
+  const [output, setOutput] = useState(loaderData.streamOutput.output ?? "");
   const [message, setMessage] = useState("");
-  const [streamLines, setStreamLines] = useState<unknown[]>([]);
+  const [streamLines, setStreamLines] = useState<unknown[]>(loaderData.streamOutput.lines);
   const [partialText, setPartialText] = useState("");
-  const [diffFiles, setDiffFiles] = useState<DiffFile[]>([]);
+  const [diffFiles, setDiffFiles] = useState<DiffFile[]>(loaderData.diff.files);
   const [pendingImages, setPendingImages] = useState<{ data: string; mediaType: string; preview: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingEscalationId, setPendingEscalationId] = useState<string | null>(null);
@@ -50,7 +57,7 @@ export function SessionPage() {
   const [settingsJSONFiles, setSettingsJSONFiles] = useState<{ name: string; content: string }[]>([]);
   const [settingsJSONLoading, setSettingsJSONLoading] = useState(false);
 
-  const [providerVersion, setProviderVersion] = useState<string | null>(null);
+  const providerVersion = loaderData.providerVersion;
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
 
@@ -147,7 +154,7 @@ export function SessionPage() {
       setReconnectToast(true);
       setTimeout(() => setReconnectToast(false), 3000);
     }
-  }, [connectionState]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [connectionState, disconnectToast]);
 
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
   const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -181,24 +188,10 @@ export function SessionPage() {
 
   useEffect(() => {
     if (!sessionId) return;
-    // Reset cursor on session change
-    streamCursorRef.current = null;
+    // Initialize cursor from loader data
+    streamCursorRef.current = loaderData.streamOutput.total || null;
+    setActiveSessionName(initialSession.name);
 
-    api.getSession(sessionId).then((s) => {
-      setSession(s);
-      setActiveSessionName(s.name);
-      if (s.outputMode === "stream") {
-        api.getStreamOutput(sessionId).then((resp) => {
-          setStreamLines(resp.lines);
-          streamCursorRef.current = resp.total;
-        }).catch(() => {});
-      } else {
-        api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
-      }
-      const versionFn = s.provider === "codex" ? api.getCodexVersion : api.getClaudeVersion;
-      versionFn().then((r) => setProviderVersion(r.version)).catch(() => {});
-    });
-    api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
     api.getPendingEscalation(sessionId).then((r) => {
       if (r.escalation) {
         setPendingEscalationId(r.escalation.id);
@@ -218,7 +211,7 @@ export function SessionPage() {
       api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
     }, 10000);
     return () => clearInterval(interval);
-  }, [sessionId]);
+  }, [sessionId, initialSession.name, loaderData.streamOutput.total]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
