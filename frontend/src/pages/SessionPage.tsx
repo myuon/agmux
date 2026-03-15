@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate, useLoaderData } from "react-router-dom";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useNavigate, useLoaderData, Await } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -20,22 +20,62 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import { StreamOutputView } from "../components/session/StreamOutputView";
 import { DiffDropdown } from "../components/session/DiffDropdown";
 
+type DeferredData = {
+  streamOutput: { lines: unknown[]; total: number; output?: string };
+  diff: { files: DiffFile[] };
+  providerVersion: string | null;
+};
+
+function SessionPageSkeleton() {
+  return (
+    <div className="h-dvh flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 max-w-4xl mx-auto">
+      <div className="flex items-center gap-3 mb-3">
+        <div className="w-4 h-4 bg-gray-200 rounded animate-pulse" />
+        <div className="w-3 h-3 rounded-full bg-gray-200 animate-pulse" />
+        <div className="h-7 w-40 bg-gray-200 rounded animate-pulse" />
+      </div>
+      <div className="flex-1 bg-gray-50 rounded-lg animate-pulse" />
+    </div>
+  );
+}
+
 export function SessionPage() {
-  const { id: sessionId } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const loaderData = useLoaderData<{
     session: Session;
-    streamOutput: { lines: unknown[]; total: number; output?: string };
-    diff: { files: DiffFile[] };
-    providerVersion: string | null;
+    streamOutput: Promise<DeferredData["streamOutput"]>;
+    diff: Promise<DeferredData["diff"]>;
+    providerVersion: Promise<string | null>;
   }>();
-  const initialSession = loaderData.session;
+
+  const deferredPromise = useMemo(
+    () =>
+      Promise.all([loaderData.streamOutput, loaderData.diff, loaderData.providerVersion]).then(
+        ([streamOutput, diff, providerVersion]) => ({ streamOutput, diff, providerVersion })
+      ),
+    [loaderData.streamOutput, loaderData.diff, loaderData.providerVersion]
+  );
+
+  return (
+    <Suspense fallback={<SessionPageSkeleton />}>
+      <Await resolve={deferredPromise}>
+        {(deferred: DeferredData) => (
+          <SessionPageInner session={loaderData.session} deferred={deferred} />
+        )}
+      </Await>
+    </Suspense>
+  );
+}
+
+function SessionPageInner({ session: initialSession, deferred }: { session: Session; deferred: DeferredData }) {
+  const { id: sessionId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+
   const [session, setSession] = useState<Session | null>(initialSession);
-  const [output, setOutput] = useState(loaderData.streamOutput.output ?? "");
+  const [output, setOutput] = useState(deferred.streamOutput.output ?? "");
   const [message, setMessage] = useState("");
-  const [streamLines, setStreamLines] = useState<unknown[]>(loaderData.streamOutput.lines);
+  const [streamLines, setStreamLines] = useState<unknown[]>(deferred.streamOutput.lines);
   const [partialText, setPartialText] = useState("");
-  const [diffFiles, setDiffFiles] = useState<DiffFile[]>(loaderData.diff.files);
+  const [diffFiles, setDiffFiles] = useState<DiffFile[]>(deferred.diff.files);
   const [pendingImages, setPendingImages] = useState<{ data: string; mediaType: string; preview: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingEscalationId, setPendingEscalationId] = useState<string | null>(null);
@@ -56,7 +96,7 @@ export function SessionPage() {
   const [settingsJSONFiles, setSettingsJSONFiles] = useState<{ name: string; content: string }[]>([]);
   const [settingsJSONLoading, setSettingsJSONLoading] = useState(false);
 
-  const providerVersion = loaderData.providerVersion;
+  const providerVersion = deferred.providerVersion;
   const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
 
@@ -185,7 +225,7 @@ export function SessionPage() {
   useEffect(() => {
     if (!sessionId) return;
     // Initialize cursor from loader data
-    streamCursorRef.current = loaderData.streamOutput.total || null;
+    streamCursorRef.current = deferred.streamOutput.total || null;
     setActiveSessionName(initialSession.name);
 
     api.getPendingEscalation(sessionId).then((r) => {
@@ -207,7 +247,7 @@ export function SessionPage() {
       api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
     }, 10000);
     return () => clearInterval(interval);
-  }, [sessionId, initialSession.name, loaderData.streamOutput.total]);
+  }, [sessionId, initialSession.name, deferred.streamOutput.total]);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
