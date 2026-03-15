@@ -1,4 +1,6 @@
 import { useState } from "react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   CheckCircle2, ListTodo, Circle, AlertTriangle,
 } from "lucide-react";
@@ -177,7 +179,9 @@ function EscalateCallView({ item, sessionId, escalationId, timedOut, timeoutSeco
       </button>
       {expanded && (
         <div className="px-3 pb-3 space-y-2">
-          <p className="text-sm text-gray-800">{inp?.message}</p>
+          <div className="text-sm text-gray-800 prose prose-sm max-w-none">
+            <Markdown remarkPlugins={[remarkGfm]}>{inp?.message ?? ""}</Markdown>
+          </div>
           {isResolved ? (
             <div className="text-xs text-gray-500 bg-white border border-gray-200 rounded px-2 py-1.5">
               <span className="text-gray-400">Response: </span>
