@@ -1,6 +1,6 @@
 import type { Session } from "../types/session";
 
-const statusDots: Record<Session["status"], string> = {
+export const statusDots: Record<Session["status"], string> = {
   working: "bg-green-500",
   idle: "bg-blue-500",
   paused: "bg-yellow-500",

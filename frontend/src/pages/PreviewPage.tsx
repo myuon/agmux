@@ -5,7 +5,7 @@ import { Section, Field } from "../components/ui/Section";
 import { SummaryCard } from "../components/ui/SummaryCard";
 import { CollapsibleText } from "../components/ui/CollapsibleText";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
-import { StatusBadge, StatusDot } from "../components/StatusBadge";
+import { StatusBadge, StatusDot, statusDots } from "../components/StatusBadge";
 import type { Session } from "../types/session";
 
 function PreviewSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -18,14 +18,34 @@ function PreviewSection({ title, children }: { title: string; children: React.Re
 }
 
 function ToastPreview() {
+  const [visible, setVisible] = useState<Record<string, boolean>>({
+    success: true,
+    error: true,
+    warning: true,
+  });
+
+  const resetAll = () => setVisible({ success: true, error: true, warning: true });
+  const allVisible = Object.values(visible).every(Boolean);
+
   return (
     <PreviewSection title="Toast">
-      <p className="text-xs text-gray-500 mb-2">Toastは固定位置で表示されるため、ここではインライン表示しています。</p>
+      <p className="text-xs text-gray-500 mb-2">Toastは固定位置で表示されるため、ここではインライン表示しています。閉じるボタンで非表示にできます。</p>
+      {!allVisible && (
+        <button onClick={resetAll} className="text-xs text-blue-600 hover:underline mb-2">すべて再表示</button>
+      )}
       <div className="space-y-2">
         {(["success", "error", "warning"] as const).map((variant) => (
           <div key={variant} className="relative h-12 border border-dashed border-gray-200 rounded overflow-hidden">
             <div className="absolute inset-0">
-              <Toast message={`${variant}: サンプルメッセージです`} variant={variant} />
+              {visible[variant] ? (
+                <Toast
+                  message={`${variant}: サンプルメッセージです`}
+                  variant={variant}
+                  onClose={() => setVisible((prev) => ({ ...prev, [variant]: false }))}
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full text-xs text-gray-400">閉じられました</div>
+              )}
             </div>
           </div>
         ))}
@@ -88,14 +108,7 @@ function SummaryCardPreview() {
 }
 
 function StatusBadgePreview() {
-  const statuses: Session["status"][] = [
-    "working",
-    "idle",
-    "paused",
-    "question_waiting",
-    "alignment_needed",
-    "stopped",
-  ];
+  const statuses = Object.keys(statusDots) as Session["status"][];
   return (
     <PreviewSection title="StatusBadge / StatusDot">
       <div className="flex flex-wrap gap-4 items-center">
