@@ -84,6 +84,31 @@ func (p *ClaudeProvider) ParseSessionID(jsonlLine []byte) (string, bool) {
 	return "", false
 }
 
+func (p *ClaudeProvider) ParseModel(jsonlLine []byte) (string, bool) {
+	// Try system init event: {"type":"system","subtype":"init","model":"claude-sonnet-4-5-20250514",...}
+	var sysMsg struct {
+		Type    string `json:"type"`
+		Subtype string `json:"subtype"`
+		Model   string `json:"model"`
+	}
+	if json.Unmarshal(jsonlLine, &sysMsg) == nil && sysMsg.Type == "system" && sysMsg.Subtype == "init" && sysMsg.Model != "" {
+		return sysMsg.Model, true
+	}
+
+	// Try assistant message: {"type":"assistant","message":{"model":"claude-sonnet-4-5-20250514",...}}
+	var assistantMsg struct {
+		Type    string `json:"type"`
+		Message struct {
+			Model string `json:"model"`
+		} `json:"message"`
+	}
+	if json.Unmarshal(jsonlLine, &assistantMsg) == nil && assistantMsg.Type == "assistant" && assistantMsg.Message.Model != "" {
+		return assistantMsg.Message.Model, true
+	}
+
+	return "", false
+}
+
 func (p *ClaudeProvider) BuildTerminalCommand(opts TerminalOpts) string {
 	otelPrefix := p.OTelEnvPrefix(opts.APIPort)
 	cmd := otelPrefix + p.command

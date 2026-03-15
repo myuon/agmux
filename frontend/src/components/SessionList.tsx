@@ -101,6 +101,11 @@ export function SessionList({ sessions, onRestartController }: Props) {
                       {s.provider.charAt(0).toUpperCase() + s.provider.slice(1)}
                     </span>
                   )}
+                  {s.model && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700 truncate max-w-[120px]" title={s.model}>
+                      {s.model}
+                    </span>
+                  )}
                   <span className="text-xs text-gray-400 ml-auto shrink-0">
                     {s.status}
                   </span>

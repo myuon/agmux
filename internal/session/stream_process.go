@@ -33,9 +33,15 @@ type StreamProcess struct {
 	// stopped is true when Stop() was called explicitly (not an unexpected exit)
 	stopped bool
 
+	// modelCaptured is true once the model has been captured (only fire callback once)
+	modelCaptured bool
+
 	// onSessionID is called when the CLI session ID is first captured from stdout.
 	// This allows the manager to persist it to the DB.
 	onSessionID func(cliSessionID string)
+
+	// onModel is called when the model name is first captured from stdout.
+	onModel func(model string)
 
 	// onNewLines is called when new lines are appended to the stream.
 	// The callback receives the session ID and the new lines.
@@ -70,6 +76,31 @@ func ReadCLISessionID(agmuxSessionID string, provider Provider) string {
 		}
 	}
 	return lastSessionID
+}
+
+// ReadModelFromStream reads the model name from a stream JSONL file.
+// It delegates parsing to the given provider.
+// Returns empty string if no model was found.
+func ReadModelFromStream(agmuxSessionID string, provider Provider) string {
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		return ""
+	}
+	path := filepath.Join(streamsDir, agmuxSessionID+".jsonl")
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	for scanner.Scan() {
+		if model, ok := provider.ParseModel([]byte(scanner.Text())); ok {
+			return model
+		}
+	}
+	return ""
 }
 
 // StartStreamProcess starts a CLI subprocess in stream-json mode.
@@ -215,6 +246,19 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 			}
 		}
 
+		// Capture model name via provider (only once per process).
+		if !sp.modelCaptured {
+			if model, ok := sp.provider.ParseModel([]byte(line)); ok {
+				sp.mu.Lock()
+				sp.modelCaptured = true
+				cb := sp.onModel
+				sp.mu.Unlock()
+				if cb != nil {
+					cb(model)
+				}
+			}
+		}
+
 		// Normalize the line into Claude-compatible format.
 		normalized := sp.provider.NormalizeStreamLine([]byte(line))
 		if normalized == nil {
@@ -300,6 +344,13 @@ func (sp *StreamProcess) SetOnSessionID(fn func(cliSessionID string)) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.onSessionID = fn
+}
+
+// SetOnModel sets a callback that fires when the model name is captured from stdout.
+func (sp *StreamProcess) SetOnModel(fn func(model string)) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.onModel = fn
 }
 
 // SetOnNewLines sets a callback that fires when new lines are appended to the stream.

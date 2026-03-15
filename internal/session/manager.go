@@ -110,6 +110,13 @@ func (m *Manager) RecoverStreamProcesses() {
 		if cliSessionID == "" {
 			cliSessionID = ReadCLISessionID(id, provider)
 		}
+		// Backfill model from JSONL if not stored in DB
+		if dbModel == "" {
+			if model := ReadModelFromStream(id, provider); model != "" {
+				dbModel = model
+				_ = m.UpdateModel(id, model)
+			}
+		}
 		sp, err := StartStreamProcessWithOpts(StreamOpts{
 			SessionID:     id,
 			ProjectPath:   projectPath,
@@ -452,6 +459,13 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *StreamProcess) {
 	sp.SetOnSessionID(func(cliSessionID string) {
 		if err := m.UpdateCliSessionID(sessionID, cliSessionID); err != nil {
 			m.logger.Error("failed to persist cli session id", "sessionId", sessionID, "cliSessionId", cliSessionID, "error", err)
+		}
+	})
+	sp.SetOnModel(func(model string) {
+		if err := m.UpdateModel(sessionID, model); err != nil {
+			m.logger.Error("failed to persist model name", "sessionId", sessionID, "model", model, "error", err)
+		} else {
+			m.logger.Info("model name captured from stream", "sessionId", sessionID, "model", model)
 		}
 	})
 	if m.onNewLines != nil {
@@ -929,6 +943,11 @@ func (m *Manager) UpdateStatus(id string, status Status) error {
 // UpdateCliSessionID persists the CLI-assigned session ID to the database.
 func (m *Manager) UpdateCliSessionID(id string, cliSessionID string) error {
 	_, err := m.db.Exec("UPDATE sessions SET cli_session_id = ?, updated_at = ? WHERE id = ?", cliSessionID, time.Now(), id)
+	return err
+}
+
+func (m *Manager) UpdateModel(id string, model string) error {
+	_, err := m.db.Exec("UPDATE sessions SET model = ?, updated_at = ? WHERE id = ?", model, time.Now(), id)
 	return err
 }
 
