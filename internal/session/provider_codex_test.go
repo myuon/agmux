@@ -80,12 +80,12 @@ func TestCodexProvider_BuildStreamCommand_FullAuto(t *testing.T) {
 	})
 
 	args := cmd.Args
-	// Should contain both --full-auto and --sandbox danger-full-access
-	if !containsArg(args, "--full-auto") {
-		t.Errorf("expected args to contain '--full-auto', got: %v", args)
-	}
+	// exec mode always uses --sandbox danger-full-access (no --full-auto which forces workspace-write)
 	if !containsArg(args, "--sandbox") {
 		t.Errorf("expected args to contain '--sandbox', got: %v", args)
+	}
+	if containsArg(args, "--full-auto") {
+		t.Errorf("should not contain '--full-auto' (it forces workspace-write sandbox), got: %v", args)
 	}
 }
 
@@ -100,12 +100,12 @@ func TestCodexProvider_BuildStreamCommand_FullAuto_Resume(t *testing.T) {
 	})
 
 	args := cmd.Args
-	// Should contain --full-auto and resume
-	if !containsArg(args, "--full-auto") {
-		t.Errorf("expected args to contain '--full-auto', got: %v", args)
-	}
+	// exec resume mode: no approval flags needed (non-interactive)
 	if !containsArg(args, "resume") {
 		t.Errorf("expected args to contain 'resume', got: %v", args)
+	}
+	if containsArg(args, "--full-auto") {
+		t.Errorf("should not contain '--full-auto', got: %v", args)
 	}
 }
 
@@ -409,8 +409,11 @@ func TestCodexBuildTerminalCommand_FullAuto(t *testing.T) {
 		FullAuto:  true,
 	})
 
-	if !strings.Contains(cmd, "--full-auto") {
-		t.Errorf("expected --full-auto flag, got %s", cmd)
+	if !strings.Contains(cmd, "-a never") {
+		t.Errorf("expected '-a never' flag, got %s", cmd)
+	}
+	if strings.Contains(cmd, "--full-auto") {
+		t.Errorf("should not contain --full-auto (forces workspace-write), got %s", cmd)
 	}
 	if !strings.Contains(cmd, "--sandbox danger-full-access") {
 		t.Errorf("expected --sandbox danger-full-access with full-auto, got %s", cmd)
@@ -425,8 +428,11 @@ func TestCodexBuildTerminalCommand_FullAuto_Resume(t *testing.T) {
 		FullAuto:  true,
 	})
 
-	if !strings.Contains(cmd, "--full-auto") {
-		t.Errorf("expected --full-auto flag, got %s", cmd)
+	if !strings.Contains(cmd, "-a never") {
+		t.Errorf("expected '-a never' flag, got %s", cmd)
+	}
+	if strings.Contains(cmd, "--full-auto") {
+		t.Errorf("should not contain --full-auto, got %s", cmd)
 	}
 	if !strings.Contains(cmd, "resume") {
 		t.Errorf("expected resume, got %s", cmd)
