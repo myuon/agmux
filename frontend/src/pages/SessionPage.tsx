@@ -128,16 +128,14 @@ export function SessionPage() {
   // On WebSocket reconnection, do a full sync to catch up on missed messages
   useEffect(() => {
     if (prevConnectionState.current === "disconnected" && connectionState === "connected" && sessionId) {
-      const cursor = streamCursorRef.current;
-      if (cursor !== null) {
-        api.getStreamOutputDelta(sessionId, cursor).then((resp) => {
-          if (resp.lines.length > 0) {
-            setStreamLines((prev) => [...prev, ...resp.lines]);
-          }
-          streamCursorRef.current = resp.total;
-        }).catch(() => {});
-      }
+      // Re-fetch full stream data to ensure no gaps from disconnection
+      api.getStreamOutput(sessionId).then((resp) => {
+        setStreamLines(resp.lines);
+        setPartialText("");
+        streamCursorRef.current = resp.total;
+      }).catch(() => {});
       api.getSession(sessionId).then(setSession).catch(() => {});
+      api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
     }
     prevConnectionState.current = connectionState;
   }, [connectionState, sessionId]);
