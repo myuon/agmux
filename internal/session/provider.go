@@ -23,6 +23,7 @@ type StreamOpts struct {
 	CLISessionID   string // provider-specific session ID (for resume)
 	InitialPrompt  string // initial user prompt (used by Codex as positional arg)
 	Model          string // model to use (e.g. "claude-sonnet-4-5", "o4-mini")
+	FullAuto       bool   // enable full-auto mode (Codex: --full-auto instead of --sandbox)
 }
 
 // TerminalOpts contains parameters for building a terminal-mode command.
@@ -33,6 +34,7 @@ type TerminalOpts struct {
 	Resume        bool
 	APIPort       int
 	Model         string // model to use (e.g. "claude-sonnet-4-5", "o4-mini")
+	FullAuto      bool   // enable full-auto mode (Codex: --full-auto instead of --sandbox)
 }
 
 // Provider abstracts CLI-specific behavior so agmux can support multiple AI CLIs.

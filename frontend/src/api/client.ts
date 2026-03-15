@@ -27,6 +27,7 @@ export const api = {
     outputMode?: "terminal" | "stream";
     provider?: string;
     model?: string;
+    autoApprove?: boolean;
   }) =>
     request<Session>("/sessions", {
       method: "POST",
