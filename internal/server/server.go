@@ -267,6 +267,15 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) duplicateSession(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	existing, err := s.sessions.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if existing.Type == session.TypeController {
+		writeError(w, http.StatusForbidden, "controller session cannot be duplicated")
+		return
+	}
 	sess, err := s.sessions.Duplicate(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
