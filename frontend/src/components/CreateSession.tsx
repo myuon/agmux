@@ -10,6 +10,7 @@ interface Props {
     outputMode?: "terminal" | "stream";
     provider?: string;
     model?: string;
+    autoApprove?: boolean;
   }) => void;
 }
 
@@ -28,6 +29,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
   const [model, setModel] = useState("");
   const [codexModels, setCodexModels] = useState<CodexModel[]>([]);
   const [claudeModels, setClaudeModels] = useState<ModelOption[]>([]);
+  const [autoApprove, setAutoApprove] = useState(true);
   const [loadingModels, setLoadingModels] = useState(false);
 
   useEffect(() => {
@@ -63,6 +65,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
       outputMode,
       provider,
       model: (provider === "codex" || provider === "claude") && model ? model : undefined,
+      autoApprove: provider === "codex" && autoApprove ? true : undefined,
     });
   };
 
@@ -171,6 +174,18 @@ export function CreateSession({ onClose, onCreate }: Props) {
                   ))}
                 </select>
               )}
+            </div>
+          )}
+          {provider === "codex" && (
+            <div>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={autoApprove}
+                  onChange={(e) => setAutoApprove(e.target.checked)}
+                />
+                Full-auto mode (bypass permission prompts)
+              </label>
             </div>
           )}
           {provider === "claude" && claudeModels.length > 0 && (

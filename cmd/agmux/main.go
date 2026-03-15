@@ -252,6 +252,7 @@ func sessionCreateCmd() *cobra.Command {
 	var worktree bool
 	var provider string
 	var model string
+	var autoApprove bool
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -266,7 +267,7 @@ func sessionCreateCmd() *cobra.Command {
 			if outputMode == session.OutputModeStream {
 				// Stream mode: delegate to the running agmux server so the
 				// child process outlives this CLI invocation.
-				return createSessionViaAPI(args[0], projectPath, prompt, mode, worktree, provider, model)
+				return createSessionViaAPI(args[0], projectPath, prompt, mode, worktree, provider, model, autoApprove)
 			}
 
 			cfg, _ := config.Load()
@@ -274,7 +275,7 @@ func sessionCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			s, err := mgr.Create(args[0], projectPath, prompt, outputMode, worktree, session.CreateOpts{Provider: session.ProviderName(provider), Model: model})
+			s, err := mgr.Create(args[0], projectPath, prompt, outputMode, worktree, session.CreateOpts{Provider: session.ProviderName(provider), Model: model, FullAuto: autoApprove})
 			if err != nil {
 				return err
 			}
@@ -289,13 +290,14 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&worktree, "worktree", "w", false, "Create a git worktree for the session")
 	cmd.Flags().StringVar(&provider, "provider", "claude", "Provider: claude or codex")
 	cmd.Flags().StringVar(&model, "model", "", "Model to use (e.g. claude-sonnet-4-5, o4-mini)")
+	cmd.Flags().BoolVar(&autoApprove, "auto-approve", true, "Enable full-auto mode (bypass permission prompts for Codex)")
 
 	return cmd
 }
 
 // createSessionViaAPI sends a POST /api/sessions request to the running agmux server
 // so that the stream process is owned by the server, not this short-lived CLI process.
-func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, provider, model string) error {
+func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, provider, model string, autoApprove bool) error {
 	cfg, _ := config.Load()
 	port := cfg.Server.Port
 
@@ -314,6 +316,9 @@ func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, 
 	}
 	if model != "" {
 		payload["model"] = model
+	}
+	if autoApprove {
+		payload["autoApprove"] = true
 	}
 	body, _ := json.Marshal(payload)
 

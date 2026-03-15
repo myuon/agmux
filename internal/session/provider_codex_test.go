@@ -71,6 +71,44 @@ func TestCodexProvider_BuildStreamCommand_Resume(t *testing.T) {
 	}
 }
 
+func TestCodexProvider_BuildStreamCommand_FullAuto(t *testing.T) {
+	p := NewCodexProvider("codex")
+	cmd := p.BuildStreamCommand(StreamOpts{
+		SessionID:   "sess-1",
+		ProjectPath: "/tmp/project",
+		FullAuto:    true,
+	})
+
+	args := cmd.Args
+	// Should contain both --full-auto and --sandbox danger-full-access
+	if !containsArg(args, "--full-auto") {
+		t.Errorf("expected args to contain '--full-auto', got: %v", args)
+	}
+	if !containsArg(args, "--sandbox") {
+		t.Errorf("expected args to contain '--sandbox', got: %v", args)
+	}
+}
+
+func TestCodexProvider_BuildStreamCommand_FullAuto_Resume(t *testing.T) {
+	p := NewCodexProvider("codex")
+	cmd := p.BuildStreamCommand(StreamOpts{
+		SessionID:    "sess-1",
+		ProjectPath:  "/tmp/project",
+		Resume:       true,
+		CLISessionID: "thr_abc123",
+		FullAuto:     true,
+	})
+
+	args := cmd.Args
+	// Should contain --full-auto and resume
+	if !containsArg(args, "--full-auto") {
+		t.Errorf("expected args to contain '--full-auto', got: %v", args)
+	}
+	if !containsArg(args, "resume") {
+		t.Errorf("expected args to contain 'resume', got: %v", args)
+	}
+}
+
 func TestCodexProvider_BuildStreamCommand_MCPIgnored(t *testing.T) {
 	p := NewCodexProvider("codex")
 	cmd := p.BuildStreamCommand(StreamOpts{
@@ -361,6 +399,40 @@ func TestCodexBuildTerminalCommand_WithSystemPrompt(t *testing.T) {
 	// Codex CLI does not support --instructions; system prompt is not passed in terminal mode
 	if strings.Contains(cmd, "--instructions") {
 		t.Errorf("--instructions should not be used in Codex terminal mode, got %s", cmd)
+	}
+}
+
+func TestCodexBuildTerminalCommand_FullAuto(t *testing.T) {
+	p := NewCodexProvider("")
+	cmd := p.BuildTerminalCommand(TerminalOpts{
+		SessionID: "sess-300",
+		FullAuto:  true,
+	})
+
+	if !strings.Contains(cmd, "--full-auto") {
+		t.Errorf("expected --full-auto flag, got %s", cmd)
+	}
+	if !strings.Contains(cmd, "--sandbox danger-full-access") {
+		t.Errorf("expected --sandbox danger-full-access with full-auto, got %s", cmd)
+	}
+}
+
+func TestCodexBuildTerminalCommand_FullAuto_Resume(t *testing.T) {
+	p := NewCodexProvider("")
+	cmd := p.BuildTerminalCommand(TerminalOpts{
+		SessionID: "sess-400",
+		Resume:    true,
+		FullAuto:  true,
+	})
+
+	if !strings.Contains(cmd, "--full-auto") {
+		t.Errorf("expected --full-auto flag, got %s", cmd)
+	}
+	if !strings.Contains(cmd, "resume") {
+		t.Errorf("expected resume, got %s", cmd)
+	}
+	if !strings.Contains(cmd, "--sandbox danger-full-access") {
+		t.Errorf("expected --sandbox danger-full-access with full-auto, got %s", cmd)
 	}
 }
 

@@ -169,6 +169,7 @@ type createSessionRequest struct {
 	Worktree    bool   `json:"worktree,omitempty"`
 	Provider    string `json:"provider,omitempty"`
 	Model       string `json:"model,omitempty"`
+	AutoApprove bool   `json:"autoApprove,omitempty"`
 }
 
 type sendImageData struct {
@@ -208,7 +209,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and projectPath are required")
 		return
 	}
-	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, session.OutputMode(req.OutputMode), req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model})
+	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, session.OutputMode(req.OutputMode), req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model, FullAuto: req.AutoApprove})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

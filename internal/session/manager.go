@@ -135,6 +135,7 @@ func (m *Manager) RecoverStreamProcesses() {
 type CreateOpts struct {
 	Provider ProviderName
 	Model    string
+	FullAuto bool // enable full-auto mode (bypasses permission prompts for Codex)
 }
 
 func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode, worktree bool, opts ...CreateOpts) (*Session, error) {
@@ -144,11 +145,13 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 
 	pn := ProviderClaude
 	model := ""
+	fullAuto := false
 	if len(opts) > 0 {
 		if opts[0].Provider != "" {
 			pn = opts[0].Provider
 		}
 		model = opts[0].Model
+		fullAuto = opts[0].FullAuto
 	}
 	provider := m.getProvider(pn)
 
@@ -176,6 +179,7 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 			Resume:        false,
 			Worktree:      worktree,
 			Model:         model,
+			FullAuto:      fullAuto,
 		}
 		var sp *StreamProcess
 		if pn == ProviderCodex && prompt != "" {
@@ -217,6 +221,7 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 			Resume:        false,
 			APIPort:       m.apiPort,
 			Model:         model,
+			FullAuto:      fullAuto,
 		})
 		if err := m.tmux.SendKeysOnce(tmuxSession, claudeCmd); err != nil {
 			return nil, fmt.Errorf("launch cli: %w", err)

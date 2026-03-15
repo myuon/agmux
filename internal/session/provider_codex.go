@@ -35,14 +35,21 @@ func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 		// Note: --sandbox is not supported for exec resume
 		args = append(args, "exec", "resume",
 			"--json",
-			opts.CLISessionID,
 		)
+		if opts.FullAuto {
+			args = append(args, "--full-auto")
+		}
+		args = append(args, opts.CLISessionID)
 	} else {
 		// Start a new session
 		args = append(args, "exec",
 			"--json",
-			"--sandbox", "danger-full-access",
 		)
+		if opts.FullAuto {
+			args = append(args, "--full-auto", "--sandbox", "danger-full-access")
+		} else {
+			args = append(args, "--sandbox", "danger-full-access")
+		}
 	}
 
 	// Codex CLI does not support --mcp-config or --instructions flags.
@@ -98,9 +105,17 @@ func (p *CodexProvider) BuildTerminalCommand(opts TerminalOpts) string {
 
 	var cmd string
 	if opts.Resume {
-		cmd = otelPrefix + p.command + " resume " + opts.SessionID + " --sandbox danger-full-access"
+		cmd = otelPrefix + p.command + " resume " + opts.SessionID
+		if opts.FullAuto {
+			cmd += " --full-auto"
+		}
+		cmd += " --sandbox danger-full-access"
 	} else {
-		cmd = otelPrefix + p.command + " --sandbox danger-full-access"
+		cmd = otelPrefix + p.command
+		if opts.FullAuto {
+			cmd += " --full-auto"
+		}
+		cmd += " --sandbox danger-full-access"
 	}
 
 	// Add --model flag if specified
