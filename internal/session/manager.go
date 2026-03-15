@@ -461,6 +461,16 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *StreamProcess) {
 		m.logger.Warn("onNewLines callback is nil, WebSocket updates will not work", "sessionId", sessionID)
 	}
 	sp.SetOnProcessExit(func(sid string, exitErr error) {
+		// For Codex provider, exit code 0 is normal (exec finishes after each prompt).
+		// Keep the session running and the stream process in the map so that
+		// sendCodex can restart it with "codex exec resume" on the next message.
+		if sp.provider.Name() == ProviderCodex && exitErr == nil {
+			m.logger.Info("codex process exited normally (exit code 0), keeping session running for resume",
+				"sessionId", sid,
+			)
+			return
+		}
+
 		errMsg := "<nil>"
 		if exitErr != nil {
 			errMsg = exitErr.Error()
