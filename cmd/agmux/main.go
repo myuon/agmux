@@ -290,7 +290,7 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().BoolVarP(&worktree, "worktree", "w", false, "Create a git worktree for the session")
 	cmd.Flags().StringVar(&provider, "provider", "claude", "Provider: claude or codex")
 	cmd.Flags().StringVar(&model, "model", "", "Model to use (e.g. claude-sonnet-4-5, o4-mini)")
-	cmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Enable full-auto mode (bypass permission prompts for Codex)")
+	cmd.Flags().BoolVar(&autoApprove, "auto-approve", true, "Enable full-auto mode (bypass permission prompts for Codex)")
 
 	return cmd
 }

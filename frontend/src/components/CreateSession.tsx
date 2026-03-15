@@ -29,7 +29,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
   const [model, setModel] = useState("");
   const [codexModels, setCodexModels] = useState<CodexModel[]>([]);
   const [claudeModels, setClaudeModels] = useState<ModelOption[]>([]);
-  const [autoApprove, setAutoApprove] = useState(false);
+  const [autoApprove, setAutoApprove] = useState(true);
   const [loadingModels, setLoadingModels] = useState(false);
 
   useEffect(() => {
