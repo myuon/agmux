@@ -36,20 +36,15 @@ func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 		args = append(args, "exec", "resume",
 			"--json",
 		)
-		if opts.FullAuto {
-			args = append(args, "--full-auto")
-		}
 		args = append(args, opts.CLISessionID)
 	} else {
 		// Start a new session
+		// Note: Do NOT use --full-auto here as it forces --sandbox workspace-write,
+		// overriding danger-full-access. In exec mode there is no approval prompt anyway.
 		args = append(args, "exec",
 			"--json",
+			"--sandbox", "danger-full-access",
 		)
-		if opts.FullAuto {
-			args = append(args, "--full-auto", "--sandbox", "danger-full-access")
-		} else {
-			args = append(args, "--sandbox", "danger-full-access")
-		}
 	}
 
 	// Codex CLI does not support --mcp-config or --instructions flags.
@@ -107,13 +102,13 @@ func (p *CodexProvider) BuildTerminalCommand(opts TerminalOpts) string {
 	if opts.Resume {
 		cmd = otelPrefix + p.command + " resume " + opts.SessionID
 		if opts.FullAuto {
-			cmd += " --full-auto"
+			cmd += " -a never"
 		}
 		cmd += " --sandbox danger-full-access"
 	} else {
 		cmd = otelPrefix + p.command
 		if opts.FullAuto {
-			cmd += " --full-auto"
+			cmd += " -a never"
 		}
 		cmd += " --sandbox danger-full-access"
 	}
