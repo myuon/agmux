@@ -16,6 +16,16 @@ make dev          # dev mode (frontend dev server + go run)
 ## サーバー
 
 - アプリはポート **4321** で動作する (`http://localhost:4321`)
+- launchd でデーモン管理されている（サービス名: `com.myuon.agmux`）
+
+## デプロイ手順（PRマージ後）
+
+```bash
+git checkout main && git pull   # 最新を取得
+make build                      # frontend + go build
+go install ./...                # バイナリをインストール
+launchctl kickstart -k gui/$(id -u)/com.myuon.agmux  # サーバー再起動
+```
 
 ## イシュー管理
 
