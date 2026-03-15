@@ -44,7 +44,7 @@ agmux logs --server              # Show server log
 agmux logs --daemon              # Show daemon log
 ```
 
-### Daemon
+### Daemon (macOS only)
 
 ```bash
 agmux daemon install     # Install daemon (launchd)
