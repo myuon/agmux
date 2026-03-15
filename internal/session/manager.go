@@ -385,6 +385,22 @@ func (m *Manager) Get(id string) (*Session, error) {
 	return &s, nil
 }
 
+// Duplicate creates a new session by copying configuration from an existing session.
+// It copies Name (with " (copy)" suffix), ProjectPath, OutputMode, Provider, and Model.
+// It does NOT copy InitialPrompt, Status, CurrentTask, Goal, Goals, TmuxSession, or CliSessionID.
+func (m *Manager) Duplicate(id string) (*Session, error) {
+	src, err := m.Get(id)
+	if err != nil {
+		return nil, err
+	}
+
+	newName := src.Name + " (copy)"
+	return m.Create(newName, src.ProjectPath, "", src.OutputMode, false, CreateOpts{
+		Provider: src.Provider,
+		Model:    src.Model,
+	})
+}
+
 func (m *Manager) Stop(id string) error {
 	s, err := m.Get(id)
 	if err != nil {
