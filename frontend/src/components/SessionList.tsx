@@ -1,9 +1,8 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { TerminalSquare, Copy } from "lucide-react";
+import { TerminalSquare } from "lucide-react";
 import type { Session } from "../types/session";
 import { StatusDot } from "./StatusBadge";
-import { api } from "../api/client";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -117,24 +116,6 @@ export function SessionList({ sessions, onRestartController }: Props) {
                     {timeAgo(s.createdAt)}
                   </span>
                   <div className="flex gap-1.5">
-                    {s.type !== "controller" && (
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          try {
-                            const newSession = await api.duplicateSession(s.id);
-                            navigate(`/sessions/${newSession.id}`);
-                          } catch {
-                            alert("Failed to duplicate session");
-                          }
-                        }}
-                        className="px-2 py-0.5 text-xs bg-gray-50 text-gray-600 rounded hover:bg-gray-100 flex items-center gap-1"
-                        title="Duplicate session"
-                      >
-                        <Copy className="w-3 h-3" />
-                        Duplicate
-                      </button>
-                    )}
                     {s.type === "controller" && s.status === "stopped" && (
                       <button
                         onClick={(e) => { e.stopPropagation(); onRestartController(); }}
