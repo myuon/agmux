@@ -294,16 +294,27 @@ func (s *Server) launchctlKickstart() error {
 	return exec.Command("launchctl", "kickstart", "-k", serviceTarget).Run()
 }
 
-// waitForServerReady はサーバーのAPIにアクセスできるようになるまでポーリングする
+// waitForServerReady はサーバーのAPIにアクセスできるようになるまでポーリングする。
+// 旧プロセスの応答を誤認しないよう、まず旧プロセスの停止を確認（接続エラー）してから
+// 新プロセスの起動完了を待つ2フェーズ方式を採用している。
 func (s *Server) waitForServerReady(timeout, interval time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 2 * time.Second}
+	url := fmt.Sprintf("%s/api/sessions", s.apiURL)
 
-	// kickstart直後はまだ旧プロセスが応答する可能性があるので少し待つ
-	time.Sleep(1 * time.Second)
-
+	// Phase 1: 旧プロセスが停止するのを待つ（接続エラーになるまでポーリング）
 	for time.Now().Before(deadline) {
-		url := fmt.Sprintf("%s/api/sessions", s.apiURL)
+		resp, err := client.Get(url)
+		if err != nil {
+			// 接続エラー = 旧プロセスが停止した
+			break
+		}
+		resp.Body.Close()
+		time.Sleep(interval)
+	}
+
+	// Phase 2: 新プロセスが起動するのを待つ（200 OKが返るまでポーリング）
+	for time.Now().Before(deadline) {
 		resp, err := client.Get(url)
 		if err == nil {
 			resp.Body.Close()
