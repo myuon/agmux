@@ -1029,18 +1029,17 @@ func (m *Manager) Reconnect(id string) error {
 	}
 
 	if s.OutputMode == OutputModeStream {
-		// Prefer DB-stored cli_session_id; fall back to JSONL file scan
-		cliSessionID := s.CliSessionID
-		if cliSessionID == "" {
-			cliSessionID = ReadCLISessionID(id, provider)
-		}
+		// Generate a fresh CLI session ID to avoid "Session ID already in use" errors.
+		// The old CLI process may still hold a lock on its session ID even after being
+		// killed, so we always start a new CLI session on reconnect.
+		freshCLISessionID := uuid.New().String()
 		sp, err := StartStreamProcessWithOpts(StreamOpts{
 			SessionID:     id,
 			ProjectPath:   s.ProjectPath,
 			MCPConfigPath: mcpConfigPath,
 			SystemPrompt:  m.systemPrompt,
-			Resume:        true,
-			CLISessionID:  cliSessionID,
+			Resume:        false,
+			CLISessionID:  freshCLISessionID,
 			Model:         s.Model,
 		}, provider)
 		if err != nil {
@@ -1052,11 +1051,13 @@ func (m *Manager) Reconnect(id string) error {
 		m.streamMu.Unlock()
 	} else {
 		time.Sleep(300 * time.Millisecond)
+		// Use a fresh session ID to avoid "Session ID already in use" errors.
+		freshSessionID := uuid.New().String()
 		claudeCmd := provider.BuildTerminalCommand(TerminalOpts{
-			SessionID:     id,
+			SessionID:     freshSessionID,
 			MCPConfigPath: mcpConfigPath,
 			SystemPrompt:  m.systemPrompt,
-			Resume:        true,
+			Resume:        false,
 			APIPort:       m.apiPort,
 			Model:         s.Model,
 		})
