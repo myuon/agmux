@@ -213,7 +213,7 @@ func add(a, b int) int {
 
 export function PreviewPage() {
   return (
-    <div className="space-y-8 pb-12">
+    <div className="p-6 space-y-8 pb-12">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">UI Component Preview</h1>
         <p className="text-sm text-gray-500 mt-1">UIコンポーネントの一覧とバリエーション確認用ページ</p>
