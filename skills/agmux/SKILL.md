@@ -27,7 +27,6 @@ agmux session create <name> -p <path>       # Create session with project direct
 agmux session create <name> -m "prompt"     # Create session with initial prompt
 agmux session create <name> --model claude-sonnet-4-5  # Specify model
 agmux session create <name> --provider codex           # Use codex provider (default: claude)
-agmux session create <name> --mode terminal             # Output mode: terminal or stream (default: stream)
 agmux session create <name> -w              # Create a git worktree for the session
 agmux session send <id> "message"           # Send message to a session
 agmux session stop <id>                     # Stop a session
