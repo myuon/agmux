@@ -125,7 +125,7 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 				},
 				map[string]interface{}{
 					"name":        "restart_server",
-					"description": "agmuxサーバーをlaunchctl kickstartで再起動します。",
+					"description": "agmuxサーバーを再起動します。",
 					"inputSchema": map[string]interface{}{
 						"type":       "object",
 						"properties": map[string]interface{}{},
@@ -273,9 +273,9 @@ func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCErro
 
 func (s *Server) handleRestartServer() (interface{}, *jsonRPCError) {
 	if err := s.launchctlKickstart(); err != nil {
-		return toolResult(fmt.Sprintf("エラー: launchctl kickstartに失敗しました: %v", err), true), nil
+		return toolResult(fmt.Sprintf("エラー: サーバーの再起動に失敗しました: %v", err), true), nil
 	}
-	return toolResult("launchctl kickstartでサーバーの再起動をキックしました。しばらくお待ちください。", false), nil
+	return toolResult("サーバーの再起動をキックしました。しばらくお待ちください。", false), nil
 }
 
 func (s *Server) launchctlKickstart() error {
