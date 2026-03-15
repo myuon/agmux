@@ -1029,17 +1029,19 @@ func (m *Manager) Reconnect(id string) error {
 	}
 
 	if s.OutputMode == OutputModeStream {
-		// Generate a fresh CLI session ID to avoid "Session ID already in use" errors.
-		// The old CLI process may still hold a lock on its session ID even after being
-		// killed, so we always start a new CLI session on reconnect.
-		freshCLISessionID := uuid.New().String()
+		// Resume the existing CLI session to preserve conversation history.
+		// Prefer DB-stored cli_session_id; fall back to JSONL file scan.
+		cliSessionID := s.CliSessionID
+		if cliSessionID == "" {
+			cliSessionID = ReadCLISessionID(id, provider)
+		}
 		sp, err := StartStreamProcessWithOpts(StreamOpts{
 			SessionID:     id,
 			ProjectPath:   s.ProjectPath,
 			MCPConfigPath: mcpConfigPath,
 			SystemPrompt:  m.systemPrompt,
-			Resume:        false,
-			CLISessionID:  freshCLISessionID,
+			Resume:        true,
+			CLISessionID:  cliSessionID,
 			Model:         s.Model,
 		}, provider)
 		if err != nil {
@@ -1051,13 +1053,13 @@ func (m *Manager) Reconnect(id string) error {
 		m.streamMu.Unlock()
 	} else {
 		time.Sleep(300 * time.Millisecond)
-		// Use a fresh session ID to avoid "Session ID already in use" errors.
-		freshSessionID := uuid.New().String()
+		// Resume the existing CLI session to preserve conversation history.
+		// Terminal mode uses the agmux session ID as the CLI session ID.
 		claudeCmd := provider.BuildTerminalCommand(TerminalOpts{
-			SessionID:     freshSessionID,
+			SessionID:     id,
 			MCPConfigPath: mcpConfigPath,
 			SystemPrompt:  m.systemPrompt,
-			Resume:        false,
+			Resume:        true,
 			APIPort:       m.apiPort,
 			Model:         s.Model,
 		})
