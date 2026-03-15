@@ -53,6 +53,9 @@ export const api = {
   deleteSession: (id: string) =>
     request<{ status: string }>(`/sessions/${id}`, { method: "DELETE" }),
 
+  duplicateSession: (id: string) =>
+    request<Session>(`/sessions/${id}/duplicate`, { method: "POST" }),
+
   sendToSession: (id: string, text: string, images?: { data: string; mediaType: string }[]) =>
     request<{ status: string }>(`/sessions/${id}/send`, {
       method: "POST",

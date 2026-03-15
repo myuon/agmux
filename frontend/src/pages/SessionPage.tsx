@@ -4,7 +4,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FolderOpen,
-  Sparkles, Settings,
+  Sparkles, Settings, Copy,
   ListTodo, Target, RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
   Code, Eye, X,
 } from "lucide-react";
@@ -291,6 +291,24 @@ export function SessionPage() {
                   }}
                 >
                   <Slash className="w-4 h-4" /> Slash commands
+                </button>
+              )}
+              {session.type !== "controller" && (
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                  onMouseDown={async (e) => {
+                    e.preventDefault();
+                    setShowActionMenu(false);
+                    try {
+                      const newSession = await api.duplicateSession(session.id);
+                      navigate(`/sessions/${newSession.id}`);
+                    } catch {
+                      alert("Failed to duplicate session");
+                    }
+                  }}
+                >
+                  <Copy className="w-4 h-4" /> Duplicate
                 </button>
               )}
               <button
