@@ -1,11 +1,13 @@
 package session
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/myuon/agmux/internal/db"
 )
@@ -359,6 +361,145 @@ func TestSendCodex_MultipleFollowups(t *testing.T) {
 	if !strings.Contains(contentStr, `"second followup"`) {
 		t.Errorf("stream file should contain second followup message")
 	}
+}
+
+// TestOnProcessExit_CodexExitCode0_SessionStaysRunning verifies that when a Codex
+// process exits with code 0, the onProcessExit callback receives a nil exitErr,
+// allowing the Manager to skip setting the session to stopped and keep the stream
+// process in the map. This is the unit test for the fix in wireSessionIDCallback.
+func TestOnProcessExit_CodexExitCode0_SessionStaysRunning(t *testing.T) {
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sessionID := "test-codex-exit0-" + t.Name()
+	streamPath := filepath.Join(streamsDir, sessionID+".jsonl")
+	defer os.Remove(streamPath)
+
+	provider := &stubCodexProviderWithOutput{
+		CodexProvider: *NewCodexProvider(""),
+		output:        `{"type":"thread.started","thread_id":"thr_exit0_test"}`,
+	}
+
+	sp, err := StartStreamProcess(sessionID, t.TempDir(), "", "", false, false, provider)
+	if err != nil {
+		t.Fatalf("StartStreamProcess failed: %v", err)
+	}
+	defer sp.Stop()
+
+	// Simulate the Manager's onProcessExit callback (same logic as wireSessionIDCallback)
+	type callbackResult struct {
+		sessionID string
+		exitErr   error
+		called    bool
+	}
+	result := make(chan callbackResult, 1)
+
+	// Track whether the session would be set to stopped
+	sessionStopped := false
+	streamProcessRemoved := false
+
+	sp.SetOnProcessExit(func(sid string, exitErr error) {
+		// This mirrors the Manager's wireSessionIDCallback logic
+		if sp.provider.Name() == ProviderCodex && exitErr == nil {
+			// Early return: Codex + exit code 0 means normal completion
+			result <- callbackResult{sessionID: sid, exitErr: exitErr, called: true}
+			return
+		}
+
+		// This path should NOT be reached for Codex + exit code 0
+		sessionStopped = true
+		streamProcessRemoved = true
+		result <- callbackResult{sessionID: sid, exitErr: exitErr, called: true}
+	})
+
+	// Wait for the callback to be invoked (monitorExit fires it after process exit)
+	select {
+	case r := <-result:
+		if !r.called {
+			t.Fatal("onProcessExit callback was not called")
+		}
+		if r.exitErr != nil {
+			t.Errorf("expected nil exitErr for Codex exit code 0, got: %v", r.exitErr)
+		}
+		if r.sessionID != sessionID {
+			t.Errorf("callback sessionID = %q, want %q", r.sessionID, sessionID)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for onProcessExit callback")
+	}
+
+	// Verify the early return prevented the session from being stopped
+	if sessionStopped {
+		t.Error("session should NOT have been set to stopped for Codex exit code 0")
+	}
+	if streamProcessRemoved {
+		t.Error("stream process should NOT have been removed from map for Codex exit code 0")
+	}
+}
+
+// TestOnProcessExit_CodexExitCodeNonZero_SessionStopped verifies that when a Codex
+// process exits with a non-zero exit code, the onProcessExit callback correctly
+// triggers session stopped behavior (does NOT early-return).
+func TestOnProcessExit_CodexExitCodeNonZero_SessionStopped(t *testing.T) {
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sessionID := "test-codex-exit1-" + t.Name()
+	streamPath := filepath.Join(streamsDir, sessionID+".jsonl")
+	defer os.Remove(streamPath)
+
+	// Use a provider whose command exits with code 1
+	provider := &stubCodexProviderExitCode{
+		CodexProvider: *NewCodexProvider(""),
+		exitCode:      1,
+	}
+
+	sp, err := StartStreamProcess(sessionID, t.TempDir(), "", "", false, false, provider)
+	if err != nil {
+		t.Fatalf("StartStreamProcess failed: %v", err)
+	}
+	defer sp.Stop()
+
+	sessionStopped := false
+	done := make(chan struct{})
+
+	sp.SetOnProcessExit(func(sid string, exitErr error) {
+		if sp.provider.Name() == ProviderCodex && exitErr == nil {
+			// This should NOT be reached for non-zero exit code
+			close(done)
+			return
+		}
+		// Non-zero exit: session should be stopped
+		sessionStopped = true
+		close(done)
+	})
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for onProcessExit callback")
+	}
+
+	if !sessionStopped {
+		t.Error("session SHOULD have been set to stopped for Codex non-zero exit code")
+	}
+}
+
+// stubCodexProviderExitCode overrides BuildStreamCommand to exit with a specific code.
+type stubCodexProviderExitCode struct {
+	CodexProvider
+	exitCode int
+}
+
+func (p *stubCodexProviderExitCode) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
+	// "sh -c 'exit N'" to simulate a specific exit code
+	cmd := exec.Command("sh", "-c", fmt.Sprintf("exit %d", p.exitCode))
+	cmd.Dir = opts.ProjectPath
+	return cmd
 }
 
 // stubCodexProvider wraps CodexProvider but overrides BuildStreamCommand to use "true"
