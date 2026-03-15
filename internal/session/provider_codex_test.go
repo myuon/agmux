@@ -80,13 +80,12 @@ func TestCodexProvider_BuildStreamCommand_FullAuto(t *testing.T) {
 	})
 
 	args := cmd.Args
-	// Should contain --full-auto
+	// Should contain both --full-auto and --sandbox danger-full-access
 	if !containsArg(args, "--full-auto") {
 		t.Errorf("expected args to contain '--full-auto', got: %v", args)
 	}
-	// Should NOT contain --sandbox
-	if containsArg(args, "--sandbox") {
-		t.Errorf("expected args to NOT contain '--sandbox' in full-auto mode, got: %v", args)
+	if !containsArg(args, "--sandbox") {
+		t.Errorf("expected args to contain '--sandbox', got: %v", args)
 	}
 }
 
@@ -413,8 +412,8 @@ func TestCodexBuildTerminalCommand_FullAuto(t *testing.T) {
 	if !strings.Contains(cmd, "--full-auto") {
 		t.Errorf("expected --full-auto flag, got %s", cmd)
 	}
-	if strings.Contains(cmd, "--sandbox") {
-		t.Errorf("should not have --sandbox in full-auto mode, got %s", cmd)
+	if !strings.Contains(cmd, "--sandbox danger-full-access") {
+		t.Errorf("expected --sandbox danger-full-access with full-auto, got %s", cmd)
 	}
 }
 
@@ -432,8 +431,8 @@ func TestCodexBuildTerminalCommand_FullAuto_Resume(t *testing.T) {
 	if !strings.Contains(cmd, "resume") {
 		t.Errorf("expected resume, got %s", cmd)
 	}
-	if strings.Contains(cmd, "--sandbox") {
-		t.Errorf("should not have --sandbox in full-auto mode, got %s", cmd)
+	if !strings.Contains(cmd, "--sandbox danger-full-access") {
+		t.Errorf("expected --sandbox danger-full-access with full-auto, got %s", cmd)
 	}
 }
 

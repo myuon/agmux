@@ -46,7 +46,7 @@ func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 			"--json",
 		)
 		if opts.FullAuto {
-			args = append(args, "--full-auto")
+			args = append(args, "--full-auto", "--sandbox", "danger-full-access")
 		} else {
 			args = append(args, "--sandbox", "danger-full-access")
 		}
@@ -108,16 +108,14 @@ func (p *CodexProvider) BuildTerminalCommand(opts TerminalOpts) string {
 		cmd = otelPrefix + p.command + " resume " + opts.SessionID
 		if opts.FullAuto {
 			cmd += " --full-auto"
-		} else {
-			cmd += " --sandbox danger-full-access"
 		}
+		cmd += " --sandbox danger-full-access"
 	} else {
 		cmd = otelPrefix + p.command
 		if opts.FullAuto {
 			cmd += " --full-auto"
-		} else {
-			cmd += " --sandbox danger-full-access"
 		}
+		cmd += " --sandbox danger-full-access"
 	}
 
 	// Add --model flag if specified
