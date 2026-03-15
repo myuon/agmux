@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/user"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -275,7 +276,13 @@ func (s *Server) handleRestartServer() (interface{}, *jsonRPCError) {
 	if err := s.launchctlKickstart(); err != nil {
 		return toolResult(fmt.Sprintf("エラー: サーバーの再起動に失敗しました: %v", err), true), nil
 	}
-	return toolResult("サーバーの再起動をキックしました。しばらくお待ちください。", false), nil
+
+	// サーバーが実際に起動するまでポーリングして待つ
+	if err := s.waitForServerReady(30*time.Second, 500*time.Millisecond); err != nil {
+		return toolResult(fmt.Sprintf("サーバーの再起動をキックしましたが、起動確認がタイムアウトしました: %v", err), true), nil
+	}
+
+	return toolResult("サーバーの再起動が完了しました。", false), nil
 }
 
 func (s *Server) launchctlKickstart() error {
@@ -285,6 +292,28 @@ func (s *Server) launchctlKickstart() error {
 	}
 	serviceTarget := fmt.Sprintf("gui/%s/com.myuon.agmux", u.Uid)
 	return exec.Command("launchctl", "kickstart", "-k", serviceTarget).Run()
+}
+
+// waitForServerReady はサーバーのAPIにアクセスできるようになるまでポーリングする
+func (s *Server) waitForServerReady(timeout, interval time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 2 * time.Second}
+
+	// kickstart直後はまだ旧プロセスが応答する可能性があるので少し待つ
+	time.Sleep(1 * time.Second)
+
+	for time.Now().Before(deadline) {
+		url := fmt.Sprintf("%s/api/sessions", s.apiURL)
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		time.Sleep(interval)
+	}
+	return fmt.Errorf("サーバーが%v以内に応答しませんでした", timeout)
 }
 
 
