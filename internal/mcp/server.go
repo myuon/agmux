@@ -125,7 +125,7 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 				},
 				map[string]interface{}{
 					"name":        "restart_server",
-					"description": "agmuxサーバーを再ビルド・再起動します。再起動完了後、このセッションに自動通知されます。",
+					"description": "agmuxサーバーを再起動します。",
 					"inputSchema": map[string]interface{}{
 						"type":       "object",
 						"properties": map[string]interface{}{},
@@ -272,15 +272,10 @@ func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCErro
 }
 
 func (s *Server) handleRestartServer() (interface{}, *jsonRPCError) {
-	if err := s.apiRestartServer(); err != nil {
-		// API呼び出し失敗（サーバーダウンの可能性）; launchctl kickstart にフォールバック
-		if kickErr := s.launchctlKickstart(); kickErr != nil {
-			return toolResult(fmt.Sprintf("エラー: API=%v, launchctl=%v", err, kickErr), true), nil
-		}
-		return toolResult("APIへの接続に失敗しましたが、launchctlで再起動をキックしました。しばらくお待ちください。", false), nil
+	if err := s.launchctlKickstart(); err != nil {
+		return toolResult(fmt.Sprintf("エラー: サーバーの再起動に失敗しました: %v", err), true), nil
 	}
-
-	return toolResult("サーバーの再起動を開始しました。再ビルド・再起動が完了すると、このセッションに自動通知されます。しばらくお待ちください。", false), nil
+	return toolResult("サーバーの再起動をキックしました。しばらくお待ちください。", false), nil
 }
 
 func (s *Server) launchctlKickstart() error {
@@ -292,28 +287,6 @@ func (s *Server) launchctlKickstart() error {
 	return exec.Command("launchctl", "kickstart", "-k", serviceTarget).Run()
 }
 
-func (s *Server) apiRestartServer() error {
-	url := fmt.Sprintf("%s/api/restart", s.apiURL)
-	body := fmt.Sprintf(`{"sessionId":%s}`, jsonString(s.sessionID))
-
-	req, err := http.NewRequest("POST", url, strings.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
-	}
-	return nil
-}
 
 func (s *Server) apiEscalate(message string, timeoutSeconds int) (string, bool, error) {
 	escalationID := uuid.New().String()

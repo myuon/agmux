@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -122,7 +121,6 @@ func (s *Server) setupRoutes() {
 		r.Get("/logs", s.getLogs)
 		r.Get("/config", s.getConfig)
 		r.Put("/config", s.updateConfig)
-		r.Post("/restart", s.restartServer)
 		r.Get("/codex/models", s.getCodexModels)
 		r.Get("/codex/version", s.getCodexVersion)
 		r.Get("/metrics", s.getMetrics)
@@ -931,62 +929,6 @@ func (s *Server) restartController(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordSessionAction(sess.ID, "controller_restart", "")
 	writeJSON(w, http.StatusOK, sess)
-}
-
-func (s *Server) restartServer(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		SessionID string `json:"sessionId"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-
-	// Persist requester so the new process can notify them
-	if req.SessionID != "" {
-		if err := session.SaveRestartRequester(req.SessionID); err != nil {
-			s.logger.Error("save restart requester", "error", err)
-		}
-	}
-
-	// Respond immediately before triggering restart
-	writeJSON(w, http.StatusOK, map[string]string{"status": "restarting"})
-
-	// Trigger rebuild and restart via `make restart` in a detached process.
-	// `make restart` rebuilds the binary and uses launchctl kickstart to
-	// restart the launchd-managed agmux service.
-	go func() {
-		time.Sleep(500 * time.Millisecond) // give the response time to flush
-
-		s.logger.Info("restart_server: running make restart", "requester", req.SessionID)
-
-		restartCmd := exec.Command("make", "restart")
-		restartCmd.Dir = findProjectRoot()
-		restartCmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-		if err := restartCmd.Start(); err != nil {
-			s.logger.Error("restart_server: make restart failed", "error", err)
-		}
-	}()
-}
-
-// findProjectRoot attempts to locate the project root containing the Makefile.
-func findProjectRoot() string {
-	// Try the directory of the running binary
-	exe, err := os.Executable()
-	if err == nil {
-		dir := filepath.Dir(exe)
-		if _, err := os.Stat(filepath.Join(dir, "Makefile")); err == nil {
-			return dir
-		}
-		// Check parent (e.g., bin/ -> project root)
-		parent := filepath.Dir(dir)
-		if _, err := os.Stat(filepath.Join(parent, "Makefile")); err == nil {
-			return parent
-		}
-	}
-	// Fallback: cwd
-	cwd, _ := os.Getwd()
-	return cwd
 }
 
 // getClaudeModels returns a hardcoded list of available Claude models.
