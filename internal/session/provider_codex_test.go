@@ -550,6 +550,134 @@ func TestCodexProvider_NormalizeStreamLine(t *testing.T) {
 	}
 }
 
+func TestCodexProvider_ParseModel(t *testing.T) {
+	p := NewCodexProvider("")
+
+	tests := []struct {
+		name      string
+		input     string
+		wantModel string
+		wantOK    bool
+	}{
+		{
+			name:      "turn.completed with model",
+			input:     `{"type":"turn.completed","model":"o4-mini"}`,
+			wantModel: "o4-mini",
+			wantOK:    true,
+		},
+		{
+			name:      "any event with model field",
+			input:     `{"type":"some.event","model":"gpt-4o"}`,
+			wantModel: "gpt-4o",
+			wantOK:    true,
+		},
+		{
+			name:      "event without model field",
+			input:     `{"type":"thread.started","thread_id":"thr_abc"}`,
+			wantModel: "",
+			wantOK:    false,
+		},
+		{
+			name:      "empty model field",
+			input:     `{"type":"turn.completed","model":""}`,
+			wantModel: "",
+			wantOK:    false,
+		},
+		{
+			name:      "invalid JSON",
+			input:     `not json`,
+			wantModel: "",
+			wantOK:    false,
+		},
+		{
+			name:      "empty input",
+			input:     ``,
+			wantModel: "",
+			wantOK:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model, ok := p.ParseModel([]byte(tt.input))
+			if model != tt.wantModel || ok != tt.wantOK {
+				t.Errorf("ParseModel(%q) = (%q, %v), want (%q, %v)",
+					tt.input, model, ok, tt.wantModel, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestClaudeProvider_ParseModel(t *testing.T) {
+	p := NewClaudeProvider("")
+
+	tests := []struct {
+		name      string
+		input     string
+		wantModel string
+		wantOK    bool
+	}{
+		{
+			name:      "system init event with model",
+			input:     `{"type":"system","subtype":"init","model":"claude-sonnet-4-5-20250514"}`,
+			wantModel: "claude-sonnet-4-5-20250514",
+			wantOK:    true,
+		},
+		{
+			name:      "assistant message with model",
+			input:     `{"type":"assistant","message":{"model":"claude-sonnet-4-5-20250514","role":"assistant"}}`,
+			wantModel: "claude-sonnet-4-5-20250514",
+			wantOK:    true,
+		},
+		{
+			name:      "system event without init subtype",
+			input:     `{"type":"system","subtype":"other","model":"claude-sonnet-4-5-20250514"}`,
+			wantModel: "",
+			wantOK:    false,
+		},
+		{
+			name:      "system init without model",
+			input:     `{"type":"system","subtype":"init"}`,
+			wantModel: "",
+			wantOK:    false,
+		},
+		{
+			name:      "assistant message without model",
+			input:     `{"type":"assistant","message":{"role":"assistant"}}`,
+			wantModel: "",
+			wantOK:    false,
+		},
+		{
+			name:      "user message (should not match)",
+			input:     `{"type":"user","message":{"role":"user","content":"hello"}}`,
+			wantModel: "",
+			wantOK:    false,
+		},
+		{
+			name:      "invalid JSON",
+			input:     `not json`,
+			wantModel: "",
+			wantOK:    false,
+		},
+		{
+			name:      "empty input",
+			input:     ``,
+			wantModel: "",
+			wantOK:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model, ok := p.ParseModel([]byte(tt.input))
+			if model != tt.wantModel || ok != tt.wantOK {
+				t.Errorf("ParseModel(%q) = (%q, %v), want (%q, %v)",
+					tt.input, model, ok, tt.wantModel, tt.wantOK)
+			}
+		})
+	}
+}
+
 func TestClaudeProvider_NormalizeStreamLine(t *testing.T) {
 	p := NewClaudeProvider("")
 	input := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}}`

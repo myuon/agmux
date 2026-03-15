@@ -84,11 +84,13 @@ func ReadCLISessionID(agmuxSessionID string, provider Provider) string {
 func ReadModelFromStream(agmuxSessionID string, provider Provider) string {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
+		slog.Default().Debug("ReadModelFromStream: failed to get streams dir", "sessionId", agmuxSessionID, "error", err)
 		return ""
 	}
 	path := filepath.Join(streamsDir, agmuxSessionID+".jsonl")
 	f, err := os.Open(path)
 	if err != nil {
+		slog.Default().Debug("ReadModelFromStream: failed to open stream file", "sessionId", agmuxSessionID, "path", path, "error", err)
 		return ""
 	}
 	defer f.Close()
@@ -99,6 +101,9 @@ func ReadModelFromStream(agmuxSessionID string, provider Provider) string {
 		if model, ok := provider.ParseModel([]byte(scanner.Text())); ok {
 			return model
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		slog.Default().Debug("ReadModelFromStream: scanner error", "sessionId", agmuxSessionID, "error", err)
 	}
 	return ""
 }

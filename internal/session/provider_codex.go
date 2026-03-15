@@ -96,7 +96,8 @@ func (p *CodexProvider) ParseSessionID(jsonlLine []byte) (string, bool) {
 }
 
 func (p *CodexProvider) ParseModel(jsonlLine []byte) (string, bool) {
-	// Codex turn.completed events contain the model: {"type":"turn.completed","model":"o4-mini",...}
+	// Codex events may contain a model field in various event types (e.g. turn.completed).
+	// We accept any event that has a non-empty "model" field.
 	var msg struct {
 		Type  string `json:"type"`
 		Model string `json:"model"`
