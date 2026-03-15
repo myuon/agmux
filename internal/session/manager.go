@@ -1029,7 +1029,8 @@ func (m *Manager) Reconnect(id string) error {
 	}
 
 	if s.OutputMode == OutputModeStream {
-		// Prefer DB-stored cli_session_id; fall back to JSONL file scan
+		// Resume the existing CLI session to preserve conversation history.
+		// Prefer DB-stored cli_session_id; fall back to JSONL file scan.
 		cliSessionID := s.CliSessionID
 		if cliSessionID == "" {
 			cliSessionID = ReadCLISessionID(id, provider)
@@ -1052,6 +1053,8 @@ func (m *Manager) Reconnect(id string) error {
 		m.streamMu.Unlock()
 	} else {
 		time.Sleep(300 * time.Millisecond)
+		// Resume the existing CLI session to preserve conversation history.
+		// Terminal mode uses the agmux session ID as the CLI session ID.
 		claudeCmd := provider.BuildTerminalCommand(TerminalOpts{
 			SessionID:     id,
 			MCPConfigPath: mcpConfigPath,
