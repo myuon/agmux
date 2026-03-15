@@ -33,15 +33,14 @@ export const router = createBrowserRouter([
         loader: async ({ params }: LoaderFunctionArgs) => {
           const id = params.id!;
           const session = await api.getSession(id);
-          const [streamOutput, diff, providerVersion] = await Promise.all([
-            session.outputMode === "stream"
-              ? api.getStreamOutput(id)
-              : api.getSessionOutput(id).then((r) => ({ lines: [], total: 0, output: r.output })),
-            api.getDiff(id).catch(() => ({ files: [] })),
-            (session.provider === "codex" ? api.getCodexVersion : api.getClaudeVersion)()
-              .then((r) => r.version)
-              .catch(() => null),
-          ]);
+          // Return promises without awaiting – React Router v7 automatically defers them
+          const streamOutput = session.outputMode === "stream"
+            ? api.getStreamOutput(id)
+            : api.getSessionOutput(id).then((r) => ({ lines: [], total: 0, output: r.output }));
+          const diff = api.getDiff(id).catch(() => ({ files: [] as never[] }));
+          const providerVersion = (session.provider === "codex" ? api.getCodexVersion : api.getClaudeVersion)()
+            .then((r) => r.version)
+            .catch(() => null);
           return { session, streamOutput, diff, providerVersion };
         },
       },
