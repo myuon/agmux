@@ -95,6 +95,19 @@ func (p *CodexProvider) ParseSessionID(jsonlLine []byte) (string, bool) {
 	return "", false
 }
 
+func (p *CodexProvider) ParseModel(jsonlLine []byte) (string, bool) {
+	// Codex events may contain a model field in various event types (e.g. turn.completed).
+	// We accept any event that has a non-empty "model" field.
+	var msg struct {
+		Type  string `json:"type"`
+		Model string `json:"model"`
+	}
+	if json.Unmarshal(jsonlLine, &msg) == nil && msg.Model != "" {
+		return msg.Model, true
+	}
+	return "", false
+}
+
 func (p *CodexProvider) BuildTerminalCommand(opts TerminalOpts) string {
 	otelPrefix := p.OTelEnvPrefix(opts.APIPort)
 

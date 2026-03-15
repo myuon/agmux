@@ -43,6 +43,8 @@ type Provider interface {
 	BuildStreamCommand(opts StreamOpts) *exec.Cmd
 	// ParseSessionID extracts a CLI session ID from a JSONL line.
 	ParseSessionID(jsonlLine []byte) (string, bool)
+	// ParseModel extracts the model name from a JSONL line (e.g. from system init or assistant events).
+	ParseModel(jsonlLine []byte) (string, bool)
 	// BuildTerminalCommand returns the shell command string for terminal mode.
 	BuildTerminalCommand(opts TerminalOpts) string
 	// SetupMCP writes MCP config for this provider. Returns config file path.
