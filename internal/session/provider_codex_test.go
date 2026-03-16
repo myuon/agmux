@@ -553,7 +553,7 @@ func TestReadCodexDefaultModel(t *testing.T) {
 }
 
 func TestClaudeProvider_ParseModel(t *testing.T) {
-	p := NewClaudeProvider("")
+	p := NewClaudeProvider("", "")
 
 	tests := []struct {
 		name      string
@@ -623,7 +623,7 @@ func TestClaudeProvider_ParseModel(t *testing.T) {
 }
 
 func TestClaudeProvider_NormalizeStreamLine(t *testing.T) {
-	p := NewClaudeProvider("")
+	p := NewClaudeProvider("", "")
 	input := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}}`
 	result := p.NormalizeStreamLine([]byte(input))
 	if string(result) != input {

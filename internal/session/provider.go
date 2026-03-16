@@ -52,11 +52,12 @@ type Provider interface {
 
 // GetProvider returns a Provider instance for the given name.
 // Defaults to ClaudeProvider if name is empty or unrecognized.
-func GetProvider(name ProviderName, command string) Provider {
+// permissionMode is only used for ClaudeProvider.
+func GetProvider(name ProviderName, command string, permissionMode string) Provider {
 	switch name {
 	case ProviderCodex:
 		return NewCodexProvider(command)
 	default:
-		return NewClaudeProvider(command)
+		return NewClaudeProvider(command, permissionMode)
 	}
 }

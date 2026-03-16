@@ -19,6 +19,7 @@ type Manager struct {
 	db              *sql.DB
 	claudeCommand   string
 	codexCommand    string
+	permissionMode  string
 	apiPort         int
 	systemPrompt    string
 	streamProcesses map[string]*StreamProcess
@@ -27,9 +28,9 @@ type Manager struct {
 	onNewLines      func(sessionID string, newLines []string, total int)
 }
 
-func NewManager(db *sql.DB, claudeCommand string, apiPort int, logger *slog.Logger, systemPrompt string) *Manager {
+func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort int, logger *slog.Logger, systemPrompt string) *Manager {
 	if claudeCommand == "" {
-		claudeCommand = "claude --dangerously-skip-permissions"
+		claudeCommand = "claude"
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -41,6 +42,7 @@ func NewManager(db *sql.DB, claudeCommand string, apiPort int, logger *slog.Logg
 		db:              db,
 		claudeCommand:   claudeCommand,
 		codexCommand:    "codex",
+		permissionMode:  permissionMode,
 		apiPort:         apiPort,
 		systemPrompt:    systemPrompt,
 		streamProcesses: make(map[string]*StreamProcess),
@@ -64,9 +66,9 @@ func (m *Manager) SetOnNewLines(fn func(sessionID string, newLines []string, tot
 func (m *Manager) getProvider(name ProviderName) Provider {
 	switch name {
 	case ProviderCodex:
-		return GetProvider(ProviderCodex, m.codexCommand)
+		return GetProvider(ProviderCodex, m.codexCommand, "")
 	default:
-		return GetProvider(ProviderClaude, m.claudeCommand)
+		return GetProvider(ProviderClaude, m.claudeCommand, m.permissionMode)
 	}
 }
 

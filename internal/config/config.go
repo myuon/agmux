@@ -13,6 +13,7 @@ type Config struct {
 	Server  ServerConfig  `toml:"server"`
 	Daemon  DaemonConfig  `toml:"daemon"`
 	Session SessionConfig `toml:"session"`
+	Claude  ClaudeConfig  `toml:"claude"`
 }
 
 type ServerConfig struct {
@@ -27,6 +28,39 @@ type SessionConfig struct {
 	ClaudeCommand string `toml:"claude_command"`
 	CodexCommand  string `toml:"codex_command"`
 	SystemPrompt  string `toml:"system_prompt"`
+}
+
+// DefaultPermissionMode is the default Claude CLI permission mode.
+const DefaultPermissionMode = "bypassPermissions"
+
+// validPermissionModes lists all valid Claude CLI permission modes.
+var validPermissionModes = map[string]bool{
+	"default":           true,
+	"acceptEdits":       true,
+	"plan":              true,
+	"dontAsk":           true,
+	"bypassPermissions": true,
+	"auto":              true,
+}
+
+// IsValidPermissionMode returns true if the given mode is a valid Claude CLI permission mode.
+func IsValidPermissionMode(mode string) bool {
+	return validPermissionModes[mode]
+}
+
+type ClaudeConfig struct {
+	PermissionMode string `toml:"permission_mode"`
+}
+
+// ClaudePermissionMode returns the effective permission mode, defaulting to DefaultPermissionMode.
+func (c ClaudeConfig) ClaudePermissionMode() string {
+	if c.PermissionMode == "" {
+		return DefaultPermissionMode
+	}
+	if !IsValidPermissionMode(c.PermissionMode) {
+		return DefaultPermissionMode
+	}
+	return c.PermissionMode
 }
 
 func (d DaemonConfig) IntervalDuration() time.Duration {
@@ -46,8 +80,11 @@ func Default() *Config {
 			Interval: "30s",
 		},
 		Session: SessionConfig{
-			ClaudeCommand: "claude --dangerously-skip-permissions",
+			ClaudeCommand: "claude",
 			CodexCommand:  "codex",
+		},
+		Claude: ClaudeConfig{
+			PermissionMode: DefaultPermissionMode,
 		},
 	}
 }
