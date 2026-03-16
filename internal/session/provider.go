@@ -26,17 +26,6 @@ type StreamOpts struct {
 	FullAuto       bool   // enable full-auto mode (Codex: --full-auto instead of --sandbox)
 }
 
-// TerminalOpts contains parameters for building a terminal-mode command.
-type TerminalOpts struct {
-	SessionID     string
-	MCPConfigPath string
-	SystemPrompt  string
-	Resume        bool
-	APIPort       int
-	Model         string // model to use (e.g. "claude-sonnet-4-5", "o4-mini")
-	FullAuto      bool   // enable full-auto mode (Codex: --full-auto instead of --sandbox)
-}
-
 // Provider abstracts CLI-specific behavior so agmux can support multiple AI CLIs.
 type Provider interface {
 	// BuildStreamCommand constructs the exec.Cmd for stream-json mode.
@@ -45,16 +34,12 @@ type Provider interface {
 	ParseSessionID(jsonlLine []byte) (string, bool)
 	// ParseModel extracts the model name from a JSONL line (e.g. from system init or assistant events).
 	ParseModel(jsonlLine []byte) (string, bool)
-	// BuildTerminalCommand returns the shell command string for terminal mode.
-	BuildTerminalCommand(opts TerminalOpts) string
 	// SetupMCP writes MCP config for this provider. Returns config file path.
 	SetupMCP(sessionID string, port int) (string, error)
 	// CleanupMCP removes MCP config for this provider.
 	CleanupMCP(sessionID string) error
 	// AppendOTelEnv appends OTel environment variables to the given env slice.
 	AppendOTelEnv(env []string, port int) []string
-	// OTelEnvPrefix returns a shell env prefix string for terminal mode.
-	OTelEnvPrefix(port int) string
 	// Name returns the provider name.
 	Name() ProviderName
 	// NormalizeStreamLine converts a provider-specific JSONL line into

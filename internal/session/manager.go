@@ -8,18 +8,15 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/myuon/agmux/internal/db"
-	"github.com/myuon/agmux/internal/tmux"
 )
 
 type Manager struct {
 	db              *sql.DB
-	tmux            *tmux.Client
 	claudeCommand   string
 	codexCommand    string
 	apiPort         int
@@ -30,7 +27,7 @@ type Manager struct {
 	onNewLines      func(sessionID string, newLines []string, total int)
 }
 
-func NewManager(db *sql.DB, tmuxClient *tmux.Client, claudeCommand string, apiPort int, logger *slog.Logger, systemPrompt string) *Manager {
+func NewManager(db *sql.DB, claudeCommand string, apiPort int, logger *slog.Logger, systemPrompt string) *Manager {
 	if claudeCommand == "" {
 		claudeCommand = "claude --dangerously-skip-permissions"
 	}
@@ -42,7 +39,6 @@ func NewManager(db *sql.DB, tmuxClient *tmux.Client, claudeCommand string, apiPo
 	}
 	return &Manager{
 		db:              db,
-		tmux:            tmuxClient,
 		claudeCommand:   claudeCommand,
 		codexCommand:    "codex",
 		apiPort:         apiPort,
@@ -79,13 +75,13 @@ func (m *Manager) SystemPrompt() string {
 	return m.systemPrompt
 }
 
-// RecoverStreamProcesses restarts stream processes for all working stream sessions.
+// RecoverStreamProcesses restarts stream processes for all working sessions.
 // This should be called at server startup to recover sessions that were running
 // before the server was restarted.
 func (m *Manager) RecoverStreamProcesses() {
 	rows, err := m.db.Query(
-		`SELECT id, project_path, provider, cli_session_id, model FROM sessions WHERE status = ? AND output_mode = ?`,
-		string(StatusWorking), string(OutputModeStream),
+		`SELECT id, project_path, provider, cli_session_id, model FROM sessions WHERE status = ?`,
+		string(StatusWorking),
 	)
 	if err != nil {
 		m.logger.Error("recover stream processes: query failed", "error", err)
@@ -145,11 +141,7 @@ type CreateOpts struct {
 	FullAuto bool // enable full-auto mode (bypasses permission prompts for Codex)
 }
 
-func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode, worktree bool, opts ...CreateOpts) (*Session, error) {
-	if outputMode == "" {
-		outputMode = OutputModeStream
-	}
-
+func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts ...CreateOpts) (*Session, error) {
 	pn := ProviderClaude
 	model := ""
 	fullAuto := false
@@ -163,7 +155,6 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 	provider := m.getProvider(pn)
 
 	id := uuid.New().String()
-	tmuxSession := tmux.SessionPrefix + name
 
 	// Generate MCP config for this session
 	mcpConfigPath, err := provider.SetupMCP(id, m.apiPort)
@@ -171,79 +162,45 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 		return nil, fmt.Errorf("write mcp config: %w", err)
 	}
 
-	// Start tmux session with a shell
-	if err := m.tmux.NewSession(name, projectPath, ""); err != nil {
-		return nil, fmt.Errorf("create tmux session: %w", err)
+	// Start stream process
+	streamOpts := StreamOpts{
+		SessionID:     id,
+		ProjectPath:   projectPath,
+		MCPConfigPath: mcpConfigPath,
+		SystemPrompt:  m.systemPrompt,
+		Resume:        false,
+		Worktree:      worktree,
+		Model:         model,
+		FullAuto:      fullAuto,
 	}
-
-	if outputMode == OutputModeStream {
-		// Stream mode: start Go subprocess instead of CLI TUI
-		streamOpts := StreamOpts{
-			SessionID:     id,
-			ProjectPath:   projectPath,
-			MCPConfigPath: mcpConfigPath,
-			SystemPrompt:  m.systemPrompt,
-			Resume:        false,
-			Worktree:      worktree,
-			Model:         model,
-			FullAuto:      fullAuto,
+	var sp *StreamProcess
+	if pn == ProviderCodex && prompt != "" {
+		// Codex: pass initial prompt as command-line argument (not stdin)
+		streamOpts.InitialPrompt = prompt
+		var err error
+		sp, err = StartStreamProcessWithOpts(streamOpts, provider)
+		if err != nil {
+			return nil, fmt.Errorf("start stream process: %w", err)
 		}
-		var sp *StreamProcess
-		if pn == ProviderCodex && prompt != "" {
-			// Codex: pass initial prompt as command-line argument (not stdin)
-			streamOpts.InitialPrompt = prompt
-			var err error
-			sp, err = StartStreamProcessWithOpts(streamOpts, provider)
-			if err != nil {
-				_ = m.tmux.KillSession(name)
-				return nil, fmt.Errorf("start stream process: %w", err)
-			}
-			// Record the user message in the stream for UI display
-			sp.recordUserMessage(prompt)
-		} else {
-			var err error
-			sp, err = StartStreamProcessWithOpts(streamOpts, provider)
-			if err != nil {
-				_ = m.tmux.KillSession(name)
-				return nil, fmt.Errorf("start stream process: %w", err)
-			}
-			// Send initial prompt via stream process (stdin for Claude)
-			if prompt != "" {
-				if err := sp.Send(prompt); err != nil {
-					return nil, fmt.Errorf("send initial prompt: %w", err)
-				}
-			}
-		}
-		m.wireSessionIDCallback(id, sp)
-		m.streamMu.Lock()
-		m.streamProcesses[id] = sp
-		m.streamMu.Unlock()
+		// Record the user message in the stream for UI display
+		sp.recordUserMessage(prompt)
 	} else {
-		// Terminal mode: launch CLI TUI in tmux
-		time.Sleep(300 * time.Millisecond)
-		claudeCmd := provider.BuildTerminalCommand(TerminalOpts{
-			SessionID:     id,
-			MCPConfigPath: mcpConfigPath,
-			SystemPrompt:  m.systemPrompt,
-			Resume:        false,
-			APIPort:       m.apiPort,
-			Model:         model,
-			FullAuto:      fullAuto,
-		})
-		if err := m.tmux.SendKeysOnce(tmuxSession, claudeCmd); err != nil {
-			return nil, fmt.Errorf("launch cli: %w", err)
+		var err error
+		sp, err = StartStreamProcessWithOpts(streamOpts, provider)
+		if err != nil {
+			return nil, fmt.Errorf("start stream process: %w", err)
 		}
-
-		// Wait for CLI to start and handle trust prompt, then send initial prompt
+		// Send initial prompt via stream process (stdin for Claude)
 		if prompt != "" {
-			if err := m.waitForClaudeReady(tmuxSession, 30*time.Second); err != nil {
-				return nil, fmt.Errorf("wait for cli: %w", err)
-			}
-			if err := m.tmux.SendKeys(tmuxSession, prompt); err != nil {
+			if err := sp.Send(prompt); err != nil {
 				return nil, fmt.Errorf("send initial prompt: %w", err)
 			}
 		}
 	}
+	m.wireSessionIDCallback(id, sp)
+	m.streamMu.Lock()
+	m.streamProcesses[id] = sp
+	m.streamMu.Unlock()
 
 	now := time.Now()
 	s := &Session{
@@ -251,10 +208,8 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 		Name:          name,
 		ProjectPath:   projectPath,
 		InitialPrompt: prompt,
-		TmuxSession:   tmuxSession,
 		Status:        StatusWorking,
 		Type:          TypeWorker,
-		OutputMode:    outputMode,
 		Provider:      pn,
 		Model:         model,
 		CreatedAt:     now,
@@ -264,10 +219,8 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 	if _, err := m.db.Exec(
 		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, s.TmuxSession, string(s.Status), string(s.Type), string(s.OutputMode), string(s.Provider), s.Model, s.CreatedAt, s.UpdatedAt,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
-		// Cleanup tmux session on DB error
-		_ = m.tmux.KillSession(name)
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
 
@@ -276,7 +229,7 @@ func (m *Manager) Create(name, projectPath, prompt string, outputMode OutputMode
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -289,15 +242,13 @@ func (m *Manager) List() ([]Session, error) {
 		var s Session
 		var status string
 		var sessionType string
-		var outputMode string
 		var providerStr string
 		var prompt, currentTask, goal, goalsJSON sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = Status(status)
 		s.Type = SessionType(sessionType)
-		s.OutputMode = OutputMode(outputMode)
 		s.Provider = ProviderName(providerStr)
 		if s.Provider == "" {
 			s.Provider = ProviderClaude
@@ -313,16 +264,6 @@ func (m *Manager) List() ([]Session, error) {
 		}
 		if goalsJSON.Valid {
 			s.Goals = ParseGoalStack(goalsJSON.String)
-		}
-
-		// Correct status based on tmux reality (only for non-stream modes)
-		if s.OutputMode != OutputModeStream {
-			if s.Status == StatusWorking || s.Status == StatusQuestionWaiting || s.Status == StatusIdle {
-				if !m.tmux.HasSessionByFullName(s.TmuxSession) {
-					s.Status = StatusStopped
-					m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(StatusStopped), time.Now(), s.ID)
-				}
-			}
 		}
 
 		sessions = append(sessions, s)
@@ -362,13 +303,12 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var s Session
 	var status string
 	var sessionType string
-	var outputMode string
 	var providerStr string
 	var prompt, currentTask, goal, goalsJSON sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -377,7 +317,6 @@ func (m *Manager) Get(id string) (*Session, error) {
 	}
 	s.Status = Status(status)
 	s.Type = SessionType(sessionType)
-	s.OutputMode = OutputMode(outputMode)
 	s.Provider = ProviderName(providerStr)
 	if s.Provider == "" {
 		s.Provider = ProviderClaude
@@ -398,8 +337,8 @@ func (m *Manager) Get(id string) (*Session, error) {
 }
 
 // Duplicate creates a new session by copying configuration from an existing session.
-// It copies Name (with " (copy)" suffix), ProjectPath, OutputMode, Provider, and Model.
-// It does NOT copy InitialPrompt, Status, CurrentTask, Goal, Goals, TmuxSession, or CliSessionID.
+// It copies Name (with " (copy)" suffix), ProjectPath, Provider, and Model.
+// It does NOT copy InitialPrompt, Status, CurrentTask, Goal, Goals, or CliSessionID.
 func (m *Manager) Duplicate(id string) (*Session, error) {
 	src, err := m.Get(id)
 	if err != nil {
@@ -407,47 +346,33 @@ func (m *Manager) Duplicate(id string) (*Session, error) {
 	}
 
 	newName := src.Name + " (copy)"
-	return m.Create(newName, src.ProjectPath, "", src.OutputMode, false, CreateOpts{
+	return m.Create(newName, src.ProjectPath, "", false, CreateOpts{
 		Provider: src.Provider,
 		Model:    src.Model,
 	})
 }
 
 func (m *Manager) Stop(id string) error {
-	s, err := m.Get(id)
+	_, err := m.Get(id)
 	if err != nil {
 		return err
 	}
 
 	// Stop stream process if exists
 	m.stopStreamProcess(id)
-
-	// Kill tmux session (strip prefix for KillSession which adds it)
-	name := s.TmuxSession[len(tmux.SessionPrefix):]
-	if m.tmux.HasSession(name) {
-		if err := m.tmux.KillSession(name); err != nil {
-			return fmt.Errorf("kill tmux session: %w", err)
-		}
-	}
 
 	_, err = m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(StatusStopped), time.Now(), id)
 	return err
 }
 
 func (m *Manager) Delete(id string) error {
-	s, err := m.Get(id)
+	_, err := m.Get(id)
 	if err != nil {
 		return err
 	}
 
 	// Stop stream process if exists
 	m.stopStreamProcess(id)
-
-	// Kill tmux session if it exists
-	name := s.TmuxSession[len(tmux.SessionPrefix):]
-	if m.tmux.HasSession(name) {
-		_ = m.tmux.KillSession(name)
-	}
 
 	_, err = m.db.Exec("DELETE FROM sessions WHERE id = ?", id)
 	return err
@@ -554,19 +479,11 @@ func (m *Manager) Clear(id string) error {
 	// Stop existing stream process if any
 	m.stopStreamProcess(id)
 
-	// Kill existing tmux session
-	name := s.TmuxSession[len(tmux.SessionPrefix):]
-	if m.tmux.HasSession(name) {
-		_ = m.tmux.KillSession(name)
-	}
-
 	// Clear the JSONL stream file (truncate)
-	if s.OutputMode == OutputModeStream {
-		streamsDir, err := db.StreamsDir()
-		if err == nil {
-			streamPath := filepath.Join(streamsDir, id+".jsonl")
-			_ = os.Truncate(streamPath, 0)
-		}
+	streamsDir, err := db.StreamsDir()
+	if err == nil {
+		streamPath := filepath.Join(streamsDir, id+".jsonl")
+		_ = os.Truncate(streamPath, 0)
 	}
 
 	// Generate fresh MCP config
@@ -575,43 +492,23 @@ func (m *Manager) Clear(id string) error {
 		return fmt.Errorf("write mcp config: %w", err)
 	}
 
-	// Recreate tmux session
-	if err := m.tmux.NewSession(name, s.ProjectPath, ""); err != nil {
-		return fmt.Errorf("create tmux session: %w", err)
+	// Start fresh with a new CLI session ID to avoid resuming the old conversation
+	freshCLISessionID := uuid.New().String()
+	sp, err := StartStreamProcessWithOpts(StreamOpts{
+		SessionID:     id,
+		ProjectPath:   s.ProjectPath,
+		MCPConfigPath: mcpConfigPath,
+		SystemPrompt:  m.systemPrompt,
+		CLISessionID:  freshCLISessionID,
+		Model:         s.Model,
+	}, provider)
+	if err != nil {
+		return fmt.Errorf("start stream process: %w", err)
 	}
-
-	if s.OutputMode == OutputModeStream {
-		// Start fresh with a new CLI session ID to avoid resuming the old conversation
-		freshCLISessionID := uuid.New().String()
-		sp, err := StartStreamProcessWithOpts(StreamOpts{
-			SessionID:     id,
-			ProjectPath:   s.ProjectPath,
-			MCPConfigPath: mcpConfigPath,
-			SystemPrompt:  m.systemPrompt,
-			CLISessionID:  freshCLISessionID,
-			Model:         s.Model,
-		}, provider)
-		if err != nil {
-			return fmt.Errorf("start stream process: %w", err)
-		}
-		m.wireSessionIDCallback(id, sp)
-		m.streamMu.Lock()
-		m.streamProcesses[id] = sp
-		m.streamMu.Unlock()
-	} else {
-		time.Sleep(300 * time.Millisecond)
-		claudeCmd := provider.BuildTerminalCommand(TerminalOpts{
-			SessionID:     id,
-			MCPConfigPath: mcpConfigPath,
-			SystemPrompt:  m.systemPrompt,
-			Resume:        false,
-			APIPort:       m.apiPort,
-			Model:         s.Model,
-		})
-		if err := m.tmux.SendKeysOnce(s.TmuxSession, claudeCmd); err != nil {
-			return fmt.Errorf("launch cli: %w", err)
-		}
-	}
+	m.wireSessionIDCallback(id, sp)
+	m.streamMu.Lock()
+	m.streamProcesses[id] = sp
+	m.streamMu.Unlock()
 
 	// Reset task/goal/cli_session_id and set status to working
 	_, err = m.db.Exec("UPDATE sessions SET status = ?, current_task = NULL, goal = NULL, goals = '[]', cli_session_id = '', updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
@@ -627,50 +524,29 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 	if err != nil {
 		return err
 	}
-	if s.OutputMode == OutputModeStream {
-		m.streamMu.Lock()
-		sp, ok := m.streamProcesses[id]
-		m.streamMu.Unlock()
-		if !ok {
-			// Auto-recover: restart stream process after server restart
-			provider := m.getProvider(s.Provider)
-			mcpPath, _ := provider.SetupMCP(s.ID, m.apiPort)
-			// Prefer DB-stored cli_session_id; fall back to JSONL file scan
-			cliSessionID := s.CliSessionID
-			if cliSessionID == "" {
-				cliSessionID = ReadCLISessionID(s.ID, provider)
-			}
+	m.streamMu.Lock()
+	sp, ok := m.streamProcesses[id]
+	m.streamMu.Unlock()
+	if !ok {
+		// Auto-recover: restart stream process after server restart
+		provider := m.getProvider(s.Provider)
+		mcpPath, _ := provider.SetupMCP(s.ID, m.apiPort)
+		// Prefer DB-stored cli_session_id; fall back to JSONL file scan
+		cliSessionID := s.CliSessionID
+		if cliSessionID == "" {
+			cliSessionID = ReadCLISessionID(s.ID, provider)
+		}
 
-			var err error
-			if s.Provider == ProviderCodex && cliSessionID != "" {
-				// For Codex, start resume directly with the prompt as a positional arg.
-				// Codex exec exits after processing, so we can't send via stdin later.
-				sp, err = StartStreamProcessWithOpts(StreamOpts{
-					SessionID:     s.ID,
-					ProjectPath:   s.ProjectPath,
-					MCPConfigPath: mcpPath,
-					SystemPrompt:  m.systemPrompt,
-					InitialPrompt: text,
-					Resume:        true,
-					CLISessionID:  cliSessionID,
-					Model:         s.Model,
-				}, provider)
-				if err != nil {
-					return fmt.Errorf("restart stream process: %w", err)
-				}
-				sp.recordUserMessage(text)
-				m.wireSessionIDCallback(id, sp)
-				m.streamMu.Lock()
-				m.streamProcesses[id] = sp
-				m.streamMu.Unlock()
-				return nil
-			}
-
+		var err error
+		if s.Provider == ProviderCodex && cliSessionID != "" {
+			// For Codex, start resume directly with the prompt as a positional arg.
+			// Codex exec exits after processing, so we can't send via stdin later.
 			sp, err = StartStreamProcessWithOpts(StreamOpts{
 				SessionID:     s.ID,
 				ProjectPath:   s.ProjectPath,
 				MCPConfigPath: mcpPath,
 				SystemPrompt:  m.systemPrompt,
+				InitialPrompt: text,
 				Resume:        true,
 				CLISessionID:  cliSessionID,
 				Model:         s.Model,
@@ -678,14 +554,32 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			if err != nil {
 				return fmt.Errorf("restart stream process: %w", err)
 			}
+			sp.recordUserMessage(text)
 			m.wireSessionIDCallback(id, sp)
 			m.streamMu.Lock()
 			m.streamProcesses[id] = sp
 			m.streamMu.Unlock()
+			return nil
 		}
-		return sp.SendWithImages(text, images)
+
+		sp, err = StartStreamProcessWithOpts(StreamOpts{
+			SessionID:     s.ID,
+			ProjectPath:   s.ProjectPath,
+			MCPConfigPath: mcpPath,
+			SystemPrompt:  m.systemPrompt,
+			Resume:        true,
+			CLISessionID:  cliSessionID,
+			Model:         s.Model,
+		}, provider)
+		if err != nil {
+			return fmt.Errorf("restart stream process: %w", err)
+		}
+		m.wireSessionIDCallback(id, sp)
+		m.streamMu.Lock()
+		m.streamProcesses[id] = sp
+		m.streamMu.Unlock()
 	}
-	return m.tmux.SendKeys(s.TmuxSession, text)
+	return sp.SendWithImages(text, images)
 }
 
 // GetStreamLines returns the last N lines from the stream process memory,
@@ -785,49 +679,10 @@ func (m *Manager) readStreamFileAfter(id string, after int) ([]string, error) {
 	return lines, nil
 }
 
+// CaptureOutput is a no-op since terminal mode has been removed.
+// Kept for API compatibility.
 func (m *Manager) CaptureOutput(id string) (string, error) {
-	s, err := m.Get(id)
-	if err != nil {
-		return "", err
-	}
-	if s.OutputMode == OutputModeStream {
-		return "", nil
-	}
-	return m.tmux.CapturePane(s.TmuxSession, 200)
-}
-
-// waitForClaudeReady polls the tmux pane until claude is ready for input.
-// It handles the workspace trust prompt by sending Enter if detected.
-func (m *Manager) waitForClaudeReady(tmuxSession string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	trustHandled := false
-
-	for time.Now().Before(deadline) {
-		output, err := m.tmux.CapturePane(tmuxSession, 30)
-		if err != nil {
-			time.Sleep(1 * time.Second)
-			continue
-		}
-
-		// Handle trust prompt
-		if !trustHandled && strings.Contains(output, "Yes, I trust this folder") {
-			_ = m.tmux.SendKeysRaw(tmuxSession, "Enter")
-			trustHandled = true
-			time.Sleep(2 * time.Second)
-			continue
-		}
-
-		// Claude is ready when we see the input prompt (> or similar)
-		if trustHandled || !strings.Contains(output, "trust this folder") {
-			// Check for claude's input prompt indicator
-			if strings.Contains(output, "> ") || strings.Contains(output, "Claude") {
-				return nil
-			}
-		}
-
-		time.Sleep(1 * time.Second)
-	}
-	return fmt.Errorf("claude did not become ready within %s", timeout)
+	return "", nil
 }
 
 // GetController returns the controller session if it exists.
@@ -835,13 +690,12 @@ func (m *Manager) GetController() (*Session, error) {
 	var s Session
 	var status string
 	var sessionType string
-	var outputMode string
 	var providerStr string
 	var prompt, currentTask, goal, goalsJSON sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
 		 FROM sessions WHERE type = ? LIMIT 1`, string(TypeController),
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &s.TmuxSession, &status, &sessionType, &outputMode, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -850,7 +704,6 @@ func (m *Manager) GetController() (*Session, error) {
 	}
 	s.Status = Status(status)
 	s.Type = SessionType(sessionType)
-	s.OutputMode = OutputMode(outputMode)
 	s.Provider = ProviderName(providerStr)
 	if s.Provider == "" {
 		s.Provider = ProviderClaude
@@ -891,18 +744,13 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 
 	id := uuid.New().String()
 	name := "controller"
-	tmuxSession := tmux.SessionPrefix + name
 
 	mcpConfigPath, err := provider.SetupMCP(id, m.apiPort)
 	if err != nil {
 		return nil, fmt.Errorf("write mcp config: %w", err)
 	}
 
-	if err := m.tmux.NewSession(name, projectPath, ""); err != nil {
-		return nil, fmt.Errorf("create controller tmux session: %w", err)
-	}
-
-	// Stream mode: start Go subprocess instead of CLI TUI
+	// Start stream process
 	sp, err := StartStreamProcessWithOpts(StreamOpts{
 		SessionID:     id,
 		ProjectPath:   projectPath,
@@ -910,7 +758,6 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 		SystemPrompt:  m.systemPrompt,
 	}, provider)
 	if err != nil {
-		_ = m.tmux.KillSession(name)
 		return nil, fmt.Errorf("start stream process for controller: %w", err)
 	}
 	m.wireSessionIDCallback(id, sp)
@@ -923,10 +770,8 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 		ID:          id,
 		Name:        name,
 		ProjectPath: projectPath,
-		TmuxSession: tmuxSession,
 		Status:      StatusWorking,
 		Type:        TypeController,
-		OutputMode:  OutputModeStream,
 		Provider:    ProviderClaude,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -935,10 +780,9 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 	_, err = m.db.Exec(
 		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, s.TmuxSession, string(s.Status), string(s.Type), string(s.OutputMode), string(s.Provider), s.CreatedAt, s.UpdatedAt,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.CreatedAt, s.UpdatedAt,
 	)
 	if err != nil {
-		_ = m.tmux.KillSession(name)
 		return nil, fmt.Errorf("insert controller session: %w", err)
 	}
 
@@ -1040,62 +884,34 @@ func (m *Manager) Reconnect(id string) error {
 	// Stop existing stream process if any
 	m.stopStreamProcess(id)
 
-	// Kill existing tmux session
-	name := s.TmuxSession[len(tmux.SessionPrefix):]
-	if m.tmux.HasSession(name) {
-		_ = m.tmux.KillSession(name)
-	}
-
 	// Generate fresh MCP config
 	mcpConfigPath, err := provider.SetupMCP(id, m.apiPort)
 	if err != nil {
 		return fmt.Errorf("write mcp config: %w", err)
 	}
 
-	// Recreate tmux session
-	if err := m.tmux.NewSession(name, s.ProjectPath, ""); err != nil {
-		return fmt.Errorf("create tmux session: %w", err)
+	// Resume the existing CLI session to preserve conversation history.
+	// Prefer DB-stored cli_session_id; fall back to JSONL file scan.
+	cliSessionID := s.CliSessionID
+	if cliSessionID == "" {
+		cliSessionID = ReadCLISessionID(id, provider)
 	}
-
-	if s.OutputMode == OutputModeStream {
-		// Resume the existing CLI session to preserve conversation history.
-		// Prefer DB-stored cli_session_id; fall back to JSONL file scan.
-		cliSessionID := s.CliSessionID
-		if cliSessionID == "" {
-			cliSessionID = ReadCLISessionID(id, provider)
-		}
-		sp, err := StartStreamProcessWithOpts(StreamOpts{
-			SessionID:     id,
-			ProjectPath:   s.ProjectPath,
-			MCPConfigPath: mcpConfigPath,
-			SystemPrompt:  m.systemPrompt,
-			Resume:        true,
-			CLISessionID:  cliSessionID,
-			Model:         s.Model,
-		}, provider)
-		if err != nil {
-			return fmt.Errorf("start stream process: %w", err)
-		}
-		m.wireSessionIDCallback(id, sp)
-		m.streamMu.Lock()
-		m.streamProcesses[id] = sp
-		m.streamMu.Unlock()
-	} else {
-		time.Sleep(300 * time.Millisecond)
-		// Resume the existing CLI session to preserve conversation history.
-		// Terminal mode uses the agmux session ID as the CLI session ID.
-		claudeCmd := provider.BuildTerminalCommand(TerminalOpts{
-			SessionID:     id,
-			MCPConfigPath: mcpConfigPath,
-			SystemPrompt:  m.systemPrompt,
-			Resume:        true,
-			APIPort:       m.apiPort,
-			Model:         s.Model,
-		})
-		if err := m.tmux.SendKeysOnce(s.TmuxSession, claudeCmd); err != nil {
-			return fmt.Errorf("launch cli: %w", err)
-		}
+	sp, err := StartStreamProcessWithOpts(StreamOpts{
+		SessionID:     id,
+		ProjectPath:   s.ProjectPath,
+		MCPConfigPath: mcpConfigPath,
+		SystemPrompt:  m.systemPrompt,
+		Resume:        true,
+		CLISessionID:  cliSessionID,
+		Model:         s.Model,
+	}, provider)
+	if err != nil {
+		return fmt.Errorf("start stream process: %w", err)
 	}
+	m.wireSessionIDCallback(id, sp)
+	m.streamMu.Lock()
+	m.streamProcesses[id] = sp
+	m.streamMu.Unlock()
 
 	_, err = m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
 	return err

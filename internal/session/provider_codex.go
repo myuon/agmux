@@ -110,34 +110,6 @@ func (p *CodexProvider) ParseModel(jsonlLine []byte) (string, bool) {
 	return "", false
 }
 
-func (p *CodexProvider) BuildTerminalCommand(opts TerminalOpts) string {
-	otelPrefix := p.OTelEnvPrefix(opts.APIPort)
-
-	var cmd string
-	if opts.Resume {
-		cmd = otelPrefix + p.command + " resume " + opts.SessionID
-		if opts.FullAuto {
-			cmd += " -a never"
-		}
-		cmd += " --dangerously-bypass-approvals-and-sandbox"
-	} else {
-		cmd = otelPrefix + p.command
-		if opts.FullAuto {
-			cmd += " -a never"
-		}
-		cmd += " --dangerously-bypass-approvals-and-sandbox"
-	}
-
-	// Add --model flag if specified
-	if opts.Model != "" {
-		cmd += " --model " + opts.Model
-	}
-
-	// Codex CLI does not support --mcp-config or --instructions flags.
-
-	return cmd
-}
-
 func (p *CodexProvider) SetupMCP(sessionID string, port int) (string, error) {
 	return writeMCPConfig(sessionID, port)
 }
@@ -154,10 +126,6 @@ func (p *CodexProvider) CleanupMCP(sessionID string) error {
 func (p *CodexProvider) AppendOTelEnv(env []string, port int) []string {
 	// Codex CLI does not support OTel yet
 	return env
-}
-
-func (p *CodexProvider) OTelEnvPrefix(port int) string {
-	return ""
 }
 
 // NormalizeStreamLine converts a Codex JSONL event into Claude-compatible

@@ -240,9 +240,6 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     const interval = setInterval(() => {
       api.getSession(sessionId).then((s) => {
         setSession(s);
-        if (s.outputMode !== "stream") {
-          api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
-        }
       });
       api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
     }, 10000);
@@ -258,16 +255,10 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     await api.sendToSession(sessionId, message, images);
     setMessage("");
     setPendingImages([]);
-    // For non-stream mode, fetch output after a short delay
-    if (session?.outputMode !== "stream") {
-      setTimeout(() => {
-        api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
-      }, 500);
-    }
     // Stream mode updates arrive via WebSocket automatically
   };
 
-  const isStream = session?.outputMode === "stream";
+  const isStream = true;
 
   const sendForm = session ? (
     <form onSubmit={handleSend} className="shrink-0 sticky bottom-0 bg-white pt-2 pb-4 px-4 sm:px-8 -mx-4 sm:-mx-8 border-t border-gray-100">

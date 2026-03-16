@@ -28,7 +28,6 @@ import (
 	"github.com/myuon/agmux/internal/monitor"
 	"github.com/myuon/agmux/internal/server"
 	"github.com/myuon/agmux/internal/session"
-	"github.com/myuon/agmux/internal/tmux"
 	"github.com/spf13/cobra"
 )
 
@@ -58,7 +57,7 @@ func initManager(cfg *config.Config, port int, logger *slog.Logger) (*session.Ma
 	if err != nil {
 		return nil, nil, err
 	}
-	mgr := session.NewManager(database, tmux.NewClient(), cfg.Session.ClaudeCommand, cfg.Server.Port, logger, cfg.Session.SystemPrompt)
+	mgr := session.NewManager(database, cfg.Session.ClaudeCommand, cfg.Server.Port, logger, cfg.Session.SystemPrompt)
 	mgr.SetCodexCommand(cfg.Session.CodexCommand)
 	return mgr, database, nil
 }
@@ -107,13 +106,12 @@ func serveCmd() *cobra.Command {
 				return err
 			}
 
-			tmuxClient := tmux.NewClient()
 			hub := server.NewHub()
 			go hub.Run()
 
 			// Status checker
-			mon := monitor.New(tmuxClient)
-			checker := monitor.NewStatusChecker(mon, mgr, tmuxClient, cfg.Daemon.IntervalDuration(), logger)
+			mon := monitor.New()
+			checker := monitor.NewStatusChecker(mon, mgr, cfg.Daemon.IntervalDuration(), logger)
 			checker.SetOnUpdate(func(sessions []session.Session) {
 				hub.Broadcast(server.Message{
 					Type: "session_update",
@@ -224,7 +222,6 @@ func sessionCmd() *cobra.Command {
 	cmd.AddCommand(sessionStopCmd())
 	cmd.AddCommand(sessionDeleteCmd())
 	cmd.AddCommand(sessionSendCmd())
-	cmd.AddCommand(sessionCaptureCmd())
 
 	return cmd
 }
@@ -232,7 +229,6 @@ func sessionCmd() *cobra.Command {
 func sessionCreateCmd() *cobra.Command {
 	var projectPath string
 	var prompt string
-	var mode string
 	var worktree bool
 	var provider string
 	var model string
@@ -243,34 +239,14 @@ func sessionCreateCmd() *cobra.Command {
 		Short: "Create a new agent session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			outputMode := session.OutputMode(mode)
-			if outputMode != session.OutputModeTerminal && outputMode != session.OutputModeStream {
-				return fmt.Errorf("invalid mode %q: must be 'terminal' or 'stream'", mode)
-			}
-
-			if outputMode == session.OutputModeStream {
-				// Stream mode: delegate to the running agmux server so the
-				// child process outlives this CLI invocation.
-				return createSessionViaAPI(args[0], projectPath, prompt, mode, worktree, provider, model, autoApprove)
-			}
-
-			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
-			if err != nil {
-				return err
-			}
-			s, err := mgr.Create(args[0], projectPath, prompt, outputMode, worktree, session.CreateOpts{Provider: session.ProviderName(provider), Model: model, FullAuto: autoApprove})
-			if err != nil {
-				return err
-			}
-			fmt.Printf("Created session: %s (id: %s, mode: %s)\n", s.Name, s.ID, s.OutputMode)
-			return nil
+			// Always delegate to the running agmux server so the
+			// child process outlives this CLI invocation.
+			return createSessionViaAPI(args[0], projectPath, prompt, worktree, provider, model, autoApprove)
 		},
 	}
 
 	cmd.Flags().StringVarP(&projectPath, "path", "p", ".", "Project directory path")
 	cmd.Flags().StringVarP(&prompt, "message", "m", "", "Initial prompt to send")
-	cmd.Flags().StringVar(&mode, "mode", "stream", "Output mode: terminal or stream")
 	cmd.Flags().BoolVarP(&worktree, "worktree", "w", false, "Create a git worktree for the session")
 	cmd.Flags().StringVar(&provider, "provider", "claude", "Provider: claude or codex")
 	cmd.Flags().StringVar(&model, "model", "", "Model to use (e.g. claude-sonnet-4-5, o4-mini)")
@@ -281,7 +257,7 @@ func sessionCreateCmd() *cobra.Command {
 
 // createSessionViaAPI sends a POST /api/sessions request to the running agmux server
 // so that the stream process is owned by the server, not this short-lived CLI process.
-func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, provider, model string, autoApprove bool) error {
+func createSessionViaAPI(name, projectPath, prompt string, worktree bool, provider, model string, autoApprove bool) error {
 	cfg, _ := config.Load()
 	port := cfg.Server.Port
 
@@ -294,7 +270,6 @@ func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, 
 		"name":        name,
 		"projectPath": absPath,
 		"prompt":      prompt,
-		"outputMode":  mode,
 		"worktree":    worktree,
 		"provider":    provider,
 	}
@@ -314,10 +289,9 @@ func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, 
 	defer resp.Body.Close()
 
 	var result struct {
-		ID         string `json:"id"`
-		Name       string `json:"name"`
-		OutputMode string `json:"outputMode"`
-		Error      string `json:"error"`
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Error string `json:"error"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return fmt.Errorf("decode server response: %w", err)
@@ -326,7 +300,7 @@ func createSessionViaAPI(name, projectPath, prompt, mode string, worktree bool, 
 		return fmt.Errorf("server error: %s", result.Error)
 	}
 
-	fmt.Printf("Created session: %s (id: %s, mode: %s)\n", result.Name, result.ID, result.OutputMode)
+	fmt.Printf("Created session: %s (id: %s)\n", result.Name, result.ID)
 	return nil
 }
 
@@ -416,7 +390,9 @@ func sessionSendCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			port := cfg.Server.Port
+
+			mgr, _, err := initManager(cfg, port, nil)
 			if err != nil {
 				return err
 			}
@@ -425,22 +401,9 @@ func sessionSendCmd() *cobra.Command {
 				return err
 			}
 
-			// For stream mode sessions, delegate to the server API so the
-			// spawned process is owned by the long-lived server, not this
-			// short-lived CLI process.
-			s, err := mgr.Get(id)
-			if err != nil {
-				return err
-			}
-			if s.OutputMode == session.OutputModeStream {
-				return sendSessionViaAPI(id, args[1], cfg.Server.Port)
-			}
-
-			if err := mgr.SendKeys(id, args[1]); err != nil {
-				return err
-			}
-			fmt.Println("Text sent.")
-			return nil
+			// Always delegate to the server API so the spawned process
+			// is owned by the long-lived server.
+			return sendSessionViaAPI(id, args[1], port)
 		},
 	}
 }
@@ -481,31 +444,6 @@ func mcpCmd() *cobra.Command {
 		Hidden: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return mcp.NewServer().Run()
-		},
-	}
-}
-
-func sessionCaptureCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "capture <id>",
-		Short: "Capture session output",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
-			if err != nil {
-				return err
-			}
-			id, err := mgr.ResolveID(args[0])
-			if err != nil {
-				return err
-			}
-			output, err := mgr.CaptureOutput(id)
-			if err != nil {
-				return err
-			}
-			fmt.Print(output)
-			return nil
 		},
 	}
 }

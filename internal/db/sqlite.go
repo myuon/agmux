@@ -107,10 +107,13 @@ func migrate(db *sql.DB) error {
 	}
 
 	// Migration: add output_mode column if missing
-	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN output_mode TEXT NOT NULL DEFAULT 'terminal'`)
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN output_mode TEXT NOT NULL DEFAULT 'stream'`)
 	if err != nil && !isAlterTableDuplicate(err) {
 		return err
 	}
+
+	// Migration: update all terminal sessions to stream (terminal mode removed)
+	_, _ = db.Exec(`UPDATE sessions SET output_mode = 'stream' WHERE output_mode = 'terminal'`)
 
 	// Migration: add current_task column if missing
 	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN current_task TEXT`)

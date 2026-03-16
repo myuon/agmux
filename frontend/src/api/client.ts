@@ -24,7 +24,6 @@ export const api = {
     name: string;
     projectPath: string;
     prompt?: string;
-    outputMode?: "terminal" | "stream";
     provider?: string;
     model?: string;
     autoApprove?: boolean;
