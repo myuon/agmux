@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { StreamEntry } from "../../models/stream";
-import { mergeStreamEntries, extractActiveTasks } from "../../models/stream";
+import { mergeStreamEntries } from "../../models/stream";
 import type { ActiveTask } from "../../models/stream";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { StreamDisplayItemView } from "./StreamDisplayItemView";
+import { toolIcon } from "../../models/tool";
 
 const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
   user: { bg: "bg-blue-50", label: "User", text: "text-blue-700" },
@@ -32,7 +33,6 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
     .filter((e) => e.type === "user" || e.type === "assistant" || e.type === "system");
 
   const groups = mergeStreamEntries(entries, partialText || undefined, provider);
-  const activeTasks = useMemo(() => extractActiveTasks(entries), [entries]);
 
   return (
     <div className={`flex flex-col ${className || ""}`}>
@@ -85,47 +85,52 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
             );
           })
         )}
-        {activeTasks.length > 0 && (
-          <ActiveTasksPanel tasks={activeTasks} />
-        )}
       </div>
     </div>
   );
 }
 
-function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
+function ActiveTaskItem({ task }: { task: ActiveTask }) {
+  const toolName = task.lastToolName || (task.taskType === "local_agent" ? "Agent" : task.taskType === "local_bash" ? "Bash" : task.taskType);
+  const Icon = toolIcon(toolName);
+  const taskTypeLabel = task.taskType === "local_agent" ? "Agent" : task.taskType === "local_bash" ? "Bash" : task.taskType;
+
   return (
-    <div className="border border-amber-200 bg-amber-50 rounded-lg p-3 space-y-2">
+    <div className="w-full text-left border border-gray-200 rounded-lg overflow-hidden px-2.5 py-1.5 bg-gray-50">
+      <div className="flex items-center gap-2">
+        <span className="relative flex shrink-0">
+          <Icon className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+          <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+        </span>
+        <span className="font-medium text-xs text-gray-800">{toolName}</span>
+        {task.description && (
+          <span className="text-xs text-gray-500 truncate min-w-0">{task.description}</span>
+        )}
+        {task.usage && (
+          <span className="text-[10px] text-gray-400 ml-auto shrink-0">
+            {task.usage.inputTokens != null && `${Math.round(task.usage.inputTokens / 1000)}k in`}
+            {task.usage.outputTokens != null && ` / ${Math.round(task.usage.outputTokens / 1000)}k out`}
+          </span>
+        )}
+      </div>
+      {task.lastToolName && (
+        <div className="mt-0.5 ml-[22px] font-mono text-[11px] text-gray-400 truncate">
+          {taskTypeLabel}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
+  return (
+    <div className="space-y-1.5">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
         <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
         Running Tasks ({tasks.length})
       </div>
       {tasks.map((task) => (
-        <div key={task.taskId} className="bg-white rounded border border-amber-100 px-3 py-2 text-xs space-y-1">
-          <div className="flex items-center gap-2">
-            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-              task.taskType === "local_agent"
-                ? "bg-purple-100 text-purple-700"
-                : "bg-gray-100 text-gray-600"
-            }`}>
-              {task.taskType === "local_agent" ? "Agent" : task.taskType === "local_bash" ? "Bash" : task.taskType}
-            </span>
-            {task.lastToolName && (
-              <span className="text-gray-500">
-                <span className="text-gray-400">tool:</span> {task.lastToolName}
-              </span>
-            )}
-            {task.usage && (
-              <span className="text-gray-400 ml-auto">
-                {task.usage.inputTokens != null && `${Math.round(task.usage.inputTokens / 1000)}k in`}
-                {task.usage.outputTokens != null && ` / ${Math.round(task.usage.outputTokens / 1000)}k out`}
-              </span>
-            )}
-          </div>
-          {task.description && (
-            <div className="text-gray-600 truncate">{task.description}</div>
-          )}
-        </div>
+        <ActiveTaskItem key={task.taskId} task={task} />
       ))}
     </div>
   );
