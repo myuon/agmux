@@ -101,6 +101,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
                       {s.provider.charAt(0).toUpperCase() + s.provider.slice(1)}
                     </span>
                   )}
+
                   <span className="text-xs text-gray-400 ml-auto shrink-0">
                     {s.status}
                   </span>
