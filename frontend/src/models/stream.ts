@@ -248,7 +248,8 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string)
     const items: StreamDisplayItem[] = [];
 
     if (entry.type === "assistant") {
-      for (const b of blocks) {
+      for (let bi = 0; bi < blocks.length; bi++) {
+        const b = blocks[bi];
         if (b.type === "thinking" && b.thinking) {
           items.push({ kind: "thinking", text: b.thinking });
         } else if (b.type === "text" && b.text) {
@@ -264,8 +265,21 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string)
             continue;
           }
 
-          const result = b.id ? resultMap.get(b.id) : undefined;
-          const resultImages = b.id ? resultImageMap.get(b.id) : undefined;
+          // For Claude: look up result by tool_use_id from user entries
+          let result = b.id ? resultMap.get(b.id) : undefined;
+          let resultImages = b.id ? resultImageMap.get(b.id) : undefined;
+
+          // For Codex: tool_result is in the same assistant content array (no id/tool_use_id pairing)
+          // Check if the next block is a tool_result and use its content directly
+          if (result === undefined && bi + 1 < blocks.length && blocks[bi + 1].type === "tool_result") {
+            const nextBlock = blocks[bi + 1];
+            if (typeof nextBlock.content === "string") {
+              result = nextBlock.content;
+            } else if (nextBlock.content != null) {
+              result = JSON.stringify(nextBlock.content);
+            }
+            bi++; // skip the tool_result block since we consumed it
+          }
 
           // For Skill calls, fold the next user text (skill content) into the result
           if (b.name === "Skill" && b.id && skillToolIds.has(b.id)) {
