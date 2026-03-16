@@ -78,62 +78,72 @@ export function SessionList({ sessions, onRestartController }: Props) {
             </span>
           </div>
           <div className="flex flex-col gap-2">
-            {groupSessions.map((s) => (
-              <div
-                key={s.id}
-                onClick={() => { if (s.type !== "external") navigate(`/sessions/${s.id}`); }}
-                className={`border border-gray-200 rounded-lg p-3 transition-shadow bg-white ${s.type !== "external" ? "hover:shadow-sm cursor-pointer" : "opacity-80"}`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <StatusDot status={s.status} />
-                  <span className="font-medium text-sm truncate">{s.name}</span>
-                  {s.type === "controller" && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 rounded">
-                      Controller
-                    </span>
-                  )}
-                  {s.type === "external" && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">
-                      External
-                    </span>
-                  )}
-                  {s.provider && s.provider !== "claude" && (
-                    <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${
-                      s.provider === "codex"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-gray-100 text-gray-600"
-                    }`}>
-                      {s.provider.charAt(0).toUpperCase() + s.provider.slice(1)}
-                    </span>
-                  )}
-
-                  <span className="text-xs text-gray-400 ml-auto shrink-0">
-                    {s.status}
+            {groupSessions.map((s) =>
+              s.type === "external" ? (
+                <div
+                  key={s.id}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded border border-dashed border-amber-300 bg-amber-50/50 text-xs text-gray-500"
+                >
+                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                  <span className="font-medium text-amber-700 shrink-0">External</span>
+                  <span className="text-gray-600 truncate">{s.name}</span>
+                  <span className="font-mono text-gray-400 shrink-0">
+                    PID {s.id.replace("ext-", "")}
                   </span>
+                  <span className="text-gray-400 ml-auto shrink-0">{timeAgo(s.createdAt)}</span>
                 </div>
-                {s.currentTask && (
-                  <p className="text-xs text-indigo-600 truncate mb-0.5">{s.currentTask}</p>
-                )}
-                <p className="text-xs text-gray-500 truncate mb-1">
-                  {s.projectPath}
-                </p>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">
-                    {timeAgo(s.createdAt)}
-                  </span>
-                  <div className="flex gap-1.5">
-                    {s.type === "controller" && s.status === "stopped" && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onRestartController(); }}
-                        className="px-2 py-0.5 text-xs bg-purple-50 text-purple-600 rounded hover:bg-purple-100"
-                      >
-                        Restart
-                      </button>
+              ) : (
+                <div
+                  key={s.id}
+                  onClick={() => navigate(`/sessions/${s.id}`)}
+                  className="border border-gray-200 rounded-lg p-3 transition-shadow bg-white hover:shadow-sm cursor-pointer"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <StatusDot status={s.status} />
+                    <span className="font-medium text-sm truncate">{s.name}</span>
+                    {s.type === "controller" && (
+                      <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 rounded">
+                        Controller
+                      </span>
                     )}
+                    {s.provider && s.provider !== "claude" && (
+                      <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${
+                        s.provider === "codex"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-gray-100 text-gray-600"
+                      }`}>
+                        {s.provider.charAt(0).toUpperCase() + s.provider.slice(1)}
+                      </span>
+                    )}
+
+                    <span className="text-xs text-gray-400 ml-auto shrink-0">
+                      {s.status}
+                    </span>
+                  </div>
+                  {s.currentTask && (
+                    <p className="text-xs text-indigo-600 truncate mb-0.5">{s.currentTask}</p>
+                  )}
+                  <p className="text-xs text-gray-500 truncate mb-1">
+                    {s.projectPath}
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-gray-400">
+                      {timeAgo(s.createdAt)}
+                    </span>
+                    <div className="flex gap-1.5">
+                      {s.type === "controller" && s.status === "stopped" && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onRestartController(); }}
+                          className="px-2 py-0.5 text-xs bg-purple-50 text-purple-600 rounded hover:bg-purple-100"
+                        >
+                          Restart
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            )}
           </div>
         </div>
         );
