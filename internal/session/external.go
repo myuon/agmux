@@ -19,11 +19,12 @@ type ExternalProcess struct {
 
 // ExternalDetector detects Claude processes running outside of agmux.
 type ExternalDetector struct {
-	mu       sync.RWMutex
-	sessions []Session
-	logger   *slog.Logger
-	stopCh   chan struct{}
-	interval time.Duration
+	mu        sync.RWMutex
+	sessions  []Session
+	knownTime map[string]time.Time // ID -> first seen CreatedAt
+	logger    *slog.Logger
+	stopCh    chan struct{}
+	interval  time.Duration
 }
 
 // NewExternalDetector creates a new ExternalDetector.
@@ -32,9 +33,10 @@ func NewExternalDetector(logger *slog.Logger, interval time.Duration) *ExternalD
 		logger = slog.Default()
 	}
 	return &ExternalDetector{
-		logger:   logger.With("component", "external_detector"),
-		stopCh:   make(chan struct{}),
-		interval: interval,
+		logger:    logger.With("component", "external_detector"),
+		knownTime: make(map[string]time.Time),
+		stopCh:    make(chan struct{}),
+		interval:  interval,
 	}
 }
 
@@ -78,24 +80,43 @@ func (d *ExternalDetector) detect() {
 		return
 	}
 
+	now := time.Now()
 	sessions := make([]Session, 0, len(processes))
+	activeIDs := make(map[string]bool, len(processes))
 	for _, p := range processes {
+		id := fmt.Sprintf("ext-%d", p.PID)
+		activeIDs[id] = true
+
+		createdAt := now
+		if t, ok := d.knownTime[id]; ok {
+			createdAt = t
+		} else {
+			d.knownTime[id] = now
+		}
+
 		projectName := projectNameFromPath(p.CWD)
 		s := Session{
-			ID:          fmt.Sprintf("ext-%d", p.PID),
+			ID:          id,
 			Name:        fmt.Sprintf("claude (pid:%d)", p.PID),
 			ProjectPath: p.CWD,
 			Status:      StatusWorking,
 			Type:        TypeExternal,
 			OutputMode:  OutputModeTerminal,
 			Provider:    ProviderClaude,
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			CreatedAt:   createdAt,
+			UpdatedAt:   now,
 		}
 		if projectName != "" {
 			s.Name = fmt.Sprintf("%s (external)", projectName)
 		}
 		sessions = append(sessions, s)
+	}
+
+	// Clean up stale entries from knownTime
+	for id := range d.knownTime {
+		if !activeIDs[id] {
+			delete(d.knownTime, id)
+		}
 	}
 
 	d.mu.Lock()
