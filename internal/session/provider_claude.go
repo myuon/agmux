@@ -12,6 +12,7 @@ import (
 	"github.com/myuon/agmux/internal/db"
 )
 
+
 // ClaudeProvider implements Provider for Claude Code CLI.
 type ClaudeProvider struct {
 	command        string // e.g. "claude"
@@ -20,15 +21,13 @@ type ClaudeProvider struct {
 
 // NewClaudeProvider creates a ClaudeProvider with the given command and permission mode.
 // If command is empty, defaults to "claude".
-// If permissionMode is empty, defaults to "bypassPermissions".
-func NewClaudeProvider(command string) *ClaudeProvider {
+// If permissionMode is empty or invalid, defaults to config.DefaultPermissionMode.
+func NewClaudeProvider(command string, permissionMode string) *ClaudeProvider {
 	if command == "" {
 		command = "claude"
 	}
-	cfg, err := config.Load()
-	permissionMode := "bypassPermissions"
-	if err == nil {
-		permissionMode = cfg.Claude.ClaudePermissionMode()
+	if permissionMode == "" || !config.IsValidPermissionMode(permissionMode) {
+		permissionMode = config.DefaultPermissionMode
 	}
 	return &ClaudeProvider{command: command, permissionMode: permissionMode}
 }

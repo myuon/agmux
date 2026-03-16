@@ -57,7 +57,7 @@ func initManager(cfg *config.Config, port int, logger *slog.Logger) (*session.Ma
 	if err != nil {
 		return nil, nil, err
 	}
-	mgr := session.NewManager(database, cfg.Session.ClaudeCommand, cfg.Server.Port, logger, cfg.Session.SystemPrompt)
+	mgr := session.NewManager(database, cfg.Session.ClaudeCommand, cfg.Claude.ClaudePermissionMode(), cfg.Server.Port, logger, cfg.Session.SystemPrompt)
 	mgr.SetCodexCommand(cfg.Session.CodexCommand)
 	return mgr, database, nil
 }

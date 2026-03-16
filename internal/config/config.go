@@ -30,14 +30,35 @@ type SessionConfig struct {
 	SystemPrompt  string `toml:"system_prompt"`
 }
 
+// DefaultPermissionMode is the default Claude CLI permission mode.
+const DefaultPermissionMode = "bypassPermissions"
+
+// validPermissionModes lists all valid Claude CLI permission modes.
+var validPermissionModes = map[string]bool{
+	"default":           true,
+	"acceptEdits":       true,
+	"plan":              true,
+	"dontAsk":           true,
+	"bypassPermissions": true,
+	"auto":              true,
+}
+
+// IsValidPermissionMode returns true if the given mode is a valid Claude CLI permission mode.
+func IsValidPermissionMode(mode string) bool {
+	return validPermissionModes[mode]
+}
+
 type ClaudeConfig struct {
 	PermissionMode string `toml:"permission_mode"`
 }
 
-// ClaudePermissionMode returns the effective permission mode, defaulting to "bypassPermissions".
+// ClaudePermissionMode returns the effective permission mode, defaulting to DefaultPermissionMode.
 func (c ClaudeConfig) ClaudePermissionMode() string {
 	if c.PermissionMode == "" {
-		return "bypassPermissions"
+		return DefaultPermissionMode
+	}
+	if !IsValidPermissionMode(c.PermissionMode) {
+		return DefaultPermissionMode
 	}
 	return c.PermissionMode
 }
@@ -63,7 +84,7 @@ func Default() *Config {
 			CodexCommand:  "codex",
 		},
 		Claude: ClaudeConfig{
-			PermissionMode: "bypassPermissions",
+			PermissionMode: DefaultPermissionMode,
 		},
 	}
 }
