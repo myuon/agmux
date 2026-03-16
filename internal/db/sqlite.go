@@ -87,7 +87,7 @@ func migrate(db *sql.DB) error {
 			name TEXT NOT NULL,
 			project_path TEXT NOT NULL,
 			initial_prompt TEXT,
-			tmux_session TEXT NOT NULL UNIQUE,
+			tmux_session TEXT NOT NULL DEFAULT '',
 			status TEXT NOT NULL DEFAULT 'working',
 			type TEXT NOT NULL DEFAULT 'worker',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -149,6 +149,45 @@ func migrate(db *sql.DB) error {
 	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`)
 	if err != nil && !isAlterTableDuplicate(err) {
 		return err
+	}
+
+	// Migration: remove UNIQUE constraint from tmux_session (no longer used)
+	// SQLite doesn't support DROP CONSTRAINT, so we recreate the table
+	{
+		var hasUnique bool
+		row := db.QueryRow(`SELECT sql FROM sqlite_master WHERE type='table' AND name='sessions'`)
+		var createSQL string
+		if err := row.Scan(&createSQL); err == nil {
+			hasUnique = strings.Contains(createSQL, "tmux_session") && strings.Contains(createSQL, "UNIQUE")
+		}
+		if hasUnique {
+			_, err = db.Exec(`
+				CREATE TABLE sessions_new (
+					id TEXT PRIMARY KEY,
+					name TEXT NOT NULL,
+					project_path TEXT NOT NULL,
+					initial_prompt TEXT,
+					tmux_session TEXT NOT NULL DEFAULT '',
+					status TEXT NOT NULL DEFAULT 'working',
+					type TEXT NOT NULL DEFAULT 'worker',
+					created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					output_mode TEXT NOT NULL DEFAULT 'stream',
+					current_task TEXT,
+					goal TEXT,
+					goals TEXT NOT NULL DEFAULT '[]',
+					provider TEXT NOT NULL DEFAULT 'claude',
+					cli_session_id TEXT NOT NULL DEFAULT '',
+					model TEXT NOT NULL DEFAULT ''
+				);
+				INSERT INTO sessions_new SELECT id, name, project_path, initial_prompt, tmux_session, status, type, created_at, updated_at, output_mode, current_task, goal, goals, provider, cli_session_id, model FROM sessions;
+				DROP TABLE sessions;
+				ALTER TABLE sessions_new RENAME TO sessions;
+			`)
+			if err != nil {
+				return fmt.Errorf("migrate tmux_session unique: %w", err)
+			}
+		}
 	}
 
 	// Migration: create otel_metrics table
