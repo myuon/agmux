@@ -3,6 +3,7 @@ import App, { Dashboard } from "./App";
 import { SessionPage } from "./pages/SessionPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { MetricsPage } from "./pages/MetricsPage";
+import { PreviewPage } from "./pages/PreviewPage";
 import { api } from "./api/client";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 
@@ -51,6 +52,10 @@ export const router = createBrowserRouter([
           const config = await api.getConfig();
           return { config };
         },
+      },
+      {
+        path: "preview",
+        element: <PreviewPage />,
       },
       {
         path: "metrics",

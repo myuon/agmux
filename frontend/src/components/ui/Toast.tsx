@@ -1,6 +1,6 @@
-import { CheckCircle2, AlertTriangle } from "lucide-react";
+import { CheckCircle2, AlertTriangle, X } from "lucide-react";
 
-export function Toast({ message, variant = "success" }: { message: string; variant?: "success" | "error" | "warning" }) {
+export function Toast({ message, variant = "success", onClose }: { message: string; variant?: "success" | "error" | "warning"; onClose?: () => void }) {
   const styles = variant === "success"
     ? "bg-green-600"
     : variant === "warning"
@@ -13,6 +13,11 @@ export function Toast({ message, variant = "success" }: { message: string; varia
       <div className={`${styles} text-white px-4 py-2 rounded shadow-lg text-sm flex items-center gap-2 animate-fade-in w-fit max-w-full`}>
         <Icon className="w-4 h-4 shrink-0" />
         {message}
+        {onClose && (
+          <button onClick={onClose} className="ml-1 hover:opacity-80" aria-label="閉じる">
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
     </div>
   );
