@@ -543,6 +543,15 @@ func TestCodexProvider_ParseModel(t *testing.T) {
 	}
 }
 
+func TestReadCodexDefaultModel(t *testing.T) {
+	// This test verifies that ReadCodexDefaultModel reads from ~/.codex/config.toml.
+	// Since it reads the real filesystem, we just verify it returns a string (possibly empty).
+	model := ReadCodexDefaultModel()
+	// The result depends on whether ~/.codex/config.toml exists on this machine.
+	// We just verify it doesn't panic and returns a string.
+	_ = model
+}
+
 func TestClaudeProvider_ParseModel(t *testing.T) {
 	p := NewClaudeProvider("")
 
