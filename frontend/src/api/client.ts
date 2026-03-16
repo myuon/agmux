@@ -62,9 +62,6 @@ export const api = {
       body: JSON.stringify({ text, ...(images && images.length > 0 ? { images } : {}) }),
     }),
 
-  getSessionOutput: (id: string) =>
-    request<{ output: string }>(`/sessions/${id}/output`),
-
   getLogs: (limit = 100) =>
     request<LogEntry[]>(`/logs?limit=${limit}`),
 

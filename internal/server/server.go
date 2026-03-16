@@ -107,7 +107,6 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/duplicate", s.duplicateSession)
 		r.Post("/sessions/{id}/reconnect", s.reconnectSession)
 		r.Post("/sessions/{id}/clear", s.clearSession)
-		r.Get("/sessions/{id}/output", s.getSessionOutput)
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
 		r.Get("/sessions/{id}/diff", s.getSessionDiff)
 		r.Get("/sessions/{id}/claude-md", s.getClaudeMD)
@@ -532,16 +531,6 @@ func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordSessionAction(id, "session_clear", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
-}
-
-func (s *Server) getSessionOutput(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	output, err := s.sessions.CaptureOutput(id)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"output": output})
 }
 
 func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {

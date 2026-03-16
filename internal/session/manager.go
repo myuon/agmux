@@ -679,12 +679,6 @@ func (m *Manager) readStreamFileAfter(id string, after int) ([]string, error) {
 	return lines, nil
 }
 
-// CaptureOutput is a no-op since terminal mode has been removed.
-// Kept for API compatibility.
-func (m *Manager) CaptureOutput(id string) (string, error) {
-	return "", nil
-}
-
 // GetController returns the controller session if it exists.
 func (m *Manager) GetController() (*Session, error) {
 	var s Session
