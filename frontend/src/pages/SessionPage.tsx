@@ -16,8 +16,10 @@ import { api, type DiffFile } from "../api/client";
 import { StatusDot } from "../components/StatusBadge";
 import { setActiveSessionName } from "../activeSession";
 import { useWebSocket } from "../hooks/useWebSocket";
-import { StreamOutputView } from "../components/session/StreamOutputView";
+import { StreamOutputView, ActiveTasksPanel } from "../components/session/StreamOutputView";
 import { DiffDropdown } from "../components/session/DiffDropdown";
+import type { StreamEntry } from "../models/stream";
+import { extractActiveTasks } from "../models/stream";
 
 type DeferredData = {
   streamOutput: { lines: unknown[]; total: number };
@@ -96,6 +98,14 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
 
   const providerVersion = deferred.providerVersion;
   const streamCursorRef = useRef<number | null>(null);
+
+  // Compute active tasks for fixed display above input
+  const activeTasks = useMemo(() => {
+    const entries = streamLines
+      .map((line) => line as StreamEntry)
+      .filter((e: StreamEntry) => e.type === "user" || e.type === "assistant" || e.type === "system");
+    return extractActiveTasks(entries);
+  }, [streamLines]);
 
   // Extract slash_commands from system init messages
   const slashCommands = useMemo(() => {
@@ -721,6 +731,11 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             if (!sessionId) return;
             await api.sendToSession(sessionId, text);
           }} />
+          {activeTasks.length > 0 && (
+            <div className="shrink-0 pt-2 px-4 sm:px-8 -mx-4 sm:-mx-8">
+              <ActiveTasksPanel tasks={activeTasks} />
+            </div>
+          )}
           {sendForm}
         </div>
       )}
