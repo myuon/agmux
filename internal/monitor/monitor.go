@@ -14,18 +14,15 @@ import (
 
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/session"
-	"github.com/myuon/agmux/internal/tmux"
 )
 
 type Monitor struct {
-	tmux          *tmux.Client
-	lastFileSize  map[string]int64
+	lastFileSize   map[string]int64
 	lastFileSizeMu sync.Mutex
 }
 
-func New(tmuxClient *tmux.Client) *Monitor {
+func New() *Monitor {
 	return &Monitor{
-		tmux:         tmuxClient,
 		lastFileSize: make(map[string]int64),
 	}
 }
@@ -37,14 +34,9 @@ type CheckStatusResult struct {
 	Summary string // LLMによる要約（何をしている/何を聞いているか）
 }
 
-// CheckStatus determines the session status based on the output mode.
+// CheckStatus determines the session status from the stream JSONL file.
 func (m *Monitor) CheckStatus(s *session.Session) CheckStatusResult {
-	switch s.OutputMode {
-	case session.OutputModeStream:
-		return m.checkStatusFromStreamJSONL(s)
-	default:
-		return m.checkStatusFromTerminal(s)
-	}
+	return m.checkStatusFromStreamJSONL(s)
 }
 
 // checkStatusFromStreamJSONL reads the agmux-managed stream JSONL file
@@ -166,61 +158,6 @@ func readLastLine(path string) string {
 	return lastLine
 }
 
-// checkStatusFromTerminal estimates status from tmux capture-pane output.
-func (m *Monitor) checkStatusFromTerminal(s *session.Session) CheckStatusResult {
-	content, err := m.tmux.CapturePane(s.TmuxSession, 50)
-	if err != nil {
-		return CheckStatusResult{Status: session.StatusWorking, Reason: "capture-pane error"}
-	}
-	return classifyFromTerminalContent(content)
-}
-
-// classifyFromTerminalContent does rough status estimation from terminal output.
-func classifyFromTerminalContent(content string) CheckStatusResult {
-	lines := strings.Split(strings.TrimSpace(content), "\n")
-
-	// Walk from the bottom to find the last non-empty line
-	lastLine := ""
-	for i := len(lines) - 1; i >= 0; i-- {
-		trimmed := strings.TrimSpace(lines[i])
-		if trimmed != "" {
-			lastLine = trimmed
-			break
-		}
-	}
-
-	if lastLine == "" {
-		return CheckStatusResult{Status: session.StatusWorking, Reason: "empty output"}
-	}
-
-	// Claude Code shows a prompt like ">" or "❯" when waiting for user input
-	if strings.HasPrefix(lastLine, ">") || strings.HasPrefix(lastLine, "❯") {
-		return CheckStatusResult{Status: session.StatusIdle, Reason: fmt.Sprintf("prompt detected: %q", truncate(lastLine, 60))}
-	}
-
-	// Check for yes/no or permission prompts
-	lowerLine := strings.ToLower(lastLine)
-	if strings.Contains(lowerLine, "(y/n)") ||
-		strings.Contains(lowerLine, "[y/n]") ||
-		strings.Contains(lowerLine, "allow") ||
-		strings.Contains(lowerLine, "deny") {
-		return CheckStatusResult{Status: session.StatusQuestionWaiting, Reason: fmt.Sprintf("permission prompt: %q", truncate(lastLine, 60))}
-	}
-
-	// Check nearby lines for question patterns
-	for i := len(lines) - 1; i >= 0 && i >= len(lines)-5; i-- {
-		trimmed := strings.TrimSpace(lines[i])
-		lower := strings.ToLower(trimmed)
-		if strings.Contains(lower, "do you want to") ||
-			strings.Contains(lower, "would you like") ||
-			strings.Contains(lower, "shall i") {
-			return CheckStatusResult{Status: session.StatusQuestionWaiting, Reason: fmt.Sprintf("question: %q", truncate(trimmed, 60))}
-		}
-	}
-
-	return CheckStatusResult{Status: session.StatusWorking, Reason: fmt.Sprintf("last_line: %q", truncate(lastLine, 60))}
-}
-
 func filterEnv(env []string, exclude string) []string {
 	var filtered []string
 	prefix := exclude + "="
@@ -237,10 +174,6 @@ func filterEnv(env []string, exclude string) []string {
 // 1. The last JSONL event contains a tool_use content block
 // 2. The JSONL file was last modified 30+ minutes ago
 func (m *Monitor) ShouldNudge(s *session.Session) bool {
-	if s.OutputMode != session.OutputModeStream {
-		return false
-	}
-
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
 		return false
@@ -302,4 +235,3 @@ func truncate(s string, n int) string {
 	}
 	return s[:n] + "..."
 }
-

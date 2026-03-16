@@ -11,7 +11,6 @@ import {
 import { Modal } from "../components/ui/Modal";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
 import { Toast } from "../components/ui/Toast";
-import { useAutoScroll } from "../hooks/useAutoScroll";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
 import { StatusDot } from "../components/StatusBadge";
@@ -21,7 +20,7 @@ import { StreamOutputView } from "../components/session/StreamOutputView";
 import { DiffDropdown } from "../components/session/DiffDropdown";
 
 type DeferredData = {
-  streamOutput: { lines: unknown[]; total: number; output?: string };
+  streamOutput: { lines: unknown[]; total: number };
   diff: { files: DiffFile[] };
   providerVersion: string | null;
 };
@@ -71,7 +70,6 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const navigate = useNavigate();
 
   const [session, setSession] = useState<Session | null>(initialSession);
-  const [output, setOutput] = useState(deferred.streamOutput.output ?? "");
   const [message, setMessage] = useState("");
   const [streamLines, setStreamLines] = useState<unknown[]>(deferred.streamOutput.lines);
   const [partialText, setPartialText] = useState("");
@@ -97,7 +95,6 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [settingsJSONLoading, setSettingsJSONLoading] = useState(false);
 
   const providerVersion = deferred.providerVersion;
-  const terminal = useAutoScroll(output);
   const streamCursorRef = useRef<number | null>(null);
 
   // Extract slash_commands from system init messages
@@ -240,9 +237,6 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     const interval = setInterval(() => {
       api.getSession(sessionId).then((s) => {
         setSession(s);
-        if (s.outputMode !== "stream") {
-          api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
-        }
       });
       api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
     }, 10000);
@@ -258,16 +252,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     await api.sendToSession(sessionId, message, images);
     setMessage("");
     setPendingImages([]);
-    // For non-stream mode, fetch output after a short delay
-    if (session?.outputMode !== "stream") {
-      setTimeout(() => {
-        api.getSessionOutput(sessionId).then((r) => setOutput(r.output));
-      }, 500);
-    }
     // Stream mode updates arrive via WebSocket automatically
   };
-
-  const isStream = session?.outputMode === "stream";
 
   const sendForm = session ? (
     <form onSubmit={handleSend} className="shrink-0 sticky bottom-0 bg-white pt-2 pb-4 px-4 sm:px-8 -mx-4 sm:-mx-8 border-t border-gray-100">
@@ -360,7 +346,6 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                     await api.clearSession(session.id);
                     setStreamLines([]);
                     setPartialText("");
-                    setOutput("");
                     streamCursorRef.current = 0;
                     api.getSession(session.id).then(setSession);
                     setClearToast("success");
@@ -730,19 +715,12 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             <div className="h-4 bg-gray-200 rounded animate-pulse w-2/3" />
           </div>
         </div>
-      ) : isStream ? (
+      ) : (
         <div className="flex flex-col flex-1 min-h-0">
           <StreamOutputView lines={streamLines} partialText={partialText} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={() => { setPendingEscalationId(null); setEscalationTimedOut(false); }} onAnswer={async (text) => {
             if (!sessionId) return;
             await api.sendToSession(sessionId, text);
           }} />
-          {sendForm}
-        </div>
-      ) : (
-        <div className="flex flex-col flex-1 min-h-0">
-          <div ref={terminal.ref} onScroll={terminal.onScroll} className="bg-gray-900 text-green-400 rounded-lg p-4 font-mono text-xs flex-1 min-h-0 overflow-y-auto whitespace-pre-wrap">
-            {output || "No output yet."}
-          </div>
           {sendForm}
         </div>
       )}

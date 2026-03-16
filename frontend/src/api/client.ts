@@ -24,7 +24,6 @@ export const api = {
     name: string;
     projectPath: string;
     prompt?: string;
-    outputMode?: "terminal" | "stream";
     provider?: string;
     model?: string;
     autoApprove?: boolean;
@@ -62,9 +61,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ text, ...(images && images.length > 0 ? { images } : {}) }),
     }),
-
-  getSessionOutput: (id: string) =>
-    request<{ output: string }>(`/sessions/${id}/output`),
 
   getLogs: (limit = 100) =>
     request<LogEntry[]>(`/logs?limit=${limit}`),

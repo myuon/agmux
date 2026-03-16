@@ -23,22 +23,13 @@ const (
 	TypeController SessionType = "controller"
 )
 
-type OutputMode string
-
-const (
-	OutputModeTerminal OutputMode = "terminal"
-	OutputModeStream   OutputMode = "stream"
-)
-
 type Session struct {
 	ID            string       `json:"id"`
 	Name          string       `json:"name"`
 	ProjectPath   string       `json:"projectPath"`
 	InitialPrompt string       `json:"initialPrompt,omitempty"`
-	TmuxSession   string       `json:"tmuxSession"`
 	Status        Status       `json:"status"`
 	Type          SessionType  `json:"type"`
-	OutputMode    OutputMode   `json:"outputMode"`
 	Provider      ProviderName `json:"provider"`
 	CliSessionID  string       `json:"cliSessionId,omitempty"`
 	Model         string       `json:"model,omitempty"`

@@ -3,12 +3,10 @@ export interface Session {
   name: string;
   projectPath: string;
   initialPrompt?: string;
-  tmuxSession: string;
   status: "working" | "idle" | "paused" | "question_waiting" | "alignment_needed" | "stopped";
   type: "worker" | "controller";
   provider: string;
   model?: string;
-  outputMode: "terminal" | "stream";
   currentTask?: string;
   goal?: string;
   goals?: { currentTask: string; goal: string }[];

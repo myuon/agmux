@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/myuon/agmux/internal/session"
-	"github.com/myuon/agmux/internal/tmux"
 )
 
 // Broadcaster is an interface for sending WebSocket messages.
@@ -18,18 +17,16 @@ type Broadcaster interface {
 type StatusChecker struct {
 	monitor  *Monitor
 	sessions *session.Manager
-	tmux     *tmux.Client
 	logger   *slog.Logger
 	onUpdate func(sessions []session.Session)
 	onNotify func(sessionId, sessionName, status, summary string)
 	interval time.Duration
 }
 
-func NewStatusChecker(monitor *Monitor, sessions *session.Manager, tmuxClient *tmux.Client, interval time.Duration, logger *slog.Logger) *StatusChecker {
+func NewStatusChecker(monitor *Monitor, sessions *session.Manager, interval time.Duration, logger *slog.Logger) *StatusChecker {
 	return &StatusChecker{
 		monitor:  monitor,
 		sessions: sessions,
-		tmux:     tmuxClient,
 		interval: interval,
 		logger:   logger,
 	}
@@ -73,37 +70,16 @@ func (sc *StatusChecker) check() {
 		if s.Status == session.StatusStopped {
 			continue
 		}
-		if s.OutputMode != session.OutputModeStream {
-			continue
-		}
 
 		shortID := s.ID[:8]
 
-		// Check if tmux session still exists (only for non-stream modes)
-		if s.OutputMode != session.OutputModeStream && !sc.tmux.HasSessionByFullName(s.TmuxSession) {
-			if s.Status != session.StatusStopped {
-				sc.logger.Info(fmt.Sprintf("%s (%s): tmux session gone, %s → stopped",
-					s.Name, shortID, s.Status),
-					slog.String("category", "status_checker"),
-					slog.String("sessionId", s.ID),
-				)
-				if err := sc.sessions.UpdateStatus(s.ID, session.StatusStopped); err != nil {
-					sc.logger.Error("status checker: update error", "name", s.Name, "sessionId", s.ID, "error", err)
-					continue
-				}
-				s.Status = session.StatusStopped
-				changed = true
-			}
-			continue
-		}
-
-		// For stream mode, check if the underlying process is still alive.
+		// Check if the underlying stream process is still alive.
 		// This is a safety net -- the onProcessExit callback should normally handle this,
 		// but the checker catches edge cases (e.g., callback not wired after server restart).
-		if s.OutputMode == session.OutputModeStream && !sc.sessions.IsStreamProcessAlive(s.ID) {
+		if !sc.sessions.IsStreamProcessAlive(s.ID) {
 			// No active stream process found -- the process has exited
 			if s.Status != session.StatusStopped {
-				sc.logger.Info(fmt.Sprintf("%s (%s): stream process not alive, %s → stopped",
+				sc.logger.Info(fmt.Sprintf("%s (%s): stream process not alive, %s -> stopped",
 					s.Name, shortID, s.Status),
 					slog.String("category", "status_checker"),
 					slog.String("sessionId", s.ID),
@@ -118,11 +94,11 @@ func (sc *StatusChecker) check() {
 			continue
 		}
 
-		// Mode-based status detection
+		// Status detection via stream JSONL
 		result := sc.monitor.CheckStatus(s)
 		if result.Status != s.Status {
-			sc.logger.Info(fmt.Sprintf("[%s] %s (%s): %s → %s (%s)",
-				s.OutputMode, s.Name, shortID,
+			sc.logger.Info(fmt.Sprintf("%s (%s): %s -> %s (%s)",
+				s.Name, shortID,
 				s.Status, result.Status, result.Reason),
 				slog.String("category", "status_checker"),
 				slog.String("sessionId", s.ID),

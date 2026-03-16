@@ -35,9 +35,7 @@ export const router = createBrowserRouter([
           const id = params.id!;
           const session = await api.getSession(id);
           // Return promises without awaiting – React Router v7 automatically defers them
-          const streamOutput = session.outputMode === "stream"
-            ? api.getStreamOutput(id)
-            : api.getSessionOutput(id).then((r) => ({ lines: [], total: 0, output: r.output }));
+          const streamOutput = api.getStreamOutput(id);
           const diff = api.getDiff(id).catch(() => ({ files: [] as never[] }));
           const providerVersion = (session.provider === "codex" ? api.getCodexVersion : api.getClaudeVersion)()
             .then((r) => r.version)

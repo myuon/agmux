@@ -7,7 +7,6 @@ interface Props {
     name: string;
     projectPath: string;
     prompt?: string;
-    outputMode?: "terminal" | "stream";
     provider?: string;
     model?: string;
     autoApprove?: boolean;
@@ -24,7 +23,6 @@ export function CreateSession({ onClose, onCreate }: Props) {
   const [name, setName] = useState("");
   const [projectPath, setProjectPath] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [outputMode, setOutputMode] = useState<"terminal" | "stream">("stream");
   const [provider, setProvider] = useState("claude");
   const [model, setModel] = useState("");
   const [codexModels, setCodexModels] = useState<CodexModel[]>([]);
@@ -62,7 +60,6 @@ export function CreateSession({ onClose, onCreate }: Props) {
       name,
       projectPath,
       prompt: prompt || undefined,
-      outputMode,
       provider,
       model: (provider === "codex" || provider === "claude") && model ? model : undefined,
       autoApprove: provider === "codex" && autoApprove ? true : undefined,
@@ -111,33 +108,6 @@ export function CreateSession({ onClose, onCreate }: Props) {
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
               placeholder="Fix the bug in..."
             />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Output Mode
-            </label>
-            <div className="flex gap-4">
-              <label className="flex items-center gap-1 text-sm">
-                <input
-                  type="radio"
-                  name="outputMode"
-                  value="terminal"
-                  checked={outputMode === "terminal"}
-                  onChange={() => setOutputMode("terminal")}
-                />
-                Terminal
-              </label>
-              <label className="flex items-center gap-1 text-sm">
-                <input
-                  type="radio"
-                  name="outputMode"
-                  value="stream"
-                  checked={outputMode === "stream"}
-                  onChange={() => setOutputMode("stream")}
-                />
-                Stream
-              </label>
-            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

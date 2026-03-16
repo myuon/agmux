@@ -109,22 +109,6 @@ func (p *ClaudeProvider) ParseModel(jsonlLine []byte) (string, bool) {
 	return "", false
 }
 
-func (p *ClaudeProvider) BuildTerminalCommand(opts TerminalOpts) string {
-	otelPrefix := p.OTelEnvPrefix(opts.APIPort)
-	cmd := otelPrefix + p.command
-	if opts.Resume {
-		cmd += " --resume --session-id " + opts.SessionID
-	} else {
-		cmd += " --session-id " + opts.SessionID
-	}
-	if opts.Model != "" {
-		cmd += " --model " + opts.Model
-	}
-	cmd += " --mcp-config " + opts.MCPConfigPath
-	cmd += " --append-system-prompt " + shellQuote(opts.SystemPrompt)
-	return cmd
-}
-
 func (p *ClaudeProvider) SetupMCP(sessionID string, port int) (string, error) {
 	return writeMCPConfig(sessionID, port)
 }
@@ -178,17 +162,3 @@ func (p *ClaudeProvider) NormalizeStreamLine(line []byte) []byte {
 	return line
 }
 
-func (p *ClaudeProvider) OTelEnvPrefix(port int) string {
-	if port == 0 {
-		cfg, err := config.Load()
-		if err == nil {
-			port = cfg.Server.Port
-		} else {
-			port = config.Default().Server.Port
-		}
-	}
-	return fmt.Sprintf(
-		"CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_LOGS_EXPORTER=otlp OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:%d ",
-		port,
-	)
-}
