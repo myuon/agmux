@@ -125,7 +125,7 @@ export type DisplayGroup =
 
 // Merge assistant/user entries into display items, pairing tool_use with tool_result by id
 // partialText: incremental text from stream_event deltas (shown as "typing" in the last assistant group)
-export function mergeStreamEntries(entries: StreamEntry[], partialText?: string): DisplayGroup[] {
+export function mergeStreamEntries(entries: StreamEntry[], partialText?: string, provider?: string): DisplayGroup[] {
   // First pass: collect all tool_results keyed by tool_use_id, and track Skill tool IDs
   const resultMap = new Map<string, string>();
   const resultImageMap = new Map<string, Array<{ mediaType: string; data: string }>>();
@@ -265,20 +265,24 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string)
             continue;
           }
 
-          // For Claude: look up result by tool_use_id from user entries
-          let result = b.id ? resultMap.get(b.id) : undefined;
-          let resultImages = b.id ? resultImageMap.get(b.id) : undefined;
+          let result: string | undefined;
+          let resultImages: Array<{ mediaType: string; data: string }> | undefined;
 
-          // For Codex: tool_result is in the same assistant content array (no id/tool_use_id pairing)
-          // Check if the next block is a tool_result and use its content directly
-          if (result === undefined && bi + 1 < blocks.length && blocks[bi + 1].type === "tool_result") {
-            const nextBlock = blocks[bi + 1];
-            if (typeof nextBlock.content === "string") {
-              result = nextBlock.content;
-            } else if (nextBlock.content != null) {
-              result = JSON.stringify(nextBlock.content);
+          if (provider === "codex") {
+            // Codex: tool_result is in the same assistant content array, directly after tool_use
+            if (bi + 1 < blocks.length && blocks[bi + 1].type === "tool_result") {
+              const nextBlock = blocks[bi + 1];
+              if (typeof nextBlock.content === "string") {
+                result = nextBlock.content;
+              } else if (nextBlock.content != null) {
+                result = JSON.stringify(nextBlock.content);
+              }
+              bi++; // skip the tool_result block since we consumed it
             }
-            bi++; // skip the tool_result block since we consumed it
+          } else {
+            // Claude: look up result by tool_use_id from user entries
+            result = b.id ? resultMap.get(b.id) : undefined;
+            resultImages = b.id ? resultImageMap.get(b.id) : undefined;
           }
 
           // For Skill calls, fold the next user text (skill content) into the result
