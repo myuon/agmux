@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"os/user"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -275,7 +276,13 @@ func (s *Server) handleRestartServer() (interface{}, *jsonRPCError) {
 	if err := s.launchctlKickstart(); err != nil {
 		return toolResult(fmt.Sprintf("エラー: サーバーの再起動に失敗しました: %v", err), true), nil
 	}
-	return toolResult("サーバーの再起動をキックしました。しばらくお待ちください。", false), nil
+
+	// サーバーが実際に起動するまでポーリングして待つ
+	if err := s.waitForServerReady(30*time.Second, 500*time.Millisecond); err != nil {
+		return toolResult(fmt.Sprintf("サーバーの再起動をキックしましたが、起動確認がタイムアウトしました: %v", err), true), nil
+	}
+
+	return toolResult("サーバーの再起動が完了しました。", false), nil
 }
 
 func (s *Server) launchctlKickstart() error {
@@ -285,6 +292,39 @@ func (s *Server) launchctlKickstart() error {
 	}
 	serviceTarget := fmt.Sprintf("gui/%s/com.myuon.agmux", u.Uid)
 	return exec.Command("launchctl", "kickstart", "-k", serviceTarget).Run()
+}
+
+// waitForServerReady はサーバーのAPIにアクセスできるようになるまでポーリングする。
+// 旧プロセスの応答を誤認しないよう、まず旧プロセスの停止を確認（接続エラー）してから
+// 新プロセスの起動完了を待つ2フェーズ方式を採用している。
+func (s *Server) waitForServerReady(timeout, interval time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	client := &http.Client{Timeout: 2 * time.Second}
+	url := fmt.Sprintf("%s/api/sessions", s.apiURL)
+
+	// Phase 1: 旧プロセスが停止するのを待つ（接続エラーになるまでポーリング）
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err != nil {
+			// 接続エラー = 旧プロセスが停止した
+			break
+		}
+		resp.Body.Close()
+		time.Sleep(interval)
+	}
+
+	// Phase 2: 新プロセスが起動するのを待つ（200 OKが返るまでポーリング）
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				return nil
+			}
+		}
+		time.Sleep(interval)
+	}
+	return fmt.Errorf("サーバーが%v以内に応答しませんでした", timeout)
 }
 
 
