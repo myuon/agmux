@@ -101,7 +101,6 @@ func (d *ExternalDetector) detect() {
 			ProjectPath: p.CWD,
 			Status:      StatusWorking,
 			Type:        TypeExternal,
-			OutputMode:  OutputModeTerminal,
 			Provider:    ProviderClaude,
 			CreatedAt:   createdAt,
 			UpdatedAt:   now,

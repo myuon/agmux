@@ -283,6 +283,74 @@ func TestCodexProvider_BuildStreamCommand_DefaultPlaceholder(t *testing.T) {
 	}
 }
 
+func TestCodexProvider_BuildStreamCommand_EnvVarsForMCP(t *testing.T) {
+	p := NewCodexProvider("codex")
+	cmd := p.BuildStreamCommand(StreamOpts{
+		SessionID:   "sess-mcp-test",
+		ProjectPath: "/tmp/project",
+		APIPort:     4321,
+	})
+
+	var foundSessionID, foundAPIURL bool
+	for _, env := range cmd.Env {
+		if env == "AGMUX_SESSION_ID=sess-mcp-test" {
+			foundSessionID = true
+		}
+		if env == "AGMUX_API_URL=http://localhost:4321" {
+			foundAPIURL = true
+		}
+	}
+	if !foundSessionID {
+		t.Error("expected AGMUX_SESSION_ID=sess-mcp-test in env")
+	}
+	if !foundAPIURL {
+		t.Error("expected AGMUX_API_URL=http://localhost:4321 in env")
+	}
+}
+
+func TestCodexProvider_BuildStreamCommand_NoEnvVarsWithoutAPIPort(t *testing.T) {
+	p := NewCodexProvider("codex")
+	cmd := p.BuildStreamCommand(StreamOpts{
+		SessionID:   "sess-no-port",
+		ProjectPath: "/tmp/project",
+	})
+
+	var foundSessionID, foundAPIURL bool
+	for _, env := range cmd.Env {
+		if strings.HasPrefix(env, "AGMUX_SESSION_ID=") {
+			foundSessionID = true
+		}
+		if strings.HasPrefix(env, "AGMUX_API_URL=") {
+			foundAPIURL = true
+		}
+	}
+	if !foundSessionID {
+		t.Error("expected AGMUX_SESSION_ID in env even without APIPort")
+	}
+	if foundAPIURL {
+		t.Error("AGMUX_API_URL should not be set when APIPort is 0")
+	}
+}
+
+func TestCodexProvider_SetupMCP_Noop(t *testing.T) {
+	p := NewCodexProvider("codex")
+	path, err := p.SetupMCP("sess-test", 4321)
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if path != "" {
+		t.Errorf("expected empty path, got %q", path)
+	}
+}
+
+func TestCodexProvider_CleanupMCP_Noop(t *testing.T) {
+	p := NewCodexProvider("codex")
+	err := p.CleanupMCP("sess-test")
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+}
+
 func TestCodexProvider_EnvFiltersCLAUDECODE(t *testing.T) {
 	p := NewCodexProvider("codex")
 	cmd := p.BuildStreamCommand(StreamOpts{

@@ -24,6 +24,7 @@ type StreamOpts struct {
 	InitialPrompt  string // initial user prompt (used by Codex as positional arg)
 	Model          string // model to use (e.g. "claude-sonnet-4-5", "o4-mini")
 	FullAuto       bool   // enable full-auto mode (Codex: --full-auto instead of --sandbox)
+	APIPort        int    // API server port (used by Codex to set env vars for MCP)
 }
 
 // Provider abstracts CLI-specific behavior so agmux can support multiple AI CLIs.

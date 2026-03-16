@@ -121,6 +121,7 @@ func (m *Manager) RecoverStreamProcesses() {
 			Resume:        true,
 			CLISessionID:  cliSessionID,
 			Model:         dbModel,
+			APIPort:       m.apiPort,
 		}, provider)
 		if err != nil {
 			m.logger.Error("recover stream processes: start failed", "sessionId", id, "error", err)
@@ -173,6 +174,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		Model:         model,
 		FullAuto:      fullAuto,
 	}
+	streamOpts.APIPort = m.apiPort
 	var sp *StreamProcess
 	if pn == ProviderCodex && prompt != "" {
 		// Codex: pass initial prompt as command-line argument (not stdin)
@@ -501,6 +503,7 @@ func (m *Manager) Clear(id string) error {
 		SystemPrompt:  m.systemPrompt,
 		CLISessionID:  freshCLISessionID,
 		Model:         s.Model,
+		APIPort:       m.apiPort,
 	}, provider)
 	if err != nil {
 		return fmt.Errorf("start stream process: %w", err)
@@ -550,6 +553,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 				Resume:        true,
 				CLISessionID:  cliSessionID,
 				Model:         s.Model,
+				APIPort:       m.apiPort,
 			}, provider)
 			if err != nil {
 				return fmt.Errorf("restart stream process: %w", err)
@@ -750,6 +754,7 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 		ProjectPath:   projectPath,
 		MCPConfigPath: mcpConfigPath,
 		SystemPrompt:  m.systemPrompt,
+		APIPort:       m.apiPort,
 	}, provider)
 	if err != nil {
 		return nil, fmt.Errorf("start stream process for controller: %w", err)
@@ -898,6 +903,7 @@ func (m *Manager) Reconnect(id string) error {
 		Resume:        true,
 		CLISessionID:  cliSessionID,
 		Model:         s.Model,
+		APIPort:       m.apiPort,
 	}, provider)
 	if err != nil {
 		return fmt.Errorf("start stream process: %w", err)
