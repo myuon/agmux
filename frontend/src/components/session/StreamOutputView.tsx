@@ -11,7 +11,7 @@ const roleStyles: Record<string, { bg: string; label: string; text: string }> = 
 
 type StreamViewMode = "markdown" | "json";
 
-export function StreamOutputView({ lines, partialText, className, onAnswer, sessionId, escalationId, escalationTimedOut, escalationTimeoutSeconds, onEscalationResponded }: {
+export function StreamOutputView({ lines, partialText, className, onAnswer, sessionId, escalationId, escalationTimedOut, escalationTimeoutSeconds, onEscalationResponded, provider }: {
   lines: unknown[];
   partialText?: string;
   className?: string;
@@ -21,6 +21,7 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
   escalationTimedOut?: boolean;
   escalationTimeoutSeconds?: number;
   onEscalationResponded?: () => void;
+  provider?: string;
 }) {
   const { ref, onScroll } = useAutoScroll(lines);
   const [viewMode, setViewMode] = useState<StreamViewMode>("markdown");
@@ -29,7 +30,7 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
     .map((line) => line as StreamEntry)
     .filter((e) => e.type === "user" || e.type === "assistant" || e.type === "system");
 
-  const groups = mergeStreamEntries(entries, partialText || undefined);
+  const groups = mergeStreamEntries(entries, partialText || undefined, provider);
 
   return (
     <div className={`flex flex-col ${className || ""}`}>
