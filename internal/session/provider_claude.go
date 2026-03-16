@@ -14,16 +14,23 @@ import (
 
 // ClaudeProvider implements Provider for Claude Code CLI.
 type ClaudeProvider struct {
-	command string // e.g. "claude --dangerously-skip-permissions"
+	command        string // e.g. "claude"
+	permissionMode string // e.g. "bypassPermissions"
 }
 
-// NewClaudeProvider creates a ClaudeProvider with the given command.
-// If command is empty, defaults to "claude --dangerously-skip-permissions".
+// NewClaudeProvider creates a ClaudeProvider with the given command and permission mode.
+// If command is empty, defaults to "claude".
+// If permissionMode is empty, defaults to "bypassPermissions".
 func NewClaudeProvider(command string) *ClaudeProvider {
 	if command == "" {
-		command = "claude --dangerously-skip-permissions"
+		command = "claude"
 	}
-	return &ClaudeProvider{command: command}
+	cfg, err := config.Load()
+	permissionMode := "bypassPermissions"
+	if err == nil {
+		permissionMode = cfg.Claude.ClaudePermissionMode()
+	}
+	return &ClaudeProvider{command: command, permissionMode: permissionMode}
 }
 
 func (p *ClaudeProvider) Name() ProviderName {
@@ -48,7 +55,7 @@ func (p *ClaudeProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 		"--output-format", "stream-json",
 		"--input-format", "stream-json",
 		sessionFlag, resumeID,
-		"--dangerously-skip-permissions",
+		"--permission-mode", p.permissionMode,
 		"--include-partial-messages",
 	}
 	if opts.Model != "" {

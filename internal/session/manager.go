@@ -29,7 +29,7 @@ type Manager struct {
 
 func NewManager(db *sql.DB, claudeCommand string, apiPort int, logger *slog.Logger, systemPrompt string) *Manager {
 	if claudeCommand == "" {
-		claudeCommand = "claude --dangerously-skip-permissions"
+		claudeCommand = "claude"
 	}
 	if logger == nil {
 		logger = slog.Default()

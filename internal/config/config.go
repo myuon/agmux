@@ -13,6 +13,7 @@ type Config struct {
 	Server  ServerConfig  `toml:"server"`
 	Daemon  DaemonConfig  `toml:"daemon"`
 	Session SessionConfig `toml:"session"`
+	Claude  ClaudeConfig  `toml:"claude"`
 }
 
 type ServerConfig struct {
@@ -27,6 +28,18 @@ type SessionConfig struct {
 	ClaudeCommand string `toml:"claude_command"`
 	CodexCommand  string `toml:"codex_command"`
 	SystemPrompt  string `toml:"system_prompt"`
+}
+
+type ClaudeConfig struct {
+	PermissionMode string `toml:"permission_mode"`
+}
+
+// ClaudePermissionMode returns the effective permission mode, defaulting to "bypassPermissions".
+func (c ClaudeConfig) ClaudePermissionMode() string {
+	if c.PermissionMode == "" {
+		return "bypassPermissions"
+	}
+	return c.PermissionMode
 }
 
 func (d DaemonConfig) IntervalDuration() time.Duration {
@@ -46,8 +59,11 @@ func Default() *Config {
 			Interval: "30s",
 		},
 		Session: SessionConfig{
-			ClaudeCommand: "claude --dangerously-skip-permissions",
+			ClaudeCommand: "claude",
 			CodexCommand:  "codex",
+		},
+		Claude: ClaudeConfig{
+			PermissionMode: "bypassPermissions",
 		},
 	}
 }
