@@ -45,7 +45,7 @@ func TestCodexProvider_BuildStreamCommand_NewSession(t *testing.T) {
 
 	// Check required args are present
 	argsStr := joinArgs(args[1:])
-	for _, expected := range []string{"exec", "--json", "--sandbox", "danger-full-access"} {
+	for _, expected := range []string{"exec", "--json", "--dangerously-bypass-approvals-and-sandbox"} {
 		if !containsArg(args[1:], expected) {
 			t.Errorf("expected args to contain %q, got: %s", expected, argsStr)
 		}
@@ -80,9 +80,9 @@ func TestCodexProvider_BuildStreamCommand_FullAuto(t *testing.T) {
 	})
 
 	args := cmd.Args
-	// exec mode always uses --sandbox danger-full-access (no --full-auto which forces workspace-write)
-	if !containsArg(args, "--sandbox") {
-		t.Errorf("expected args to contain '--sandbox', got: %v", args)
+	// exec mode always uses --dangerously-bypass-approvals-and-sandbox (no --full-auto which forces workspace-write)
+	if !containsArg(args, "--dangerously-bypass-approvals-and-sandbox") {
+		t.Errorf("expected args to contain '--dangerously-bypass-approvals-and-sandbox', got: %v", args)
 	}
 	if containsArg(args, "--full-auto") {
 		t.Errorf("should not contain '--full-auto' (it forces workspace-write sandbox), got: %v", args)
@@ -210,7 +210,7 @@ func TestCodexProvider_BuildTerminalCommand(t *testing.T) {
 		t.Error("expected non-empty command")
 	}
 	// Should contain key parts
-	for _, part := range []string{"codex", "--sandbox", "danger-full-access"} {
+	for _, part := range []string{"codex", "--dangerously-bypass-approvals-and-sandbox"} {
 		if !containsStr(cmd, part) {
 			t.Errorf("expected command to contain %q, got: %s", part, cmd)
 		}
@@ -361,7 +361,7 @@ func TestCodexBuildTerminalCommand_New(t *testing.T) {
 	if !strings.Contains(cmd, "codex") {
 		t.Errorf("expected codex command, got %s", cmd)
 	}
-	if !strings.Contains(cmd, "--sandbox danger-full-access") {
+	if !strings.Contains(cmd, "--dangerously-bypass-approvals-and-sandbox") {
 		t.Errorf("expected --sandbox flag, got %s", cmd)
 	}
 	if strings.Contains(cmd, "--mcp-config") {
@@ -383,7 +383,7 @@ func TestCodexBuildTerminalCommand_Resume(t *testing.T) {
 	if !strings.Contains(cmd, "codex resume sess-456") {
 		t.Errorf("expected resume with session ID, got %s", cmd)
 	}
-	if !strings.Contains(cmd, "--sandbox danger-full-access") {
+	if !strings.Contains(cmd, "--dangerously-bypass-approvals-and-sandbox") {
 		t.Errorf("expected --sandbox flag, got %s", cmd)
 	}
 }
@@ -415,8 +415,8 @@ func TestCodexBuildTerminalCommand_FullAuto(t *testing.T) {
 	if strings.Contains(cmd, "--full-auto") {
 		t.Errorf("should not contain --full-auto (forces workspace-write), got %s", cmd)
 	}
-	if !strings.Contains(cmd, "--sandbox danger-full-access") {
-		t.Errorf("expected --sandbox danger-full-access with full-auto, got %s", cmd)
+	if !strings.Contains(cmd, "--dangerously-bypass-approvals-and-sandbox") {
+		t.Errorf("expected --dangerously-bypass-approvals-and-sandbox with full-auto, got %s", cmd)
 	}
 }
 
@@ -437,8 +437,8 @@ func TestCodexBuildTerminalCommand_FullAuto_Resume(t *testing.T) {
 	if !strings.Contains(cmd, "resume") {
 		t.Errorf("expected resume, got %s", cmd)
 	}
-	if !strings.Contains(cmd, "--sandbox danger-full-access") {
-		t.Errorf("expected --sandbox danger-full-access with full-auto, got %s", cmd)
+	if !strings.Contains(cmd, "--dangerously-bypass-approvals-and-sandbox") {
+		t.Errorf("expected --dangerously-bypass-approvals-and-sandbox with full-auto, got %s", cmd)
 	}
 }
 
