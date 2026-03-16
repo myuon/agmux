@@ -32,18 +32,20 @@ func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 
 	if opts.Resume && opts.CLISessionID != "" {
 		// Resume an existing session
-		// Note: --sandbox is not supported for exec resume
+		// Note: --sandbox flag is not supported for exec resume, so we use
+		// --dangerously-bypass-approvals-and-sandbox to retain full write access.
 		args = append(args, "exec", "resume",
 			"--json",
+			"--dangerously-bypass-approvals-and-sandbox",
 		)
 		args = append(args, opts.CLISessionID)
 	} else {
 		// Start a new session
-		// Note: Do NOT use --full-auto here as it forces --sandbox workspace-write,
-		// overriding danger-full-access. In exec mode there is no approval prompt anyway.
+		// Use --dangerously-bypass-approvals-and-sandbox for consistency with resume mode.
+		// Do NOT use --full-auto as it forces --sandbox workspace-write.
 		args = append(args, "exec",
 			"--json",
-			"--sandbox", "danger-full-access",
+			"--dangerously-bypass-approvals-and-sandbox",
 		)
 	}
 
@@ -117,13 +119,13 @@ func (p *CodexProvider) BuildTerminalCommand(opts TerminalOpts) string {
 		if opts.FullAuto {
 			cmd += " -a never"
 		}
-		cmd += " --sandbox danger-full-access"
+		cmd += " --dangerously-bypass-approvals-and-sandbox"
 	} else {
 		cmd = otelPrefix + p.command
 		if opts.FullAuto {
 			cmd += " -a never"
 		}
-		cmd += " --sandbox danger-full-access"
+		cmd += " --dangerously-bypass-approvals-and-sandbox"
 	}
 
 	// Add --model flag if specified

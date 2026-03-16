@@ -139,8 +139,8 @@ func TestCodexProvider_BuildStreamCommand_ResumeExactArgs(t *testing.T) {
 	})
 
 	args := cmd.Args
-	// Expected: codex exec resume --json thr_abc123 "follow up message"
-	expected := []string{"codex", "exec", "resume", "--json", "thr_abc123", "follow up message"}
+	// Expected: codex exec resume --json --dangerously-bypass-approvals-and-sandbox thr_abc123 "follow up message"
+	expected := []string{"codex", "exec", "resume", "--json", "--dangerously-bypass-approvals-and-sandbox", "thr_abc123", "follow up message"}
 	if len(args) != len(expected) {
 		t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
 	}
@@ -163,8 +163,8 @@ func TestCodexProvider_BuildStreamCommand_ResumeNoPromptExactArgs(t *testing.T) 
 	})
 
 	args := cmd.Args
-	// Expected: codex exec resume --json thr_abc123
-	expected := []string{"codex", "exec", "resume", "--json", "thr_abc123"}
+	// Expected: codex exec resume --json --dangerously-bypass-approvals-and-sandbox thr_abc123
+	expected := []string{"codex", "exec", "resume", "--json", "--dangerously-bypass-approvals-and-sandbox", "thr_abc123"}
 	if len(args) != len(expected) {
 		t.Fatalf("expected %d args, got %d: %v", len(expected), len(args), args)
 	}
