@@ -27,7 +27,6 @@
 |---------|------|
 | バックエンド | Go (chi, cobra, gorilla/websocket, SQLite) |
 | フロントエンド | TypeScript + React + Vite + Tailwind CSS |
-| セッション管理 | tmux (CLI経由) |
 | ビルド | Go embed でsingle binaryにビルド |
 
 ## インストール
@@ -39,7 +38,6 @@ go install github.com/myuon/agmux/cmd/agmux@latest
 前提条件:
 - Go 1.21+
 - Node.js 18+ (ビルド時のみ)
-- tmux
 
 ### ソースからビルド
 
@@ -67,7 +65,6 @@ agmux serve -p 8080      # ポート指定
 agmux session list                          # セッション一覧
 agmux session create <name> -p <path>       # セッション作成
 agmux session create <name> -p <path> -m "prompt"  # 初期プロンプト付き
-agmux session create <name> -p <path> --mode stream # Stream Mode
 agmux session send <id> "message"           # メッセージ送信
 agmux session stop <id>                     # 停止
 agmux session delete <id>                   # 削除
@@ -84,9 +81,19 @@ port = 4321
 [daemon]
 interval = "30s"
 
-[session]
-claude_command = "claude --dangerously-skip-permissions"
+[claude]
+permission_mode = "auto"  # default, acceptEdits, plan, dontAsk, bypassPermissions, auto
 ```
+
+## Codexセッションのセットアップ
+
+agmuxはOpenAI Codex CLIのセッションもサポートしています。CodexセッションでagmuxのMCPツール（ゴール管理、escalate等）を利用するには、事前にグローバルMCP登録が必要です。
+
+```bash
+codex mcp add agmux -- agmux mcp
+```
+
+セッション固有の情報（セッションID等）は環境変数経由で自動的に渡されます。
 
 ## Controllerセッション
 
