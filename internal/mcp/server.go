@@ -15,6 +15,12 @@ import (
 	"github.com/google/uuid"
 )
 
+// sessionIDProperty is the shared JSON Schema property for session_id across all tools.
+var sessionIDProperty = map[string]interface{}{
+	"type":        "string",
+	"description": "agmuxのセッションID。環境変数 AGMUX_SESSION_ID が設定されていない場合に必要です。",
+}
+
 type Server struct {
 	sessionID string
 	apiURL    string
@@ -91,6 +97,7 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 					"inputSchema": map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
+							"session_id": sessionIDProperty,
 							"currentTask": map[string]interface{}{
 								"type":        "string",
 								"description": "今取り組んでいる作業の概要（例: 「ログイン画面のバリデーション実装」）",
@@ -112,16 +119,20 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 					"name":        "get_goal",
 					"description": "現在のゴール情報を取得します。currentTask、goal、goalsスタックを返します。コンテキストが圧縮された後などに自分が何をやっていたか確認するのに使えます。",
 					"inputSchema": map[string]interface{}{
-						"type":       "object",
-						"properties": map[string]interface{}{},
+						"type": "object",
+						"properties": map[string]interface{}{
+							"session_id": sessionIDProperty,
+						},
 					},
 				},
 				map[string]interface{}{
 					"name":        "complete_goal",
 					"description": "現在のゴールを達成済みとしてポップします。親ゴールがあればそれがアクティブになります。",
 					"inputSchema": map[string]interface{}{
-						"type":       "object",
-						"properties": map[string]interface{}{},
+						"type": "object",
+						"properties": map[string]interface{}{
+							"session_id": sessionIDProperty,
+						},
 					},
 				},
 				map[string]interface{}{
@@ -138,6 +149,7 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 					"inputSchema": map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
+							"session_id": sessionIDProperty,
 							"message": map[string]interface{}{
 								"type":        "string",
 								"description": "ユーザーに伝えたいメッセージ（例: 「テストが3件失敗しています。修正方針を教えてください」）",
@@ -169,14 +181,33 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 	}
 }
 
+// resolveSessionID determines the session ID to use for an API call.
+// Priority: 1) environment variable AGMUX_SESSION_ID, 2) session_id parameter from tool args.
+func (s *Server) resolveSessionID(args json.RawMessage) (string, *jsonRPCError) {
+	if s.sessionID != "" {
+		return s.sessionID, nil
+	}
+	// Try to extract session_id from args
+	var parsed struct {
+		SessionID string `json:"session_id"`
+	}
+	if len(args) > 0 {
+		_ = json.Unmarshal(args, &parsed)
+	}
+	if parsed.SessionID != "" {
+		return parsed.SessionID, nil
+	}
+	return "", &jsonRPCError{Code: -32602, Message: "session_id is required: set AGMUX_SESSION_ID env var or pass session_id parameter"}
+}
+
 func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *jsonRPCError) {
 	switch name {
 	case "create_goal":
 		return s.handleCreateGoal(args)
 	case "get_goal":
-		return s.handleGetGoal()
+		return s.handleGetGoal(args)
 	case "complete_goal":
-		return s.handleCompleteGoal()
+		return s.handleCompleteGoal(args)
 	case "set_session_context":
 		// Backward compatibility
 		return s.handleCreateGoal(args)
@@ -190,6 +221,11 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 }
 
 func (s *Server) handleCreateGoal(args json.RawMessage) (interface{}, *jsonRPCError) {
+	sessionID, rpcErr := s.resolveSessionID(args)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+
 	var input struct {
 		CurrentTask string `json:"currentTask"`
 		Goal        string `json:"goal"`
@@ -199,7 +235,7 @@ func (s *Server) handleCreateGoal(args json.RawMessage) (interface{}, *jsonRPCEr
 		return nil, &jsonRPCError{Code: -32602, Message: "invalid arguments"}
 	}
 
-	if err := s.apiCreateGoal(input.CurrentTask, input.Goal, input.Subgoal); err != nil {
+	if err := s.apiCreateGoal(sessionID, input.CurrentTask, input.Goal, input.Subgoal); err != nil {
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
 
@@ -210,8 +246,13 @@ func (s *Server) handleCreateGoal(args json.RawMessage) (interface{}, *jsonRPCEr
 	return toolResult(msg, false), nil
 }
 
-func (s *Server) handleGetGoal() (interface{}, *jsonRPCError) {
-	result, err := s.apiGetGoal()
+func (s *Server) handleGetGoal(args json.RawMessage) (interface{}, *jsonRPCError) {
+	sessionID, rpcErr := s.resolveSessionID(args)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+
+	result, err := s.apiGetGoal(sessionID)
 	if err != nil {
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
@@ -232,8 +273,13 @@ func (s *Server) handleGetGoal() (interface{}, *jsonRPCError) {
 	return toolResult(strings.Join(lines, "\n"), false), nil
 }
 
-func (s *Server) handleCompleteGoal() (interface{}, *jsonRPCError) {
-	parentGoal, err := s.apiCompleteGoal()
+func (s *Server) handleCompleteGoal(args json.RawMessage) (interface{}, *jsonRPCError) {
+	sessionID, rpcErr := s.resolveSessionID(args)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+
+	parentGoal, err := s.apiCompleteGoal(sessionID)
 	if err != nil {
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
@@ -245,6 +291,11 @@ func (s *Server) handleCompleteGoal() (interface{}, *jsonRPCError) {
 }
 
 func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCError) {
+	sessionID, rpcErr := s.resolveSessionID(args)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+
 	var input struct {
 		Message        string `json:"message"`
 		TimeoutSeconds *int   `json:"timeout_seconds,omitempty"`
@@ -261,7 +312,7 @@ func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCErro
 		timeoutSeconds = *input.TimeoutSeconds
 	}
 
-	response, timedOut, err := s.apiEscalate(input.Message, timeoutSeconds)
+	response, timedOut, err := s.apiEscalate(sessionID, input.Message, timeoutSeconds)
 	if err != nil {
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
@@ -328,9 +379,9 @@ func (s *Server) waitForServerReady(timeout, interval time.Duration) error {
 }
 
 
-func (s *Server) apiEscalate(message string, timeoutSeconds int) (string, bool, error) {
+func (s *Server) apiEscalate(sessionID string, message string, timeoutSeconds int) (string, bool, error) {
 	escalationID := uuid.New().String()
-	url := fmt.Sprintf("%s/api/sessions/%s/escalate", s.apiURL, s.sessionID)
+	url := fmt.Sprintf("%s/api/sessions/%s/escalate", s.apiURL, sessionID)
 	body := fmt.Sprintf(`{"id":%s,"message":%s,"timeout_seconds":%d}`,
 		jsonString(escalationID), jsonString(message), timeoutSeconds)
 
@@ -372,8 +423,8 @@ type goalResponse struct {
 	} `json:"goals"`
 }
 
-func (s *Server) apiGetGoal() (*goalResponse, error) {
-	url := fmt.Sprintf("%s/api/sessions/%s/goals", s.apiURL, s.sessionID)
+func (s *Server) apiGetGoal(sessionID string) (*goalResponse, error) {
+	url := fmt.Sprintf("%s/api/sessions/%s/goals", s.apiURL, sessionID)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -398,8 +449,8 @@ func (s *Server) apiGetGoal() (*goalResponse, error) {
 	return &result, nil
 }
 
-func (s *Server) apiCreateGoal(currentTask, goal string, subgoal bool) error {
-	url := fmt.Sprintf("%s/api/sessions/%s/goals", s.apiURL, s.sessionID)
+func (s *Server) apiCreateGoal(sessionID string, currentTask, goal string, subgoal bool) error {
+	url := fmt.Sprintf("%s/api/sessions/%s/goals", s.apiURL, sessionID)
 	body := fmt.Sprintf(`{"currentTask":%s,"goal":%s,"subgoal":%t}`,
 		jsonString(currentTask), jsonString(goal), subgoal)
 
@@ -422,8 +473,8 @@ func (s *Server) apiCreateGoal(currentTask, goal string, subgoal bool) error {
 	return nil
 }
 
-func (s *Server) apiCompleteGoal() (string, error) {
-	url := fmt.Sprintf("%s/api/sessions/%s/goals/complete", s.apiURL, s.sessionID)
+func (s *Server) apiCompleteGoal(sessionID string) (string, error) {
+	url := fmt.Sprintf("%s/api/sessions/%s/goals/complete", s.apiURL, sessionID)
 
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
@@ -455,8 +506,8 @@ func (s *Server) apiCompleteGoal() (string, error) {
 	return "", nil
 }
 
-func (s *Server) updateContext(currentTask, goal string) error {
-	url := fmt.Sprintf("%s/api/sessions/%s/context", s.apiURL, s.sessionID)
+func (s *Server) updateContext(sessionID string, currentTask, goal string) error {
+	url := fmt.Sprintf("%s/api/sessions/%s/context", s.apiURL, sessionID)
 	body := fmt.Sprintf(`{"currentTask":%s,"goal":%s}`,
 		jsonString(currentTask), jsonString(goal))
 
