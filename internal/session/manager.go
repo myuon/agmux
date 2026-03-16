@@ -153,6 +153,12 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		model = opts[0].Model
 		fullAuto = opts[0].FullAuto
 	}
+
+	// For Codex, resolve default model from config if not explicitly specified
+	if pn == ProviderCodex && model == "" {
+		model = ReadCodexDefaultModel()
+	}
+
 	provider := m.getProvider(pn)
 
 	id := uuid.New().String()

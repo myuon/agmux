@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+
+	"github.com/BurntSushi/toml"
 )
 
 // CodexProvider implements Provider for OpenAI Codex CLI.
@@ -227,6 +230,24 @@ func (p *CodexProvider) buildAssistantToolUse(command, output string) []byte {
 	msg.Message.Content = []json.RawMessage{tuJSON, trJSON}
 	b, _ := json.Marshal(msg)
 	return b
+}
+
+// ReadCodexDefaultModel reads the default model from ~/.codex/config.toml.
+// Returns empty string if the file doesn't exist or has no model field.
+func ReadCodexDefaultModel() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	configPath := filepath.Join(home, ".codex", "config.toml")
+
+	var cfg struct {
+		Model string `toml:"model"`
+	}
+	if _, err := toml.DecodeFile(configPath, &cfg); err != nil {
+		return ""
+	}
+	return cfg.Model
 }
 
 // NewCodexThreadStartedJSON creates a JSONL line for a thread.started event (for testing).
