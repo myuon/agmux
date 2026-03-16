@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import type { StreamEntry } from "../../models/stream";
-import { mergeStreamEntries, extractActiveTasks } from "../../models/stream";
+import { mergeStreamEntries } from "../../models/stream";
 import type { ActiveTask } from "../../models/stream";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { StreamDisplayItemView } from "./StreamDisplayItemView";
@@ -32,7 +32,6 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
     .filter((e) => e.type === "user" || e.type === "assistant" || e.type === "system");
 
   const groups = mergeStreamEntries(entries, partialText || undefined, provider);
-  const activeTasks = useMemo(() => extractActiveTasks(entries), [entries]);
 
   return (
     <div className={`flex flex-col ${className || ""}`}>
@@ -85,15 +84,12 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
             );
           })
         )}
-        {activeTasks.length > 0 && (
-          <ActiveTasksPanel tasks={activeTasks} />
-        )}
       </div>
     </div>
   );
 }
 
-function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
+export function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
   return (
     <div className="border border-amber-200 bg-amber-50 rounded-lg p-3 space-y-2">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
