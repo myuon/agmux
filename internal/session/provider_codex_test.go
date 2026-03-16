@@ -237,10 +237,13 @@ func TestCodexProvider_BuildStreamCommand_WithInitialPrompt(t *testing.T) {
 	})
 
 	args := cmd.Args
-	// The last arg should be the initial prompt, not the placeholder
+	// The last arg should start with the initial prompt and include session_id instruction
 	lastArg := args[len(args)-1]
-	if lastArg != "hello world" {
-		t.Errorf("expected last arg to be initial prompt %q, got %q", "hello world", lastArg)
+	if !strings.HasPrefix(lastArg, "hello world") {
+		t.Errorf("expected last arg to start with initial prompt %q, got %q", "hello world", lastArg)
+	}
+	if !strings.Contains(lastArg, "session_id") {
+		t.Errorf("expected last arg to contain session_id instruction, got %q", lastArg)
 	}
 }
 
@@ -278,8 +281,11 @@ func TestCodexProvider_BuildStreamCommand_DefaultPlaceholder(t *testing.T) {
 
 	args := cmd.Args
 	lastArg := args[len(args)-1]
-	if lastArg != "Follow the instructions given via stdin" {
-		t.Errorf("expected default placeholder prompt, got %q", lastArg)
+	if !strings.HasPrefix(lastArg, "Follow the instructions given via stdin") {
+		t.Errorf("expected last arg to start with default placeholder prompt, got %q", lastArg)
+	}
+	if !strings.Contains(lastArg, "session_id") {
+		t.Errorf("expected last arg to contain session_id instruction, got %q", lastArg)
 	}
 }
 

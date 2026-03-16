@@ -67,6 +67,11 @@ func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 		if opts.SystemPrompt != "" {
 			prompt = opts.SystemPrompt + "\n\n" + prompt
 		}
+		// Codex CLI does not propagate env vars to MCP subprocesses,
+		// so instruct the agent to pass session_id explicitly in tool calls.
+		if opts.SessionID != "" {
+			prompt = prompt + fmt.Sprintf("\n\n[IMPORTANT] agmux MCPツールを使う際は、必ず session_id パラメータに \"%s\" を渡してください。", opts.SessionID)
+		}
 		args = append(args, prompt)
 	}
 
