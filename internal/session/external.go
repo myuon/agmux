@@ -11,10 +11,11 @@ import (
 	"time"
 )
 
-// ExternalProcess represents a Claude process running outside of agmux.
+// ExternalProcess represents a Claude or Codex process running outside of agmux.
 type ExternalProcess struct {
-	PID int
-	CWD string
+	PID      int
+	CWD      string
+	Provider ProviderName
 }
 
 // ExternalDetector detects Claude processes running outside of agmux.
@@ -72,9 +73,9 @@ func (d *ExternalDetector) Sessions() []Session {
 	return result
 }
 
-// detect finds external Claude processes and updates the sessions list.
+// detect finds external Claude and Codex processes and updates the sessions list.
 func (d *ExternalDetector) detect() {
-	processes, err := findExternalClaudeProcesses()
+	processes, err := findExternalProcesses()
 	if err != nil {
 		d.logger.Error("failed to detect external processes", "error", err)
 		return
@@ -97,11 +98,11 @@ func (d *ExternalDetector) detect() {
 		projectName := projectNameFromPath(p.CWD)
 		s := Session{
 			ID:          id,
-			Name:        fmt.Sprintf("claude (pid:%d)", p.PID),
+			Name:        fmt.Sprintf("%s (pid:%d)", p.Provider, p.PID),
 			ProjectPath: p.CWD,
 			Status:      StatusWorking,
 			Type:        TypeExternal,
-			Provider:    ProviderClaude,
+			Provider:    p.Provider,
 			CreatedAt:   createdAt,
 			UpdatedAt:   now,
 		}
@@ -123,11 +124,11 @@ func (d *ExternalDetector) detect() {
 	d.mu.Unlock()
 }
 
-// findExternalClaudeProcesses finds Claude processes not managed by this agmux instance.
-func findExternalClaudeProcesses() ([]ExternalProcess, error) {
+// findExternalProcesses finds Claude and Codex processes not managed by this agmux instance.
+func findExternalProcesses() ([]ExternalProcess, error) {
 	myPID := os.Getpid()
 
-	// Get all Claude processes: ps -eo pid,ppid,comm
+	// Get all processes: ps -eo pid,ppid,comm
 	out, err := exec.Command("ps", "-eo", "pid,ppid,comm").Output()
 	if err != nil {
 		return nil, fmt.Errorf("ps command failed: %w", err)
@@ -136,7 +137,11 @@ func findExternalClaudeProcesses() ([]ExternalProcess, error) {
 	// Collect all PIDs in the agmux process tree
 	agmuxPIDs := collectProcessTree(myPID, string(out))
 
-	var claudePIDs []int
+	type pidWithProvider struct {
+		PID      int
+		Provider ProviderName
+	}
+	var externalPIDs []pidWithProvider
 	for _, line := range strings.Split(string(out), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 3 {
@@ -147,28 +152,29 @@ func findExternalClaudeProcesses() ([]ExternalProcess, error) {
 			continue
 		}
 		comm := fields[2]
-		// Match claude process (the binary name)
-		if !isClaudeProcess(comm) {
+		provider := detectProvider(comm)
+		if provider == "" {
 			continue
 		}
 		// Skip if this process is in the agmux tree
 		if agmuxPIDs[pid] {
 			continue
 		}
-		claudePIDs = append(claudePIDs, pid)
+		externalPIDs = append(externalPIDs, pidWithProvider{PID: pid, Provider: provider})
 	}
 
-	if len(claudePIDs) == 0 {
+	if len(externalPIDs) == 0 {
 		return nil, nil
 	}
 
-	// Get CWD for each external Claude process via lsof
+	// Get CWD for each external process via lsof
 	var results []ExternalProcess
-	for _, pid := range claudePIDs {
-		cwd := getCWD(pid)
+	for _, p := range externalPIDs {
+		cwd := getCWD(p.PID)
 		results = append(results, ExternalProcess{
-			PID: pid,
-			CWD: cwd,
+			PID:      p.PID,
+			CWD:      cwd,
+			Provider: p.Provider,
 		})
 	}
 
@@ -210,12 +216,29 @@ func collectProcessTree(rootPID int, psOutput string) map[int]bool {
 
 // isClaudeProcess checks if a process name corresponds to Claude CLI.
 func isClaudeProcess(comm string) bool {
-	// The binary might be "claude" or a full path ending in "/claude"
+	return detectProvider(comm) == ProviderClaude
+}
+
+// isCodexProcess checks if a process name corresponds to Codex CLI.
+func isCodexProcess(comm string) bool {
+	return detectProvider(comm) == ProviderCodex
+}
+
+// detectProvider returns the provider name for a given process command name.
+// Returns empty string if the process is not a recognized AI agent.
+func detectProvider(comm string) ProviderName {
 	base := comm
 	if idx := strings.LastIndex(comm, "/"); idx >= 0 {
 		base = comm[idx+1:]
 	}
-	return base == "claude"
+	switch base {
+	case "claude":
+		return ProviderClaude
+	case "codex":
+		return ProviderCodex
+	default:
+		return ""
+	}
 }
 
 // getCWD returns the current working directory of a process.
