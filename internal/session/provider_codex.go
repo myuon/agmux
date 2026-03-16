@@ -2,12 +2,10 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
-
-	"github.com/myuon/agmux/internal/db"
 )
 
 // CodexProvider implements Provider for OpenAI Codex CLI.
@@ -82,6 +80,13 @@ func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 			cmd.Env = append(cmd.Env, env)
 		}
 	}
+	// Set session-specific env vars for global MCP server
+	if opts.SessionID != "" {
+		cmd.Env = append(cmd.Env, "AGMUX_SESSION_ID="+opts.SessionID)
+	}
+	if opts.APIPort > 0 {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("AGMUX_API_URL=http://localhost:%d", opts.APIPort))
+	}
 	return cmd
 }
 
@@ -111,16 +116,15 @@ func (p *CodexProvider) ParseModel(jsonlLine []byte) (string, bool) {
 }
 
 func (p *CodexProvider) SetupMCP(sessionID string, port int) (string, error) {
-	return writeMCPConfig(sessionID, port)
+	// Codex uses global MCP registration (codex mcp add agmux -- agmux mcp).
+	// Session-specific env vars (AGMUX_SESSION_ID, AGMUX_API_URL) are passed
+	// via cmd.Env in BuildStreamCommand, so no per-session config file is needed.
+	return "", nil
 }
 
 func (p *CodexProvider) CleanupMCP(sessionID string) error {
-	dir, err := db.AgmuxDir()
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(dir, "mcp-configs", sessionID+".json")
-	return os.Remove(path)
+	// No per-session MCP config file to clean up for Codex.
+	return nil
 }
 
 func (p *CodexProvider) AppendOTelEnv(env []string, port int) []string {
