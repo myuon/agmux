@@ -55,6 +55,51 @@ export type StreamDisplayItem =
   | { kind: "thinking"; text: string }
   | { kind: "system_event"; eventType: string; label: string; detail?: string };
 
+// Active task tracking for sub-agents and background tasks
+export interface ActiveTask {
+  taskId: string;
+  taskType: string; // "local_agent" | "local_bash"
+  description?: string;
+  lastToolName?: string;
+  usage?: { inputTokens?: number; outputTokens?: number };
+}
+
+export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
+  const tasks = new Map<string, ActiveTask>();
+  for (const entry of entries) {
+    const raw = entry as unknown as Record<string, unknown>;
+    if (entry.type !== "system") continue;
+    const subtype = raw.subtype as string | undefined;
+    if (subtype === "task_started") {
+      const taskId = raw.task_id as string;
+      const taskType = raw.task_type as string;
+      if (taskId) {
+        tasks.set(taskId, { taskId, taskType: taskType || "unknown" });
+      }
+    } else if (subtype === "task_progress") {
+      const taskId = raw.task_id as string;
+      if (taskId && tasks.has(taskId)) {
+        const task = tasks.get(taskId)!;
+        if (raw.description) task.description = raw.description as string;
+        if (raw.last_tool_name) task.lastToolName = raw.last_tool_name as string;
+        if (raw.usage) {
+          const usage = raw.usage as Record<string, unknown>;
+          task.usage = {
+            inputTokens: usage.input_tokens as number | undefined,
+            outputTokens: usage.output_tokens as number | undefined,
+          };
+        }
+      }
+    } else if (subtype === "task_notification") {
+      const taskId = raw.task_id as string;
+      if (taskId) {
+        tasks.delete(taskId);
+      }
+    }
+  }
+  return Array.from(tasks.values());
+}
+
 export function parseStreamContentBlocks(entry: StreamEntry): StreamContentBlock[] {
   // Check both entry.message.content and top-level entry.content (some entries
   // have content at the top level without a message wrapper)
