@@ -29,27 +29,32 @@ import (
 )
 
 type Server struct {
-	sessions     *session.Manager
-	hub          *Hub
-	router       chi.Router
-	devMode      bool
-	logPath      string
-	logger       *slog.Logger
-	escalations  *EscalationStore
-	otelReceiver *otel.Receiver
-	sqlDB        *sql.DB
+	sessions         *session.Manager
+	hub              *Hub
+	router           chi.Router
+	devMode          bool
+	logPath          string
+	logger           *slog.Logger
+	escalations      *EscalationStore
+	otelReceiver     *otel.Receiver
+	sqlDB            *sql.DB
+	externalDetector *session.ExternalDetector
 }
 
 func New(sessions *session.Manager, hub *Hub, devMode bool, logPath string, logger *slog.Logger, sqlDB *sql.DB) *Server {
+	extDetector := session.NewExternalDetector(logger, 10*time.Second)
+	go extDetector.Start()
+
 	s := &Server{
-		sessions:     sessions,
-		hub:          hub,
-		devMode:      devMode,
-		logPath:      logPath,
-		logger:       logger.With("component", "server"),
-		escalations:  NewEscalationStore(),
-		otelReceiver: otel.NewReceiver(sqlDB, logger),
-		sqlDB:        sqlDB,
+		sessions:         sessions,
+		hub:              hub,
+		devMode:          devMode,
+		logPath:          logPath,
+		logger:           logger.With("component", "server"),
+		escalations:      NewEscalationStore(),
+		otelReceiver:     otel.NewReceiver(sqlDB, logger),
+		sqlDB:            sqlDB,
+		externalDetector: extDetector,
 	}
 
 	// Wire real-time stream updates via WebSocket
@@ -71,6 +76,11 @@ func New(sessions *session.Manager, hub *Hub, devMode bool, logPath string, logg
 
 	s.setupRoutes()
 	return s
+}
+
+// ExternalDetector returns the server's external process detector.
+func (s *Server) ExternalDetector() *session.ExternalDetector {
+	return s.externalDetector
 }
 
 func (s *Server) setupRoutes() {
@@ -194,6 +204,13 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	if sessions == nil {
 		sessions = []session.Session{}
 	}
+
+	// Merge external (non-agmux) Claude sessions
+	if s.externalDetector != nil {
+		external := s.externalDetector.Sessions()
+		sessions = append(sessions, external...)
+	}
+
 	writeJSON(w, http.StatusOK, sessions)
 }
 

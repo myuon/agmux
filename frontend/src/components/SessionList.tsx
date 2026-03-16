@@ -81,8 +81,8 @@ export function SessionList({ sessions, onRestartController }: Props) {
             {groupSessions.map((s) => (
               <div
                 key={s.id}
-                onClick={() => navigate(`/sessions/${s.id}`)}
-                className="border border-gray-200 rounded-lg p-3 hover:shadow-sm transition-shadow bg-white cursor-pointer"
+                onClick={() => { if (s.type !== "external") navigate(`/sessions/${s.id}`); }}
+                className={`border border-gray-200 rounded-lg p-3 transition-shadow bg-white ${s.type !== "external" ? "hover:shadow-sm cursor-pointer" : "opacity-80"}`}
               >
                 <div className="flex items-center gap-2 mb-1">
                   <StatusDot status={s.status} />
@@ -90,6 +90,11 @@ export function SessionList({ sessions, onRestartController }: Props) {
                   {s.type === "controller" && (
                     <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 rounded">
                       Controller
+                    </span>
+                  )}
+                  {s.type === "external" && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-medium bg-amber-100 text-amber-700 rounded">
+                      External
                     </span>
                   )}
                   {s.provider && s.provider !== "claude" && (

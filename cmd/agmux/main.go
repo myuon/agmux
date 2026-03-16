@@ -111,10 +111,19 @@ func serveCmd() *cobra.Command {
 			hub := server.NewHub()
 			go hub.Run()
 
+			// Declare srv early so the checker callback can reference it
+			var srv *server.Server
+
 			// Status checker
 			mon := monitor.New(tmuxClient)
 			checker := monitor.NewStatusChecker(mon, mgr, tmuxClient, cfg.Daemon.IntervalDuration(), logger)
 			checker.SetOnUpdate(func(sessions []session.Session) {
+				// Merge external (non-agmux) Claude sessions into the update
+				if srv != nil {
+					if extDet := srv.ExternalDetector(); extDet != nil {
+						sessions = append(sessions, extDet.Sessions()...)
+					}
+				}
 				hub.Broadcast(server.Message{
 					Type: "session_update",
 					Data: sessions,
@@ -149,7 +158,7 @@ func serveCmd() *cobra.Command {
 			}
 
 			logPath, _ := logging.LogPath()
-			srv := server.New(mgr, hub, devMode, logPath, logger, database)
+			srv = server.New(mgr, hub, devMode, logPath, logger, database)
 
 			// Recover stream processes AFTER server.New() so that
 			// SetOnNewLines callback is already registered on the manager.

@@ -5,7 +5,7 @@ export interface Session {
   initialPrompt?: string;
   tmuxSession: string;
   status: "working" | "idle" | "paused" | "question_waiting" | "alignment_needed" | "stopped";
-  type: "worker" | "controller";
+  type: "worker" | "controller" | "external";
   provider: string;
   model?: string;
   outputMode: "terminal" | "stream";

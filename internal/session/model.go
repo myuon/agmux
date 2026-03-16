@@ -21,6 +21,7 @@ type SessionType string
 const (
 	TypeWorker     SessionType = "worker"
 	TypeController SessionType = "controller"
+	TypeExternal   SessionType = "external"
 )
 
 type OutputMode string
