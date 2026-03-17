@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import type { StreamEntry } from "../../models/stream";
 import { mergeStreamEntries } from "../../models/stream";
 import type { ActiveTask } from "../../models/stream";
@@ -92,7 +92,7 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
   );
 }
 
-function ActiveTaskItem({ task }: { task: ActiveTask }) {
+function ActiveTaskItem({ task, onDismiss }: { task: ActiveTask; onDismiss?: (taskId: string) => void }) {
   const [open, setOpen] = useState(false);
   const taskTypeLabel = task.taskType === "local_agent" ? "Agent" : task.taskType === "local_bash" ? "Bash" : task.taskType;
   const Icon = toolIcon(taskTypeLabel);
@@ -100,27 +100,40 @@ function ActiveTaskItem({ task }: { task: ActiveTask }) {
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="w-full text-left border border-gray-200 rounded-lg overflow-hidden px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <span className="relative flex shrink-0">
-            <Icon className="w-3.5 h-3.5 text-gray-500 shrink-0" />
-            <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-          </span>
-          <span className="font-medium text-xs text-gray-800">{taskTypeLabel}</span>
-          {desc && (
-            <span className="text-xs text-gray-500 truncate min-w-0">{desc}</span>
-          )}
-          {task.usage && (
-            <span className="text-[10px] text-gray-400 ml-auto shrink-0">
-              {task.usage.inputTokens != null && `${Math.round(task.usage.inputTokens / 1000)}k in`}
-              {task.usage.outputTokens != null && ` / ${Math.round(task.usage.outputTokens / 1000)}k out`}
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => setOpen(true)}
+          className="flex-1 min-w-0 text-left border border-gray-200 rounded-lg overflow-hidden px-2.5 py-1.5 bg-gray-50 hover:bg-gray-100 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <span className="relative flex shrink-0">
+              <Icon className="w-3.5 h-3.5 text-gray-500 shrink-0" />
+              <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
             </span>
-          )}
-        </div>
-      </button>
+            <span className="font-medium text-xs text-gray-800">{taskTypeLabel}</span>
+            {desc && (
+              <span className="text-xs text-gray-500 truncate min-w-0">{desc}</span>
+            )}
+            {task.usage && (
+              <span className="text-[10px] text-gray-400 ml-auto shrink-0">
+                {task.usage.inputTokens != null && `${Math.round(task.usage.inputTokens / 1000)}k in`}
+                {task.usage.outputTokens != null && ` / ${Math.round(task.usage.outputTokens / 1000)}k out`}
+              </span>
+            )}
+          </div>
+        </button>
+        {onDismiss && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDismiss(task.taskId); }}
+            className="shrink-0 p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded transition-colors"
+            title="Hide task"
+          >
+            <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M2 2l8 8M10 2l-8 8" />
+            </svg>
+          </button>
+        )}
+      </div>
       <Modal
         open={open}
         onClose={() => setOpen(false)}
@@ -174,14 +187,51 @@ function ActiveTaskItem({ task }: { task: ActiveTask }) {
 }
 
 export function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
+  // Track previous task snapshots to detect task_progress updates for hidden tasks
+  const prevTasksRef = useRef<Map<string, ActiveTask>>(new Map());
+
+  useEffect(() => {
+    const prevMap = prevTasksRef.current;
+    const updatedHidden = new Set(hiddenIds);
+    let changed = false;
+    for (const task of tasks) {
+      if (updatedHidden.has(task.taskId)) {
+        const prev = prevMap.get(task.taskId);
+        // Re-show if task data changed (new task_progress event)
+        if (prev && JSON.stringify(prev) !== JSON.stringify(task)) {
+          updatedHidden.delete(task.taskId);
+          changed = true;
+        }
+      }
+    }
+    // Update ref with current snapshot
+    const newMap = new Map<string, ActiveTask>();
+    for (const task of tasks) {
+      newMap.set(task.taskId, { ...task });
+    }
+    prevTasksRef.current = newMap;
+    if (changed) {
+      setHiddenIds(updatedHidden);
+    }
+  }, [tasks, hiddenIds]);
+
+  const handleDismiss = useCallback((taskId: string) => {
+    setHiddenIds((prev) => new Set(prev).add(taskId));
+  }, []);
+
+  const visibleTasks = tasks.filter((t) => !hiddenIds.has(t.taskId));
+
+  if (visibleTasks.length === 0) return null;
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
         <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-        Running Tasks ({tasks.length})
+        Running Tasks ({visibleTasks.length})
       </div>
-      {tasks.map((task) => (
-        <ActiveTaskItem key={task.taskId} task={task} />
+      {visibleTasks.map((task) => (
+        <ActiveTaskItem key={task.taskId} task={task} onDismiss={handleDismiss} />
       ))}
     </div>
   );
