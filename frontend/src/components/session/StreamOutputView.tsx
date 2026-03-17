@@ -121,7 +121,7 @@ function ActiveTaskItem({ task }: { task: ActiveTask }) {
             </span>
           )}
         </div>
-        {task.lastToolName && (
+        {task.lastToolName && toolName !== taskTypeLabel && (
           <div className="mt-0.5 ml-[22px] font-mono text-[11px] text-gray-400 truncate">
             {taskTypeLabel}
           </div>
