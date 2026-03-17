@@ -37,6 +37,7 @@ type Session struct {
 	CurrentTask   string       `json:"currentTask,omitempty"`
 	Goal          string       `json:"goal,omitempty"`
 	Goals         GoalStack    `json:"goals,omitempty"`
+	CreatedBy     string       `json:"createdBy,omitempty"`
 	CreatedAt     time.Time    `json:"createdAt"`
 	UpdatedAt     time.Time    `json:"updatedAt"`
 }

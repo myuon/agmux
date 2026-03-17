@@ -59,6 +59,16 @@ function useGlobalNotifications() {
       sendNotification("agmux - Task Completed", `${data.sessionName}: ${data.currentTask} (${durationMin}min)`, data.sessionId);
       return;
     }
+    if (msg.type === "agent_notification") {
+      const data = msg.data as { sessionId: string; sessionName: string; message: string; createdBy: string };
+      // Show notification to all connected browsers (createdBy filtering is optional)
+      // If createdBy is set and matches this browser, or if createdBy is empty, show notification
+      const browserId = localStorage.getItem("agmux-browser-id");
+      if (!data.createdBy || !browserId || data.createdBy === browserId) {
+        sendNotification("agmux - Notification", `${data.sessionName}: ${data.message}`, data.sessionId);
+      }
+      return;
+    }
     if (msg.type === "notify") {
       const notify = localStorage.getItem("agmux-notify") === "true";
       if (!notify) return;

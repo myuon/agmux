@@ -10,6 +10,7 @@ export interface Session {
   currentTask?: string;
   goal?: string;
   goals?: { currentTask: string; goal: string }[];
+  createdBy?: string;
   createdAt: string;
   updatedAt: string;
   githubUrl?: string;
