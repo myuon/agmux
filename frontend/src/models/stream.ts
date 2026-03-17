@@ -61,6 +61,8 @@ export interface ActiveTask {
   taskType: string; // "local_agent" | "local_bash"
   description?: string;
   lastToolName?: string;
+  lastToolInput?: unknown;
+  output?: string;
   usage?: { inputTokens?: number; outputTokens?: number };
 }
 
@@ -82,6 +84,8 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
         const task = tasks.get(taskId)!;
         if (raw.description) task.description = raw.description as string;
         if (raw.last_tool_name) task.lastToolName = raw.last_tool_name as string;
+        if (raw.last_tool_input !== undefined) task.lastToolInput = raw.last_tool_input;
+        if (raw.output) task.output = raw.output as string;
         if (raw.usage) {
           const usage = raw.usage as Record<string, unknown>;
           task.usage = {
