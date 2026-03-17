@@ -38,10 +38,11 @@ export const api = {
     provider?: string;
     model?: string;
     autoApprove?: boolean;
+    createdBy?: string;
   }) =>
     request<Session>("/sessions", {
       method: "POST",
-      body: JSON.stringify({ ...data, createdBy: getBrowserId() }),
+      body: JSON.stringify(data),
     }),
 
   getCodexModels: () =>
