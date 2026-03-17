@@ -85,7 +85,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
                   className="flex items-center gap-2 px-3 py-1.5 rounded border border-dashed border-amber-300 bg-amber-50/50 text-xs text-gray-500"
                 >
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                  <span className="font-medium text-amber-700 shrink-0">External</span>
+                  <span className="font-medium text-amber-700 shrink-0">{s.provider === "codex" ? "Codex" : s.provider === "claude" ? "Claude" : "External"}</span>
                   <span className="text-gray-600 truncate">{s.name}</span>
                   <span className="font-mono text-gray-400 shrink-0">
                     PID {s.id.replace("ext-", "")}

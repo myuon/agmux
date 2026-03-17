@@ -107,7 +107,7 @@ func (d *ExternalDetector) detect() {
 			UpdatedAt:   now,
 		}
 		if projectName != "" {
-			s.Name = fmt.Sprintf("%s (external)", projectName)
+			s.Name = fmt.Sprintf("%s (%s external)", projectName, p.Provider)
 		}
 		sessions = append(sessions, s)
 	}
