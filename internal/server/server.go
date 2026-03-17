@@ -245,8 +245,23 @@ type prInfo struct {
 	State  string `json:"state"`
 }
 
-func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
+// resolveIDParam resolves a short/full session ID from the URL parameter.
+// Returns the resolved full ID, or writes an error response and returns "".
+func (s *Server) resolveIDParam(w http.ResponseWriter, r *http.Request) string {
 	id := chi.URLParam(r, "id")
+	resolved, err := s.sessions.ResolveID(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return ""
+	}
+	return resolved
+}
+
+func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	sess, err := s.sessions.Get(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -261,7 +276,10 @@ func (s *Server) getSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	sess, err := s.sessions.Get(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -280,7 +298,10 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) duplicateSession(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	existing, err := s.sessions.Get(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -300,7 +321,10 @@ func (s *Server) duplicateSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) stopSession(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	if err := s.sessions.Stop(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -310,7 +334,10 @@ func (s *Server) stopSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sendToSession(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	var req sendRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -334,7 +361,10 @@ func (s *Server) sendToSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateSessionContext(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	var req updateContextRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -354,7 +384,10 @@ type createGoalRequest struct {
 }
 
 func (s *Server) getGoals(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	sess, err := s.sessions.Get(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -368,7 +401,10 @@ func (s *Server) getGoals(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createGoal(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	var req createGoalRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -382,7 +418,10 @@ func (s *Server) createGoal(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) completeGoal(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	cgResult, err := s.sessions.CompleteGoal(id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -417,7 +456,10 @@ func (s *Server) completeGoal(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getPendingEscalation(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "id")
+	sessionID := s.resolveIDParam(w, r)
+	if sessionID == "" {
+		return
+	}
 	esc := s.escalations.GetBySession(sessionID)
 	if esc == nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{"escalation": nil})
@@ -433,7 +475,10 @@ type createEscalationRequest struct {
 }
 
 func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
-	sessionID := chi.URLParam(r, "id")
+	sessionID := s.resolveIDParam(w, r)
+	if sessionID == "" {
+		return
+	}
 	var req createEscalationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -531,7 +576,10 @@ func (s *Server) respondEscalation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) reconnectSession(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	if err := s.sessions.Reconnect(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -541,7 +589,10 @@ func (s *Server) reconnectSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	if err := s.sessions.Clear(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -551,7 +602,10 @@ func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 
 	// Delta fetch: if "after" is specified, return only new lines since that index
 	if q := r.URL.Query().Get("after"); q != "" {
@@ -1064,7 +1118,10 @@ type diffFileEntry struct {
 }
 
 func (s *Server) getSessionDiff(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	sess, err := s.sessions.Get(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -1104,7 +1161,10 @@ type claudeMDFile struct {
 }
 
 func (s *Server) getClaudeMD(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	sess, err := s.sessions.Get(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
@@ -1160,7 +1220,10 @@ func (s *Server) getClaudeMD(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getSettingsJSON(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
+	id := s.resolveIDParam(w, r)
+	if id == "" {
+		return
+	}
 	sess, err := s.sessions.Get(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
