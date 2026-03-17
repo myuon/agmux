@@ -61,10 +61,27 @@ export interface ActiveTask {
   taskType: string; // "local_agent" | "local_bash"
   description?: string;
   lastToolName?: string;
+  lastToolInput?: unknown;
+  output?: string;
   usage?: { inputTokens?: number; outputTokens?: number };
 }
 
 export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
+  // Pass 1: collect tool_use inputs by id from assistant messages
+  const toolUseInputs = new Map<string, { name: string; input: unknown }>();
+  for (const entry of entries) {
+    if (entry.type !== "assistant") continue;
+    const content = entry.message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      const b = block as Record<string, unknown>;
+      if (b.type === "tool_use" && typeof b.id === "string" && b.input != null) {
+        toolUseInputs.set(b.id, { name: b.name as string, input: b.input });
+      }
+    }
+  }
+
+  // Pass 2: process task events
   const tasks = new Map<string, ActiveTask>();
   for (const entry of entries) {
     const raw = entry as unknown as Record<string, unknown>;
@@ -73,8 +90,17 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
     if (subtype === "task_started") {
       const taskId = raw.task_id as string;
       const taskType = raw.task_type as string;
+      const toolUseId = raw.tool_use_id as string | undefined;
       if (taskId) {
-        tasks.set(taskId, { taskId, taskType: taskType || "unknown" });
+        const task: ActiveTask = { taskId, taskType: taskType || "unknown" };
+        if (raw.description) task.description = raw.description as string;
+        // Resolve tool input from the corresponding tool_use block
+        if (toolUseId && toolUseInputs.has(toolUseId)) {
+          const tu = toolUseInputs.get(toolUseId)!;
+          task.lastToolName = tu.name;
+          task.lastToolInput = tu.input;
+        }
+        tasks.set(taskId, task);
       }
     } else if (subtype === "task_progress") {
       const taskId = raw.task_id as string;
@@ -82,6 +108,8 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
         const task = tasks.get(taskId)!;
         if (raw.description) task.description = raw.description as string;
         if (raw.last_tool_name) task.lastToolName = raw.last_tool_name as string;
+        if (raw.last_tool_input !== undefined) task.lastToolInput = raw.last_tool_input;
+        if (raw.output) task.output = raw.output as string;
         if (raw.usage) {
           const usage = raw.usage as Record<string, unknown>;
           task.usage = {
