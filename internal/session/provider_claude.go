@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 )
@@ -46,6 +47,15 @@ func (p *ClaudeProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 		}
 	} else if opts.CLISessionID != "" {
 		resumeID = opts.CLISessionID
+	}
+
+	// Claude CLI requires a valid UUID for --session-id.
+	// When not resuming and no CLI session ID is set, generate a UUID
+	// instead of using the agmux nanoid.
+	if sessionFlag == "--session-id" {
+		if _, err := uuid.Parse(resumeID); err != nil {
+			resumeID = uuid.New().String()
+		}
 	}
 
 	args := []string{

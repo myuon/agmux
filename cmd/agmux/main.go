@@ -357,8 +357,12 @@ func sessionListCmd() *cobra.Command {
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "ID\tNAME\tSTATUS\tPROJECT\tCREATED")
 			for _, s := range sessions {
+				id := s.ID
+				if len(id) > 8 {
+					id = id[:8]
+				}
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-					s.ID[:8], s.Name, s.Status, s.ProjectPath, s.CreatedAt.Format("2006-01-02 15:04:05"))
+					id, s.Name, s.Status, s.ProjectPath, s.CreatedAt.Format("2006-01-02 15:04:05"))
 			}
 			w.Flush()
 			return nil

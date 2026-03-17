@@ -71,7 +71,10 @@ func (sc *StatusChecker) check() {
 			continue
 		}
 
-		shortID := s.ID[:8]
+		shortID := s.ID
+		if len(shortID) > 8 {
+			shortID = shortID[:8]
+		}
 
 		// Check if the underlying stream process is still alive.
 		// This is a safety net -- the onProcessExit callback should normally handle this,
