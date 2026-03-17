@@ -67,6 +67,21 @@ export interface ActiveTask {
 }
 
 export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
+  // Pass 1: collect tool_use inputs by id from assistant messages
+  const toolUseInputs = new Map<string, { name: string; input: unknown }>();
+  for (const entry of entries) {
+    if (entry.type !== "assistant") continue;
+    const content = entry.message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      const b = block as Record<string, unknown>;
+      if (b.type === "tool_use" && typeof b.id === "string" && b.input != null) {
+        toolUseInputs.set(b.id, { name: b.name as string, input: b.input });
+      }
+    }
+  }
+
+  // Pass 2: process task events
   const tasks = new Map<string, ActiveTask>();
   for (const entry of entries) {
     const raw = entry as unknown as Record<string, unknown>;
@@ -75,9 +90,16 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
     if (subtype === "task_started") {
       const taskId = raw.task_id as string;
       const taskType = raw.task_type as string;
+      const toolUseId = raw.tool_use_id as string | undefined;
       if (taskId) {
         const task: ActiveTask = { taskId, taskType: taskType || "unknown" };
         if (raw.description) task.description = raw.description as string;
+        // Resolve tool input from the corresponding tool_use block
+        if (toolUseId && toolUseInputs.has(toolUseId)) {
+          const tu = toolUseInputs.get(toolUseId)!;
+          task.lastToolName = tu.name;
+          task.lastToolInput = tu.input;
+        }
         tasks.set(taskId, task);
       }
     } else if (subtype === "task_progress") {
