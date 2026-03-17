@@ -76,7 +76,9 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
       const taskId = raw.task_id as string;
       const taskType = raw.task_type as string;
       if (taskId) {
-        tasks.set(taskId, { taskId, taskType: taskType || "unknown" });
+        const task: ActiveTask = { taskId, taskType: taskType || "unknown" };
+        if (raw.description) task.description = raw.description as string;
+        tasks.set(taskId, task);
       }
     } else if (subtype === "task_progress") {
       const taskId = raw.task_id as string;
