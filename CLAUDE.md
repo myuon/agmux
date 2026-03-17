@@ -34,6 +34,7 @@ launchctl kickstart -k gui/$(id -u)/com.myuon.agmux  # サーバー再起動
 - 進捗管理は `gh issue list` で確認
 - 複数イシューの振り分け・実装は `/dispatch` スキルを使う
 - 動作確認するときは、PRのブランチをチェックアウトし、`restart_server` MCPツールでサーバーを再起動してから動作確認に入る。処理の確認には agmux CLI を利用し、Webアプリの画面を見る必要があるときは agent browser を利用する。どちらもskillがあるので利用する際には参照すること
+- **フロントエンドのみの変更の場合**: configによりfrontendの `dist` ディレクトリを直接配信する設定になっているため、PRブランチをチェックアウトして `make build` するだけで画面に反映される（サーバー再起動不要）
 
 ## エージェントの自律性ルール
 
