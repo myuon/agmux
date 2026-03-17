@@ -148,21 +148,18 @@ type CreateOpts struct {
 	Provider  ProviderName
 	Model     string
 	FullAuto  bool   // enable full-auto mode (bypasses permission prompts for Codex)
-	CreatedBy string // identifier of the user who created the session
 }
 
 func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts ...CreateOpts) (*Session, error) {
 	pn := ProviderClaude
 	model := ""
 	fullAuto := false
-	createdBy := ""
 	if len(opts) > 0 {
 		if opts[0].Provider != "" {
 			pn = opts[0].Provider
 		}
 		model = opts[0].Model
 		fullAuto = opts[0].FullAuto
-		createdBy = opts[0].CreatedBy
 	}
 
 	// For Codex, resolve default model from config if not explicitly specified
@@ -234,15 +231,14 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		Type:          TypeWorker,
 		Provider:      pn,
 		Model:         model,
-		CreatedBy:     createdBy,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
 
 	if _, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, created_by, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.CreatedBy, s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
@@ -252,7 +248,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, created_by, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -267,7 +263,7 @@ func (m *Manager) List() ([]Session, error) {
 		var sessionType string
 		var providerStr string
 		var prompt, currentTask, goal, goalsJSON sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = Status(status)
@@ -302,9 +298,9 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var providerStr string
 	var prompt, currentTask, goal, goalsJSON sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, created_by, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -688,9 +684,9 @@ func (m *Manager) GetController() (*Session, error) {
 	var providerStr string
 	var prompt, currentTask, goal, goalsJSON sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, created_by, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
 		 FROM sessions WHERE type = ? LIMIT 1`, string(TypeController),
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedBy, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

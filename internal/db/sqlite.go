@@ -251,12 +251,6 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
-	// Migration: add created_by column if missing (for notification targeting)
-	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN created_by TEXT NOT NULL DEFAULT ''`)
-	if err != nil && !isAlterTableDuplicate(err) {
-		return err
-	}
-
 	return nil
 }
 

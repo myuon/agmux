@@ -177,7 +177,6 @@ type createSessionRequest struct {
 	Provider    string `json:"provider,omitempty"`
 	Model       string `json:"model,omitempty"`
 	AutoApprove bool   `json:"autoApprove,omitempty"`
-	CreatedBy   string `json:"createdBy,omitempty"`
 }
 
 type sendImageData struct {
@@ -224,7 +223,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and projectPath are required")
 		return
 	}
-	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model, FullAuto: req.AutoApprove, CreatedBy: req.CreatedBy})
+	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model, FullAuto: req.AutoApprove})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -533,14 +532,12 @@ func (s *Server) sendNotification(w http.ResponseWriter, r *http.Request) {
 	s.recordSessionAction(sessionID, "agent_notification", req.Message)
 
 	// Broadcast WebSocket notification to all connected clients
-	// The frontend will filter by createdBy to show only to the session creator
 	s.hub.Broadcast(Message{
 		Type: "agent_notification",
 		Data: map[string]interface{}{
 			"sessionId":   sessionID,
 			"sessionName": sess.Name,
 			"message":     req.Message,
-			"createdBy":   sess.CreatedBy,
 		},
 	})
 

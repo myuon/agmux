@@ -2,17 +2,6 @@ import type { Session } from "../types/session";
 
 const BASE = "/api";
 
-// Generate/retrieve a persistent browser ID for notification targeting
-export function getBrowserId(): string {
-  const key = "agmux-browser-id";
-  let id = localStorage.getItem(key);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(key, id);
-  }
-  return id;
-}
-
 async function request<T>(
   path: string,
   options?: RequestInit
@@ -38,7 +27,6 @@ export const api = {
     provider?: string;
     model?: string;
     autoApprove?: boolean;
-    createdBy?: string;
   }) =>
     request<Session>("/sessions", {
       method: "POST",
