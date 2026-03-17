@@ -377,10 +377,7 @@ func sessionStopCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			id, err := mgr.ResolveID(args[0])
-			if err != nil {
-				return err
-			}
+			id := args[0]
 			if err := mgr.Stop(id); err != nil {
 				return err
 			}
@@ -401,10 +398,7 @@ func sessionDeleteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			id, err := mgr.ResolveID(args[0])
-			if err != nil {
-				return err
-			}
+			id := args[0]
 			if err := mgr.Delete(id); err != nil {
 				return err
 			}
@@ -422,15 +416,7 @@ func sessionSendCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
 			port := cfg.Server.Port
-
-			mgr, _, err := initManager(cfg, port, nil)
-			if err != nil {
-				return err
-			}
-			id, err := mgr.ResolveID(args[0])
-			if err != nil {
-				return err
-			}
+			id := args[0]
 
 			// Always delegate to the server API so the spawned process
 			// is owned by the long-lived server.

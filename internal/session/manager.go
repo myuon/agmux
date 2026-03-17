@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/myuon/agmux/internal/db"
 )
 
@@ -26,6 +26,12 @@ type Manager struct {
 	streamMu        sync.Mutex
 	logger          *slog.Logger
 	onNewLines      func(sessionID string, newLines []string, total int)
+}
+
+const nanoidAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+
+func newSessionID() (string, error) {
+	return gonanoid.Generate(nanoidAlphabet, 5)
 }
 
 func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort int, logger *slog.Logger, systemPrompt string) *Manager {
@@ -163,7 +169,10 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 
 	provider := m.getProvider(pn)
 
-	id := uuid.New().String()
+	id, err := newSessionID()
+	if err != nil {
+		return nil, fmt.Errorf("generate session id: %w", err)
+	}
 
 	// Generate MCP config for this session
 	mcpConfigPath, err := provider.SetupMCP(id, m.apiPort)
@@ -281,33 +290,6 @@ func (m *Manager) List() ([]Session, error) {
 	return sessions, rows.Err()
 }
 
-// ResolveID resolves a (possibly abbreviated) session ID prefix to a full ID.
-// Returns an error if the prefix matches zero or multiple sessions.
-func (m *Manager) ResolveID(prefix string) (string, error) {
-	rows, err := m.db.Query(`SELECT id FROM sessions WHERE id LIKE ?`, prefix+"%")
-	if err != nil {
-		return "", fmt.Errorf("query sessions: %w", err)
-	}
-	defer rows.Close()
-
-	var ids []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return "", fmt.Errorf("scan session id: %w", err)
-		}
-		ids = append(ids, id)
-	}
-
-	switch len(ids) {
-	case 0:
-		return "", fmt.Errorf("session not found: %s", prefix)
-	case 1:
-		return ids[0], nil
-	default:
-		return "", fmt.Errorf("ambiguous session ID prefix '%s' matches %d sessions", prefix, len(ids))
-	}
-}
 
 func (m *Manager) Get(id string) (*Session, error) {
 	var s Session
@@ -503,7 +485,10 @@ func (m *Manager) Clear(id string) error {
 	}
 
 	// Start fresh with a new CLI session ID to avoid resuming the old conversation
-	freshCLISessionID := uuid.New().String()
+	freshCLISessionID, err := newSessionID()
+	if err != nil {
+		return fmt.Errorf("generate cli session id: %w", err)
+	}
 	sp, err := StartStreamProcessWithOpts(StreamOpts{
 		SessionID:     id,
 		ProjectPath:   s.ProjectPath,
@@ -748,7 +733,10 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 
 	provider := m.getProvider(ProviderClaude)
 
-	id := uuid.New().String()
+	id, err := newSessionID()
+	if err != nil {
+		return nil, fmt.Errorf("generate session id: %w", err)
+	}
 	name := "controller"
 
 	mcpConfigPath, err := provider.SetupMCP(id, m.apiPort)
