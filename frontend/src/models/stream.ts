@@ -59,6 +59,7 @@ export type StreamDisplayItem =
 export interface ActiveTask {
   taskId: string;
   taskType: string; // "local_agent" | "local_bash"
+  agentId?: string;
   description?: string;
   lastToolName?: string;
   lastToolInput?: unknown;
@@ -93,6 +94,7 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
       const toolUseId = raw.tool_use_id as string | undefined;
       if (taskId) {
         const task: ActiveTask = { taskId, taskType: taskType || "unknown" };
+        if (raw.agent_id) task.agentId = raw.agent_id as string;
         if (raw.description) task.description = raw.description as string;
         // Resolve tool input from the corresponding tool_use block
         if (toolUseId && toolUseInputs.has(toolUseId)) {

@@ -147,6 +147,16 @@ function ActiveTaskItem({ task, onDismiss }: { task: ActiveTask; onDismiss?: (ta
       >
         <div className="space-y-3">
           <div>
+            <span className="text-gray-400 text-[10px] uppercase tracking-wide">Task ID</span>
+            <div className="text-gray-700 text-xs mt-0.5 font-mono">{task.taskId}</div>
+          </div>
+          {task.agentId && (
+            <div>
+              <span className="text-gray-400 text-[10px] uppercase tracking-wide">Agent ID</span>
+              <div className="text-gray-700 text-xs mt-0.5 font-mono">{task.agentId}</div>
+            </div>
+          )}
+          <div>
             <span className="text-gray-400 text-[10px] uppercase tracking-wide">Task Type</span>
             <div className="text-gray-700 text-xs mt-0.5 font-mono">{taskTypeLabel}</div>
           </div>
