@@ -94,10 +94,9 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
 
 function ActiveTaskItem({ task }: { task: ActiveTask }) {
   const [open, setOpen] = useState(false);
-  const toolName = task.lastToolName || (task.taskType === "local_agent" ? "Agent" : task.taskType === "local_bash" ? "Bash" : task.taskType);
-  const Icon = toolIcon(toolName);
   const taskTypeLabel = task.taskType === "local_agent" ? "Agent" : task.taskType === "local_bash" ? "Bash" : task.taskType;
-  const desc = task.description || (task.lastToolInput ? toolDescription(toolName, task.lastToolInput) : null);
+  const Icon = toolIcon(taskTypeLabel);
+  const desc = task.description || (task.lastToolInput ? toolDescription(taskTypeLabel, task.lastToolInput) : null);
 
   return (
     <>
@@ -110,7 +109,7 @@ function ActiveTaskItem({ task }: { task: ActiveTask }) {
             <Icon className="w-3.5 h-3.5 text-gray-500 shrink-0" />
             <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
           </span>
-          <span className="font-medium text-xs text-gray-800">{toolName}</span>
+          <span className="font-medium text-xs text-gray-800">{taskTypeLabel}</span>
           {desc && (
             <span className="text-xs text-gray-500 truncate min-w-0">{desc}</span>
           )}
@@ -121,11 +120,6 @@ function ActiveTaskItem({ task }: { task: ActiveTask }) {
             </span>
           )}
         </div>
-        {task.lastToolName && toolName !== taskTypeLabel && (
-          <div className="mt-0.5 ml-[22px] font-mono text-[11px] text-gray-400 truncate">
-            {taskTypeLabel}
-          </div>
-        )}
       </button>
       <Modal
         open={open}
@@ -133,7 +127,7 @@ function ActiveTaskItem({ task }: { task: ActiveTask }) {
         title={
           <span className="flex items-center gap-2">
             <Icon className="w-4 h-4 text-gray-500" />
-            {toolName}
+            {taskTypeLabel}
             {desc && <span className="text-gray-400 font-normal truncate">{desc}</span>}
           </span>
         }
