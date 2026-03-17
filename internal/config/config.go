@@ -17,7 +17,8 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port int `toml:"port"`
+	Port        int    `toml:"port"`
+	FrontendDir string `toml:"frontend_dir"`
 }
 
 type DaemonConfig struct {
