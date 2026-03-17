@@ -1,12 +1,15 @@
 PORT ?= 4321
 
-.PHONY: build build-frontend dev clean test install restart preview preview-stop
+.PHONY: build build-frontend reload-frontend dev clean test install restart preview preview-stop
 
 build: build-frontend
 	go build -o agmux ./cmd/agmux
 
 build-frontend:
 	cd frontend && npm ci && npm run build
+
+reload-frontend:
+	cd frontend && npm run build
 
 dev:
 	cd frontend && npm run dev &

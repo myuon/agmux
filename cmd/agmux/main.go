@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"log/slog"
 	"net"
@@ -65,6 +66,7 @@ func initManager(cfg *config.Config, port int, logger *slog.Logger) (*session.Ma
 func serveCmd() *cobra.Command {
 	var port int
 	var devMode bool
+	var frontendDir string
 
 	cmd := &cobra.Command{
 		Use:   "serve",
@@ -162,11 +164,27 @@ func serveCmd() *cobra.Command {
 			// SetOnNewLines callback is already registered on the manager.
 			mgr.RecoverStreamProcesses()
 
-
 			if !devMode {
-				frontendFS, err := agmux.FrontendFS()
-				if err != nil {
-					return fmt.Errorf("load frontend: %w", err)
+				// Resolve frontend directory: CLI flag > config > embedded
+				if frontendDir == "" {
+					frontendDir = cfg.Server.FrontendDir
+				}
+
+				var frontendFS fs.FS
+				if frontendDir != "" {
+					if info, err := os.Stat(frontendDir); err == nil && info.IsDir() {
+						frontendFS = os.DirFS(frontendDir)
+						slog.Info("serving frontend from filesystem", "dir", frontendDir)
+					} else {
+						slog.Warn("frontend-dir not found, falling back to embedded", "dir", frontendDir)
+						frontendFS, _ = agmux.FrontendFS()
+					}
+				} else {
+					var err error
+					frontendFS, err = agmux.FrontendFS()
+					if err != nil {
+						return fmt.Errorf("load frontend: %w", err)
+					}
 				}
 				srv.MountFrontend(frontendFS)
 			}
@@ -219,6 +237,7 @@ func serveCmd() *cobra.Command {
 
 	cmd.Flags().IntVarP(&port, "port", "p", 0, "Server port (default: from config or 4321)")
 	cmd.Flags().BoolVar(&devMode, "dev", false, "Enable dev mode (CORS for Vite)")
+	cmd.Flags().StringVar(&frontendDir, "frontend-dir", "", "Serve frontend from this directory instead of embedded files")
 
 	return cmd
 }
