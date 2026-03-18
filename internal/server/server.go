@@ -29,7 +29,7 @@ import (
 )
 
 type Server struct {
-	sessions         *session.Manager
+	sessions         session.SessionService
 	hub              *Hub
 	router           chi.Router
 	devMode          bool
@@ -41,7 +41,7 @@ type Server struct {
 	externalDetector *session.ExternalDetector
 }
 
-func New(sessions *session.Manager, hub *Hub, devMode bool, logPath string, logger *slog.Logger, sqlDB *sql.DB) *Server {
+func New(sessions session.SessionService, hub *Hub, devMode bool, logPath string, logger *slog.Logger, sqlDB *sql.DB) *Server {
 	extDetector := session.NewExternalDetector(logger, 10*time.Second)
 	go extDetector.Start()
 

@@ -49,7 +49,7 @@ func main() {
 	}
 }
 
-func initManager(cfg *config.Config, port int, logger *slog.Logger) (*session.Manager, *sql.DB, error) {
+func initManager(cfg *config.Config, port int, logger *slog.Logger) (session.SessionService, *sql.DB, error) {
 	dbPath, err := db.DBPathForPort(port)
 	if err != nil {
 		return nil, nil, err
