@@ -523,7 +523,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           />
         </div>
         {/* Send button */}
-        <IconButton shape="circle" type="submit">
+        <IconButton shape="circle" variant="primary" type="submit">
           <SendHorizonal className="w-4 h-4" />
         </IconButton>
       </div>
