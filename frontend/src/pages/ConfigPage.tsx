@@ -3,6 +3,10 @@ import { useNavigate, useLoaderData } from "react-router-dom";
 import { api } from "../api/client";
 import type { AppConfig } from "../api/client";
 import { Section, Field } from "../components/ui/Section";
+import { ToggleButton } from "../components/ui/ToggleButton";
+import { AlertBanner } from "../components/ui/AlertBanner";
+import { PermissionStatus } from "../components/ui/PermissionStatus";
+import { SecondaryButton } from "../components/ui/SecondaryButton";
 
 export function ConfigPage() {
   const navigate = useNavigate();
@@ -38,20 +42,12 @@ export function ConfigPage() {
       </header>
 
       <div className="max-w-2xl mx-auto p-6 space-y-6">
-        <div className="bg-yellow-50 border border-yellow-300 rounded-lg px-4 py-3 text-yellow-800 text-sm">
-          設定の変更は次回再起動時に反映されます
-        </div>
+        <AlertBanner variant="warning">設定の変更は次回再起動時に反映されます</AlertBanner>
 
         {message && (
-          <div
-            className={`rounded-lg px-4 py-3 text-sm ${
-              message.type === "success"
-                ? "bg-green-50 border border-green-300 text-green-800"
-                : "bg-red-50 border border-red-300 text-red-800"
-            }`}
-          >
+          <AlertBanner variant={message.type === "success" ? "success" : "error"}>
             {message.text}
-          </div>
+          </AlertBanner>
         )}
 
         <Section title="Server">
@@ -168,16 +164,9 @@ function GoalCompletionNotifySettings() {
   return (
     <>
       <Field label="タスク完了通知">
-        <button
-          onClick={toggleEnabled}
-          className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors ${
-            enabled
-              ? "bg-green-50 border-green-300 text-green-700"
-              : "bg-gray-50 border-gray-200 text-gray-400"
-          }`}
-        >
+        <ToggleButton enabled={enabled} onClick={toggleEnabled}>
           {enabled ? "ON" : "OFF"}
-        </button>
+        </ToggleButton>
       </Field>
       {enabled && (
         <Field label="閾値（分）">
@@ -252,42 +241,26 @@ function NotificationStatus() {
   return (
     <Section title="Notifications">
       <Field label="Browser Permission">
-        <span className={`text-sm font-medium ${
-          permission === "granted" ? "text-green-600" :
-          permission === "denied" ? "text-red-600" : "text-yellow-600"
-        }`}>
-          {permission}
-        </span>
+        <PermissionStatus status={permission} />
       </Field>
       <Field label="通知">
-        <button
-          onClick={toggleNotify}
-          className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors ${
-            notifyEnabled
-              ? "bg-green-50 border-green-300 text-green-700"
-              : "bg-gray-50 border-gray-200 text-gray-400"
-          }`}
-        >
+        <ToggleButton enabled={notifyEnabled} onClick={toggleNotify}>
           {notifyEnabled ? "ON" : "OFF"}
-        </button>
+        </ToggleButton>
       </Field>
       <div>
         <label className="text-sm text-gray-600 block mb-2">通知するステータス</label>
         <div className="flex flex-wrap gap-2">
           {NOTIFY_STATUSES.map(({ key, label }) => {
-            const enabled = statusFilters[key] ?? DEFAULT_NOTIFY_STATUSES[key] ?? true;
+            const active = statusFilters[key] ?? DEFAULT_NOTIFY_STATUSES[key] ?? true;
             return (
-              <button
+              <ToggleButton
                 key={key}
+                enabled={active}
                 onClick={() => toggleStatus(key)}
-                className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
-                  enabled
-                    ? "bg-blue-50 border-blue-300 text-blue-700"
-                    : "bg-gray-50 border-gray-200 text-gray-400"
-                }`}
               >
                 {label}
-              </button>
+              </ToggleButton>
             );
           })}
         </div>
@@ -295,20 +268,14 @@ function NotificationStatus() {
       <GoalCompletionNotifySettings />
       <div className="flex gap-2 pt-2">
         {permission !== "granted" && (
-          <button
-            onClick={requestPermission}
-            className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700"
-          >
+          <SecondaryButton onClick={requestPermission} color="blue" className="px-3 py-1.5">
             通知を許可
-          </button>
+          </SecondaryButton>
         )}
         {permission === "granted" && (
-          <button
-            onClick={sendTest}
-            className="text-xs bg-gray-600 text-white px-3 py-1.5 rounded hover:bg-gray-700"
-          >
+          <SecondaryButton onClick={sendTest} color="gray" className="px-3 py-1.5">
             テスト通知を送信
-          </button>
+          </SecondaryButton>
         )}
       </div>
     </Section>

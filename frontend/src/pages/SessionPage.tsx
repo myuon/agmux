@@ -3,14 +3,19 @@ import { useParams, useNavigate, useLoaderData, Await } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FolderOpen,
+  Square, RefreshCw, Trash2, ArrowLeft, GitBranch, FolderOpen,
   Sparkles, Settings, Copy,
-  ListTodo, Target, RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
+  RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
   Code, Eye, X,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
 import { Toast } from "../components/ui/Toast";
+import { Chip } from "../components/ui/Chip";
+import { IconButton } from "../components/ui/IconButton";
+import { IconText } from "../components/ui/IconText";
+import { CircleButton } from "../components/ui/CircleButton";
+import { ActionMenu, ActionMenuItem } from "../components/ui/ActionMenu";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
 import { StatusDot } from "../components/StatusBadge";
@@ -18,6 +23,9 @@ import { setActiveSessionName } from "../activeSession";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { StreamOutputView, ActiveTasksPanel } from "../components/session/StreamOutputView";
 import { DiffDropdown } from "../components/session/DiffDropdown";
+import { GoalPanel } from "../components/ui/GoalPanel";
+import { ConnectionStatusIndicator } from "../components/ui/ConnectionStatus";
+import { PullRequestBadge } from "../components/ui/PullRequestBadge";
 import type { StreamEntry } from "../models/stream";
 import { extractActiveTasks } from "../models/stream";
 
@@ -290,49 +298,41 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       <div className="flex gap-2 items-center">
         {/* Left action menu */}
         <div className="relative">
-          <button
-            type="button"
+          <CircleButton
+            variant="secondary"
             onClick={() => setShowActionMenu((v) => !v)}
-            className="w-9 h-9 flex items-center justify-center text-gray-500 bg-gray-50 rounded-full hover:bg-gray-100"
             title="Actions"
           >
             <Plus className="w-4 h-4" />
-          </button>
+          </CircleButton>
           {showActionMenu && (
-            <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[160px]">
-              <button
-                type="button"
-                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                onMouseDown={(e) => {
-                  e.preventDefault();
+            <ActionMenu className="absolute bottom-full left-0 mb-1 z-50">
+              <ActionMenuItem
+                icon={<ImagePlus className="w-4 h-4" />}
+                label="Add image"
+                onClick={() => {
                   fileInputRef.current?.click();
                   setShowActionMenu(false);
                 }}
-              >
-                <ImagePlus className="w-4 h-4" /> Add image
-              </button>
+              />
               {slashCommands.length > 0 && (
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
+                <ActionMenuItem
+                  icon={<Slash className="w-4 h-4" />}
+                  label="Slash commands"
+                  onClick={() => {
                     setMessage("/");
                     setSlashFilter("");
                     setSlashSelectedIndex(0);
                     setShowSlashMenu(true);
                     setShowActionMenu(false);
                   }}
-                >
-                  <Slash className="w-4 h-4" /> Slash commands
-                </button>
+                />
               )}
               {session.type !== "controller" && (
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                  onMouseDown={async (e) => {
-                    e.preventDefault();
+                <ActionMenuItem
+                  icon={<Copy className="w-4 h-4" />}
+                  label="Duplicate"
+                  onClick={async () => {
                     setShowActionMenu(false);
                     try {
                       const newSession = await api.duplicateSession(session.id);
@@ -341,16 +341,13 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                       alert("Failed to duplicate session");
                     }
                   }}
-                >
-                  <Copy className="w-4 h-4" /> Duplicate
-                </button>
+                />
               )}
               {session.type !== "controller" && (
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                  onMouseDown={async (e) => {
-                    e.preventDefault();
+                <ActionMenuItem
+                  icon={<RotateCcw className="w-4 h-4" />}
+                  label="Clear context"
+                  onClick={async () => {
                     setShowActionMenu(false);
                     if (!confirm("Clear session context? This will start a fresh conversation.")) return;
                     try {
@@ -366,15 +363,12 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                       setTimeout(() => setClearToast(null), 3000);
                     }
                   }}
-                >
-                  <RotateCcw className="w-4 h-4" /> Clear context
-                </button>
+                />
               )}
-              <button
-                type="button"
-                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                onMouseDown={async (e) => {
-                  e.preventDefault();
+              <ActionMenuItem
+                icon={<RefreshCw className="w-4 h-4" />}
+                label="Reconnect"
+                onClick={async () => {
                   setShowActionMenu(false);
                   if (!confirm("セッションを再接続しますか？")) return;
                   try {
@@ -386,39 +380,33 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                     alert("再接続に失敗しました");
                   }
                 }}
-              >
-                <RefreshCw className="w-4 h-4" /> Reconnect
-              </button>
+              />
               {session.status !== "stopped" && session.type !== "controller" && (
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                  onMouseDown={async (e) => {
-                    e.preventDefault();
+                <ActionMenuItem
+                  icon={<Square className="w-4 h-4" />}
+                  label="Stop session"
+                  variant="danger"
+                  onClick={async () => {
                     setShowActionMenu(false);
                     await api.stopSession(session.id);
                     api.getSession(session.id).then(setSession);
                   }}
-                >
-                  <Square className="w-4 h-4" /> Stop session
-                </button>
+                />
               )}
               {session.type !== "controller" && (
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                  onMouseDown={async (e) => {
-                    e.preventDefault();
+                <ActionMenuItem
+                  icon={<Trash2 className="w-4 h-4" />}
+                  label="Delete session"
+                  variant="danger"
+                  onClick={async () => {
                     setShowActionMenu(false);
                     if (!confirm("Delete this session?")) return;
                     await api.deleteSession(session.id);
                     navigate("/");
                   }}
-                >
-                  <Trash2 className="w-4 h-4" /> Delete session
-                </button>
+                />
               )}
-            </div>
+            </ActionMenu>
           )}
         </div>
         <input
@@ -535,12 +523,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           />
         </div>
         {/* Send button */}
-        <button
-          type="submit"
-          className="w-9 h-9 flex items-center justify-center bg-blue-600 text-white rounded-full hover:bg-blue-700"
-        >
+        <CircleButton type="submit">
           <SendHorizonal className="w-4 h-4" />
-        </button>
+        </CircleButton>
       </div>
     </form>
   ) : null;
@@ -552,34 +537,22 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       {clearToast === "success" && <Toast message="セッションをクリアしました" />}
       {clearToast === "error" && <Toast message="クリアに失敗しました" variant="error" />}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 shrink-0">
-        <button
-          onClick={() => navigate("/")}
-          className="p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 shrink-0"
-          title="Back"
-        >
+        <IconButton onClick={() => navigate("/")} title="Back">
           <ArrowLeft className="w-4 h-4" />
-        </button>
+        </IconButton>
         {session ? (
           <>
             <StatusDot status={session.status} />
             <h2 className="text-xl sm:text-2xl font-bold">{session.name}</h2>
             <span className="text-xs text-gray-400">{session.status}</span>
             {session.provider && (
-              <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${
-                session.provider === "codex"
-                  ? "bg-green-100 text-green-700"
-                  : session.provider === "claude"
-                    ? "bg-blue-100 text-blue-700"
-                    : "bg-gray-100 text-gray-600"
-              }`}>
+              <Chip color={session.provider === "codex" ? "green" : session.provider === "claude" ? "blue" : "gray"}>
                 {session.provider.charAt(0).toUpperCase() + session.provider.slice(1)}
                 {providerVersion && ` ${providerVersion.match(/\d+\.\d+\.\d+/)?.[0] ?? ""}`}
-              </span>
+              </Chip>
             )}
             {session.model && (
-              <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700">
-                {session.model}
-              </span>
+              <Chip color="purple">{session.model}</Chip>
             )}
           </>
         ) : (
@@ -591,8 +564,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       </div>
       {session ? (
         <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm text-gray-500">
-          <FolderOpen className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <span className="truncate" title={session.projectPath}>{session.projectPath}</span>
+          <IconText icon={<FolderOpen className="w-3.5 h-3.5" />} className="text-xs sm:text-sm">
+            <span className="truncate" title={session.projectPath}>{session.projectPath}</span>
+          </IconText>
         {session.githubUrl && (
           <a
             href={session.githubUrl}
@@ -656,65 +630,23 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             </>
           )}
           {session.pullRequests && session.pullRequests.map((pr) => (
-            <a
-              key={pr.number}
-              href={pr.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${
-                pr.state === "MERGED"
-                  ? "bg-purple-100 text-purple-700"
-                  : pr.state === "OPEN"
-                    ? "bg-green-100 text-green-700"
-                    : "bg-gray-100 text-gray-600"
-              }`}
-            >
-              <GitPullRequest className="w-3 h-3" />
-              #{pr.number}
-            </a>
+            <PullRequestBadge key={pr.number} number={pr.number} state={pr.state} url={pr.url} />
           ))}
           <DiffDropdown files={diffFiles} />
         </div>
       )}
 
       {session && (session.currentTask || session.goal) && (
-        <div className="border-l-2 border-gray-300 bg-gray-50 rounded-r-lg px-3 py-2 mb-3 space-y-1">
-          {session.goals && session.goals.length > 1 && (
-            <div className="text-[10px] text-gray-400 ml-5">
-              {session.goals.slice(0, -1).map((g, i) => (
-                <span key={i}>
-                  {i > 0 && " > "}
-                  {g.goal}
-                </span>
-              ))}
-              {" > "}
-            </div>
-          )}
-          {session.currentTask && (
-            <div className="flex items-start gap-1.5 text-xs text-gray-700">
-              <ListTodo className="w-3.5 h-3.5 shrink-0 mt-0.5 text-indigo-400" />
-              <span>{session.currentTask}</span>
-            </div>
-          )}
-          {session.goal && (
-            <div className="flex items-start gap-1.5 text-xs text-gray-500">
-              <Target className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-400" />
-              <span>{session.goal}</span>
-            </div>
-          )}
-        </div>
+        <GoalPanel
+          currentTask={session.currentTask}
+          goal={session.goal}
+          goals={session.goals}
+        />
       )}
 
       {session && connectionState !== "connected" && (
-        <div className="flex items-center gap-1.5 mb-2 shrink-0">
-          <span className={`inline-block w-2 h-2 rounded-full ${
-            connectionState === "connecting" ? "bg-yellow-500 animate-pulse" : "bg-red-500"
-          }`} />
-          <span className={`text-xs ${
-            connectionState === "connecting" ? "text-yellow-600" : "text-red-600"
-          }`}>
-            {connectionState === "connecting" ? "Connecting..." : "Disconnected"}
-          </span>
+        <div className="mb-2 shrink-0">
+          <ConnectionStatusIndicator state={connectionState} />
         </div>
       )}
 

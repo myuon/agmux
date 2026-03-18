@@ -13,6 +13,7 @@ import {
 import type { MetricsSummary, MetricRow, MetricEvent } from "../api/client";
 import { useNavigate, useLoaderData, useSearchParams } from "react-router-dom";
 import { SummaryCard } from "../components/ui/SummaryCard";
+import { FilterButton } from "../components/ui/FilterButton";
 import {
   ToolDurationRanking,
   ContextUsageAnalysis,
@@ -88,17 +89,13 @@ export function MetricsPage() {
         </div>
         <div className="flex gap-1">
           {(["1h", "6h", "24h", "7d", "all"] as TimeRange[]).map((r) => (
-            <button
+            <FilterButton
               key={r}
+              selected={range === r}
               onClick={() => setSearchParams({ range: r })}
-              className={`px-2.5 py-1 text-xs rounded ${
-                range === r
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
             >
               {r}
-            </button>
+            </FilterButton>
           ))}
         </div>
       </header>
