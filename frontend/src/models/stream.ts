@@ -69,7 +69,9 @@ export interface ActiveTask {
 
 export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
   // Pass 1: collect tool_use inputs by id from assistant messages
+  // Also collect task_ids stopped via TaskStop
   const toolUseInputs = new Map<string, { name: string; input: unknown }>();
+  const stoppedTaskIds = new Set<string>();
   for (const entry of entries) {
     if (entry.type !== "assistant") continue;
     const content = entry.message?.content;
@@ -78,6 +80,12 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
       const b = block as Record<string, unknown>;
       if (b.type === "tool_use" && typeof b.id === "string" && b.input != null) {
         toolUseInputs.set(b.id, { name: b.name as string, input: b.input });
+      }
+      if (b.type === "tool_use" && b.name === "TaskStop" && b.input) {
+        const input = b.input as Record<string, unknown>;
+        if (typeof input.task_id === "string") {
+          stoppedTaskIds.add(input.task_id);
+        }
       }
     }
   }
@@ -126,6 +134,10 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
         tasks.delete(taskId);
       }
     }
+  }
+  // Remove tasks that were explicitly stopped via TaskStop
+  for (const id of stoppedTaskIds) {
+    tasks.delete(id);
   }
   return Array.from(tasks.values());
 }
