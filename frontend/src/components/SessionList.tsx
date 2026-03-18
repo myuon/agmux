@@ -94,6 +94,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
                   type={s.type}
                   provider={s.provider}
                   currentTask={s.currentTask}
+                  lastError={s.lastError}
                   projectPath={s.projectPath}
                   timeAgo={timeAgo(s.createdAt)}
                   onClick={() => navigate(`/sessions/${s.id}`)}

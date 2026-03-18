@@ -151,6 +151,12 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add last_error column if missing (for error display)
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN last_error TEXT`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: remove UNIQUE constraint from tmux_session (no longer used)
 	// SQLite doesn't support DROP CONSTRAINT, so we recreate the table
 	{

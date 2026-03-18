@@ -8,6 +8,7 @@ interface SessionCardProps {
   type?: string;
   provider?: string;
   currentTask?: string;
+  lastError?: string;
   projectPath: string;
   timeAgo: string;
   onClick?: () => void;
@@ -20,6 +21,7 @@ export function SessionCard({
   type,
   provider,
   currentTask,
+  lastError,
   projectPath,
   timeAgo,
   onClick,
@@ -47,6 +49,11 @@ export function SessionCard({
       </div>
       {currentTask && (
         <p className="text-xs text-indigo-600 truncate mb-0.5">{currentTask}</p>
+      )}
+      {status === "stopped" && lastError && (
+        <p className="text-xs text-red-600 truncate mb-0.5" title={lastError}>
+          Error: {lastError}
+        </p>
       )}
       <p className="text-xs text-gray-500 truncate mb-1">
         {projectPath}

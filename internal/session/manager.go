@@ -248,7 +248,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -262,8 +262,8 @@ func (m *Manager) List() ([]Session, error) {
 		var status string
 		var sessionType string
 		var providerStr string
-		var prompt, currentTask, goal, goalsJSON sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		var prompt, currentTask, goal, goalsJSON, lastError sql.NullString
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = Status(status)
@@ -284,6 +284,9 @@ func (m *Manager) List() ([]Session, error) {
 		if goalsJSON.Valid {
 			s.Goals = ParseGoalStack(goalsJSON.String)
 		}
+		if lastError.Valid {
+			s.LastError = lastError.String
+		}
 
 		sessions = append(sessions, s)
 	}
@@ -296,11 +299,11 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var status string
 	var sessionType string
 	var providerStr string
-	var prompt, currentTask, goal, goalsJSON sql.NullString
+	var prompt, currentTask, goal, goalsJSON, lastError sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -324,6 +327,9 @@ func (m *Manager) Get(id string) (*Session, error) {
 	}
 	if goalsJSON.Valid {
 		s.Goals = ParseGoalStack(goalsJSON.String)
+	}
+	if lastError.Valid {
+		s.LastError = lastError.String
 	}
 	return &s, nil
 }
@@ -410,7 +416,7 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *StreamProcess) {
 			"sessionId", sid,
 			"exitError", errMsg,
 		)
-		if err := m.UpdateStatus(sid, StatusStopped); err != nil {
+		if err := m.UpdateStatusWithError(sid, StatusStopped, errMsg); err != nil {
 			m.logger.Error("failed to update status after process exit", "sessionId", sid, "error", err)
 		}
 		// Clean up the stream process from the map
@@ -507,7 +513,7 @@ func (m *Manager) Clear(id string) error {
 	m.streamMu.Unlock()
 
 	// Reset task/goal and set status to working (preserve cli_session_id with fresh value)
-	_, err = m.db.Exec("UPDATE sessions SET status = ?, current_task = NULL, goal = NULL, goals = '[]', cli_session_id = ?, updated_at = ? WHERE id = ?", string(StatusWorking), freshCLISessionID, time.Now(), id)
+	_, err = m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', cli_session_id = ?, updated_at = ? WHERE id = ?", string(StatusWorking), freshCLISessionID, time.Now(), id)
 	return err
 }
 
@@ -682,11 +688,11 @@ func (m *Manager) GetController() (*Session, error) {
 	var status string
 	var sessionType string
 	var providerStr string
-	var prompt, currentTask, goal, goalsJSON sql.NullString
+	var prompt, currentTask, goal, goalsJSON, lastError sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, created_at, updated_at
 		 FROM sessions WHERE type = ? LIMIT 1`, string(TypeController),
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -710,6 +716,9 @@ func (m *Manager) GetController() (*Session, error) {
 	}
 	if goalsJSON.Valid {
 		s.Goals = ParseGoalStack(goalsJSON.String)
+	}
+	if lastError.Valid {
+		s.LastError = lastError.String
 	}
 	return &s, nil
 }
@@ -786,6 +795,12 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 
 func (m *Manager) UpdateStatus(id string, status Status) error {
 	_, err := m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(status), time.Now(), id)
+	return err
+}
+
+// UpdateStatusWithError updates the session status and records the last error message.
+func (m *Manager) UpdateStatusWithError(id string, status Status, lastError string) error {
+	_, err := m.db.Exec("UPDATE sessions SET status = ?, last_error = ?, updated_at = ? WHERE id = ?", string(status), lastError, time.Now(), id)
 	return err
 }
 
@@ -909,6 +924,6 @@ func (m *Manager) Reconnect(id string) error {
 	m.streamProcesses[id] = sp
 	m.streamMu.Unlock()
 
-	_, err = m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
+	_, err = m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
 	return err
 }
