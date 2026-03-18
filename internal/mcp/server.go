@@ -144,6 +144,21 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 					},
 				},
 				map[string]interface{}{
+					"name":        "send_notification",
+					"description": "セッション作成者にブラウザ通知を送信します。作業完了の報告やユーザーへの情報共有に使ってください。escalateとは異なり、ユーザーの応答を待たずに即座に返ります。",
+					"inputSchema": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"session_id": sessionIDProperty,
+							"message": map[string]interface{}{
+								"type":        "string",
+								"description": "通知メッセージ（例: 「PR #123 を作成しました」「テストが全て通りました」）",
+							},
+						},
+						"required": []string{"message"},
+					},
+				},
+				map[string]interface{}{
 					"name":        "escalate",
 					"description": "ユーザーへのエスカレーション。判断を仰ぎたいときや確認が必要なときに呼んでください。ブラウザ通知が送られ、ユーザーが応答するまでブロックします。",
 					"inputSchema": map[string]interface{}{
@@ -211,6 +226,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 	case "set_session_context":
 		// Backward compatibility
 		return s.handleCreateGoal(args)
+	case "send_notification":
+		return s.handleSendNotification(args)
 	case "escalate":
 		return s.handleEscalate(args)
 	case "restart_server":
@@ -288,6 +305,29 @@ func (s *Server) handleCompleteGoal(args json.RawMessage) (interface{}, *jsonRPC
 		return toolResult(fmt.Sprintf("Goal completed. Returning to parent goal: %s", parentGoal), false), nil
 	}
 	return toolResult("Goal completed. No more goals in the stack.", false), nil
+}
+
+func (s *Server) handleSendNotification(args json.RawMessage) (interface{}, *jsonRPCError) {
+	sessionID, rpcErr := s.resolveSessionID(args)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+
+	var input struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(args, &input); err != nil {
+		return nil, &jsonRPCError{Code: -32602, Message: "invalid arguments"}
+	}
+	if input.Message == "" {
+		return nil, &jsonRPCError{Code: -32602, Message: "message is required"}
+	}
+
+	if err := s.apiSendNotification(sessionID, input.Message); err != nil {
+		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
+	}
+
+	return toolResult("Notification sent successfully.", false), nil
 }
 
 func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCError) {
@@ -378,6 +418,29 @@ func (s *Server) waitForServerReady(timeout, interval time.Duration) error {
 	return fmt.Errorf("サーバーが%v以内に応答しませんでした", timeout)
 }
 
+
+func (s *Server) apiSendNotification(sessionID string, message string) error {
+	url := fmt.Sprintf("%s/api/sessions/%s/notify", s.apiURL, sessionID)
+	body := fmt.Sprintf(`{"message":%s}`, jsonString(message))
+
+	req, err := http.NewRequest("POST", url, strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
 
 func (s *Server) apiEscalate(sessionID string, message string, timeoutSeconds int) (string, bool, error) {
 	escalationID := uuid.New().String()

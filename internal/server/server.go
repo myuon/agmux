@@ -124,6 +124,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/sessions/{id}/escalate", s.getPendingEscalation)
 		r.Post("/sessions/{id}/escalate", s.createEscalation)
 		r.Post("/sessions/{id}/escalate/respond", s.respondEscalation)
+		r.Post("/sessions/{id}/notify", s.sendNotification)
 		r.Post("/sessions/controller/restart", s.restartController)
 		r.Get("/claude/models", s.getClaudeModels)
 		r.Get("/claude/version", s.getClaudeVersion)
@@ -504,6 +505,43 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 		s.escalations.Cleanup(req.ID)
 		writeError(w, http.StatusGatewayTimeout, "request cancelled")
 	}
+}
+
+type sendNotificationRequest struct {
+	Message string `json:"message"`
+}
+
+func (s *Server) sendNotification(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "id")
+	var req sendNotificationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Message == "" {
+		writeError(w, http.StatusBadRequest, "message is required")
+		return
+	}
+
+	sess, err := s.sessions.Get(sessionID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	s.recordSessionAction(sessionID, "agent_notification", req.Message)
+
+	// Broadcast WebSocket notification to all connected clients
+	s.hub.Broadcast(Message{
+		Type: "agent_notification",
+		Data: map[string]interface{}{
+			"sessionId":   sessionID,
+			"sessionName": sess.Name,
+			"message":     req.Message,
+		},
+	})
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 type respondEscalationRequest struct {

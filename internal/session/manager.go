@@ -145,9 +145,9 @@ func (m *Manager) RecoverStreamProcesses() {
 
 // CreateOpts contains optional parameters for creating a session.
 type CreateOpts struct {
-	Provider ProviderName
-	Model    string
-	FullAuto bool // enable full-auto mode (bypasses permission prompts for Codex)
+	Provider  ProviderName
+	Model     string
+	FullAuto  bool   // enable full-auto mode (bypasses permission prompts for Codex)
 }
 
 func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts ...CreateOpts) (*Session, error) {

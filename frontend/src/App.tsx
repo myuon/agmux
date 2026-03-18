@@ -59,6 +59,11 @@ function useGlobalNotifications() {
       sendNotification("agmux - Task Completed", `${data.sessionName}: ${data.currentTask} (${durationMin}min)`, data.sessionId);
       return;
     }
+    if (msg.type === "agent_notification") {
+      const data = msg.data as { sessionId: string; sessionName: string; message: string };
+      sendNotification("agmux - Notification", `${data.sessionName}: ${data.message}`, data.sessionId);
+      return;
+    }
     if (msg.type === "notify") {
       const notify = localStorage.getItem("agmux-notify") === "true";
       if (!notify) return;
