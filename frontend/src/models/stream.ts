@@ -125,7 +125,7 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
       if (taskId) {
         if (!tasks.has(taskId)) {
           const taskType = (raw.task_type as string) || "unknown";
-          const task: ActiveTask = { taskId, taskType };
+          const task: ActiveTask = { taskId, taskType, toolCallHistory: [] };
           if (raw.agent_id) task.agentId = raw.agent_id as string;
           tasks.set(taskId, task);
         }
