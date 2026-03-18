@@ -12,11 +12,9 @@ import { DiffDropdown } from "../components/session/DiffDropdown";
 import { Chip } from "../components/ui/Chip";
 import { IconButton } from "../components/ui/IconButton";
 import { IconText } from "../components/ui/IconText";
-import { CircleButton } from "../components/ui/CircleButton";
 import { ToggleButton } from "../components/ui/ToggleButton";
 import { FilterButton } from "../components/ui/FilterButton";
 import { ArrowLeft, BarChart3, FolderOpen, GitBranch, Image, Plus, SendHorizonal, Settings, Sparkles, TerminalSquare } from "lucide-react";
-import { IconLink } from "../components/ui/IconLink";
 import { PullRequestBadge } from "../components/ui/PullRequestBadge";
 import { GroupSectionHeader } from "../components/ui/GroupSectionHeader";
 import type { Session } from "../types/session";
@@ -236,41 +234,6 @@ func add(a, b int) int {
   );
 }
 
-function CircleButtonPreview() {
-  return (
-    <PreviewSection title="CircleButton">
-      <div className="space-y-3">
-        <div>
-          <p className="text-xs text-gray-500 mb-1">Primary (送信ボタン)</p>
-          <div className="flex items-center gap-2">
-            <CircleButton title="Send">
-              <SendHorizonal className="w-4 h-4" />
-            </CircleButton>
-          </div>
-        </div>
-        <div>
-          <p className="text-xs text-gray-500 mb-1">Secondary (メニューボタン)</p>
-          <div className="flex items-center gap-2">
-            <CircleButton variant="secondary" title="Actions">
-              <Plus className="w-4 h-4" />
-            </CircleButton>
-          </div>
-        </div>
-        <div>
-          <p className="text-xs text-gray-500 mb-1">Disabled</p>
-          <div className="flex items-center gap-2">
-            <CircleButton disabled title="Disabled primary">
-              <SendHorizonal className="w-4 h-4" />
-            </CircleButton>
-            <CircleButton variant="secondary" disabled title="Disabled secondary">
-              <Plus className="w-4 h-4" />
-            </CircleButton>
-          </div>
-        </div>
-      </div>
-    </PreviewSection>
-  );
-}
 
 function ToolInputViewPreview() {
   const simpleInput = {
@@ -508,11 +471,41 @@ function IconButtonPreview() {
     <PreviewSection title="IconButton">
       <div className="space-y-3">
         <div>
-          <p className="text-xs text-gray-500 mb-1">標準アイコンボタン</p>
+          <p className="text-xs text-gray-500 mb-1">shape=&quot;square&quot; (デフォルト) + variant=&quot;ghost&quot;</p>
           <div className="flex items-center gap-2">
             <IconButton title="Back"><ArrowLeft className="w-4 h-4" /></IconButton>
             <IconButton title="Settings"><Settings className="w-4 h-4" /></IconButton>
             <IconButton title="CLAUDE.md"><Sparkles className="w-4 h-4" /></IconButton>
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">shape=&quot;rounded&quot; + to prop (ナビゲーションリンク)</p>
+          <div className="flex items-center gap-2">
+            <IconButton shape="rounded" to="/preview" title="UI Preview"><Image className="w-5 h-5" /></IconButton>
+            <IconButton shape="rounded" to="/metrics" title="Metrics"><BarChart3 className="w-5 h-5" /></IconButton>
+            <IconButton shape="rounded" to="/config" title="Settings"><Settings className="w-5 h-5" /></IconButton>
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">shape=&quot;circle&quot; + variant=&quot;primary&quot; / &quot;secondary&quot;</p>
+          <div className="flex items-center gap-2">
+            <IconButton shape="circle" title="Send">
+              <SendHorizonal className="w-4 h-4" />
+            </IconButton>
+            <IconButton shape="circle" variant="secondary" title="Actions">
+              <Plus className="w-4 h-4" />
+            </IconButton>
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Disabled</p>
+          <div className="flex items-center gap-2">
+            <IconButton shape="circle" disabled title="Disabled primary">
+              <SendHorizonal className="w-4 h-4" />
+            </IconButton>
+            <IconButton shape="circle" variant="secondary" disabled title="Disabled secondary">
+              <Plus className="w-4 h-4" />
+            </IconButton>
           </div>
         </div>
         <div>
@@ -993,8 +986,6 @@ const categories = [
     label: "Buttons",
     items: [
       { id: "iconbutton", label: "IconButton", el: <IconButtonPreview /> },
-      { id: "iconlink", label: "IconLink", el: <IconLinkPreview /> },
-      { id: "circlebutton", label: "CircleButton", el: <CircleButtonPreview /> },
       { id: "secondarybutton", label: "SecondaryButton", el: <SecondaryButtonPreview /> },
       { id: "togglebutton", label: "ToggleButton", el: <ToggleButtonPreview /> },
       { id: "filterbutton", label: "FilterButton", el: <FilterButtonPreview /> },
@@ -1100,20 +1091,3 @@ function SystemEventRowPreview() {
   );
 }
 
-function IconLinkPreview() {
-  return (
-    <PreviewSection title="IconLink">
-      <div className="space-y-3">
-        <div>
-          <p className="text-xs text-gray-500 mb-1">ヘッダーナビゲーション（アイコンリンク）</p>
-          <div className="flex items-center gap-2">
-            <IconLink to="/preview" title="UI Preview"><Image className="w-5 h-5" /></IconLink>
-            <IconLink to="/metrics" title="Metrics"><BarChart3 className="w-5 h-5" /></IconLink>
-            <IconLink to="/config" title="Settings"><Settings className="w-5 h-5" /></IconLink>
-            <IconLink to="/" title="Controller"><TerminalSquare className="w-5 h-5" /></IconLink>
-          </div>
-        </div>
-      </div>
-    </PreviewSection>
-  );
-}

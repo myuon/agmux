@@ -14,7 +14,6 @@ import { Toast } from "../components/ui/Toast";
 import { Chip } from "../components/ui/Chip";
 import { IconButton } from "../components/ui/IconButton";
 import { IconText } from "../components/ui/IconText";
-import { CircleButton } from "../components/ui/CircleButton";
 import { ActionMenu, ActionMenuItem } from "../components/ui/ActionMenu";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
@@ -298,13 +297,14 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       <div className="flex gap-2 items-center">
         {/* Left action menu */}
         <div className="relative">
-          <CircleButton
+          <IconButton
+            shape="circle"
             variant="secondary"
             onClick={() => setShowActionMenu((v) => !v)}
             title="Actions"
           >
             <Plus className="w-4 h-4" />
-          </CircleButton>
+          </IconButton>
           {showActionMenu && (
             <ActionMenu className="absolute bottom-full left-0 mb-1 z-50">
               <ActionMenuItem
@@ -523,9 +523,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           />
         </div>
         {/* Send button */}
-        <CircleButton type="submit">
+        <IconButton shape="circle" type="submit">
           <SendHorizonal className="w-4 h-4" />
-        </CircleButton>
+        </IconButton>
       </div>
     </form>
   ) : null;
