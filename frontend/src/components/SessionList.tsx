@@ -4,6 +4,7 @@ import { TerminalSquare } from "lucide-react";
 import type { Session } from "../types/session";
 import { StatusDot } from "./StatusBadge";
 import { GroupSectionHeader } from "./ui/GroupSectionHeader";
+import { SecondaryButton } from "./ui/SecondaryButton";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -129,12 +130,11 @@ export function SessionList({ sessions, onRestartController }: Props) {
                     </span>
                     <div className="flex gap-1.5">
                       {s.type === "controller" && s.status === "stopped" && (
-                        <button
+                        <SecondaryButton
                           onClick={(e) => { e.stopPropagation(); onRestartController(); }}
-                          className="px-2 py-0.5 text-xs bg-purple-50 text-purple-600 rounded hover:bg-purple-100"
                         >
                           Restart
-                        </button>
+                        </SecondaryButton>
                       )}
                     </div>
                   </div>

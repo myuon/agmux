@@ -26,6 +26,8 @@ import { ActiveTasksPanel } from "../components/session/StreamOutputView";
 import { SessionList } from "../components/SessionList";
 import { AlertBanner } from "../components/ui/AlertBanner";
 import { ConnectionStatusIndicator } from "../components/ui/ConnectionStatus";
+import { PermissionStatus } from "../components/ui/PermissionStatus";
+import { SecondaryButton } from "../components/ui/SecondaryButton";
 
 function PreviewSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -820,6 +822,48 @@ function GroupSectionHeaderPreview() {
   );
 }
 
+function PermissionStatusPreview() {
+  const statuses = ["granted", "denied", "default", "prompt"] as const;
+  return (
+    <PreviewSection title="PermissionStatus">
+      <div className="flex flex-wrap gap-4 items-center">
+        {statuses.map((s) => (
+          <div key={s} className="flex items-center gap-1">
+            <span className="text-xs text-gray-500">{s}:</span>
+            <PermissionStatus status={s} />
+          </div>
+        ))}
+      </div>
+    </PreviewSection>
+  );
+}
+
+function SecondaryButtonPreview() {
+  const colors = ["purple", "blue", "gray"] as const;
+  return (
+    <PreviewSection title="SecondaryButton">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">カラーバリエーション</p>
+          <div className="flex flex-wrap gap-2">
+            {colors.map((c) => (
+              <SecondaryButton key={c} color={c}>{c}</SecondaryButton>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">使用例</p>
+          <div className="flex gap-2">
+            <SecondaryButton color="purple">Restart</SecondaryButton>
+            <SecondaryButton color="blue">通知を許可</SecondaryButton>
+            <SecondaryButton color="gray">テスト通知を送信</SecondaryButton>
+          </div>
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
 export function PreviewPage() {
   return (
     <div className="p-6 space-y-8 pb-12">
@@ -851,6 +895,8 @@ export function PreviewPage() {
       <GroupSectionHeaderPreview />
       <AlertBannerPreview />
       <ConnectionStatusPreview />
+      <PermissionStatusPreview />
+      <SecondaryButtonPreview />
     </div>
   );
 }

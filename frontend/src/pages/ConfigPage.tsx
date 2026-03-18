@@ -5,6 +5,8 @@ import type { AppConfig } from "../api/client";
 import { Section, Field } from "../components/ui/Section";
 import { ToggleButton } from "../components/ui/ToggleButton";
 import { AlertBanner } from "../components/ui/AlertBanner";
+import { PermissionStatus } from "../components/ui/PermissionStatus";
+import { SecondaryButton } from "../components/ui/SecondaryButton";
 
 export function ConfigPage() {
   const navigate = useNavigate();
@@ -239,12 +241,7 @@ function NotificationStatus() {
   return (
     <Section title="Notifications">
       <Field label="Browser Permission">
-        <span className={`text-sm font-medium ${
-          permission === "granted" ? "text-green-600" :
-          permission === "denied" ? "text-red-600" : "text-yellow-600"
-        }`}>
-          {permission}
-        </span>
+        <PermissionStatus status={permission} />
       </Field>
       <Field label="通知">
         <ToggleButton enabled={notifyEnabled} onClick={toggleNotify}>
@@ -271,20 +268,14 @@ function NotificationStatus() {
       <GoalCompletionNotifySettings />
       <div className="flex gap-2 pt-2">
         {permission !== "granted" && (
-          <button
-            onClick={requestPermission}
-            className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded hover:bg-blue-700"
-          >
+          <SecondaryButton onClick={requestPermission} color="blue" className="px-3 py-1.5">
             通知を許可
-          </button>
+          </SecondaryButton>
         )}
         {permission === "granted" && (
-          <button
-            onClick={sendTest}
-            className="text-xs bg-gray-600 text-white px-3 py-1.5 rounded hover:bg-gray-700"
-          >
+          <SecondaryButton onClick={sendTest} color="gray" className="px-3 py-1.5">
             テスト通知を送信
-          </button>
+          </SecondaryButton>
         )}
       </div>
     </Section>
