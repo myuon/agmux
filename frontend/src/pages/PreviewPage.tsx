@@ -12,7 +12,8 @@ import { DiffDropdown } from "../components/session/DiffDropdown";
 import { Chip } from "../components/ui/Chip";
 import { IconButton } from "../components/ui/IconButton";
 import { IconText } from "../components/ui/IconText";
-import { ArrowLeft, FolderOpen, GitBranch, Settings, Sparkles } from "lucide-react";
+import { CircleButton } from "../components/ui/CircleButton";
+import { ArrowLeft, FolderOpen, GitBranch, Plus, SendHorizonal, Settings, Sparkles } from "lucide-react";
 import type { Session } from "../types/session";
 import type { StreamDisplayItem } from "../models/stream";
 import type { DiffFile } from "../api/client";
@@ -214,6 +215,42 @@ func add(a, b int) int {
         <div>
           <p className="text-xs text-gray-500 mb-2">空の状態</p>
           <FileCodeViewer files={[]} emptyMessage="ファイルがありません" />
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
+function CircleButtonPreview() {
+  return (
+    <PreviewSection title="CircleButton">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Primary (送信ボタン)</p>
+          <div className="flex items-center gap-2">
+            <CircleButton title="Send">
+              <SendHorizonal className="w-4 h-4" />
+            </CircleButton>
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Secondary (メニューボタン)</p>
+          <div className="flex items-center gap-2">
+            <CircleButton variant="secondary" title="Actions">
+              <Plus className="w-4 h-4" />
+            </CircleButton>
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Disabled</p>
+          <div className="flex items-center gap-2">
+            <CircleButton disabled title="Disabled primary">
+              <SendHorizonal className="w-4 h-4" />
+            </CircleButton>
+            <CircleButton variant="secondary" disabled title="Disabled secondary">
+              <Plus className="w-4 h-4" />
+            </CircleButton>
+          </div>
         </div>
       </div>
     </PreviewSection>
@@ -508,6 +545,7 @@ export function PreviewPage() {
       <ChipPreview />
       <IconButtonPreview />
       <IconTextPreview />
+      <CircleButtonPreview />
       <ToolInputViewPreview />
       <ToolCallViewPreview />
       <DiffDropdownPreview />

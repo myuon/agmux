@@ -14,6 +14,7 @@ import { Toast } from "../components/ui/Toast";
 import { Chip } from "../components/ui/Chip";
 import { IconButton } from "../components/ui/IconButton";
 import { IconText } from "../components/ui/IconText";
+import { CircleButton } from "../components/ui/CircleButton";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
 import { StatusDot } from "../components/StatusBadge";
@@ -293,14 +294,13 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       <div className="flex gap-2 items-center">
         {/* Left action menu */}
         <div className="relative">
-          <button
-            type="button"
+          <CircleButton
+            variant="secondary"
             onClick={() => setShowActionMenu((v) => !v)}
-            className="w-9 h-9 flex items-center justify-center text-gray-500 bg-gray-50 rounded-full hover:bg-gray-100"
             title="Actions"
           >
             <Plus className="w-4 h-4" />
-          </button>
+          </CircleButton>
           {showActionMenu && (
             <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[160px]">
               <button
@@ -538,12 +538,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           />
         </div>
         {/* Send button */}
-        <button
-          type="submit"
-          className="w-9 h-9 flex items-center justify-center bg-blue-600 text-white rounded-full hover:bg-blue-700"
-        >
+        <CircleButton type="submit">
           <SendHorizonal className="w-4 h-4" />
-        </button>
+        </CircleButton>
       </div>
     </form>
   ) : null;
