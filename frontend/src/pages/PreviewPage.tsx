@@ -573,6 +573,11 @@ function ActiveTasksPanelPreview() {
       lastToolName: "Grep",
       lastToolInput: { pattern: "export function", path: "src/" },
       usage: { inputTokens: 12500, outputTokens: 3200 },
+      toolCallHistory: [
+        { toolName: "Read", input: { file_path: "/src/index.ts" } },
+        { toolName: "Glob", input: { pattern: "**/*.ts" } },
+        { toolName: "Grep", input: { pattern: "export function", path: "src/" } },
+      ],
     },
     {
       taskId: "task-ghi-789",
@@ -582,6 +587,9 @@ function ActiveTasksPanelPreview() {
       lastToolInput: { command: "npm test --watch" },
       output: "Tests: 42 passed, 1 failed",
       usage: { inputTokens: 800, outputTokens: 1500 },
+      toolCallHistory: [
+        { toolName: "Bash", input: { command: "npm test --watch" } },
+      ],
     },
   ];
 

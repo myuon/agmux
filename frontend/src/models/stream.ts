@@ -55,6 +55,13 @@ export type StreamDisplayItem =
   | { kind: "thinking"; text: string }
   | { kind: "system_event"; eventType: string; label: string; detail?: string };
 
+// Tool call history entry for tracking sub-agent activity
+export interface ToolCallHistoryEntry {
+  toolName: string;
+  input: unknown;
+  timestamp?: string;
+}
+
 // Active task tracking for sub-agents and background tasks
 export interface ActiveTask {
   taskId: string;
@@ -65,6 +72,7 @@ export interface ActiveTask {
   lastToolInput?: unknown;
   output?: string;
   usage?: { inputTokens?: number; outputTokens?: number };
+  toolCallHistory: ToolCallHistoryEntry[];
 }
 
 export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
@@ -101,7 +109,7 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
       const taskType = raw.task_type as string;
       const toolUseId = raw.tool_use_id as string | undefined;
       if (taskId) {
-        const task: ActiveTask = { taskId, taskType: taskType || "unknown" };
+        const task: ActiveTask = { taskId, taskType: taskType || "unknown", toolCallHistory: [] };
         if (raw.agent_id) task.agentId = raw.agent_id as string;
         if (raw.description) task.description = raw.description as string;
         // Resolve tool input from the corresponding tool_use block
@@ -117,7 +125,20 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
       if (taskId && tasks.has(taskId)) {
         const task = tasks.get(taskId)!;
         if (raw.description) task.description = raw.description as string;
-        if (raw.last_tool_name) task.lastToolName = raw.last_tool_name as string;
+        // Track tool call history: append when last_tool_name changes
+        if (raw.last_tool_name) {
+          const newToolName = raw.last_tool_name as string;
+          const newToolInput = raw.last_tool_input;
+          const lastEntry = task.toolCallHistory[task.toolCallHistory.length - 1];
+          if (!lastEntry || lastEntry.toolName !== newToolName || JSON.stringify(lastEntry.input) !== JSON.stringify(newToolInput)) {
+            task.toolCallHistory.push({
+              toolName: newToolName,
+              input: newToolInput,
+              timestamp: raw.timestamp as string | undefined,
+            });
+          }
+          task.lastToolName = newToolName;
+        }
         if (raw.last_tool_input !== undefined) task.lastToolInput = raw.last_tool_input;
         if (raw.output) task.output = raw.output as string;
         if (raw.usage) {

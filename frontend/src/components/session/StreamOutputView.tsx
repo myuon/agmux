@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { StreamEntry } from "../../models/stream";
 import { mergeStreamEntries } from "../../models/stream";
-import type { ActiveTask } from "../../models/stream";
+import type { ActiveTask, ToolCallHistoryEntry } from "../../models/stream";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
 import { StreamDisplayItemView } from "./StreamDisplayItemView";
 import { toolIcon, toolDescription } from "../../models/tool";
@@ -92,6 +92,33 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
   );
 }
 
+function ToolCallHistoryItem({ entry, index, isLatest }: { entry: ToolCallHistoryEntry; index: number; isLatest: boolean }) {
+  const [expanded, setExpanded] = useState(isLatest);
+  const Icon = toolIcon(entry.toolName);
+  const desc = entry.input ? toolDescription(entry.toolName, entry.input) : null;
+
+  return (
+    <div className={`border rounded ${isLatest ? "border-amber-300 bg-amber-50/50" : "border-gray-200 bg-gray-50"}`}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full text-left px-2 py-1 flex items-center gap-1.5 hover:bg-gray-100/50 transition-colors"
+      >
+        <span className="text-gray-400 text-[10px] font-mono w-4 text-right shrink-0">{index + 1}</span>
+        <Icon className="w-3 h-3 text-gray-500 shrink-0" />
+        <span className="text-xs font-medium text-gray-700">{entry.toolName}</span>
+        {desc && <span className="text-xs text-gray-500 truncate min-w-0">{desc}</span>}
+        {isLatest && <span className="text-[10px] text-amber-600 ml-auto shrink-0">current</span>}
+        <svg className={`w-3 h-3 text-gray-400 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 2l4 4-4 4" /></svg>
+      </button>
+      {expanded && entry.input != null && (
+        <div className="px-2 pb-1.5 pt-0.5 border-t border-gray-200">
+          <ToolInputView input={entry.input} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ActiveTaskItem({ task, onDismiss }: { task: ActiveTask; onDismiss?: (taskId: string) => void }) {
   const [open, setOpen] = useState(false);
   const taskTypeLabel = task.taskType === "local_agent" ? "Agent" : task.taskType === "local_bash" ? "Bash" : task.taskType;
@@ -166,7 +193,17 @@ function ActiveTaskItem({ task, onDismiss }: { task: ActiveTask; onDismiss?: (ta
               <div className="text-gray-700 text-xs mt-0.5">{task.description}</div>
             </div>
           )}
-          {task.lastToolInput != null && (
+          {task.toolCallHistory.length > 0 && (
+            <div>
+              <span className="text-gray-400 text-[10px] uppercase tracking-wide">Tool Call History ({task.toolCallHistory.length})</span>
+              <div className="mt-1 space-y-1">
+                {task.toolCallHistory.map((entry, i) => (
+                  <ToolCallHistoryItem key={i} entry={entry} index={i} isLatest={i === task.toolCallHistory.length - 1} />
+                ))}
+              </div>
+            </div>
+          )}
+          {task.toolCallHistory.length === 0 && task.lastToolInput != null && (
             <div>
               <span className="text-gray-400 text-[10px] uppercase tracking-wide">Input</span>
               <div className="mt-0.5">
