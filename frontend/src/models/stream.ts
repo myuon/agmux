@@ -114,7 +114,13 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
       }
     } else if (subtype === "task_progress") {
       const taskId = raw.task_id as string;
-      if (taskId && tasks.has(taskId)) {
+      if (taskId) {
+        if (!tasks.has(taskId)) {
+          const taskType = (raw.task_type as string) || "unknown";
+          const task: ActiveTask = { taskId, taskType };
+          if (raw.agent_id) task.agentId = raw.agent_id as string;
+          tasks.set(taskId, task);
+        }
         const task = tasks.get(taskId)!;
         if (raw.description) task.description = raw.description as string;
         if (raw.last_tool_name) task.lastToolName = raw.last_tool_name as string;
