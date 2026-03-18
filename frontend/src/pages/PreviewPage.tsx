@@ -15,8 +15,10 @@ import { IconText } from "../components/ui/IconText";
 import { CircleButton } from "../components/ui/CircleButton";
 import { ArrowLeft, FolderOpen, GitBranch, Plus, SendHorizonal, Settings, Sparkles } from "lucide-react";
 import type { Session } from "../types/session";
-import type { StreamDisplayItem } from "../models/stream";
+import type { StreamDisplayItem, ActiveTask } from "../models/stream";
 import type { DiffFile } from "../api/client";
+import { GoalPanel } from "../components/ui/GoalPanel";
+import { ActiveTasksPanel } from "../components/session/StreamOutputView";
 
 function PreviewSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -527,6 +529,72 @@ function IconTextPreview() {
   );
 }
 
+function GoalPanelPreview() {
+  return (
+    <PreviewSection title="GoalPanel">
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">シンプル (タスク + ゴールのみ)</p>
+          <GoalPanel
+            currentTask="Add GoalPanel component to preview page"
+            goal="Extract and componentize goal display from SessionPage"
+          />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">ネスト (親ゴールのブレッドクラムあり)</p>
+          <GoalPanel
+            currentTask="Write unit tests for GoalPanel"
+            goal="Ensure GoalPanel renders correctly"
+            goals={[
+              { currentTask: "Refactor UI components", goal: "Improve code maintainability" },
+              { currentTask: "Extract domain components", goal: "Create reusable component library" },
+              { currentTask: "Write unit tests for GoalPanel", goal: "Ensure GoalPanel renders correctly" },
+            ]}
+          />
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
+function ActiveTasksPanelPreview() {
+  const mockTasks: ActiveTask[] = [
+    {
+      taskId: "task-abc-123",
+      taskType: "local_agent",
+      agentId: "agent-def-456",
+      description: "Explore codebase structure",
+      lastToolName: "Grep",
+      lastToolInput: { pattern: "export function", path: "src/" },
+      usage: { inputTokens: 12500, outputTokens: 3200 },
+    },
+    {
+      taskId: "task-ghi-789",
+      taskType: "local_bash",
+      description: "npm test --watch",
+      lastToolName: "Bash",
+      lastToolInput: { command: "npm test --watch" },
+      output: "Tests: 42 passed, 1 failed",
+      usage: { inputTokens: 800, outputTokens: 1500 },
+    },
+  ];
+
+  return (
+    <PreviewSection title="ActiveTasksPanel">
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">2つのアクティブタスク (agent + bash)</p>
+          <ActiveTasksPanel tasks={mockTasks} />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">空の状態</p>
+          <ActiveTasksPanel tasks={[]} />
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
 export function PreviewPage() {
   return (
     <div className="p-6 space-y-8 pb-12">
@@ -549,6 +617,8 @@ export function PreviewPage() {
       <ToolInputViewPreview />
       <ToolCallViewPreview />
       <DiffDropdownPreview />
+      <GoalPanelPreview />
+      <ActiveTasksPanelPreview />
     </div>
   );
 }
