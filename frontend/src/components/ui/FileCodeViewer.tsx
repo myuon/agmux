@@ -18,6 +18,62 @@ interface FileCodeViewerProps {
   renderLine?: (line: string, index: number) => ReactNode;
 }
 
+function CodeBlock({
+  content,
+  fileName,
+  lineClickable,
+  selectedFile,
+  selectedLine,
+  onLineClick,
+  renderLine,
+}: {
+  content: string;
+  fileName: string;
+  lineClickable: boolean;
+  selectedFile: string | null;
+  selectedLine: number | null;
+  onLineClick: (file: string, line: number | null) => void;
+  renderLine?: (line: string, index: number) => ReactNode;
+}) {
+  return (
+    <pre className="bg-gray-50 text-gray-800 text-xs p-3 overflow-x-auto whitespace-pre font-mono border-t border-gray-200">
+      {content.split("\n").map((line, i) => {
+        if (renderLine) return renderLine(line, i);
+
+        const lineNum = i + 1;
+        const isSelected =
+          lineClickable && selectedFile === fileName && selectedLine === lineNum;
+
+        return (
+          <div
+            key={i}
+            className={`flex ${lineClickable ? "cursor-pointer" : ""} ${isSelected ? "bg-yellow-100" : "hover:bg-gray-50"}`}
+            onClick={
+              lineClickable
+                ? () => {
+                    if (isSelected) {
+                      onLineClick(fileName, null);
+                    } else {
+                      onLineClick(fileName, lineNum);
+                      navigator.clipboard.writeText(`${fileName}:L${lineNum}`);
+                    }
+                  }
+                : undefined
+            }
+          >
+            <span
+              className={`select-none w-10 text-right pr-3 shrink-0 ${isSelected ? "text-yellow-600" : "text-gray-300"}`}
+            >
+              {lineNum}
+            </span>
+            <span className="flex-1">{line}</span>
+          </div>
+        );
+      })}
+    </pre>
+  );
+}
+
 export function FileCodeViewer({
   files,
   formatContent,
@@ -45,19 +101,20 @@ export function FileCodeViewer({
     });
   };
 
-  const multiFile = files.length > 1;
+  const handleLineClick = (file: string, line: number | null) => {
+    setSelectedFile(line === null ? null : file);
+    setSelectedLine(line);
+  };
 
-  if (collapsible) {
-    return (
-      <div className="border border-gray-200 rounded-lg overflow-hidden">
-        {files.map((file) => {
-          const content = formatContent
-            ? formatContent(file.content)
-            : file.content;
-          const isExpanded = expanded.has(file.name);
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      {files.map((file) => {
+        const content = formatContent ? formatContent(file.content) : file.content;
+        const isExpanded = !collapsible || expanded.has(file.name);
 
-          return (
-            <div key={file.name} className="border-b border-gray-100 last:border-b-0">
+        return (
+          <div key={file.name} className="border-b border-gray-100 last:border-b-0">
+            {collapsible ? (
               <button
                 onClick={() => toggle(file.name)}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 text-left min-w-0"
@@ -66,123 +123,28 @@ export function FileCodeViewer({
                 <span className="font-mono text-gray-700 truncate min-w-0">{file.name}</span>
                 <span className="ml-auto text-gray-400 shrink-0">{isExpanded ? "\u25BC" : "\u25B6"}</span>
               </button>
-              {isExpanded && (
-                renderContent ? (
-                  <div className="border-t border-gray-200 p-3">
-                    {renderContent(file.content)}
-                  </div>
-                ) : (
-                  <pre className="bg-gray-50 text-gray-800 text-xs p-3 overflow-x-auto whitespace-pre font-mono border-t border-gray-200">
-                    {content.split("\n").map((line, i) => {
-                      if (renderLine) return renderLine(line, i);
-
-                      const lineNum = i + 1;
-                      const isSelected =
-                        lineClickable &&
-                        selectedFile === file.name &&
-                        selectedLine === lineNum;
-
-                      return (
-                        <div
-                          key={i}
-                          className={`flex ${lineClickable ? "cursor-pointer" : ""} ${isSelected ? "bg-yellow-100" : "hover:bg-gray-50"}`}
-                          onClick={
-                            lineClickable
-                              ? () => {
-                                  if (isSelected) {
-                                    setSelectedFile(null);
-                                    setSelectedLine(null);
-                                  } else {
-                                    setSelectedFile(file.name);
-                                    setSelectedLine(lineNum);
-                                    navigator.clipboard.writeText(
-                                      `${file.name}:L${lineNum}`,
-                                    );
-                                  }
-                                }
-                              : undefined
-                          }
-                        >
-                          <span
-                            className={`select-none w-10 text-right pr-3 shrink-0 ${isSelected ? "text-yellow-600" : "text-gray-300"}`}
-                          >
-                            {lineNum}
-                          </span>
-                          <span className="flex-1">{line}</span>
-                        </div>
-                      );
-                    })}
-                  </pre>
-                )
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  // Non-collapsible mode (original behavior)
-  return (
-    <div className="space-y-6">
-      {files.map((file, fileIdx) => {
-        const content = formatContent
-          ? formatContent(file.content)
-          : file.content;
-
-        return (
-          <div key={fileIdx}>
-            {multiFile && (
-              <div className="text-xs font-mono text-gray-500 bg-gray-100 px-2 py-1 rounded-t border border-b-0 border-gray-200">
-                {file.name}
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 text-xs min-w-0">
+                {fileHeaderExtra?.(file)}
+                <span className="font-mono text-gray-700 truncate min-w-0">{file.name}</span>
               </div>
             )}
-            {renderContent ? (
-              <div className={multiFile ? "border border-gray-200 rounded-b p-3" : ""}>
-                {renderContent(file.content)}
-              </div>
-            ) : (
-              <pre
-                className={`text-xs leading-relaxed font-mono whitespace-pre-wrap ${multiFile ? "border border-gray-200 rounded-b" : ""}`}
-              >
-                {content.split("\n").map((line, i) => {
-                  const lineNum = i + 1;
-                  const isSelected =
-                    lineClickable &&
-                    selectedFile === file.name &&
-                    selectedLine === lineNum;
-
-                  return (
-                    <div
-                      key={i}
-                      className={`flex ${lineClickable ? "cursor-pointer" : ""} ${isSelected ? "bg-yellow-100" : "hover:bg-gray-50"}`}
-                      onClick={
-                        lineClickable
-                          ? () => {
-                              if (isSelected) {
-                                setSelectedFile(null);
-                                setSelectedLine(null);
-                              } else {
-                                setSelectedFile(file.name);
-                                setSelectedLine(lineNum);
-                                navigator.clipboard.writeText(
-                                  `${file.name}:L${lineNum}`,
-                                );
-                              }
-                            }
-                          : undefined
-                      }
-                    >
-                      <span
-                        className={`select-none w-10 text-right pr-3 shrink-0 ${isSelected ? "text-yellow-600" : "text-gray-300"}`}
-                      >
-                        {lineNum}
-                      </span>
-                      <span className="flex-1">{line}</span>
-                    </div>
-                  );
-                })}
-              </pre>
+            {isExpanded && (
+              renderContent ? (
+                <div className="border-t border-gray-200 p-3">
+                  {renderContent(file.content)}
+                </div>
+              ) : (
+                <CodeBlock
+                  content={content}
+                  fileName={file.name}
+                  lineClickable={lineClickable}
+                  selectedFile={selectedFile}
+                  selectedLine={selectedLine}
+                  onLineClick={handleLineClick}
+                  renderLine={renderLine}
+                />
+              )
             )}
           </div>
         );
