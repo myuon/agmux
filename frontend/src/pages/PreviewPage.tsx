@@ -29,6 +29,7 @@ import { ConnectionStatusIndicator } from "../components/ui/ConnectionStatus";
 import { PermissionStatus } from "../components/ui/PermissionStatus";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
 import { ExternalProcessRow } from "../components/ui/ExternalProcessRow";
+import { Tabs } from "../components/ui/Tabs";
 
 function PreviewSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -877,6 +878,29 @@ function ExternalProcessRowPreview() {
   );
 }
 
+function TabsPreview() {
+  const [activeKey, setActiveKey] = useState("tab1");
+  return (
+    <PreviewSection title="Tabs">
+      <p className="text-xs text-gray-500 mb-2">タブ切り替えUI。アクティブなタブは青色のボーダーで強調されます。</p>
+      <div className="border border-gray-200 rounded overflow-hidden">
+        <Tabs
+          items={[
+            { key: "tab1", label: "General" },
+            { key: "tab2", label: "Settings" },
+            { key: "tab3", label: "Logs" },
+          ]}
+          activeKey={activeKey}
+          onChange={setActiveKey}
+        />
+        <div className="p-4 text-sm text-gray-600">
+          Selected: <span className="font-medium">{activeKey}</span>
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
 export function PreviewPage() {
   return (
     <div className="p-6 space-y-8 pb-12">
@@ -911,6 +935,7 @@ export function PreviewPage() {
       <PermissionStatusPreview />
       <SecondaryButtonPreview />
       <ExternalProcessRowPreview />
+      <TabsPreview />
     </div>
   );
 }
