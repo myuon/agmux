@@ -19,6 +19,7 @@ import type { StreamDisplayItem, ActiveTask } from "../models/stream";
 import type { DiffFile } from "../api/client";
 import { GoalPanel } from "../components/ui/GoalPanel";
 import { ActiveTasksPanel } from "../components/session/StreamOutputView";
+import { SessionList } from "../components/SessionList";
 
 function PreviewSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -595,6 +596,88 @@ function ActiveTasksPanelPreview() {
   );
 }
 
+function SessionListPreview() {
+  const now = new Date().toISOString();
+  const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
+  const threeHoursAgo = new Date(Date.now() - 10800000).toISOString();
+  const oneDayAgo = new Date(Date.now() - 86400000).toISOString();
+
+  const mockSessions: Session[] = [
+    {
+      id: "sess-001",
+      name: "implement-auth",
+      projectPath: "/Users/ioijoi/ghq/github.com/myuon/agmux",
+      status: "working",
+      type: "worker",
+      provider: "claude",
+      model: "claude-opus-4-6[1m]",
+      currentTask: "Adding JWT authentication middleware",
+      createdAt: oneHourAgo,
+      updatedAt: now,
+    },
+    {
+      id: "ext-48291",
+      name: "refactor-api-client",
+      projectPath: "/Users/ioijoi/ghq/github.com/myuon/agmux",
+      status: "working",
+      type: "external",
+      provider: "claude",
+      createdAt: threeHoursAgo,
+      updatedAt: now,
+    },
+    {
+      id: "ext-77120",
+      name: "explore-deps",
+      projectPath: "/Users/ioijoi/ghq/github.com/myuon/other-project",
+      status: "working",
+      type: "external",
+      provider: "codex",
+      createdAt: oneHourAgo,
+      updatedAt: now,
+    },
+    {
+      id: "sess-002",
+      name: "fix-css-layout",
+      projectPath: "/Users/ioijoi/ghq/github.com/myuon/agmux",
+      status: "stopped",
+      type: "worker",
+      provider: "claude",
+      model: "claude-opus-4-6[1m]",
+      createdAt: oneDayAgo,
+      updatedAt: threeHoursAgo,
+    },
+    {
+      id: "sess-003",
+      name: "update-docs",
+      projectPath: "/Users/ioijoi/ghq/github.com/myuon/other-project",
+      status: "idle",
+      type: "worker",
+      provider: "claude",
+      createdAt: threeHoursAgo,
+      updatedAt: oneHourAgo,
+    },
+  ];
+
+  return (
+    <PreviewSection title="SessionList">
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs text-gray-500 mb-2">通常セッション + external + stopped + idle (プロジェクト別グループ)</p>
+          <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+            <SessionList sessions={mockSessions} onRestartController={() => {}} />
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-2">空の状態</p>
+          <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+            <SessionList sessions={[]} onRestartController={() => {}} />
+          </div>
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
 export function PreviewPage() {
   return (
     <div className="p-6 space-y-8 pb-12">
@@ -619,6 +702,7 @@ export function PreviewPage() {
       <DiffDropdownPreview />
       <GoalPanelPreview />
       <ActiveTasksPanelPreview />
+      <SessionListPreview />
     </div>
   );
 }
