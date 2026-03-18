@@ -88,7 +88,7 @@ func (m *Manager) SystemPrompt() string {
 // before the server was restarted.
 func (m *Manager) RecoverStreamProcesses() {
 	rows, err := m.db.Query(
-		`SELECT id, project_path, provider, cli_session_id, model FROM sessions WHERE status = ?`,
+		`SELECT id, project_path, provider, cli_session_id, model FROM sessions WHERE status = ? AND type != 'controller'`,
 		string(StatusWorking),
 	)
 	if err != nil {
@@ -506,8 +506,8 @@ func (m *Manager) Clear(id string) error {
 	m.streamProcesses[id] = sp
 	m.streamMu.Unlock()
 
-	// Reset task/goal/cli_session_id and set status to working
-	_, err = m.db.Exec("UPDATE sessions SET status = ?, current_task = NULL, goal = NULL, goals = '[]', cli_session_id = '', updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
+	// Reset task/goal and set status to working (preserve cli_session_id with fresh value)
+	_, err = m.db.Exec("UPDATE sessions SET status = ?, current_task = NULL, goal = NULL, goals = '[]', cli_session_id = ?, updated_at = ? WHERE id = ?", string(StatusWorking), freshCLISessionID, time.Now(), id)
 	return err
 }
 

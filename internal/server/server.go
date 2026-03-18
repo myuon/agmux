@@ -580,6 +580,15 @@ func (s *Server) reconnectSession(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	sess, err := s.sessions.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if sess.Type == session.TypeController {
+		writeError(w, http.StatusForbidden, "controller session cannot be cleared")
+		return
+	}
 	if err := s.sessions.Clear(id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
