@@ -651,6 +651,18 @@ function SessionCardPreview() {
             </SecondaryButton>
           }
         />
+
+        <p className="text-xs text-gray-500 font-medium mt-4">Stopped with error</p>
+        <SessionCard
+          name="failing-worker"
+          status="stopped"
+          type="worker"
+          provider="claude"
+          lastError="exit status 1"
+          projectPath="/Users/dev/projects/my-app"
+          timeAgo="5m ago"
+          onClick={() => {}}
+        />
       </div>
     </PreviewSection>
   );

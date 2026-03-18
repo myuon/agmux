@@ -25,6 +25,7 @@ import { DiffDropdown } from "../components/session/DiffDropdown";
 import { GoalPanel } from "../components/ui/GoalPanel";
 import { ConnectionStatusIndicator } from "../components/ui/ConnectionStatus";
 import { PullRequestBadge } from "../components/ui/PullRequestBadge";
+import { AlertBanner } from "../components/ui/AlertBanner";
 import type { StreamEntry } from "../models/stream";
 import { extractActiveTasks } from "../models/stream";
 
@@ -642,6 +643,14 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           goal={session.goal}
           goals={session.goals}
         />
+      )}
+
+      {session && session.status === "stopped" && session.lastError && (
+        <div className="mb-2 shrink-0">
+          <AlertBanner variant="error">
+            {session.lastError}
+          </AlertBanner>
+        </div>
       )}
 
       {session && connectionState !== "connected" && (
