@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Toast } from "../components/ui/Toast";
+import { ToastBar } from "../components/ui/Toast";
 import { Modal } from "../components/ui/Modal";
 import { Section, Field } from "../components/ui/Section";
 import { SummaryCard } from "../components/ui/SummaryCard";
@@ -52,25 +52,23 @@ function ToastPreview() {
   const allVisible = Object.values(visible).every(Boolean);
 
   return (
-    <PreviewSection title="Toast">
-      <p className="text-xs text-gray-500 mb-2">Toastは固定位置で表示されるため、ここではインライン表示しています。閉じるボタンで非表示にできます。</p>
+    <PreviewSection title="ToastBar">
+      <p className="text-xs text-gray-500 mb-2">ToastBarはインライン表示可能なトースト。Toastコンポーネントはこれを固定位置コンテナで包んだもの。</p>
       {!allVisible && (
         <button onClick={resetAll} className="text-xs text-blue-600 hover:underline mb-2">すべて再表示</button>
       )}
       <div className="space-y-2">
         {(["success", "error", "warning"] as const).map((variant) => (
-          <div key={variant} className="relative h-12 border border-dashed border-gray-200 rounded overflow-hidden">
-            <div className="absolute inset-0">
-              {visible[variant] ? (
-                <Toast
-                  message={`${variant}: サンプルメッセージです`}
-                  variant={variant}
-                  onClose={() => setVisible((prev) => ({ ...prev, [variant]: false }))}
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full text-xs text-gray-400">閉じられました</div>
-              )}
-            </div>
+          <div key={variant}>
+            {visible[variant] ? (
+              <ToastBar
+                message={`${variant}: サンプルメッセージです`}
+                variant={variant}
+                onClose={() => setVisible((prev) => ({ ...prev, [variant]: false }))}
+              />
+            ) : (
+              <div className="h-10 flex items-center text-xs text-gray-400">閉じられました</div>
+            )}
           </div>
         ))}
       </div>
