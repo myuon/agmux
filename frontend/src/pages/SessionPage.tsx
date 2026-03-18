@@ -23,6 +23,7 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import { StreamOutputView, ActiveTasksPanel } from "../components/session/StreamOutputView";
 import { DiffDropdown } from "../components/session/DiffDropdown";
 import { GoalPanel } from "../components/ui/GoalPanel";
+import { ConnectionStatusIndicator } from "../components/ui/ConnectionStatus";
 import type { StreamEntry } from "../models/stream";
 import { extractActiveTasks } from "../models/stream";
 
@@ -676,15 +677,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       )}
 
       {session && connectionState !== "connected" && (
-        <div className="flex items-center gap-1.5 mb-2 shrink-0">
-          <span className={`inline-block w-2 h-2 rounded-full ${
-            connectionState === "connecting" ? "bg-yellow-500 animate-pulse" : "bg-red-500"
-          }`} />
-          <span className={`text-xs ${
-            connectionState === "connecting" ? "text-yellow-600" : "text-red-600"
-          }`}>
-            {connectionState === "connecting" ? "Connecting..." : "Disconnected"}
-          </span>
+        <div className="mb-2 shrink-0">
+          <ConnectionStatusIndicator state={connectionState} />
         </div>
       )}
 

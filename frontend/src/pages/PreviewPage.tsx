@@ -22,6 +22,8 @@ import type { DiffFile } from "../api/client";
 import { GoalPanel } from "../components/ui/GoalPanel";
 import { ActiveTasksPanel } from "../components/session/StreamOutputView";
 import { SessionList } from "../components/SessionList";
+import { AlertBanner } from "../components/ui/AlertBanner";
+import { ConnectionStatusIndicator } from "../components/ui/ConnectionStatus";
 
 function PreviewSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -728,6 +730,52 @@ function FilterButtonPreview() {
   );
 }
 
+function AlertBannerPreview() {
+  return (
+    <PreviewSection title="AlertBanner">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Warning (デフォルト)</p>
+          <AlertBanner variant="warning">設定の変更は次回再起動時に反映されます</AlertBanner>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Success</p>
+          <AlertBanner variant="success">設定を保存しました</AlertBanner>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Error</p>
+          <AlertBanner variant="error">保存に失敗しました</AlertBanner>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Info</p>
+          <AlertBanner variant="info">新しいバージョンが利用可能です</AlertBanner>
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
+function ConnectionStatusPreview() {
+  return (
+    <PreviewSection title="ConnectionStatusIndicator">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Connected</p>
+          <ConnectionStatusIndicator state="connected" />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Connecting</p>
+          <ConnectionStatusIndicator state="connecting" />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Disconnected</p>
+          <ConnectionStatusIndicator state="disconnected" />
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
 export function PreviewPage() {
   return (
     <div className="p-6 space-y-8 pb-12">
@@ -755,6 +803,8 @@ export function PreviewPage() {
       <SessionListPreview />
       <ToggleButtonPreview />
       <FilterButtonPreview />
+      <AlertBannerPreview />
+      <ConnectionStatusPreview />
     </div>
   );
 }

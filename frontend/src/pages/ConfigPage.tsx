@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import type { AppConfig } from "../api/client";
 import { Section, Field } from "../components/ui/Section";
 import { ToggleButton } from "../components/ui/ToggleButton";
+import { AlertBanner } from "../components/ui/AlertBanner";
 
 export function ConfigPage() {
   const navigate = useNavigate();
@@ -39,20 +40,12 @@ export function ConfigPage() {
       </header>
 
       <div className="max-w-2xl mx-auto p-6 space-y-6">
-        <div className="bg-yellow-50 border border-yellow-300 rounded-lg px-4 py-3 text-yellow-800 text-sm">
-          設定の変更は次回再起動時に反映されます
-        </div>
+        <AlertBanner variant="warning">設定の変更は次回再起動時に反映されます</AlertBanner>
 
         {message && (
-          <div
-            className={`rounded-lg px-4 py-3 text-sm ${
-              message.type === "success"
-                ? "bg-green-50 border border-green-300 text-green-800"
-                : "bg-red-50 border border-red-300 text-red-800"
-            }`}
-          >
+          <AlertBanner variant={message.type === "success" ? "success" : "error"}>
             {message.text}
-          </div>
+          </AlertBanner>
         )}
 
         <Section title="Server">
