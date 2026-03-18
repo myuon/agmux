@@ -345,29 +345,31 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   <Copy className="w-4 h-4" /> Duplicate
                 </button>
               )}
-              <button
-                type="button"
-                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                onMouseDown={async (e) => {
-                  e.preventDefault();
-                  setShowActionMenu(false);
-                  if (!confirm("Clear session context? This will start a fresh conversation.")) return;
-                  try {
-                    await api.clearSession(session.id);
-                    setStreamLines([]);
-                    setPartialText("");
-                    streamCursorRef.current = 0;
-                    api.getSession(session.id).then(setSession);
-                    setClearToast("success");
-                    setTimeout(() => setClearToast(null), 3000);
-                  } catch {
-                    setClearToast("error");
-                    setTimeout(() => setClearToast(null), 3000);
-                  }
-                }}
-              >
-                <RotateCcw className="w-4 h-4" /> Clear context
-              </button>
+              {session.type !== "controller" && (
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                  onMouseDown={async (e) => {
+                    e.preventDefault();
+                    setShowActionMenu(false);
+                    if (!confirm("Clear session context? This will start a fresh conversation.")) return;
+                    try {
+                      await api.clearSession(session.id);
+                      setStreamLines([]);
+                      setPartialText("");
+                      streamCursorRef.current = 0;
+                      api.getSession(session.id).then(setSession);
+                      setClearToast("success");
+                      setTimeout(() => setClearToast(null), 3000);
+                    } catch {
+                      setClearToast("error");
+                      setTimeout(() => setClearToast(null), 3000);
+                    }
+                  }}
+                >
+                  <RotateCcw className="w-4 h-4" /> Clear context
+                </button>
+              )}
               <button
                 type="button"
                 className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
