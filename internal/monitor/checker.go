@@ -16,14 +16,14 @@ type Broadcaster interface {
 
 type StatusChecker struct {
 	monitor  *Monitor
-	sessions *session.Manager
+	sessions session.SessionService
 	logger   *slog.Logger
 	onUpdate func(sessions []session.Session)
 	onNotify func(sessionId, sessionName, status, summary string)
 	interval time.Duration
 }
 
-func NewStatusChecker(monitor *Monitor, sessions *session.Manager, interval time.Duration, logger *slog.Logger) *StatusChecker {
+func NewStatusChecker(monitor *Monitor, sessions session.SessionService, interval time.Duration, logger *slog.Logger) *StatusChecker {
 	return &StatusChecker{
 		monitor:  monitor,
 		sessions: sessions,
