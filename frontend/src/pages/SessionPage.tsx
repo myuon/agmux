@@ -11,6 +11,9 @@ import {
 import { Modal } from "../components/ui/Modal";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
 import { Toast } from "../components/ui/Toast";
+import { Chip } from "../components/ui/Chip";
+import { IconButton } from "../components/ui/IconButton";
+import { IconText } from "../components/ui/IconText";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
 import { StatusDot } from "../components/StatusBadge";
@@ -552,34 +555,22 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       {clearToast === "success" && <Toast message="セッションをクリアしました" />}
       {clearToast === "error" && <Toast message="クリアに失敗しました" variant="error" />}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 shrink-0">
-        <button
-          onClick={() => navigate("/")}
-          className="p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100 shrink-0"
-          title="Back"
-        >
+        <IconButton onClick={() => navigate("/")} title="Back">
           <ArrowLeft className="w-4 h-4" />
-        </button>
+        </IconButton>
         {session ? (
           <>
             <StatusDot status={session.status} />
             <h2 className="text-xl sm:text-2xl font-bold">{session.name}</h2>
             <span className="text-xs text-gray-400">{session.status}</span>
             {session.provider && (
-              <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${
-                session.provider === "codex"
-                  ? "bg-green-100 text-green-700"
-                  : session.provider === "claude"
-                    ? "bg-blue-100 text-blue-700"
-                    : "bg-gray-100 text-gray-600"
-              }`}>
+              <Chip color={session.provider === "codex" ? "green" : session.provider === "claude" ? "blue" : "gray"}>
                 {session.provider.charAt(0).toUpperCase() + session.provider.slice(1)}
                 {providerVersion && ` ${providerVersion.match(/\d+\.\d+\.\d+/)?.[0] ?? ""}`}
-              </span>
+              </Chip>
             )}
             {session.model && (
-              <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 text-purple-700">
-                {session.model}
-              </span>
+              <Chip color="purple">{session.model}</Chip>
             )}
           </>
         ) : (
@@ -591,8 +582,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       </div>
       {session ? (
         <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm text-gray-500">
-          <FolderOpen className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-          <span className="truncate" title={session.projectPath}>{session.projectPath}</span>
+          <IconText icon={<FolderOpen className="w-3.5 h-3.5" />} className="text-xs sm:text-sm">
+            <span className="truncate" title={session.projectPath}>{session.projectPath}</span>
+          </IconText>
         {session.githubUrl && (
           <a
             href={session.githubUrl}

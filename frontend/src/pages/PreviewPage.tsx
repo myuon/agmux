@@ -9,6 +9,10 @@ import { StatusBadge, StatusDot, statusDots } from "../components/StatusBadge";
 import { ToolCallView } from "../components/session/ToolCallView";
 import { ToolInputView } from "../components/session/ToolInputView";
 import { DiffDropdown } from "../components/session/DiffDropdown";
+import { Chip } from "../components/ui/Chip";
+import { IconButton } from "../components/ui/IconButton";
+import { IconText } from "../components/ui/IconText";
+import { ArrowLeft, FolderOpen, GitBranch, Settings, Sparkles } from "lucide-react";
 import type { Session } from "../types/session";
 import type { StreamDisplayItem } from "../models/stream";
 import type { DiffFile } from "../api/client";
@@ -417,6 +421,75 @@ function DiffDropdownPreview() {
   );
 }
 
+function ChipPreview() {
+  return (
+    <PreviewSection title="Chip">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">カラーバリエーション</p>
+          <div className="flex flex-wrap gap-2">
+            <Chip color="blue">Claude 2.1.76</Chip>
+            <Chip color="green">Codex 0.1.2</Chip>
+            <Chip color="purple">claude-opus-4-6[1m]</Chip>
+            <Chip color="orange">warning</Chip>
+            <Chip color="red">error</Chip>
+            <Chip color="gray">default</Chip>
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">セッションヘッダーでの使用例</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <StatusDot status="working" />
+            <span className="text-lg font-bold">my-session</span>
+            <span className="text-xs text-gray-400">working</span>
+            <Chip color="blue">Claude 2.1.76</Chip>
+            <Chip color="purple">claude-opus-4-6[1m]</Chip>
+          </div>
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
+function IconButtonPreview() {
+  return (
+    <PreviewSection title="IconButton">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">標準アイコンボタン</p>
+          <div className="flex items-center gap-2">
+            <IconButton title="Back"><ArrowLeft className="w-4 h-4" /></IconButton>
+            <IconButton title="Settings"><Settings className="w-4 h-4" /></IconButton>
+            <IconButton title="CLAUDE.md"><Sparkles className="w-4 h-4" /></IconButton>
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">セッションヘッダーでの使用例</p>
+          <div className="flex items-center gap-1.5">
+            <IconText icon={<FolderOpen className="w-3.5 h-3.5" />}>/Users/ioijoi/ghq/github.com/myuon/agmux</IconText>
+            <IconButton title="GitHub" className="ml-0.5">
+              <svg className="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+            </IconButton>
+            <IconButton title="CLAUDE.md" className="ml-0.5"><Sparkles className="w-3.5 h-3.5" /></IconButton>
+            <IconButton title="Settings" className="ml-0.5"><Settings className="w-3.5 h-3.5" /></IconButton>
+          </div>
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
+function IconTextPreview() {
+  return (
+    <PreviewSection title="IconText">
+      <div className="space-y-2">
+        <IconText icon={<FolderOpen className="w-3.5 h-3.5" />}>/Users/ioijoi/ghq/github.com/myuon/agmux</IconText>
+        <IconText icon={<GitBranch className="w-3.5 h-3.5" />}>feat/preview-domain-components</IconText>
+      </div>
+    </PreviewSection>
+  );
+}
+
 export function PreviewPage() {
   return (
     <div className="p-6 space-y-8 pb-12">
@@ -432,6 +505,9 @@ export function PreviewPage() {
       <SectionPreview />
       <CollapsibleTextPreview />
       <FileCodeViewerPreview />
+      <ChipPreview />
+      <IconButtonPreview />
+      <IconTextPreview />
       <ToolInputViewPreview />
       <ToolCallViewPreview />
       <DiffDropdownPreview />
