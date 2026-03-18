@@ -205,12 +205,12 @@ func add(a, b int) int {
     <PreviewSection title="FileCodeViewer">
       <div className="space-y-6">
         <div>
-          <p className="text-xs text-gray-500 mb-2">通常表示 (行クリック有効)</p>
-          <FileCodeViewer files={sampleFiles} lineClickable />
+          <p className="text-xs text-gray-500 mb-2">初期展開 (行クリック有効)</p>
+          <FileCodeViewer files={sampleFiles} defaultExpanded lineClickable />
         </div>
         <div>
-          <p className="text-xs text-gray-500 mb-2">折りたたみ表示</p>
-          <FileCodeViewer files={sampleFiles} collapsible />
+          <p className="text-xs text-gray-500 mb-2">初期折りたたみ (デフォルト)</p>
+          <FileCodeViewer files={sampleFiles} />
         </div>
         <div>
           <p className="text-xs text-gray-500 mb-2">カスタム行レンダリング (diff風)</p>
@@ -225,7 +225,6 @@ func add(a, b int) int {
                 <span className="flex-1">{line}</span>
               </div>
             )}
-            collapsible
           />
         </div>
         <div>

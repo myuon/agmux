@@ -10,8 +10,8 @@ interface FileCodeViewerProps {
   lineClickable?: boolean;
   /** No content message */
   emptyMessage?: string;
-  /** Enable collapsible file list (expand/collapse per file) */
-  collapsible?: boolean;
+  /** Start with all files expanded (default: false = all collapsed) */
+  defaultExpanded?: boolean;
   /** Extra element rendered before the file name in the header (e.g. status badge) */
   fileHeaderExtra?: (file: { name: string; content: string }) => ReactNode;
   /** Custom line renderer for code display (e.g. diff coloring) */
@@ -80,13 +80,15 @@ export function FileCodeViewer({
   renderContent,
   lineClickable = false,
   emptyMessage = "No content",
-  collapsible = false,
+  defaultExpanded = false,
   fileHeaderExtra,
   renderLine,
 }: FileCodeViewerProps) {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedLine, setSelectedLine] = useState<number | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(() =>
+    defaultExpanded ? new Set(files.map((f) => f.name)) : new Set()
+  );
 
   if (files.length === 0) {
     return <div className="text-gray-400 text-sm">{emptyMessage}</div>;
@@ -110,25 +112,18 @@ export function FileCodeViewer({
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       {files.map((file) => {
         const content = formatContent ? formatContent(file.content) : file.content;
-        const isExpanded = !collapsible || expanded.has(file.name);
+        const isExpanded = expanded.has(file.name);
 
         return (
           <div key={file.name} className="border-b border-gray-100 last:border-b-0">
-            {collapsible ? (
-              <button
-                onClick={() => toggle(file.name)}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 text-left min-w-0"
-              >
-                {fileHeaderExtra?.(file)}
-                <span className="font-mono text-gray-700 truncate min-w-0">{file.name}</span>
-                <span className="ml-auto text-gray-400 shrink-0">{isExpanded ? "\u25BC" : "\u25B6"}</span>
-              </button>
-            ) : (
-              <div className="flex items-center gap-2 px-3 py-1.5 text-xs min-w-0">
-                {fileHeaderExtra?.(file)}
-                <span className="font-mono text-gray-700 truncate min-w-0">{file.name}</span>
-              </div>
-            )}
+            <button
+              onClick={() => toggle(file.name)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 text-left min-w-0"
+            >
+              {fileHeaderExtra?.(file)}
+              <span className="font-mono text-gray-700 truncate min-w-0">{file.name}</span>
+              <span className="ml-auto text-gray-400 shrink-0">{isExpanded ? "\u25BC" : "\u25B6"}</span>
+            </button>
             {isExpanded && (
               renderContent ? (
                 <div className="border-t border-gray-200 p-3">
