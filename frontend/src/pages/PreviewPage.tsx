@@ -292,13 +292,23 @@ function ToolCallViewPreview() {
   const parentItem: Extract<StreamDisplayItem, { kind: "tool_call" }> = {
     kind: "tool_call",
     name: "Agent",
-    input: { prompt: "Explore the codebase structure", subagent_type: "Explore" },
+    input: { prompt: "Explore tool panel and textfield components", description: "Explore tool panel and textfield components", subagent_type: "Explore" },
     result: "Found 42 files matching the pattern.",
     toolUseId: "preview-agent-1",
     children: [
-      { kind: "tool_call", name: "Glob", input: { pattern: "**/*.tsx" }, result: "12 files", toolUseId: "child-1" },
-      { kind: "tool_call", name: "Grep", input: { pattern: "export function" }, result: "28 matches", toolUseId: "child-2" },
-      { kind: "text", text: "Found 42 files matching the pattern." },
+      { kind: "tool_call", name: "Glob", input: { pattern: "frontend/src/components/**/*.tsx" }, result: "src/components/ui/Toast.tsx\nsrc/components/ui/Modal.tsx", toolUseId: "child-1" },
+      { kind: "tool_call", name: "Grep", input: { pattern: "export function", path: "frontend/src" }, result: "42 matches", toolUseId: "child-2" },
+      { kind: "tool_call", name: "Read", input: { file_path: "frontend/src/api/client.ts" }, result: "export const api = { ... }", toolUseId: "child-3" },
+      { kind: "tool_call", name: "Read", input: { file_path: "frontend/src/api/client.ts" }, result: "export interface DiffFile { ... }", toolUseId: "child-4" },
+      { kind: "tool_call", name: "Read", input: { file_path: "frontend/src/components/ui/Modal.tsx" }, result: "export function Modal({ ... }) { ... }", toolUseId: "child-5" },
+      { kind: "tool_call", name: "Read", input: { file_path: "frontend/src/components/ui/FileCodeViewer.tsx" }, result: "export function FileCodeViewer({ ... }) { ... }", toolUseId: "child-6" },
+      { kind: "tool_call", name: "Read", input: { file_path: "frontend/src/components/ui/CollapsibleText.tsx" }, result: "export function CollapsibleText({ ... }) { ... }", toolUseId: "child-7" },
+      { kind: "tool_call", name: "Read", input: { file_path: "frontend/src/components/session/ToolCallView.tsx" }, result: "export function ToolCallView({ ... }) { ... }", toolUseId: "child-8" },
+      { kind: "tool_call", name: "Read", input: { file_path: "frontend/src/components/session/ToolInputView.tsx" }, result: "export function ToolInputView({ ... }) { ... }", toolUseId: "child-9" },
+      { kind: "tool_call", name: "Read", input: { file_path: "frontend/src/components/session/DiffDropdown.tsx" }, result: "export function DiffDropdown({ ... }) { ... }", toolUseId: "child-10" },
+      { kind: "tool_call", name: "Read", input: { file_path: "frontend/src/models/stream.ts" }, result: "export type StreamDisplayItem = ...", toolUseId: "child-11" },
+      { kind: "tool_call", name: "Read", input: { file_path: "frontend/src/components/StatusBadge.tsx" }, result: "export function StatusBadge({ ... }) { ... }", toolUseId: "child-12" },
+      { kind: "tool_call", name: "Read", input: { file_path: "frontend/src/components/CreateSession.tsx" }, result: "export function CreateSession({ ... }) { ... }", toolUseId: "child-13" },
     ],
   };
   const escalateItem: Extract<StreamDisplayItem, { kind: "tool_call" }> = {
