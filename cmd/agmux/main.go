@@ -600,6 +600,7 @@ func daemonCmd() *cobra.Command {
 // readTailLines reads the last n lines from the file.
 func readTailLines(file *os.File, n int) ([]string, error) {
 	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 	var allLines []string
 	for scanner.Scan() {
 		allLines = append(allLines, scanner.Text())
