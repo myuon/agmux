@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { MetricEvent } from "../../api/client";
 import { EVENT_LABELS, EVENT_COLORS } from "./constants";
+import { FilterButton } from "../ui/FilterButton";
 
 function EventSummaryText({ event }: { event: MetricEvent }) {
   const attrs = event.attributes ?? {};
@@ -59,24 +60,17 @@ export function EventsSection({ events }: { events: MetricEvent[] }) {
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-gray-700">Events ({events.length})</h3>
         <div className="flex gap-1 flex-wrap">
-          <button
-            onClick={() => setFilter("all")}
-            className={`px-2 py-0.5 text-xs rounded ${
-              filter === "all" ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
-          >
+          <FilterButton selected={filter === "all"} onClick={() => setFilter("all")}>
             All
-          </button>
+          </FilterButton>
           {eventTypes.map((type) => (
-            <button
+            <FilterButton
               key={type}
+              selected={filter === type}
               onClick={() => setFilter(type)}
-              className={`px-2 py-0.5 text-xs rounded ${
-                filter === type ? "bg-gray-800 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
             >
               {EVENT_LABELS[type] ?? type} ({counts[type]})
-            </button>
+            </FilterButton>
           ))}
         </div>
       </div>

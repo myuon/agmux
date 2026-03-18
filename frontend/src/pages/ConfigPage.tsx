@@ -3,6 +3,7 @@ import { useNavigate, useLoaderData } from "react-router-dom";
 import { api } from "../api/client";
 import type { AppConfig } from "../api/client";
 import { Section, Field } from "../components/ui/Section";
+import { ToggleButton } from "../components/ui/ToggleButton";
 
 export function ConfigPage() {
   const navigate = useNavigate();
@@ -168,16 +169,9 @@ function GoalCompletionNotifySettings() {
   return (
     <>
       <Field label="タスク完了通知">
-        <button
-          onClick={toggleEnabled}
-          className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors ${
-            enabled
-              ? "bg-green-50 border-green-300 text-green-700"
-              : "bg-gray-50 border-gray-200 text-gray-400"
-          }`}
-        >
+        <ToggleButton enabled={enabled} onClick={toggleEnabled}>
           {enabled ? "ON" : "OFF"}
-        </button>
+        </ToggleButton>
       </Field>
       {enabled && (
         <Field label="閾値（分）">
@@ -260,34 +254,23 @@ function NotificationStatus() {
         </span>
       </Field>
       <Field label="通知">
-        <button
-          onClick={toggleNotify}
-          className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors ${
-            notifyEnabled
-              ? "bg-green-50 border-green-300 text-green-700"
-              : "bg-gray-50 border-gray-200 text-gray-400"
-          }`}
-        >
+        <ToggleButton enabled={notifyEnabled} onClick={toggleNotify}>
           {notifyEnabled ? "ON" : "OFF"}
-        </button>
+        </ToggleButton>
       </Field>
       <div>
         <label className="text-sm text-gray-600 block mb-2">通知するステータス</label>
         <div className="flex flex-wrap gap-2">
           {NOTIFY_STATUSES.map(({ key, label }) => {
-            const enabled = statusFilters[key] ?? DEFAULT_NOTIFY_STATUSES[key] ?? true;
+            const active = statusFilters[key] ?? DEFAULT_NOTIFY_STATUSES[key] ?? true;
             return (
-              <button
+              <ToggleButton
                 key={key}
+                enabled={active}
                 onClick={() => toggleStatus(key)}
-                className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
-                  enabled
-                    ? "bg-blue-50 border-blue-300 text-blue-700"
-                    : "bg-gray-50 border-gray-200 text-gray-400"
-                }`}
               >
                 {label}
-              </button>
+              </ToggleButton>
             );
           })}
         </div>

@@ -13,6 +13,8 @@ import { Chip } from "../components/ui/Chip";
 import { IconButton } from "../components/ui/IconButton";
 import { IconText } from "../components/ui/IconText";
 import { CircleButton } from "../components/ui/CircleButton";
+import { ToggleButton } from "../components/ui/ToggleButton";
+import { FilterButton } from "../components/ui/FilterButton";
 import { ArrowLeft, FolderOpen, GitBranch, Plus, SendHorizonal, Settings, Sparkles } from "lucide-react";
 import type { Session } from "../types/session";
 import type { StreamDisplayItem, ActiveTask } from "../models/stream";
@@ -678,6 +680,54 @@ function SessionListPreview() {
   );
 }
 
+function ToggleButtonPreview() {
+  const [enabled, setEnabled] = useState(true);
+  return (
+    <PreviewSection title="ToggleButton">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">ON / OFF 状態</p>
+          <div className="flex items-center gap-3">
+            <ToggleButton enabled={true} onClick={() => {}}>ON</ToggleButton>
+            <ToggleButton enabled={false} onClick={() => {}}>OFF</ToggleButton>
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">インタラクティブ</p>
+          <ToggleButton enabled={enabled} onClick={() => setEnabled(!enabled)}>
+            {enabled ? "ON" : "OFF"}
+          </ToggleButton>
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
+function FilterButtonPreview() {
+  const [selected, setSelected] = useState("1h");
+  const options = ["1h", "6h", "24h", "7d", "all"];
+  return (
+    <PreviewSection title="FilterButton">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">選択状態の切り替え</p>
+          <div className="flex gap-1">
+            {options.map((opt) => (
+              <FilterButton
+                key={opt}
+                selected={selected === opt}
+                onClick={() => setSelected(opt)}
+              >
+                {opt}
+              </FilterButton>
+            ))}
+          </div>
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
 export function PreviewPage() {
   return (
     <div className="p-6 space-y-8 pb-12">
@@ -703,6 +753,8 @@ export function PreviewPage() {
       <GoalPanelPreview />
       <ActiveTasksPanelPreview />
       <SessionListPreview />
+      <ToggleButtonPreview />
+      <FilterButtonPreview />
     </div>
   );
 }
