@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { TerminalSquare } from "lucide-react";
 import type { Session } from "../types/session";
 import { StatusDot } from "./StatusBadge";
+import { GroupSectionHeader } from "./ui/GroupSectionHeader";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -68,15 +69,11 @@ export function SessionList({ sessions, onRestartController }: Props) {
         const isController = groupSessions.some(s => s.type === "controller");
         return (
         <div key={projectPath}>
-          <div className="flex items-center gap-2 mb-2 px-1">
-            {isController && <TerminalSquare className="w-3.5 h-3.5 text-purple-500" />}
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide truncate">
-              {projectDisplayName(projectPath)}
-            </span>
-            <span className="text-xs text-gray-400">
-              ({groupSessions.length})
-            </span>
-          </div>
+          <GroupSectionHeader
+            icon={isController ? <TerminalSquare className="w-3.5 h-3.5 text-purple-500" /> : undefined}
+            title={projectDisplayName(projectPath)}
+            count={groupSessions.length}
+          />
           <div className="flex flex-col gap-2">
             {groupSessions.map((s) =>
               s.type === "external" ? (

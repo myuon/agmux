@@ -15,7 +15,9 @@ import { IconText } from "../components/ui/IconText";
 import { CircleButton } from "../components/ui/CircleButton";
 import { ToggleButton } from "../components/ui/ToggleButton";
 import { FilterButton } from "../components/ui/FilterButton";
-import { ArrowLeft, FolderOpen, GitBranch, Plus, SendHorizonal, Settings, Sparkles } from "lucide-react";
+import { ArrowLeft, FolderOpen, GitBranch, Plus, SendHorizonal, Settings, Sparkles, TerminalSquare } from "lucide-react";
+import { PullRequestBadge } from "../components/ui/PullRequestBadge";
+import { GroupSectionHeader } from "../components/ui/GroupSectionHeader";
 import type { Session } from "../types/session";
 import type { StreamDisplayItem, ActiveTask } from "../models/stream";
 import type { DiffFile } from "../api/client";
@@ -776,6 +778,48 @@ function ConnectionStatusPreview() {
   );
 }
 
+function PullRequestBadgePreview() {
+  return (
+    <PreviewSection title="PullRequestBadge">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">状態バリエーション</p>
+          <div className="flex flex-wrap gap-2">
+            <PullRequestBadge number={42} state="OPEN" url="#" />
+            <PullRequestBadge number={38} state="MERGED" url="#" />
+            <PullRequestBadge number={35} state="CLOSED" url="#" />
+          </div>
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
+function GroupSectionHeaderPreview() {
+  return (
+    <PreviewSection title="GroupSectionHeader">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">アイコン + カウント付き</p>
+          <GroupSectionHeader
+            icon={<TerminalSquare className="w-3.5 h-3.5 text-purple-500" />}
+            title="myuon/agmux"
+            count={3}
+          />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">アイコンなし + カウント付き</p>
+          <GroupSectionHeader title="myuon/other-project" count={2} />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">タイトルのみ</p>
+          <GroupSectionHeader title="standalone-project" />
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
 export function PreviewPage() {
   return (
     <div className="p-6 space-y-8 pb-12">
@@ -803,6 +847,8 @@ export function PreviewPage() {
       <SessionListPreview />
       <ToggleButtonPreview />
       <FilterButtonPreview />
+      <PullRequestBadgePreview />
+      <GroupSectionHeaderPreview />
       <AlertBannerPreview />
       <ConnectionStatusPreview />
     </div>

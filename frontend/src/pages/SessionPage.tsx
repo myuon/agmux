@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLoaderData, Await } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Square, RefreshCw, Trash2, ArrowLeft, GitBranch, GitPullRequest, FolderOpen,
+  Square, RefreshCw, Trash2, ArrowLeft, GitBranch, FolderOpen,
   Sparkles, Settings, Copy,
   RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
   Code, Eye, X,
@@ -24,6 +24,7 @@ import { StreamOutputView, ActiveTasksPanel } from "../components/session/Stream
 import { DiffDropdown } from "../components/session/DiffDropdown";
 import { GoalPanel } from "../components/ui/GoalPanel";
 import { ConnectionStatusIndicator } from "../components/ui/ConnectionStatus";
+import { PullRequestBadge } from "../components/ui/PullRequestBadge";
 import type { StreamEntry } from "../models/stream";
 import { extractActiveTasks } from "../models/stream";
 
@@ -647,22 +648,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             </>
           )}
           {session.pullRequests && session.pullRequests.map((pr) => (
-            <a
-              key={pr.number}
-              href={pr.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full ${
-                pr.state === "MERGED"
-                  ? "bg-purple-100 text-purple-700"
-                  : pr.state === "OPEN"
-                    ? "bg-green-100 text-green-700"
-                    : "bg-gray-100 text-gray-600"
-              }`}
-            >
-              <GitPullRequest className="w-3 h-3" />
-              #{pr.number}
-            </a>
+            <PullRequestBadge key={pr.number} number={pr.number} state={pr.state} url={pr.url} />
           ))}
           <DiffDropdown files={diffFiles} />
         </div>
