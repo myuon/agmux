@@ -31,6 +31,7 @@ import { PermissionStatus } from "../components/ui/PermissionStatus";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
 import { ExternalProcessRow } from "../components/ui/ExternalProcessRow";
 import { Tabs } from "../components/ui/Tabs";
+import { SystemEventRow } from "../components/ui/SystemEventRow";
 
 function PreviewSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -936,7 +937,20 @@ export function PreviewPage() {
       <ExternalProcessRowPreview />
       <TabsPreview />
       <IconLinkPreview />
+      <SystemEventRowPreview />
     </div>
+  );
+}
+
+function SystemEventRowPreview() {
+  return (
+    <PreviewSection title="SystemEventRow">
+      <div className="space-y-2">
+        <SystemEventRow label="タスク完了" detail="Extract IconLink from App header" />
+        <SystemEventRow label="セッション開始" />
+        <SystemEventRow label="エラー発生" detail="Connection timeout" />
+      </div>
+    </PreviewSection>
   );
 }
 

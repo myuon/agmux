@@ -1,15 +1,10 @@
 import { CollapsibleText } from "../ui/CollapsibleText";
+import { SystemEventRow } from "../ui/SystemEventRow";
 import type { StreamDisplayItem } from "../../models/stream";
 import { ToolCallView } from "./ToolCallView";
 
 function SystemEventView({ item }: { item: Extract<StreamDisplayItem, { kind: "system_event" }> }) {
-  return (
-    <div className="flex items-center gap-2 py-1 px-3 text-xs text-gray-500 border-y border-dashed border-gray-200">
-      <span className="text-gray-400">{"\u27E1"}</span>
-      <span>{item.label}</span>
-      {item.detail && <span className="text-gray-400">{item.detail}</span>}
-    </div>
-  );
+  return <SystemEventRow label={item.label} detail={item.detail} />;
 }
 
 export function StreamDisplayItemView({ item, onAnswer, sessionId, escalationId, escalationTimedOut, escalationTimeoutSeconds, onEscalationResponded }: {
