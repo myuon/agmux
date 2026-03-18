@@ -15,6 +15,7 @@ import { Chip } from "../components/ui/Chip";
 import { IconButton } from "../components/ui/IconButton";
 import { IconText } from "../components/ui/IconText";
 import { CircleButton } from "../components/ui/CircleButton";
+import { ActionMenu, ActionMenuItem } from "../components/ui/ActionMenu";
 import type { Session } from "../types/session";
 import { api, type DiffFile } from "../api/client";
 import { StatusDot } from "../components/StatusBadge";
@@ -305,40 +306,33 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             <Plus className="w-4 h-4" />
           </CircleButton>
           {showActionMenu && (
-            <div className="absolute bottom-full left-0 mb-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[160px]">
-              <button
-                type="button"
-                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                onMouseDown={(e) => {
-                  e.preventDefault();
+            <ActionMenu className="absolute bottom-full left-0 mb-1 z-50">
+              <ActionMenuItem
+                icon={<ImagePlus className="w-4 h-4" />}
+                label="Add image"
+                onClick={() => {
                   fileInputRef.current?.click();
                   setShowActionMenu(false);
                 }}
-              >
-                <ImagePlus className="w-4 h-4" /> Add image
-              </button>
+              />
               {slashCommands.length > 0 && (
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                  onMouseDown={(e) => {
-                    e.preventDefault();
+                <ActionMenuItem
+                  icon={<Slash className="w-4 h-4" />}
+                  label="Slash commands"
+                  onClick={() => {
                     setMessage("/");
                     setSlashFilter("");
                     setSlashSelectedIndex(0);
                     setShowSlashMenu(true);
                     setShowActionMenu(false);
                   }}
-                >
-                  <Slash className="w-4 h-4" /> Slash commands
-                </button>
+                />
               )}
               {session.type !== "controller" && (
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                  onMouseDown={async (e) => {
-                    e.preventDefault();
+                <ActionMenuItem
+                  icon={<Copy className="w-4 h-4" />}
+                  label="Duplicate"
+                  onClick={async () => {
                     setShowActionMenu(false);
                     try {
                       const newSession = await api.duplicateSession(session.id);
@@ -347,16 +341,13 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                       alert("Failed to duplicate session");
                     }
                   }}
-                >
-                  <Copy className="w-4 h-4" /> Duplicate
-                </button>
+                />
               )}
               {session.type !== "controller" && (
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                  onMouseDown={async (e) => {
-                    e.preventDefault();
+                <ActionMenuItem
+                  icon={<RotateCcw className="w-4 h-4" />}
+                  label="Clear context"
+                  onClick={async () => {
                     setShowActionMenu(false);
                     if (!confirm("Clear session context? This will start a fresh conversation.")) return;
                     try {
@@ -372,15 +363,12 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                       setTimeout(() => setClearToast(null), 3000);
                     }
                   }}
-                >
-                  <RotateCcw className="w-4 h-4" /> Clear context
-                </button>
+                />
               )}
-              <button
-                type="button"
-                className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                onMouseDown={async (e) => {
-                  e.preventDefault();
+              <ActionMenuItem
+                icon={<RefreshCw className="w-4 h-4" />}
+                label="Reconnect"
+                onClick={async () => {
                   setShowActionMenu(false);
                   if (!confirm("セッションを再接続しますか？")) return;
                   try {
@@ -392,39 +380,33 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                     alert("再接続に失敗しました");
                   }
                 }}
-              >
-                <RefreshCw className="w-4 h-4" /> Reconnect
-              </button>
+              />
               {session.status !== "stopped" && session.type !== "controller" && (
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                  onMouseDown={async (e) => {
-                    e.preventDefault();
+                <ActionMenuItem
+                  icon={<Square className="w-4 h-4" />}
+                  label="Stop session"
+                  variant="danger"
+                  onClick={async () => {
                     setShowActionMenu(false);
                     await api.stopSession(session.id);
                     api.getSession(session.id).then(setSession);
                   }}
-                >
-                  <Square className="w-4 h-4" /> Stop session
-                </button>
+                />
               )}
               {session.type !== "controller" && (
-                <button
-                  type="button"
-                  className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                  onMouseDown={async (e) => {
-                    e.preventDefault();
+                <ActionMenuItem
+                  icon={<Trash2 className="w-4 h-4" />}
+                  label="Delete session"
+                  variant="danger"
+                  onClick={async () => {
                     setShowActionMenu(false);
                     if (!confirm("Delete this session?")) return;
                     await api.deleteSession(session.id);
                     navigate("/");
                   }}
-                >
-                  <Trash2 className="w-4 h-4" /> Delete session
-                </button>
+                />
               )}
-            </div>
+            </ActionMenu>
           )}
         </div>
         <input

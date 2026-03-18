@@ -32,6 +32,8 @@ import { SecondaryButton } from "../components/ui/SecondaryButton";
 import { ExternalProcessRow } from "../components/ui/ExternalProcessRow";
 import { Tabs } from "../components/ui/Tabs";
 import { SystemEventRow } from "../components/ui/SystemEventRow";
+import { ActionMenu, ActionMenuItem } from "../components/ui/ActionMenu";
+import { Copy, ImagePlus, RefreshCw, RotateCcw, Square, Trash2 } from "lucide-react";
 
 function PreviewSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -901,6 +903,34 @@ function TabsPreview() {
   );
 }
 
+function ActionMenuPreview() {
+  return (
+    <PreviewSection title="ActionMenu / ActionMenuItem">
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">通常メニュー (default + danger バリエーション)</p>
+          <ActionMenu>
+            <ActionMenuItem icon={<ImagePlus className="w-4 h-4" />} label="Add image" onClick={() => {}} />
+            <ActionMenuItem icon={<Copy className="w-4 h-4" />} label="Duplicate" onClick={() => {}} />
+            <ActionMenuItem icon={<RotateCcw className="w-4 h-4" />} label="Clear context" onClick={() => {}} />
+            <ActionMenuItem icon={<RefreshCw className="w-4 h-4" />} label="Reconnect" onClick={() => {}} />
+            <ActionMenuItem icon={<Square className="w-4 h-4" />} label="Stop session" variant="danger" onClick={() => {}} />
+            <ActionMenuItem icon={<Trash2 className="w-4 h-4" />} label="Delete session" variant="danger" onClick={() => {}} />
+          </ActionMenu>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Disabled 状態</p>
+          <ActionMenu>
+            <ActionMenuItem icon={<Copy className="w-4 h-4" />} label="Duplicate" onClick={() => {}} />
+            <ActionMenuItem icon={<Square className="w-4 h-4" />} label="Stop session" variant="danger" disabled />
+            <ActionMenuItem icon={<Trash2 className="w-4 h-4" />} label="Delete session" variant="danger" disabled />
+          </ActionMenu>
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
 export function PreviewPage() {
   return (
     <div className="p-6 space-y-8 pb-12">
@@ -938,6 +968,7 @@ export function PreviewPage() {
       <TabsPreview />
       <IconLinkPreview />
       <SystemEventRowPreview />
+      <ActionMenuPreview />
     </div>
   );
 }
