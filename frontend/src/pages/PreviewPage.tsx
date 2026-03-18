@@ -489,7 +489,7 @@ function IconButtonPreview() {
         <div>
           <p className="text-xs text-gray-500 mb-1">shape=&quot;circle&quot; + variant=&quot;primary&quot; / &quot;secondary&quot;</p>
           <div className="flex items-center gap-2">
-            <IconButton shape="circle" title="Send">
+            <IconButton shape="circle" variant="primary" title="Send">
               <SendHorizonal className="w-4 h-4" />
             </IconButton>
             <IconButton shape="circle" variant="secondary" title="Actions">
@@ -500,7 +500,7 @@ function IconButtonPreview() {
         <div>
           <p className="text-xs text-gray-500 mb-1">Disabled</p>
           <div className="flex items-center gap-2">
-            <IconButton shape="circle" disabled title="Disabled primary">
+            <IconButton shape="circle" variant="primary" disabled title="Disabled primary">
               <SendHorizonal className="w-4 h-4" />
             </IconButton>
             <IconButton shape="circle" variant="secondary" disabled title="Disabled secondary">
