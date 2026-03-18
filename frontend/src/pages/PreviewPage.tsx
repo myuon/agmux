@@ -15,7 +15,8 @@ import { IconText } from "../components/ui/IconText";
 import { CircleButton } from "../components/ui/CircleButton";
 import { ToggleButton } from "../components/ui/ToggleButton";
 import { FilterButton } from "../components/ui/FilterButton";
-import { ArrowLeft, FolderOpen, GitBranch, Plus, SendHorizonal, Settings, Sparkles, TerminalSquare } from "lucide-react";
+import { ArrowLeft, BarChart3, FolderOpen, GitBranch, Image, Plus, SendHorizonal, Settings, Sparkles, TerminalSquare } from "lucide-react";
+import { IconLink } from "../components/ui/IconLink";
 import { PullRequestBadge } from "../components/ui/PullRequestBadge";
 import { GroupSectionHeader } from "../components/ui/GroupSectionHeader";
 import type { Session } from "../types/session";
@@ -936,6 +937,25 @@ export function PreviewPage() {
       <SecondaryButtonPreview />
       <ExternalProcessRowPreview />
       <TabsPreview />
+      <IconLinkPreview />
     </div>
+  );
+}
+
+function IconLinkPreview() {
+  return (
+    <PreviewSection title="IconLink">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">ヘッダーナビゲーション（アイコンリンク）</p>
+          <div className="flex items-center gap-2">
+            <IconLink to="/preview" title="UI Preview"><Image className="w-5 h-5" /></IconLink>
+            <IconLink to="/metrics" title="Metrics"><BarChart3 className="w-5 h-5" /></IconLink>
+            <IconLink to="/config" title="Settings"><Settings className="w-5 h-5" /></IconLink>
+            <IconLink to="/" title="Controller"><TerminalSquare className="w-5 h-5" /></IconLink>
+          </div>
+        </div>
+      </div>
+    </PreviewSection>
   );
 }
