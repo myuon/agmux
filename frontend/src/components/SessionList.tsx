@@ -5,6 +5,7 @@ import type { Session } from "../types/session";
 import { StatusDot } from "./StatusBadge";
 import { GroupSectionHeader } from "./ui/GroupSectionHeader";
 import { SecondaryButton } from "./ui/SecondaryButton";
+import { ExternalProcessRow } from "./ui/ExternalProcessRow";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -78,18 +79,13 @@ export function SessionList({ sessions, onRestartController }: Props) {
           <div className="flex flex-col gap-2">
             {groupSessions.map((s) =>
               s.type === "external" ? (
-                <div
+                <ExternalProcessRow
                   key={s.id}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded border border-dashed border-amber-300 bg-amber-50/50 text-xs text-gray-500"
-                >
-                  <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                  <span className="font-medium text-amber-700 shrink-0">{s.provider === "codex" ? "Codex" : s.provider === "claude" ? "Claude" : "External"}</span>
-                  <span className="text-gray-600 truncate">{s.name}</span>
-                  <span className="font-mono text-gray-400 shrink-0">
-                    PID {s.id.replace("ext-", "")}
-                  </span>
-                  <span className="text-gray-400 ml-auto shrink-0">{timeAgo(s.createdAt)}</span>
-                </div>
+                  provider={s.provider}
+                  name={s.name}
+                  pid={s.id.replace("ext-", "")}
+                  timeAgo={timeAgo(s.createdAt)}
+                />
               ) : (
                 <div
                   key={s.id}

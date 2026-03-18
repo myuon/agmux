@@ -28,6 +28,7 @@ import { AlertBanner } from "../components/ui/AlertBanner";
 import { ConnectionStatusIndicator } from "../components/ui/ConnectionStatus";
 import { PermissionStatus } from "../components/ui/PermissionStatus";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
+import { ExternalProcessRow } from "../components/ui/ExternalProcessRow";
 
 function PreviewSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -864,6 +865,18 @@ function SecondaryButtonPreview() {
   );
 }
 
+function ExternalProcessRowPreview() {
+  return (
+    <PreviewSection title="ExternalProcessRow">
+      <div className="space-y-2">
+        <ExternalProcessRow provider="claude" name="refactor-api-client" pid="48291" timeAgo="3h ago" />
+        <ExternalProcessRow provider="codex" name="explore-deps" pid="77120" timeAgo="1h ago" />
+        <ExternalProcessRow provider="" name="unknown-process" pid="99001" timeAgo="5m ago" />
+      </div>
+    </PreviewSection>
+  );
+}
+
 export function PreviewPage() {
   return (
     <div className="p-6 space-y-8 pb-12">
@@ -897,6 +910,7 @@ export function PreviewPage() {
       <ConnectionStatusPreview />
       <PermissionStatusPreview />
       <SecondaryButtonPreview />
+      <ExternalProcessRowPreview />
     </div>
   );
 }
