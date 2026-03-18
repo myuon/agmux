@@ -931,6 +931,69 @@ function ActionMenuPreview() {
   );
 }
 
+const categories = [
+  {
+    id: "feedback",
+    label: "Feedback",
+    items: [
+      { id: "toastbar", label: "ToastBar", el: <ToastPreview /> },
+      { id: "modal", label: "Modal", el: <ModalPreview /> },
+      { id: "alertbanner", label: "AlertBanner", el: <AlertBannerPreview /> },
+    ],
+  },
+  {
+    id: "buttons",
+    label: "Buttons",
+    items: [
+      { id: "iconbutton", label: "IconButton", el: <IconButtonPreview /> },
+      { id: "iconlink", label: "IconLink", el: <IconLinkPreview /> },
+      { id: "circlebutton", label: "CircleButton", el: <CircleButtonPreview /> },
+      { id: "secondarybutton", label: "SecondaryButton", el: <SecondaryButtonPreview /> },
+      { id: "togglebutton", label: "ToggleButton", el: <ToggleButtonPreview /> },
+      { id: "filterbutton", label: "FilterButton", el: <FilterButtonPreview /> },
+      { id: "actionmenu", label: "ActionMenu", el: <ActionMenuPreview /> },
+    ],
+  },
+  {
+    id: "data-display",
+    label: "Data Display",
+    items: [
+      { id: "chip", label: "Chip", el: <ChipPreview /> },
+      { id: "statusbadge", label: "StatusBadge / StatusDot", el: <StatusBadgePreview /> },
+      { id: "summarycard", label: "SummaryCard", el: <SummaryCardPreview /> },
+      { id: "collapsibletext", label: "CollapsibleText", el: <CollapsibleTextPreview /> },
+      { id: "filecodeviwer", label: "FileCodeViewer", el: <FileCodeViewerPreview /> },
+      { id: "icontext", label: "IconText", el: <IconTextPreview /> },
+      { id: "connectionstatus", label: "ConnectionStatus", el: <ConnectionStatusPreview /> },
+      { id: "permissionstatus", label: "PermissionStatus", el: <PermissionStatusPreview /> },
+      { id: "pullrequestbadge", label: "PullRequestBadge", el: <PullRequestBadgePreview /> },
+      { id: "systemeventrow", label: "SystemEventRow", el: <SystemEventRowPreview /> },
+      { id: "externalprocessrow", label: "ExternalProcessRow", el: <ExternalProcessRowPreview /> },
+    ],
+  },
+  {
+    id: "layout",
+    label: "Layout",
+    items: [
+      { id: "section", label: "Section / Field", el: <SectionPreview /> },
+      { id: "groupsectionheader", label: "GroupSectionHeader", el: <GroupSectionHeaderPreview /> },
+      { id: "tabs", label: "Tabs", el: <TabsPreview /> },
+    ],
+  },
+  {
+    id: "domain",
+    label: "Domain",
+    items: [
+      { id: "toolinputview", label: "ToolInputView", el: <ToolInputViewPreview /> },
+      { id: "toolcallview", label: "ToolCallView", el: <ToolCallViewPreview /> },
+      { id: "diffdropdown", label: "DiffDropdown", el: <DiffDropdownPreview /> },
+      { id: "goalpanel", label: "GoalPanel", el: <GoalPanelPreview /> },
+      { id: "activetaskspanel", label: "ActiveTasksPanel", el: <ActiveTasksPanelPreview /> },
+      { id: "sessionlist", label: "SessionList", el: <SessionListPreview /> },
+    ],
+  },
+] as const;
+
 export function PreviewPage() {
   return (
     <div className="p-6 space-y-8 pb-12">
@@ -939,36 +1002,40 @@ export function PreviewPage() {
         <p className="text-sm text-gray-500 mt-1">UIコンポーネントの一覧とバリエーション確認用ページ</p>
       </div>
 
-      <ToastPreview />
-      <ModalPreview />
-      <StatusBadgePreview />
-      <SummaryCardPreview />
-      <SectionPreview />
-      <CollapsibleTextPreview />
-      <FileCodeViewerPreview />
-      <ChipPreview />
-      <IconButtonPreview />
-      <IconTextPreview />
-      <CircleButtonPreview />
-      <ToolInputViewPreview />
-      <ToolCallViewPreview />
-      <DiffDropdownPreview />
-      <GoalPanelPreview />
-      <ActiveTasksPanelPreview />
-      <SessionListPreview />
-      <ToggleButtonPreview />
-      <FilterButtonPreview />
-      <PullRequestBadgePreview />
-      <GroupSectionHeaderPreview />
-      <AlertBannerPreview />
-      <ConnectionStatusPreview />
-      <PermissionStatusPreview />
-      <SecondaryButtonPreview />
-      <ExternalProcessRowPreview />
-      <TabsPreview />
-      <IconLinkPreview />
-      <SystemEventRowPreview />
-      <ActionMenuPreview />
+      {/* TOC */}
+      <nav className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+        <h2 className="text-sm font-bold text-gray-700 mb-2">Contents</h2>
+        <div className="space-y-2">
+          {categories.map((cat) => (
+            <div key={cat.id}>
+              <a href={`#cat-${cat.id}`} className="text-xs font-semibold text-gray-500 uppercase tracking-wide hover:text-blue-600">
+                {cat.label}
+              </a>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 ml-2 mt-0.5">
+                {cat.items.map((item) => (
+                  <a key={item.id} href={`#${item.id}`} className="text-xs text-blue-600 hover:underline">
+                    {item.label}
+                  </a>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </nav>
+
+      {/* Components */}
+      {categories.map((cat) => (
+        <div key={cat.id} id={`cat-${cat.id}`} className="space-y-8">
+          <h2 className="text-xl font-bold text-gray-800 border-b-2 border-gray-300 pb-2 pt-4">
+            {cat.label}
+          </h2>
+          {cat.items.map((item) => (
+            <div key={item.id} id={item.id}>
+              {item.el}
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
