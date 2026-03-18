@@ -6,7 +6,12 @@ import { SummaryCard } from "../components/ui/SummaryCard";
 import { CollapsibleText } from "../components/ui/CollapsibleText";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
 import { StatusBadge, StatusDot, statusDots } from "../components/StatusBadge";
+import { ToolCallView } from "../components/session/ToolCallView";
+import { ToolInputView } from "../components/session/ToolInputView";
+import { DiffDropdown } from "../components/session/DiffDropdown";
 import type { Session } from "../types/session";
+import type { StreamDisplayItem } from "../models/stream";
+import type { DiffFile } from "../api/client";
 
 function PreviewSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -211,6 +216,197 @@ func add(a, b int) int {
   );
 }
 
+function ToolInputViewPreview() {
+  const simpleInput = {
+    command: "git status",
+    timeout: 30000,
+  };
+  const nestedInput = {
+    file_path: "/src/components/App.tsx",
+    old_string: "const foo = 1;",
+    new_string: "const foo = 2;",
+  };
+  const multilineInput = {
+    content: `package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello, World!")
+}`,
+  };
+
+  return (
+    <PreviewSection title="ToolInputView">
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">シンプルなキー・バリュー</p>
+          <div className="border border-gray-200 rounded-lg p-3 bg-white">
+            <ToolInputView input={simpleInput} />
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">複数フィールド</p>
+          <div className="border border-gray-200 rounded-lg p-3 bg-white">
+            <ToolInputView input={nestedInput} />
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">マルチラインコンテンツ</p>
+          <div className="border border-gray-200 rounded-lg p-3 bg-white">
+            <ToolInputView input={multilineInput} />
+          </div>
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
+function ToolCallViewPreview() {
+  const bashItem: Extract<StreamDisplayItem, { kind: "tool_call" }> = {
+    kind: "tool_call",
+    name: "Bash",
+    input: { command: "ls -la /tmp" },
+    result: "total 48\ndrwxrwxrwt  12 root  wheel  384 Mar 18 10:00 .\ndrwxr-xr-x   6 root  wheel  192 Mar 18 09:00 ..",
+    toolUseId: "preview-bash-1",
+  };
+  const readItem: Extract<StreamDisplayItem, { kind: "tool_call" }> = {
+    kind: "tool_call",
+    name: "Read",
+    input: { file_path: "/src/App.tsx", limit: 50 },
+    toolUseId: "preview-read-1",
+  };
+  const todoItem: Extract<StreamDisplayItem, { kind: "tool_call" }> = {
+    kind: "tool_call",
+    name: "TodoWrite",
+    input: {
+      todos: [
+        { id: "1", content: "コンポーネントを作成", status: "completed" },
+        { id: "2", content: "テストを追加", status: "in_progress" },
+        { id: "3", content: "ドキュメントを更新", status: "pending" },
+      ],
+    },
+    result: "ok",
+    toolUseId: "preview-todo-1",
+  };
+  const parentItem: Extract<StreamDisplayItem, { kind: "tool_call" }> = {
+    kind: "tool_call",
+    name: "Agent",
+    input: { prompt: "Explore the codebase structure", subagent_type: "Explore" },
+    result: "Found 42 files matching the pattern.",
+    toolUseId: "preview-agent-1",
+    children: [
+      { kind: "tool_call", name: "Glob", input: { pattern: "**/*.tsx" }, result: "12 files", toolUseId: "child-1" },
+      { kind: "tool_call", name: "Grep", input: { pattern: "export function" }, result: "28 matches", toolUseId: "child-2" },
+      { kind: "text", text: "Found 42 files matching the pattern." },
+    ],
+  };
+  const escalateItem: Extract<StreamDisplayItem, { kind: "tool_call" }> = {
+    kind: "tool_call",
+    name: "mcp__agmux__escalate",
+    input: { message: "デプロイ先の環境を **staging** と **production** のどちらにしますか？" },
+    toolUseId: "preview-escalate-1",
+  };
+  const escalateResolvedItem: Extract<StreamDisplayItem, { kind: "tool_call" }> = {
+    kind: "tool_call",
+    name: "mcp__agmux__escalate",
+    input: { message: "この変更をマージしてよいですか？" },
+    result: "はい、マージしてください",
+    toolUseId: "preview-escalate-2",
+  };
+
+  return (
+    <PreviewSection title="ToolCallView">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Bash (完了済み)</p>
+          <ToolCallView item={bashItem} />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Read (実行中)</p>
+          <ToolCallView item={readItem} />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">TodoWrite</p>
+          <ToolCallView item={todoItem} />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Agent (子ツールあり)</p>
+          <ToolCallView item={parentItem} />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Escalate (未回答)</p>
+          <ToolCallView item={escalateItem} />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">Escalate (回答済み)</p>
+          <ToolCallView item={escalateResolvedItem} />
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
+function DiffDropdownPreview() {
+  const mockFiles: DiffFile[] = [
+    {
+      path: "src/App.tsx",
+      status: "M",
+      diff: `--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -1,5 +1,6 @@
+ import React from "react";
++import { NewComponent } from "./NewComponent";
+
+ function App() {
+-  return <div>Hello</div>;
++  return <NewComponent />;
+ }`,
+    },
+    {
+      path: "src/NewComponent.tsx",
+      status: "A",
+      diff: `--- /dev/null
++++ b/src/NewComponent.tsx
+@@ -0,0 +1,5 @@
++export function NewComponent() {
++  return <div>New Component</div>;
++}`,
+    },
+    {
+      path: "src/OldComponent.tsx",
+      status: "D",
+      diff: `--- a/src/OldComponent.tsx
++++ /dev/null
+@@ -1,3 +0,0 @@
+-export function OldComponent() {
+-  return <div>Old</div>;
+-}`,
+    },
+  ];
+
+  return (
+    <PreviewSection title="DiffDropdown">
+      <div className="space-y-3">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">3ファイル変更 (Modified / Added / Deleted)</p>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-600">クリックしてdiffを表示:</span>
+            <DiffDropdown files={mockFiles} />
+          </div>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">1ファイル変更</p>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-600">単一ファイル:</span>
+            <DiffDropdown files={[mockFiles[0]]} />
+          </div>
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
 export function PreviewPage() {
   return (
     <div className="p-6 space-y-8 pb-12">
@@ -226,6 +422,9 @@ export function PreviewPage() {
       <SectionPreview />
       <CollapsibleTextPreview />
       <FileCodeViewerPreview />
+      <ToolInputViewPreview />
+      <ToolCallViewPreview />
+      <DiffDropdownPreview />
     </div>
   );
 }
