@@ -706,6 +706,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         ) : claudeMDFiles && claudeMDFiles.length > 0 ? (
           <FileCodeViewer
             files={claudeMDFiles.map((f) => ({ name: f.path, content: f.content }))}
+            defaultExpanded
             lineClickable={claudeMDViewMode === "source"}
             renderContent={claudeMDViewMode === "preview" ? (content) => (
               <div className="prose prose-sm max-w-none">
@@ -734,7 +735,6 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         ) : (
           <FileCodeViewer
             files={settingsJSONFiles}
-            collapsible
             formatContent={(content) => {
               try {
                 return JSON.stringify(JSON.parse(content), null, 2);

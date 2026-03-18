@@ -36,7 +36,6 @@ export function DiffDropdown({ files }: { files: DiffFile[] }) {
       >
         <FileCodeViewer
           files={files.map((f) => ({ name: f.path, content: f.diff || "" }))}
-          collapsible
           fileHeaderExtra={(file) => {
             const status = statusMap.get(file.name) || "?";
             return (
