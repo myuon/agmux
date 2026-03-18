@@ -2,10 +2,10 @@ import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { TerminalSquare } from "lucide-react";
 import type { Session } from "../types/session";
-import { StatusDot } from "./StatusBadge";
 import { GroupSectionHeader } from "./ui/GroupSectionHeader";
 import { SecondaryButton } from "./ui/SecondaryButton";
 import { ExternalProcessRow } from "./ui/ExternalProcessRow";
+import { SessionCard } from "./ui/SessionCard";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -87,54 +87,26 @@ export function SessionList({ sessions, onRestartController }: Props) {
                   timeAgo={timeAgo(s.createdAt)}
                 />
               ) : (
-                <div
+                <SessionCard
                   key={s.id}
+                  name={s.name}
+                  status={s.status}
+                  type={s.type}
+                  provider={s.provider}
+                  currentTask={s.currentTask}
+                  projectPath={s.projectPath}
+                  timeAgo={timeAgo(s.createdAt)}
                   onClick={() => navigate(`/sessions/${s.id}`)}
-                  className="border border-gray-200 rounded-lg p-3 transition-shadow bg-white hover:shadow-sm cursor-pointer"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    <StatusDot status={s.status} />
-                    <span className="font-medium text-sm truncate">{s.name}</span>
-                    {s.type === "controller" && (
-                      <span className="px-1.5 py-0.5 text-[10px] font-medium bg-purple-100 text-purple-700 rounded">
-                        Controller
-                      </span>
-                    )}
-                    {s.provider && s.provider !== "claude" && (
-                      <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${
-                        s.provider === "codex"
-                          ? "bg-green-100 text-green-700"
-                          : "bg-gray-100 text-gray-600"
-                      }`}>
-                        {s.provider.charAt(0).toUpperCase() + s.provider.slice(1)}
-                      </span>
-                    )}
-
-                    <span className="text-xs text-gray-400 ml-auto shrink-0">
-                      {s.status}
-                    </span>
-                  </div>
-                  {s.currentTask && (
-                    <p className="text-xs text-indigo-600 truncate mb-0.5">{s.currentTask}</p>
-                  )}
-                  <p className="text-xs text-gray-500 truncate mb-1">
-                    {s.projectPath}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-gray-400">
-                      {timeAgo(s.createdAt)}
-                    </span>
-                    <div className="flex gap-1.5">
-                      {s.type === "controller" && s.status === "stopped" && (
-                        <SecondaryButton
-                          onClick={(e) => { e.stopPropagation(); onRestartController(); }}
-                        >
-                          Restart
-                        </SecondaryButton>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                  actions={
+                    s.type === "controller" && s.status === "stopped" ? (
+                      <SecondaryButton
+                        onClick={(e) => { e.stopPropagation(); onRestartController(); }}
+                      >
+                        Restart
+                      </SecondaryButton>
+                    ) : undefined
+                  }
+                />
               )
             )}
           </div>

@@ -25,6 +25,7 @@ import type { DiffFile } from "../api/client";
 import { GoalPanel } from "../components/ui/GoalPanel";
 import { ActiveTasksPanel } from "../components/session/StreamOutputView";
 import { SessionList } from "../components/SessionList";
+import { SessionCard } from "../components/ui/SessionCard";
 import { AlertBanner } from "../components/ui/AlertBanner";
 import { ConnectionStatusIndicator } from "../components/ui/ConnectionStatus";
 import { PermissionStatus } from "../components/ui/PermissionStatus";
@@ -608,6 +609,53 @@ function ActiveTasksPanelPreview() {
   );
 }
 
+function SessionCardPreview() {
+  return (
+    <PreviewSection title="SessionCard">
+      <div className="space-y-2 max-w-md">
+        <p className="text-xs text-gray-500 font-medium">Working (with currentTask)</p>
+        <SessionCard
+          name="implement-auth-feature"
+          status="working"
+          type="worker"
+          provider="claude"
+          currentTask="Adding JWT token validation middleware"
+          projectPath="/Users/dev/projects/my-app"
+          timeAgo="3m ago"
+          onClick={() => {}}
+        />
+
+        <p className="text-xs text-gray-500 font-medium mt-4">Idle (no currentTask)</p>
+        <SessionCard
+          name="refactor-database"
+          status="idle"
+          type="worker"
+          provider="codex"
+          projectPath="/Users/dev/projects/my-app"
+          timeAgo="1h ago"
+          onClick={() => {}}
+        />
+
+        <p className="text-xs text-gray-500 font-medium mt-4">Controller (stopped, with Restart action)</p>
+        <SessionCard
+          name="project-orchestrator"
+          status="stopped"
+          type="controller"
+          provider="claude"
+          projectPath="/Users/dev/projects/my-app"
+          timeAgo="2h ago"
+          onClick={() => {}}
+          actions={
+            <SecondaryButton onClick={(e) => e.stopPropagation()}>
+              Restart
+            </SecondaryButton>
+          }
+        />
+      </div>
+    </PreviewSection>
+  );
+}
+
 function SessionListPreview() {
   const now = new Date().toISOString();
   const oneHourAgo = new Date(Date.now() - 3600000).toISOString();
@@ -989,6 +1037,7 @@ const categories = [
       { id: "diffdropdown", label: "DiffDropdown", el: <DiffDropdownPreview /> },
       { id: "goalpanel", label: "GoalPanel", el: <GoalPanelPreview /> },
       { id: "activetaskspanel", label: "ActiveTasksPanel", el: <ActiveTasksPanelPreview /> },
+      { id: "sessioncard", label: "SessionCard", el: <SessionCardPreview /> },
       { id: "sessionlist", label: "SessionList", el: <SessionListPreview /> },
     ],
   },
