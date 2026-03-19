@@ -58,7 +58,8 @@ export type StreamDisplayItem =
 // Tool call history entry for tracking sub-agent activity
 export interface ToolCallHistoryEntry {
   toolName: string;
-  input: unknown;
+  input?: unknown;
+  description?: string;
   timestamp?: string;
 }
 
@@ -134,12 +135,12 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
         // Track tool call history: append when last_tool_name changes
         if (raw.last_tool_name) {
           const newToolName = raw.last_tool_name as string;
-          const newToolInput = raw.last_tool_input;
+          const newDescription = raw.description as string | undefined;
           const lastEntry = task.toolCallHistory[task.toolCallHistory.length - 1];
-          if (!lastEntry || lastEntry.toolName !== newToolName || JSON.stringify(lastEntry.input) !== JSON.stringify(newToolInput)) {
+          if (!lastEntry || lastEntry.toolName !== newToolName || lastEntry.description !== newDescription) {
             task.toolCallHistory.push({
               toolName: newToolName,
-              input: newToolInput,
+              description: newDescription,
               timestamp: raw.timestamp as string | undefined,
             });
           }

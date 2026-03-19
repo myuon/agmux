@@ -574,9 +574,9 @@ function ActiveTasksPanelPreview() {
       lastToolInput: { pattern: "export function", path: "src/" },
       usage: { inputTokens: 12500, outputTokens: 3200 },
       toolCallHistory: [
-        { toolName: "Read", input: { file_path: "/src/index.ts" } },
-        { toolName: "Glob", input: { pattern: "**/*.ts" } },
-        { toolName: "Grep", input: { pattern: "export function", path: "src/" } },
+        { toolName: "Read", description: "Reading /src/index.ts" },
+        { toolName: "Glob", description: "Finding **/*.ts" },
+        { toolName: "Grep", description: "Searching for export function in src/" },
       ],
     },
     {
@@ -588,7 +588,7 @@ function ActiveTasksPanelPreview() {
       output: "Tests: 42 passed, 1 failed",
       usage: { inputTokens: 800, outputTokens: 1500 },
       toolCallHistory: [
-        { toolName: "Bash", input: { command: "npm test --watch" } },
+        { toolName: "Bash", description: "Running npm test --watch" },
       ],
     },
   ];

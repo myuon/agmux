@@ -93,28 +93,20 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
 }
 
 function ToolCallHistoryItem({ entry, index, isLatest }: { entry: ToolCallHistoryEntry; index: number; isLatest: boolean }) {
-  const [expanded, setExpanded] = useState(isLatest);
   const Icon = toolIcon(entry.toolName);
-  const desc = entry.input ? toolDescription(entry.toolName, entry.input) : null;
+  const desc = entry.description || (entry.input ? toolDescription(entry.toolName, entry.input) : null);
 
   return (
     <div className={`border rounded ${isLatest ? "border-amber-300 bg-amber-50/50" : "border-gray-200 bg-gray-50"}`}>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full text-left px-2 py-1 flex items-center gap-1.5 hover:bg-gray-100/50 transition-colors"
+      <div
+        className="w-full text-left px-2 py-1 flex items-center gap-1.5"
       >
         <span className="text-gray-400 text-[10px] font-mono w-4 text-right shrink-0">{index + 1}</span>
         <Icon className="w-3 h-3 text-gray-500 shrink-0" />
         <span className="text-xs font-medium text-gray-700">{entry.toolName}</span>
         {desc && <span className="text-xs text-gray-500 truncate min-w-0">{desc}</span>}
         {isLatest && <span className="text-[10px] text-amber-600 ml-auto shrink-0">current</span>}
-        <svg className={`w-3 h-3 text-gray-400 shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 2l4 4-4 4" /></svg>
-      </button>
-      {expanded && entry.input != null && (
-        <div className="px-2 pb-1.5 pt-0.5 border-t border-gray-200">
-          <ToolInputView input={entry.input} />
-        </div>
-      )}
+      </div>
     </div>
   );
 }
