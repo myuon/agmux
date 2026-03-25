@@ -344,28 +344,26 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   }}
                 />
               )}
-              {session.type !== "controller" && (
-                <ActionMenuItem
-                  icon={<RotateCcw className="w-4 h-4" />}
-                  label="Clear context"
-                  onClick={async () => {
-                    setShowActionMenu(false);
-                    if (!confirm("Clear session context? This will start a fresh conversation.")) return;
-                    try {
-                      await api.clearSession(session.id);
-                      setStreamLines([]);
-                      setPartialText("");
-                      streamCursorRef.current = 0;
-                      api.getSession(session.id).then(setSession);
-                      setClearToast("success");
-                      setTimeout(() => setClearToast(null), 3000);
-                    } catch {
-                      setClearToast("error");
-                      setTimeout(() => setClearToast(null), 3000);
-                    }
-                  }}
-                />
-              )}
+              <ActionMenuItem
+                icon={<RotateCcw className="w-4 h-4" />}
+                label="Clear context"
+                onClick={async () => {
+                  setShowActionMenu(false);
+                  if (!confirm("Clear session context? This will start a fresh conversation.")) return;
+                  try {
+                    await api.clearSession(session.id);
+                    setStreamLines([]);
+                    setPartialText("");
+                    streamCursorRef.current = 0;
+                    api.getSession(session.id).then(setSession);
+                    setClearToast("success");
+                    setTimeout(() => setClearToast(null), 3000);
+                  } catch {
+                    setClearToast("error");
+                    setTimeout(() => setClearToast(null), 3000);
+                  }
+                }}
+              />
               <ActionMenuItem
                 icon={<RefreshCw className="w-4 h-4" />}
                 label="Reconnect"
