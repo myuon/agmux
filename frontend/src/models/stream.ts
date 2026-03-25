@@ -69,6 +69,7 @@ export interface ActiveTask {
   taskType: string; // "local_agent" | "local_bash"
   agentId?: string;
   description?: string;
+  startedAt?: string;
   lastToolName?: string;
   lastToolInput?: unknown;
   output?: string;
@@ -113,6 +114,7 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
         const task: ActiveTask = { taskId, taskType: taskType || "unknown", toolCallHistory: [] };
         if (raw.agent_id) task.agentId = raw.agent_id as string;
         if (raw.description) task.description = raw.description as string;
+        if (raw.timestamp) task.startedAt = raw.timestamp as string;
         // Resolve tool input from the corresponding tool_use block
         if (toolUseId && toolUseInputs.has(toolUseId)) {
           const tu = toolUseInputs.get(toolUseId)!;
