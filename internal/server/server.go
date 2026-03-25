@@ -1151,6 +1151,8 @@ func (s *Server) getClaudeMD(w http.ResponseWriter, r *http.Request) {
 
 	var files []claudeMDFile
 
+	homeDir, _ := os.UserHomeDir()
+
 	// Candidate paths for CLAUDE.md files (project-local)
 	type candidateEntry struct {
 		path        string
@@ -1163,7 +1165,7 @@ func (s *Server) getClaudeMD(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Add global ~/.claude/CLAUDE.md
-	if homeDir, err := os.UserHomeDir(); err == nil {
+	if homeDir != "" {
 		globalPath := filepath.Join(homeDir, ".claude", "CLAUDE.md")
 		candidates = append(candidates, candidateEntry{
 			path:        globalPath,
@@ -1203,11 +1205,9 @@ func (s *Server) getClaudeMD(w http.ResponseWriter, r *http.Request) {
 			}
 			// For refs from global CLAUDE.md, use ~/... display path
 			var refDisplayPath string
-			if candidate.displayPath != "" {
-				if homeDir, err := os.UserHomeDir(); err == nil {
-					if rel, err := filepath.Rel(homeDir, ref); err == nil {
-						refDisplayPath = "~/" + rel
-					}
+			if candidate.displayPath != "" && homeDir != "" && strings.HasPrefix(ref, homeDir+string(filepath.Separator)) {
+				if rel, err := filepath.Rel(homeDir, ref); err == nil {
+					refDisplayPath = "~/" + rel
 				}
 			}
 			if refDisplayPath == "" {
