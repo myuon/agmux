@@ -518,7 +518,12 @@ func (sp *StreamProcess) sendCodex(message string) error {
 	sp.mu.Lock()
 	sp.stopped = true
 	doneCh := sp.done
+	stdinToClose := sp.stdin
 	sp.mu.Unlock()
+
+	// Close stdin to signal the Codex process to exit.
+	// Without this, the process may hang waiting for input even after turn.completed.
+	stdinToClose.Close()
 
 	// Check if the process has already finished (non-blocking).
 	// If it has, skip the wait and proceed directly to restart.
@@ -552,14 +557,12 @@ func (sp *StreamProcess) sendCodex(message string) error {
 
 // restartForCodex spawns a new codex exec resume process for a followup message.
 func (sp *StreamProcess) restartForCodex(message, cliSessionID string) error {
-	// Clean up the old process (already exited since done channel was closed).
 	// Wait for monitorExit to finish calling Wait() before proceeding.
+	// stdin is already closed by sendCodex() to trigger process exit.
 	sp.mu.RLock()
-	oldStdin := sp.stdin
 	exitedCh := sp.exited
 	sp.mu.RUnlock()
 
-	oldStdin.Close()
 	<-exitedCh // wait for monitorExit to call Wait() and close exited
 
 	opts := sp.streamOpts
