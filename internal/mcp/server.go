@@ -7,10 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
-	"os/user"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 )
@@ -136,14 +133,6 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 					},
 				},
 				map[string]interface{}{
-					"name":        "restart_server",
-					"description": "agmuxサーバーを再起動します。",
-					"inputSchema": map[string]interface{}{
-						"type":       "object",
-						"properties": map[string]interface{}{},
-					},
-				},
-				map[string]interface{}{
 					"name":        "send_notification",
 					"description": "セッション作成者にブラウザ通知を送信します。作業完了の報告やユーザーへの情報共有に使ってください。escalateとは異なり、ユーザーの応答を待たずに即座に返ります。",
 					"inputSchema": map[string]interface{}{
@@ -230,8 +219,6 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 		return s.handleSendNotification(args)
 	case "escalate":
 		return s.handleEscalate(args)
-	case "restart_server":
-		return s.handleRestartServer()
 	default:
 		return nil, &jsonRPCError{Code: -32602, Message: "unknown tool: " + name}
 	}
@@ -361,61 +348,6 @@ func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCErro
 		return toolResult(fmt.Sprintf("[TIMED OUT] %s", response), false), nil
 	}
 	return toolResult(fmt.Sprintf("User responded: %s", response), false), nil
-}
-
-func (s *Server) handleRestartServer() (interface{}, *jsonRPCError) {
-	if err := s.launchctlKickstart(); err != nil {
-		return toolResult(fmt.Sprintf("エラー: サーバーの再起動に失敗しました: %v", err), true), nil
-	}
-
-	// サーバーが実際に起動するまでポーリングして待つ
-	if err := s.waitForServerReady(30*time.Second, 500*time.Millisecond); err != nil {
-		return toolResult(fmt.Sprintf("サーバーの再起動をキックしましたが、起動確認がタイムアウトしました: %v", err), true), nil
-	}
-
-	return toolResult("サーバーの再起動が完了しました。", false), nil
-}
-
-func (s *Server) launchctlKickstart() error {
-	u, err := user.Current()
-	if err != nil {
-		return fmt.Errorf("UIDの取得に失敗しました: %w", err)
-	}
-	serviceTarget := fmt.Sprintf("gui/%s/com.myuon.agmux", u.Uid)
-	return exec.Command("launchctl", "kickstart", "-k", serviceTarget).Run()
-}
-
-// waitForServerReady はサーバーのAPIにアクセスできるようになるまでポーリングする。
-// 旧プロセスの応答を誤認しないよう、まず旧プロセスの停止を確認（接続エラー）してから
-// 新プロセスの起動完了を待つ2フェーズ方式を採用している。
-func (s *Server) waitForServerReady(timeout, interval time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	client := &http.Client{Timeout: 2 * time.Second}
-	url := fmt.Sprintf("%s/api/sessions", s.apiURL)
-
-	// Phase 1: 旧プロセスが停止するのを待つ（接続エラーになるまでポーリング）
-	for time.Now().Before(deadline) {
-		resp, err := client.Get(url)
-		if err != nil {
-			// 接続エラー = 旧プロセスが停止した
-			break
-		}
-		resp.Body.Close()
-		time.Sleep(interval)
-	}
-
-	// Phase 2: 新プロセスが起動するのを待つ（200 OKが返るまでポーリング）
-	for time.Now().Before(deadline) {
-		resp, err := client.Get(url)
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				return nil
-			}
-		}
-		time.Sleep(interval)
-	}
-	return fmt.Errorf("サーバーが%v以内に応答しませんでした", timeout)
 }
 
 
