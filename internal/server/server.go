@@ -1151,30 +1151,47 @@ func (s *Server) getClaudeMD(w http.ResponseWriter, r *http.Request) {
 
 	var files []claudeMDFile
 
-	// Candidate paths for CLAUDE.md files
-	candidates := []string{
-		filepath.Join(sess.ProjectPath, "CLAUDE.md"),
-		filepath.Join(sess.ProjectPath, ".claude", "CLAUDE.md"),
+	// Candidate paths for CLAUDE.md files (project-local)
+	type candidateEntry struct {
+		path        string
+		displayPath string // if empty, compute relative path from project root
+	}
+
+	candidates := []candidateEntry{
+		{path: filepath.Join(sess.ProjectPath, "CLAUDE.md")},
+		{path: filepath.Join(sess.ProjectPath, ".claude", "CLAUDE.md")},
+	}
+
+	// Add global ~/.claude/CLAUDE.md
+	if homeDir, err := os.UserHomeDir(); err == nil {
+		globalPath := filepath.Join(homeDir, ".claude", "CLAUDE.md")
+		candidates = append(candidates, candidateEntry{
+			path:        globalPath,
+			displayPath: "~/.claude/CLAUDE.md",
+		})
 	}
 
 	seen := map[string]bool{}
 
 	for _, candidate := range candidates {
-		if seen[candidate] {
+		if seen[candidate.path] {
 			continue
 		}
-		content, err := os.ReadFile(candidate)
+		content, err := os.ReadFile(candidate.path)
 		if err != nil {
 			continue
 		}
-		seen[candidate] = true
+		seen[candidate.path] = true
 
-		// Compute relative path from project root for display
-		relPath, _ := filepath.Rel(sess.ProjectPath, candidate)
-		files = append(files, claudeMDFile{Path: relPath, Content: string(content)})
+		// Compute display path
+		displayPath := candidate.displayPath
+		if displayPath == "" {
+			displayPath, _ = filepath.Rel(sess.ProjectPath, candidate.path)
+		}
+		files = append(files, claudeMDFile{Path: displayPath, Content: string(content)})
 
 		// Parse @references and include referenced files
-		refs := parseAtReferences(string(content), filepath.Dir(candidate))
+		refs := parseAtReferences(string(content), filepath.Dir(candidate.path))
 		for _, ref := range refs {
 			if seen[ref] {
 				continue
@@ -1184,8 +1201,19 @@ func (s *Server) getClaudeMD(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			refRelPath, _ := filepath.Rel(sess.ProjectPath, ref)
-			files = append(files, claudeMDFile{Path: refRelPath, Content: string(refContent)})
+			// For refs from global CLAUDE.md, use ~/... display path
+			var refDisplayPath string
+			if candidate.displayPath != "" {
+				if homeDir, err := os.UserHomeDir(); err == nil {
+					if rel, err := filepath.Rel(homeDir, ref); err == nil {
+						refDisplayPath = "~/" + rel
+					}
+				}
+			}
+			if refDisplayPath == "" {
+				refDisplayPath, _ = filepath.Rel(sess.ProjectPath, ref)
+			}
+			files = append(files, claudeMDFile{Path: refDisplayPath, Content: string(refContent)})
 		}
 	}
 
