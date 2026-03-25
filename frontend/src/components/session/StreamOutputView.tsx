@@ -145,6 +145,9 @@ function ActiveTaskItem({ task, onDismiss }: { task: ActiveTask; onDismiss?: (ta
             {desc && (
               <span className="text-xs text-gray-500 truncate min-w-0">{desc}</span>
             )}
+            {task.startedAt && (
+              <span className="text-[10px] text-gray-400 shrink-0">{new Date(task.startedAt).toLocaleTimeString()}</span>
+            )}
             {task.usage && (
               <span className="text-[10px] text-gray-400 ml-auto shrink-0">
                 {task.usage.inputTokens != null && `${Math.round(task.usage.inputTokens / 1000)}k in`}
@@ -181,6 +184,12 @@ function ActiveTaskItem({ task, onDismiss }: { task: ActiveTask; onDismiss?: (ta
             <span className="text-gray-400 text-[10px] uppercase tracking-wide">Task ID</span>
             <div className="text-gray-700 text-xs mt-0.5 font-mono">{task.taskId}</div>
           </div>
+          {task.startedAt && (
+            <div>
+              <span className="text-gray-400 text-[10px] uppercase tracking-wide">Started At</span>
+              <div className="text-gray-700 text-xs mt-0.5">{new Date(task.startedAt).toLocaleString()}</div>
+            </div>
+          )}
           {task.agentId && (
             <div>
               <span className="text-gray-400 text-[10px] uppercase tracking-wide">Agent ID</span>
