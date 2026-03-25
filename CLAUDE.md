@@ -33,8 +33,8 @@ launchctl kickstart -k gui/$(id -u)/com.myuon.agmux  # サーバー再起動
 - 新規イシューは `gh issue create` で起票
 - 進捗管理は `gh issue list` で確認
 - 複数イシューの振り分け・実装は `/dispatch` スキルを使う
-- 動作確認するときは、PRのブランチをチェックアウトし、`make build && go install ./...` してから `launchctl kickstart -k gui/$(id -u)/com.myuon.agmux` でサーバーを再起動して動作確認に入る。処理の確認には agmux CLI を利用し、Webアプリの画面を見る必要があるときは agent browser を利用する。どちらもskillがあるので利用する際には参照すること
-- **フロントエンドのみの変更の場合**: configによりfrontendの `dist` ディレクトリを直接配信する設定になっているため、PRブランチをチェックアウトして `make build` するだけで画面に反映される（サーバー再起動不要）
+- 動作確認するときは、`make preview pr=<PR番号>` でPRのブランチをチェックアウトしてプレビュー用サーバーを起動し、そのポートにアクセスして確認する。処理の確認には agmux CLI を利用し、Webアプリの画面を見る必要があるときは agent browser を利用する。どちらもskillがあるので利用する際には参照すること
+- **フロントエンドのみの変更の場合**: configによりfrontendの `dist` ディレクトリを直接配信する設定になっているため、PRブランチをチェックアウトして `make build` するだけで画面に反映される（サーバー再起動不要、preview不要）
 
 ## エージェントの自律性ルール
 
