@@ -490,17 +490,13 @@ func (m *Manager) Clear(id string) error {
 		return fmt.Errorf("write mcp config: %w", err)
 	}
 
-	// Start fresh with a new CLI session ID to avoid resuming the old conversation
-	freshCLISessionID, err := newSessionID()
-	if err != nil {
-		return fmt.Errorf("generate cli session id: %w", err)
-	}
+	// Start fresh without CLISessionID — BuildStreamCommand will generate a
+	// new UUID for --session-id automatically.
 	sp, err := StartStreamProcessWithOpts(StreamOpts{
 		SessionID:     id,
 		ProjectPath:   s.ProjectPath,
 		MCPConfigPath: mcpConfigPath,
 		SystemPrompt:  m.systemPrompt,
-		CLISessionID:  freshCLISessionID,
 		Model:         s.Model,
 		APIPort:       m.apiPort,
 	}, provider)
@@ -512,8 +508,10 @@ func (m *Manager) Clear(id string) error {
 	m.streamProcesses[id] = sp
 	m.streamMu.Unlock()
 
-	// Reset task/goal and set status to working (preserve cli_session_id with fresh value)
-	_, err = m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', cli_session_id = ?, updated_at = ? WHERE id = ?", string(StatusWorking), freshCLISessionID, time.Now(), id)
+	// Reset task/goal and set status to working.
+	// Clear cli_session_id so that Reconnect does not reuse a stale/invalid ID;
+	// wireSessionIDCallback will persist the real CLI session ID once captured.
+	_, err = m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', cli_session_id = '', updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
 	return err
 }
 
