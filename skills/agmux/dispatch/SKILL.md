@@ -111,7 +111,7 @@ agmux session create "fix-pr-<PR番号>" \
   -m "PR #<N> のレビュー指摘を修正してください。
 
 ## 指示
-1. PR のレビューコメントを確認: gh api repos/{owner}/{repo}/pulls/<N>/comments
+1. PR のレビューコメントを確認: gh pr view <N> --comments
 2. 指摘事項を修正
 3. make test && make build で確認
 4. コミット & プッシュ
