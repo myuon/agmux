@@ -879,6 +879,35 @@ func (m *Manager) CompleteGoal(id string) (*CompleteGoalResult, error) {
 	return result, nil
 }
 
+// ListRecentProjects returns recently used project paths, ordered by last usage.
+func (m *Manager) ListRecentProjects(limit int) ([]RecentProject, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	rows, err := m.db.Query(
+		`SELECT project_path, MAX(updated_at) AS last_used_at, COUNT(*) AS session_count
+		 FROM sessions
+		 WHERE type != 'controller'
+		 GROUP BY project_path
+		 ORDER BY last_used_at DESC
+		 LIMIT ?`, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query recent projects: %w", err)
+	}
+	defer rows.Close()
+
+	var projects []RecentProject
+	for rows.Next() {
+		var p RecentProject
+		if err := rows.Scan(&p.ProjectPath, &p.LastUsedAt, &p.SessionCount); err != nil {
+			return nil, fmt.Errorf("scan recent project: %w", err)
+		}
+		projects = append(projects, p)
+	}
+	return projects, rows.Err()
+}
+
 // Reconnect restarts the CLI process for an existing session,
 // preserving the CLI session ID (--resume) and injecting a fresh MCP config.
 func (m *Manager) Reconnect(id string) error {

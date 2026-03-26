@@ -60,6 +60,9 @@ type SessionService interface {
 	StopAllStreamProcesses()
 	// SetCodexCommand sets the codex command for the manager.
 	SetCodexCommand(cmd string)
+
+	// ListRecentProjects returns recently used project paths.
+	ListRecentProjects(limit int) ([]RecentProject, error)
 }
 
 // Verify Manager implements SessionService at compile time.

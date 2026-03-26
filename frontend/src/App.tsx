@@ -8,6 +8,7 @@ import { Tabs } from "./components/ui/Tabs";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { getActiveSessionName } from "./activeSession";
 import { IconButton } from "./components/ui/IconButton";
+import { CreateSession } from "./components/CreateSession";
 
 // Register service worker for mobile notifications
 if ("serviceWorker" in navigator) {
@@ -89,6 +90,7 @@ function useGlobalNotifications() {
 function Dashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const mobileTab: MobileTab = searchParams.get("tab") === "logs" ? "logs" : "sessions";
   const navigate = useNavigate();
@@ -126,6 +128,15 @@ function Dashboard() {
       <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-3 flex items-center justify-between shrink-0">
         <h1 className="text-lg md:text-xl font-bold text-gray-900">agmux</h1>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="p-1.5 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"
+            title="New Session"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+            </svg>
+          </button>
           <IconButton shape="rounded" to="/preview" title="UI Preview">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
@@ -217,6 +228,20 @@ function Dashboard() {
         </div>
       </div>
 
+      {showCreateModal && (
+        <CreateSession
+          onClose={() => setShowCreateModal(false)}
+          onCreate={async (data) => {
+            try {
+              const created = await api.createSession(data);
+              setShowCreateModal(false);
+              navigate(`/sessions/${created.id}`);
+            } catch (e: unknown) {
+              setError(e instanceof Error ? e.message : "Failed to create session");
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
