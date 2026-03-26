@@ -147,6 +147,9 @@ export const api = {
     if (params?.since) qs.set("since", params.since);
     return request<MetricEvent[]>(`/metrics/events?${qs}`);
   },
+
+  getNotifications: (limit = 50) =>
+    request<NotificationEntry[]>(`/notifications?limit=${limit}`),
 };
 
 export interface RecentProject {
@@ -206,6 +209,15 @@ export interface MetricsSummary {
   codeEditDecisions: number;
   costBySession: { sessionId: string; cost: number }[];
   tokensBySession: { sessionId: string; input: number; output: number }[];
+}
+
+export interface NotificationEntry {
+  id: number;
+  sessionId: string;
+  sessionName: string;
+  kind: string;
+  message: string;
+  createdAt: string;
 }
 
 export interface MetricEvent {

@@ -3,6 +3,7 @@ import { Outlet, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
 import { LogPanel } from "./components/LogPanel";
+import { NotificationPanel } from "./components/NotificationPanel";
 import { SessionList } from "./components/SessionList";
 import { Tabs } from "./components/ui/Tabs";
 import { useWebSocket } from "./hooks/useWebSocket";
@@ -39,7 +40,8 @@ async function sendNotification(title: string, body: string, sessionId?: string)
   }
 }
 
-type MobileTab = "sessions" | "logs";
+type MobileTab = "sessions" | "logs" | "notifications";
+type SidebarTab = "logs" | "notifications";
 
 // Global notification hook — runs regardless of which page is active
 function useGlobalNotifications() {
@@ -93,8 +95,9 @@ function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("logs");
   const [searchParams, setSearchParams] = useSearchParams();
-  const mobileTab: MobileTab = searchParams.get("tab") === "logs" ? "logs" : "sessions";
+  const mobileTab: MobileTab = (searchParams.get("tab") as MobileTab) || "sessions";
   const navigate = useNavigate();
   const loadSessions = () => {
     api.listSessions().then((data) => {
@@ -205,13 +208,14 @@ function Dashboard() {
           items={[
             { key: "sessions", label: `Sessions (${sessions.length})` },
             { key: "logs", label: "Logs" },
+            { key: "notifications", label: "Notifications" },
           ]}
           activeKey={mobileTab}
           onChange={(key) => {
-            if (key === "logs") {
-              setSearchParams({ tab: "logs" });
-            } else {
+            if (key === "sessions") {
               setSearchParams({});
+            } else {
+              setSearchParams({ tab: key });
             }
           }}
         />
@@ -234,13 +238,32 @@ function Dashboard() {
           />
         </div>
 
-        {/* Log panel - desktop: always visible (sidebar), mobile: only when tab active */}
+        {/* Sidebar - desktop: always visible, mobile: only when tab active */}
         <div
           className={`md:w-[480px] md:border-l border-gray-200 bg-white min-h-0 p-3 md:p-4 ${
-            mobileTab === "logs" ? "flex-1 flex flex-col" : "hidden md:flex md:flex-col"
+            mobileTab === "logs" || mobileTab === "notifications" ? "flex-1 flex flex-col" : "hidden md:flex md:flex-col"
           }`}
         >
-          <LogPanel />
+          {/* Desktop sidebar tab switcher */}
+          <div className="hidden md:block mb-2">
+            <Tabs
+              items={[
+                { key: "logs", label: "Logs" },
+                { key: "notifications", label: "Notifications" },
+              ]}
+              activeKey={sidebarTab}
+              onChange={(key) => setSidebarTab(key as SidebarTab)}
+            />
+          </div>
+          {/* Mobile: show based on mobileTab, Desktop: show based on sidebarTab */}
+          <div className="flex-1 min-h-0 flex flex-col md:hidden">
+            {mobileTab === "logs" && <LogPanel />}
+            {mobileTab === "notifications" && <NotificationPanel />}
+          </div>
+          <div className="flex-1 min-h-0 hidden md:flex md:flex-col">
+            {sidebarTab === "logs" && <LogPanel />}
+            {sidebarTab === "notifications" && <NotificationPanel />}
+          </div>
         </div>
       </div>
 
