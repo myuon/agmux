@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { api, type CodexModel } from "../api/client";
+import { api, type CodexModel, type RecentProject } from "../api/client";
 
 interface Props {
   onClose: () => void;
@@ -29,6 +29,13 @@ export function CreateSession({ onClose, onCreate }: Props) {
   const [claudeModels, setClaudeModels] = useState<ModelOption[]>([]);
   const [autoApprove, setAutoApprove] = useState(true);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+
+  useEffect(() => {
+    api.getRecentProjects()
+      .then(setRecentProjects)
+      .catch(() => setRecentProjects([]));
+  }, []);
 
   useEffect(() => {
     if (provider === "codex") {
@@ -96,6 +103,29 @@ export function CreateSession({ onClose, onCreate }: Props) {
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
               placeholder="/path/to/project"
             />
+            {recentProjects.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {recentProjects.map((p) => {
+                  const dirName = p.projectPath.split("/").pop() || p.projectPath;
+                  return (
+                    <button
+                      key={p.projectPath}
+                      type="button"
+                      onClick={() => {
+                        setProjectPath(p.projectPath);
+                        if (!name) {
+                          setName(dirName);
+                        }
+                      }}
+                      className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-700 hover:bg-blue-100 hover:text-blue-700 transition-colors"
+                      title={p.projectPath}
+                    >
+                      {dirName}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

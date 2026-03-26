@@ -20,6 +20,9 @@ async function request<T>(
 export const api = {
   listSessions: () => request<Session[]>("/sessions"),
 
+  getRecentProjects: () =>
+    request<RecentProject[]>("/projects/recent"),
+
   createSession: (data: {
     name: string;
     projectPath: string;
@@ -133,6 +136,12 @@ export const api = {
     return request<MetricEvent[]>(`/metrics/events?${qs}`);
   },
 };
+
+export interface RecentProject {
+  projectPath: string;
+  lastUsedAt: string;
+  sessionCount: number;
+}
 
 export interface CodexModel {
   id: string;

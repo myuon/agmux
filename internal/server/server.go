@@ -126,6 +126,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/escalate/respond", s.respondEscalation)
 		r.Post("/sessions/{id}/notify", s.sendNotification)
 		r.Post("/sessions/controller/restart", s.restartController)
+		r.Get("/projects/recent", s.getRecentProjects)
 		r.Get("/claude/models", s.getClaudeModels)
 		r.Get("/claude/version", s.getClaudeVersion)
 		r.Get("/logs", s.getLogs)
@@ -192,6 +193,18 @@ type sendRequest struct {
 type updateContextRequest struct {
 	CurrentTask string `json:"currentTask"`
 	Goal        string `json:"goal"`
+}
+
+func (s *Server) getRecentProjects(w http.ResponseWriter, r *http.Request) {
+	projects, err := s.sessions.ListRecentProjects(10)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if projects == nil {
+		projects = []session.RecentProject{}
+	}
+	writeJSON(w, http.StatusOK, projects)
 }
 
 func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {

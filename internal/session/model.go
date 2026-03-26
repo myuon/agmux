@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+// RecentProject represents a recently used project path.
+type RecentProject struct {
+	ProjectPath  string    `json:"projectPath"`
+	LastUsedAt   time.Time `json:"lastUsedAt"`
+	SessionCount int       `json:"sessionCount"`
+}
+
 type Status string
 
 const (
