@@ -931,9 +931,11 @@ func (m *Manager) ListRecentProjects(limit int) ([]RecentProject, error) {
 	var projects []RecentProject
 	for rows.Next() {
 		var p RecentProject
-		if err := rows.Scan(&p.ProjectPath, &p.LastUsedAt, &p.SessionCount); err != nil {
+		var lastUsed string
+		if err := rows.Scan(&p.ProjectPath, &lastUsed, &p.SessionCount); err != nil {
 			return nil, fmt.Errorf("scan recent project: %w", err)
 		}
+		p.LastUsedAt, _ = time.Parse(time.RFC3339, lastUsed)
 		projects = append(projects, p)
 	}
 	return projects, rows.Err()
