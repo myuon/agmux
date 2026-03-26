@@ -9,6 +9,7 @@ import { useWebSocket } from "./hooks/useWebSocket";
 import { getActiveSessionName } from "./activeSession";
 import { IconButton } from "./components/ui/IconButton";
 import { CreateSession } from "./components/CreateSession";
+import { BroadcastModal } from "./components/BroadcastModal";
 
 // Register service worker for mobile notifications
 if ("serviceWorker" in navigator) {
@@ -91,6 +92,7 @@ function Dashboard() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const mobileTab: MobileTab = searchParams.get("tab") === "logs" ? "logs" : "sessions";
   const navigate = useNavigate();
@@ -153,6 +155,19 @@ function Dashboard() {
             </svg>
           </IconButton>
           <button
+            onClick={() => setBroadcastOpen(true)}
+            className="p-1.5 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"
+            title="Broadcast"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" />
+              <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.4" />
+              <circle cx="12" cy="12" r="2" />
+              <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.4" />
+              <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19" />
+            </svg>
+          </button>
+          <button
             onClick={() => {
               const controller = sessions.find((s) => s.type === "controller");
               if (controller) {
@@ -169,6 +184,7 @@ function Dashboard() {
           </button>
         </div>
       </header>
+      <BroadcastModal open={broadcastOpen} onClose={() => setBroadcastOpen(false)} sessions={sessions} />
 
       {/* Error banner */}
       {error && (

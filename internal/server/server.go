@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -125,6 +126,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/escalate", s.createEscalation)
 		r.Post("/sessions/{id}/escalate/respond", s.respondEscalation)
 		r.Post("/sessions/{id}/notify", s.sendNotification)
+		r.Post("/sessions/broadcast", s.broadcastToSessions)
 		r.Post("/sessions/controller/restart", s.restartController)
 		r.Get("/projects/recent", s.getRecentProjects)
 		r.Get("/claude/models", s.getClaudeModels)
@@ -346,6 +348,77 @@ func (s *Server) sendToSession(w http.ResponseWriter, r *http.Request) {
 	_ = s.sessions.UpdateStatus(id, session.StatusWorking)
 	s.recordSessionAction(id, "session_send_keys", req.Text)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+}
+
+type broadcastRequest struct {
+	Text       string   `json:"text"`
+	SessionIDs []string `json:"sessionIds,omitempty"`
+	Filter     string   `json:"filter,omitempty"` // "active" (default) | "all"
+}
+
+type broadcastResult struct {
+	SessionID string `json:"sessionId"`
+	Status    string `json:"status"`
+	Error     string `json:"error,omitempty"`
+}
+
+func (s *Server) broadcastToSessions(w http.ResponseWriter, r *http.Request) {
+	var req broadcastRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Text == "" {
+		writeError(w, http.StatusBadRequest, "text is required")
+		return
+	}
+
+	// Determine target sessions
+	var targetIDs []string
+	if len(req.SessionIDs) > 0 {
+		targetIDs = req.SessionIDs
+	} else {
+		sessions, err := s.sessions.List()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		activeStatuses := map[session.Status]bool{
+			session.StatusWorking:         true,
+			session.StatusIdle:            true,
+			session.StatusQuestionWaiting: true,
+			session.StatusAlignmentNeeded: true,
+		}
+		for _, sess := range sessions {
+			// Skip external sessions
+			if sess.Type == session.TypeExternal {
+				continue
+			}
+			if req.Filter == "all" || activeStatuses[sess.Status] {
+				targetIDs = append(targetIDs, sess.ID)
+			}
+		}
+	}
+
+	// Send to all targets in parallel
+	results := make([]broadcastResult, len(targetIDs))
+	var wg sync.WaitGroup
+	for i, id := range targetIDs {
+		wg.Add(1)
+		go func(idx int, sessionID string) {
+			defer wg.Done()
+			if err := s.sessions.SendKeysWithImages(sessionID, req.Text, nil); err != nil {
+				results[idx] = broadcastResult{SessionID: sessionID, Status: "error", Error: err.Error()}
+				return
+			}
+			_ = s.sessions.UpdateStatus(sessionID, session.StatusWorking)
+			s.recordSessionAction(sessionID, "session_send_keys", req.Text)
+			results[idx] = broadcastResult{SessionID: sessionID, Status: "sent"}
+		}(i, id)
+	}
+	wg.Wait()
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"results": results})
 }
 
 func (s *Server) updateSessionContext(w http.ResponseWriter, r *http.Request) {

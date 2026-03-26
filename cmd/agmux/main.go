@@ -253,6 +253,7 @@ func sessionCmd() *cobra.Command {
 	cmd.AddCommand(sessionStopCmd())
 	cmd.AddCommand(sessionDeleteCmd())
 	cmd.AddCommand(sessionSendCmd())
+	cmd.AddCommand(sessionBroadcastCmd())
 
 	return cmd
 }
@@ -455,6 +456,85 @@ func sendSessionViaAPI(id, text string, port int) error {
 	}
 
 	fmt.Println("Text sent.")
+	return nil
+}
+
+func sessionBroadcastCmd() *cobra.Command {
+	var all bool
+	var filter string
+
+	cmd := &cobra.Command{
+		Use:   "broadcast <text>",
+		Short: "Broadcast a message to multiple sessions",
+		Long:  "Send the same message to all active sessions or specify a filter.\nExamples:\n  agmux session broadcast \"Report your progress\"\n  agmux session broadcast --filter all \"Stop work\"",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, _ := config.Load()
+			port := cfg.Server.Port
+			text := args[0]
+
+			if all {
+				filter = "all"
+			}
+			if filter == "" {
+				filter = "active"
+			}
+
+			return broadcastViaAPI(text, nil, filter, port)
+		},
+	}
+
+	cmd.Flags().BoolVar(&all, "all", false, "Send to all sessions including stopped/paused (shortcut for --filter all)")
+	cmd.Flags().StringVar(&filter, "filter", "", "Filter target sessions: \"active\" (default) or \"all\"")
+
+	return cmd
+}
+
+func broadcastViaAPI(text string, sessionIDs []string, filter string, port int) error {
+	payload := map[string]interface{}{
+		"text":   text,
+		"filter": filter,
+	}
+	if len(sessionIDs) > 0 {
+		payload["sessionIds"] = sessionIDs
+	}
+	body, _ := json.Marshal(payload)
+
+	url := fmt.Sprintf("http://localhost:%d/api/sessions/broadcast", port)
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("failed to connect to agmux server on port %d (is it running?): %w", port, err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Results []struct {
+			SessionID string `json:"sessionId"`
+			Status    string `json:"status"`
+			Error     string `json:"error,omitempty"`
+		} `json:"results"`
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode server response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server error: %s", result.Error)
+	}
+
+	if len(result.Results) == 0 {
+		fmt.Println("No target sessions found.")
+		return nil
+	}
+
+	for _, r := range result.Results {
+		if r.Status == "sent" {
+			fmt.Printf("  %s: sent\n", r.SessionID)
+		} else {
+			fmt.Printf("  %s: error - %s\n", r.SessionID, r.Error)
+		}
+	}
+	fmt.Printf("Broadcast complete: %d session(s)\n", len(result.Results))
 	return nil
 }
 
