@@ -170,13 +170,14 @@ func (s *Server) NewHTTPServer(addr string) *http.Server {
 // API handlers
 
 type createSessionRequest struct {
-	Name        string `json:"name"`
-	ProjectPath string `json:"projectPath"`
-	Prompt      string `json:"prompt,omitempty"`
-	Worktree    bool   `json:"worktree,omitempty"`
-	Provider    string `json:"provider,omitempty"`
-	Model       string `json:"model,omitempty"`
-	AutoApprove bool   `json:"autoApprove,omitempty"`
+	Name         string `json:"name"`
+	ProjectPath  string `json:"projectPath"`
+	Prompt       string `json:"prompt,omitempty"`
+	Worktree     bool   `json:"worktree,omitempty"`
+	Provider     string `json:"provider,omitempty"`
+	Model        string `json:"model,omitempty"`
+	AutoApprove  bool   `json:"autoApprove,omitempty"`
+	SystemPrompt string `json:"systemPrompt,omitempty"`
 }
 
 type sendImageData struct {
@@ -223,7 +224,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and projectPath are required")
 		return
 	}
-	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model, FullAuto: req.AutoApprove})
+	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model, FullAuto: req.AutoApprove, SystemPrompt: req.SystemPrompt})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

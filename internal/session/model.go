@@ -29,6 +29,7 @@ type Session struct {
 	Name          string       `json:"name"`
 	ProjectPath   string       `json:"projectPath"`
 	InitialPrompt string       `json:"initialPrompt,omitempty"`
+	SystemPrompt  string       `json:"systemPrompt,omitempty"`
 	Status        Status       `json:"status"`
 	Type          SessionType  `json:"type"`
 	Provider      ProviderName `json:"provider"`

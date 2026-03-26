@@ -83,12 +83,21 @@ func (m *Manager) SystemPrompt() string {
 	return m.systemPrompt
 }
 
+// buildEffectiveSystemPrompt returns the effective system prompt by combining
+// the global default system prompt with a per-session custom system prompt.
+func (m *Manager) buildEffectiveSystemPrompt(customSystemPrompt string) string {
+	if customSystemPrompt == "" {
+		return m.systemPrompt
+	}
+	return m.systemPrompt + "\n\n" + customSystemPrompt
+}
+
 // RecoverStreamProcesses restarts stream processes for all working sessions.
 // This should be called at server startup to recover sessions that were running
 // before the server was restarted.
 func (m *Manager) RecoverStreamProcesses() {
 	rows, err := m.db.Query(
-		`SELECT id, project_path, provider, cli_session_id, model FROM sessions WHERE status = ? AND type != 'controller'`,
+		`SELECT id, project_path, provider, cli_session_id, model, system_prompt FROM sessions WHERE status = ? AND type != 'controller'`,
 		string(StatusWorking),
 	)
 	if err != nil {
@@ -99,7 +108,8 @@ func (m *Manager) RecoverStreamProcesses() {
 
 	for rows.Next() {
 		var id, projectPath, providerStr, dbCliSessionID, dbModel string
-		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel); err != nil {
+		var dbSystemPrompt sql.NullString
+		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt); err != nil {
 			m.logger.Error("recover stream processes: scan failed", "error", err)
 			continue
 		}
@@ -121,11 +131,15 @@ func (m *Manager) RecoverStreamProcesses() {
 				_ = m.UpdateModel(id, model)
 			}
 		}
+		customPrompt := ""
+		if dbSystemPrompt.Valid {
+			customPrompt = dbSystemPrompt.String
+		}
 		sp, err := StartStreamProcessWithOpts(StreamOpts{
 			SessionID:     id,
 			ProjectPath:   projectPath,
 			MCPConfigPath: mcpPath,
-			SystemPrompt:  m.systemPrompt,
+			SystemPrompt:  m.buildEffectiveSystemPrompt(customPrompt),
 			Resume:        true,
 			CLISessionID:  cliSessionID,
 			Model:         dbModel,
@@ -145,21 +159,24 @@ func (m *Manager) RecoverStreamProcesses() {
 
 // CreateOpts contains optional parameters for creating a session.
 type CreateOpts struct {
-	Provider  ProviderName
-	Model     string
-	FullAuto  bool   // enable full-auto mode (bypasses permission prompts for Codex)
+	Provider     ProviderName
+	Model        string
+	FullAuto     bool   // enable full-auto mode (bypasses permission prompts for Codex)
+	SystemPrompt string // per-session custom system prompt (appended to defaultSystemPrompt)
 }
 
 func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts ...CreateOpts) (*Session, error) {
 	pn := ProviderClaude
 	model := ""
 	fullAuto := false
+	customSystemPrompt := ""
 	if len(opts) > 0 {
 		if opts[0].Provider != "" {
 			pn = opts[0].Provider
 		}
 		model = opts[0].Model
 		fullAuto = opts[0].FullAuto
+		customSystemPrompt = opts[0].SystemPrompt
 	}
 
 	// For Codex, resolve default model from config if not explicitly specified
@@ -180,12 +197,14 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		return nil, fmt.Errorf("write mcp config: %w", err)
 	}
 
+	effectiveSystemPrompt := m.buildEffectiveSystemPrompt(customSystemPrompt)
+
 	// Start stream process
 	streamOpts := StreamOpts{
 		SessionID:     id,
 		ProjectPath:   projectPath,
 		MCPConfigPath: mcpConfigPath,
-		SystemPrompt:  m.systemPrompt,
+		SystemPrompt:  effectiveSystemPrompt,
 		Resume:        false,
 		Worktree:      worktree,
 		Model:         model,
@@ -227,6 +246,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		Name:          name,
 		ProjectPath:   projectPath,
 		InitialPrompt: prompt,
+		SystemPrompt:  customSystemPrompt,
 		Status:        StatusWorking,
 		Type:          TypeWorker,
 		Provider:      pn,
@@ -236,9 +256,9 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	}
 
 	if _, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
@@ -248,7 +268,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -262,8 +282,8 @@ func (m *Manager) List() ([]Session, error) {
 		var status string
 		var sessionType string
 		var providerStr string
-		var prompt, currentTask, goal, goalsJSON, lastError sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		var prompt, systemPrompt, currentTask, goal, goalsJSON, lastError sql.NullString
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = Status(status)
@@ -274,6 +294,9 @@ func (m *Manager) List() ([]Session, error) {
 		}
 		if prompt.Valid {
 			s.InitialPrompt = prompt.String
+		}
+		if systemPrompt.Valid {
+			s.SystemPrompt = systemPrompt.String
 		}
 		if currentTask.Valid {
 			s.CurrentTask = currentTask.String
@@ -299,11 +322,11 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var status string
 	var sessionType string
 	var providerStr string
-	var prompt, currentTask, goal, goalsJSON, lastError sql.NullString
+	var prompt, systemPrompt, currentTask, goal, goalsJSON, lastError sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -318,6 +341,9 @@ func (m *Manager) Get(id string) (*Session, error) {
 	}
 	if prompt.Valid {
 		s.InitialPrompt = prompt.String
+	}
+	if systemPrompt.Valid {
+		s.SystemPrompt = systemPrompt.String
 	}
 	if currentTask.Valid {
 		s.CurrentTask = currentTask.String
@@ -345,8 +371,9 @@ func (m *Manager) Duplicate(id string) (*Session, error) {
 
 	newName := src.Name + " (copy)"
 	return m.Create(newName, src.ProjectPath, "", false, CreateOpts{
-		Provider: src.Provider,
-		Model:    src.Model,
+		Provider:     src.Provider,
+		Model:        src.Model,
+		SystemPrompt: src.SystemPrompt,
 	})
 }
 
@@ -496,7 +523,7 @@ func (m *Manager) Clear(id string) error {
 		SessionID:     id,
 		ProjectPath:   s.ProjectPath,
 		MCPConfigPath: mcpConfigPath,
-		SystemPrompt:  m.systemPrompt,
+		SystemPrompt:  m.buildEffectiveSystemPrompt(s.SystemPrompt),
 		Model:         s.Model,
 		APIPort:       m.apiPort,
 	}, provider)
@@ -537,6 +564,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			cliSessionID = ReadCLISessionID(s.ID, provider)
 		}
 
+		effectiveSP := m.buildEffectiveSystemPrompt(s.SystemPrompt)
 		var err error
 		if s.Provider == ProviderCodex && cliSessionID != "" {
 			// For Codex, start resume directly with the prompt as a positional arg.
@@ -545,7 +573,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 				SessionID:     s.ID,
 				ProjectPath:   s.ProjectPath,
 				MCPConfigPath: mcpPath,
-				SystemPrompt:  m.systemPrompt,
+				SystemPrompt:  effectiveSP,
 				InitialPrompt: text,
 				Resume:        true,
 				CLISessionID:  cliSessionID,
@@ -567,7 +595,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			SessionID:     s.ID,
 			ProjectPath:   s.ProjectPath,
 			MCPConfigPath: mcpPath,
-			SystemPrompt:  m.systemPrompt,
+			SystemPrompt:  effectiveSP,
 			Resume:        true,
 			CLISessionID:  cliSessionID,
 			Model:         s.Model,
@@ -686,11 +714,11 @@ func (m *Manager) GetController() (*Session, error) {
 	var status string
 	var sessionType string
 	var providerStr string
-	var prompt, currentTask, goal, goalsJSON, lastError sql.NullString
+	var prompt, systemPrompt, currentTask, goal, goalsJSON, lastError sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, created_at, updated_at
 		 FROM sessions WHERE type = ? LIMIT 1`, string(TypeController),
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -705,6 +733,9 @@ func (m *Manager) GetController() (*Session, error) {
 	}
 	if prompt.Valid {
 		s.InitialPrompt = prompt.String
+	}
+	if systemPrompt.Valid {
+		s.SystemPrompt = systemPrompt.String
 	}
 	if currentTask.Valid {
 		s.CurrentTask = currentTask.String
@@ -908,7 +939,7 @@ func (m *Manager) Reconnect(id string) error {
 		SessionID:     id,
 		ProjectPath:   s.ProjectPath,
 		MCPConfigPath: mcpConfigPath,
-		SystemPrompt:  m.systemPrompt,
+		SystemPrompt:  m.buildEffectiveSystemPrompt(s.SystemPrompt),
 		Resume:        true,
 		CLISessionID:  cliSessionID,
 		Model:         s.Model,
