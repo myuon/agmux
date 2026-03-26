@@ -30,6 +30,7 @@ export const api = {
     provider?: string;
     model?: string;
     autoApprove?: boolean;
+    systemPrompt?: string;
   }) =>
     request<Session>("/sessions", {
       method: "POST",

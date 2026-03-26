@@ -157,6 +157,12 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add system_prompt column if missing (for per-session system prompt)
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN system_prompt TEXT`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: remove UNIQUE constraint from tmux_session (no longer used)
 	// SQLite doesn't support DROP CONSTRAINT, so we recreate the table
 	{

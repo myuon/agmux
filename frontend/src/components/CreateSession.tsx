@@ -10,6 +10,7 @@ interface Props {
     provider?: string;
     model?: string;
     autoApprove?: boolean;
+    systemPrompt?: string;
   }) => void;
 }
 
@@ -23,6 +24,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
   const [name, setName] = useState("");
   const [projectPath, setProjectPath] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("");
   const [provider, setProvider] = useState("claude");
   const [model, setModel] = useState("");
   const [codexModels, setCodexModels] = useState<CodexModel[]>([]);
@@ -70,6 +72,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
       provider,
       model: (provider === "codex" || provider === "claude") && model ? model : undefined,
       autoApprove: provider === "codex" && autoApprove ? true : undefined,
+      systemPrompt: systemPrompt || undefined,
     });
   };
 
@@ -137,6 +140,18 @@ export function CreateSession({ onClose, onCreate }: Props) {
               rows={3}
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
               placeholder="Fix the bug in..."
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              System Prompt (optional)
+            </label>
+            <textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              rows={3}
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              placeholder="You are a specialist in..."
             />
           </div>
           <div>
