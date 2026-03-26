@@ -131,6 +131,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/projects/recent", s.getRecentProjects)
 		r.Get("/claude/models", s.getClaudeModels)
 		r.Get("/claude/version", s.getClaudeVersion)
+		r.Get("/notifications", s.listNotifications)
 		r.Get("/logs", s.getLogs)
 		r.Get("/config", s.getConfig)
 		r.Put("/config", s.updateConfig)
@@ -540,6 +541,7 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.recordSessionAction(sessionID, "escalation", req.Message)
+	s.saveNotification(sessionID, "escalation", req.Message)
 
 	// Determine timeout duration
 	timeoutSeconds := 300 // default 5 minutes
@@ -617,6 +619,7 @@ func (s *Server) sendNotification(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.recordSessionAction(sessionID, "agent_notification", req.Message)
+	s.saveNotification(sessionID, "notification", req.Message)
 
 	// Broadcast WebSocket notification to all connected clients
 	s.hub.Broadcast(Message{
@@ -730,6 +733,68 @@ func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
 		"lines": result,
 		"total": total,
 	})
+}
+
+func (s *Server) saveNotification(sessionID, kind, message string) {
+	_, err := s.sqlDB.Exec(
+		`INSERT INTO notifications (session_id, kind, message) VALUES (?, ?, ?)`,
+		sessionID, kind, message,
+	)
+	if err != nil {
+		s.logger.Error("failed to save notification", "error", err)
+	}
+}
+
+type notificationRow struct {
+	ID          int64  `json:"id"`
+	SessionID   string `json:"sessionId"`
+	SessionName string `json:"sessionName"`
+	Kind        string `json:"kind"`
+	Message     string `json:"message"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+func (s *Server) listNotifications(w http.ResponseWriter, r *http.Request) {
+	limit := 50
+	if q := r.URL.Query().Get("limit"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil && n > 0 {
+			limit = n
+		}
+	}
+
+	query := `
+		SELECT n.id, n.session_id, COALESCE(s.name, ''), n.kind, n.message, n.created_at
+		FROM notifications n
+		LEFT JOIN sessions s ON n.session_id = s.id
+	`
+	args := []interface{}{}
+
+	if since := r.URL.Query().Get("since"); since != "" {
+		query += ` WHERE n.created_at >= ?`
+		args = append(args, since)
+	}
+
+	query += ` ORDER BY n.created_at DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := s.sqlDB.Query(query, args...)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	defer rows.Close()
+
+	notifications := []notificationRow{}
+	for rows.Next() {
+		var n notificationRow
+		if err := rows.Scan(&n.ID, &n.SessionID, &n.SessionName, &n.Kind, &n.Message, &n.CreatedAt); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		notifications = append(notifications, n)
+	}
+
+	writeJSON(w, http.StatusOK, notifications)
 }
 
 func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {

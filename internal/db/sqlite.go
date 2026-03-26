@@ -263,6 +263,22 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: create notifications table
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS notifications (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			session_id TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			message TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_notifications_session ON notifications(session_id)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at)`)
+
 	return nil
 }
 
