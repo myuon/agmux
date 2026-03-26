@@ -87,6 +87,17 @@ export const api = {
   clearSession: (id: string) =>
     request<{ status: string }>(`/sessions/${id}/clear`, { method: "POST" }),
 
+  broadcastToSessions: (
+    text: string,
+    opts?: { sessionIds?: string[]; filter?: "active" | "all" }
+  ) =>
+    request<{
+      results: { sessionId: string; status: string; error?: string }[];
+    }>("/sessions/broadcast", {
+      method: "POST",
+      body: JSON.stringify({ text, ...opts }),
+    }),
+
   restartController: () =>
     request<Session>("/sessions/controller/restart", { method: "POST" }),
 
