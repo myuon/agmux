@@ -6,7 +6,7 @@ import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, FolderOpen,
   Sparkles, Settings, Copy,
   RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
-  Code, Eye, X,
+  Code, Eye, X, AlertTriangle,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
@@ -695,6 +695,13 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               <ActiveTasksPanel tasks={activeTasks} />
             </div>
           )}
+          {pendingPermission && sessionId && (
+            <PermissionPromptBanner
+              permission={pendingPermission}
+              sessionId={sessionId}
+              onResponded={() => setPendingPermission(null)}
+            />
+          )}
           {sendForm}
         </div>
       )}
@@ -771,6 +778,65 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           />
         )}
       </Modal>
+    </div>
+  );
+}
+
+function PermissionPromptBanner({ permission, sessionId, onResponded }: {
+  permission: { id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number };
+  sessionId: string;
+  onResponded: () => void;
+}) {
+  const [sending, setSending] = useState(false);
+  const inp = permission.input as Record<string, unknown> | undefined;
+
+  const handleRespond = async (response: "allow" | "deny") => {
+    if (sending) return;
+    setSending(true);
+    try {
+      await api.respondPermission(sessionId, permission.id, response);
+      onResponded();
+    } catch {
+      // ignore
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="shrink-0 mx-4 sm:mx-8 -mx-4 sm:-mx-8 mb-2">
+      <div className="border border-amber-300 rounded-lg bg-amber-50 p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+          <span className="font-medium text-sm text-amber-800">Permission Request</span>
+          <span className="text-sm text-gray-700">{permission.toolName}</span>
+        </div>
+        {typeof inp?.plan === "string" && (
+          <pre className="text-xs text-gray-600 bg-white border border-gray-200 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap max-h-40 overflow-y-auto">
+            {inp.plan}
+          </pre>
+        )}
+        {permission.timedOut ? (
+          <div className="text-xs text-amber-700">タイムアウト - 自動承認しました</div>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleRespond("allow")}
+              disabled={sending}
+              className="px-4 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+            >
+              {sending ? "..." : "承認"}
+            </button>
+            <button
+              onClick={() => handleRespond("deny")}
+              disabled={sending}
+              className="px-4 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+            >
+              {sending ? "..." : "拒否"}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
