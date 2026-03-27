@@ -25,6 +25,7 @@ import { ActiveTasksPanel } from "../components/session/StreamOutputView";
 import { SessionList } from "../components/SessionList";
 import { SessionCard } from "../components/ui/SessionCard";
 import { AlertBanner } from "../components/ui/AlertBanner";
+import { PermissionPromptBanner } from "./SessionPage";
 import { ConnectionStatusIndicator } from "../components/ui/ConnectionStatus";
 import { PermissionStatus } from "../components/ui/PermissionStatus";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
@@ -823,6 +824,42 @@ function AlertBannerPreview() {
   );
 }
 
+function PermissionPromptBannerPreview() {
+  const shortPlan = "# Plan\n\nファイルを更新します。";
+  const longPlan = "# Plan\n\n## Step 1\nファイルAを読み込む\n\n## Step 2\n関数Bを修正する\n\n## Step 3\nテストを実行する\n\n## Step 4\nリファクタリング\n\n## Step 5\nドキュメントを更新する\n\n## Step 6\nレビュー準備";
+
+  return (
+    <PreviewSection title="PermissionPromptBanner">
+      <div className="space-y-4">
+        <div>
+          <p className="text-xs text-gray-500 mb-1">短いプラン</p>
+          <PermissionPromptBanner
+            permission={{ id: "1", toolName: "ExitPlanMode", input: { plan: shortPlan }, timeoutSeconds: 300 }}
+            sessionId="preview"
+            onResponded={() => {}}
+          />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">長いプラン（折りたたみ）</p>
+          <PermissionPromptBanner
+            permission={{ id: "2", toolName: "ExitPlanMode", input: { plan: longPlan }, timeoutSeconds: 300 }}
+            sessionId="preview"
+            onResponded={() => {}}
+          />
+        </div>
+        <div>
+          <p className="text-xs text-gray-500 mb-1">タイムアウト</p>
+          <PermissionPromptBanner
+            permission={{ id: "3", toolName: "ExitPlanMode", input: { plan: shortPlan }, timedOut: true, timeoutSeconds: 300 }}
+            sessionId="preview"
+            onResponded={() => {}}
+          />
+        </div>
+      </div>
+    </PreviewSection>
+  );
+}
+
 function ConnectionStatusPreview() {
   return (
     <PreviewSection title="ConnectionStatusIndicator">
@@ -999,6 +1036,7 @@ const categories = [
       { id: "toastbar", label: "ToastBar", el: <ToastPreview /> },
       { id: "modal", label: "Modal", el: <ModalPreview /> },
       { id: "alertbanner", label: "AlertBanner", el: <AlertBannerPreview /> },
+      { id: "permissionpromptbanner", label: "PermissionPromptBanner", el: <PermissionPromptBannerPreview /> },
     ],
   },
   {

@@ -6,7 +6,7 @@ import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, FolderOpen,
   Sparkles, Settings, Copy,
   RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
-  Code, Eye, X,
+  Code, Eye, X, AlertTriangle,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
@@ -89,6 +89,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [pendingEscalationId, setPendingEscalationId] = useState<string | null>(null);
   const [escalationTimedOut, setEscalationTimedOut] = useState(false);
   const [escalationTimeoutSeconds, setEscalationTimeoutSeconds] = useState(300);
+  const [pendingPermission, setPendingPermission] = useState<{ id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number } | null>(null);
   const [reconnectToast, setReconnectToast] = useState(false);
   const [disconnectToast, setDisconnectToast] = useState(false);
   const [clearToast, setClearToast] = useState<"success" | "error" | null>(null);
@@ -148,6 +149,18 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       const data = msg.data as { id: string; sessionId: string };
       if (data.sessionId === sessionId) {
         setEscalationTimedOut(true);
+      }
+    }
+    if (msg.type === "permission_prompt") {
+      const data = msg.data as { id: string; sessionId: string; toolName: string; input: unknown; timeoutSeconds?: number };
+      if (data.sessionId === sessionId) {
+        setPendingPermission({ id: data.id, toolName: data.toolName, input: data.input, timeoutSeconds: data.timeoutSeconds ?? 300 });
+      }
+    }
+    if (msg.type === "permission_timeout") {
+      const data = msg.data as { id: string; sessionId: string };
+      if (data.sessionId === sessionId) {
+        setPendingPermission((prev) => prev && prev.id === data.id ? { ...prev, timedOut: true } : prev);
       }
     }
     if (msg.type === "stream_update") {
@@ -248,6 +261,11 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         setPendingEscalationId(r.escalation.id);
         setEscalationTimedOut(r.escalation.timedOut ?? false);
         setEscalationTimeoutSeconds(r.escalation.timeoutSeconds ?? 300);
+      }
+    }).catch(() => {});
+    api.getPendingPermission(sessionId).then((r) => {
+      if (r.permission) {
+        setPendingPermission({ id: r.permission.id, toolName: r.permission.toolName, input: r.permission.input, timedOut: r.permission.timedOut, timeoutSeconds: r.permission.timeoutSeconds ?? 300 });
       }
     }).catch(() => {});
 
@@ -668,7 +686,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         </div>
       ) : (
         <div className="flex flex-col flex-1 min-h-0">
-          <StreamOutputView lines={streamLines} partialText={partialText} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={() => { setPendingEscalationId(null); setEscalationTimedOut(false); }} provider={session?.provider ?? undefined} onAnswer={async (text) => {
+          <StreamOutputView lines={streamLines} partialText={partialText} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={() => { setPendingEscalationId(null); setEscalationTimedOut(false); }} pendingPermission={pendingPermission ?? undefined} onPermissionResponded={() => { setPendingPermission(null); }} provider={session?.provider ?? undefined} onAnswer={async (text) => {
             if (!sessionId) return;
             await api.sendToSession(sessionId, text);
           }} />
@@ -677,7 +695,13 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               <ActiveTasksPanel tasks={activeTasks} />
             </div>
           )}
-          {sendForm}
+          {pendingPermission && sessionId ? (
+            <PermissionPromptBanner
+              permission={pendingPermission}
+              sessionId={sessionId}
+              onResponded={() => setPendingPermission(null)}
+            />
+          ) : sendForm}
         </div>
       )}
 
@@ -753,6 +777,83 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           />
         )}
       </Modal>
+    </div>
+  );
+}
+
+export function PermissionPromptBanner({ permission, sessionId, onResponded }: {
+  permission: { id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number };
+  sessionId: string;
+  onResponded: () => void;
+}) {
+  const [sending, setSending] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const inp = permission.input as Record<string, unknown> | undefined;
+  const planText = typeof inp?.plan === "string" ? inp.plan : null;
+  const planIsLong = planText != null && planText.split("\n").length > 6;
+
+  const handleRespond = async (response: "allow" | "deny") => {
+    if (sending) return;
+    setSending(true);
+    try {
+      await api.respondPermission(sessionId, permission.id, response);
+      onResponded();
+    } catch {
+      // ignore
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="shrink-0 sticky bottom-0 bg-white pt-2 pb-4 px-4 sm:px-8 -mx-4 sm:-mx-8 border-t border-gray-100">
+      <div className="border border-amber-300 rounded-lg bg-amber-50 p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+          <span className="font-medium text-sm text-amber-800">Permission Request</span>
+          <span className="text-xs text-gray-500 font-mono">{permission.toolName}</span>
+        </div>
+        {planText && (
+          <div>
+            <div className="relative">
+              <pre className={`text-xs text-gray-600 bg-white border border-gray-200 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap ${!expanded && planIsLong ? "max-h-24 overflow-hidden" : "max-h-80 overflow-y-auto"}`}>
+                {planText}
+              </pre>
+              {planIsLong && !expanded && (
+                <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent rounded-b pointer-events-none" />
+              )}
+            </div>
+            {planIsLong && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="text-xs text-amber-700 hover:text-amber-900 hover:underline mt-1.5 relative z-10"
+              >
+                {expanded ? "折りたたむ" : "すべて表示"}
+              </button>
+            )}
+          </div>
+        )}
+        {permission.timedOut ? (
+          <div className="text-xs text-amber-700">タイムアウト - 自動承認しました</div>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleRespond("allow")}
+              disabled={sending}
+              className="px-4 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
+            >
+              {sending ? "..." : "承認"}
+            </button>
+            <button
+              onClick={() => handleRespond("deny")}
+              disabled={sending}
+              className="px-4 py-1.5 text-sm border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100 disabled:opacity-50 transition-colors"
+            >
+              {sending ? "..." : "拒否"}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -167,6 +167,28 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 						"required": []string{"message"},
 					},
 				},
+				map[string]interface{}{
+					"name":        "permission_prompt",
+					"description": "Handle permission prompts from Claude Code CLI",
+					"inputSchema": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"tool_name": map[string]interface{}{
+								"type":        "string",
+								"description": "The name of the tool requesting permission",
+							},
+							"input": map[string]interface{}{
+								"type":        "object",
+								"description": "The input for the tool",
+							},
+							"tool_use_id": map[string]interface{}{
+								"type":        "string",
+								"description": "The unique tool use request ID",
+							},
+						},
+						"required": []string{"tool_name", "input"},
+					},
+				},
 			},
 		}, nil
 
@@ -219,6 +241,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 		return s.handleSendNotification(args)
 	case "escalate":
 		return s.handleEscalate(args)
+	case "permission_prompt":
+		return s.handlePermissionPrompt(args)
 	default:
 		return nil, &jsonRPCError{Code: -32602, Message: "unknown tool: " + name}
 	}
@@ -350,6 +374,83 @@ func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCErro
 	return toolResult(fmt.Sprintf("User responded: %s", response), false), nil
 }
 
+
+func (s *Server) handlePermissionPrompt(args json.RawMessage) (interface{}, *jsonRPCError) {
+	sessionID, rpcErr := s.resolveSessionID(args)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+
+	var input struct {
+		ToolName  string          `json:"tool_name"`
+		Input     json.RawMessage `json:"input"`
+		ToolUseID string          `json:"tool_use_id"`
+	}
+	if err := json.Unmarshal(args, &input); err != nil {
+		return nil, &jsonRPCError{Code: -32602, Message: "invalid arguments"}
+	}
+	if input.ToolName == "" {
+		return nil, &jsonRPCError{Code: -32602, Message: "tool_name is required"}
+	}
+
+	response, timedOut, err := s.apiPermissionPrompt(sessionID, input.ToolName, input.Input, input.ToolUseID)
+	if err != nil {
+		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
+	}
+
+	// For permission_prompt, the response is a JSON string returned as text
+	if timedOut || response == "allow" {
+		// Auto-allow on timeout
+		result := map[string]interface{}{
+			"behavior":     "allow",
+			"updatedInput": json.RawMessage(input.Input),
+		}
+		resultJSON, _ := json.Marshal(result)
+		return toolResult(string(resultJSON), false), nil
+	}
+
+	// User denied
+	result := map[string]interface{}{
+		"behavior": "deny",
+		"message":  "User denied",
+	}
+	resultJSON, _ := json.Marshal(result)
+	return toolResult(string(resultJSON), false), nil
+}
+
+func (s *Server) apiPermissionPrompt(sessionID string, toolName string, toolInput json.RawMessage, toolUseID string) (string, bool, error) {
+	permissionID := uuid.New().String()
+	url := fmt.Sprintf("%s/api/sessions/%s/permission", s.apiURL, sessionID)
+	body := fmt.Sprintf(`{"id":%s,"tool_name":%s,"input":%s,"tool_use_id":%s,"timeout_seconds":300}`,
+		jsonString(permissionID), jsonString(toolName), string(toolInput), jsonString(toolUseID))
+
+	req, err := http.NewRequest("POST", url, strings.NewReader(body))
+	if err != nil {
+		return "", false, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", false, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return "", false, fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result struct {
+		Response string `json:"response"`
+		TimedOut bool   `json:"timed_out"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", false, fmt.Errorf("decode response: %w", err)
+	}
+	return result.Response, result.TimedOut, nil
+}
 
 func (s *Server) apiSendNotification(sessionID string, message string) error {
 	url := fmt.Sprintf("%s/api/sessions/%s/notify", s.apiURL, sessionID)

@@ -119,6 +119,15 @@ export const api = {
       body: JSON.stringify({ id: escalationId, response }),
     }),
 
+  getPendingPermission: (sessionId: string) =>
+    request<{ permission: { id: string; sessionId: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number } | null }>(`/sessions/${sessionId}/permission`),
+
+  respondPermission: (sessionId: string, permissionId: string, response: string) =>
+    request<{ status: string }>(`/sessions/${sessionId}/permission/respond`, {
+      method: "POST",
+      body: JSON.stringify({ id: permissionId, response }),
+    }),
+
   getConfig: () => request<AppConfig>("/config"),
 
   updateConfig: (data: AppConfig) =>

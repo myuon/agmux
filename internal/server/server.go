@@ -37,6 +37,7 @@ type Server struct {
 	logPath          string
 	logger           *slog.Logger
 	escalations      *EscalationStore
+	permissions      *PermissionStore
 	otelReceiver     *otel.Receiver
 	sqlDB            *sql.DB
 	externalDetector *session.ExternalDetector
@@ -53,6 +54,7 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logPath string
 		logPath:          logPath,
 		logger:           logger.With("component", "server"),
 		escalations:      NewEscalationStore(),
+		permissions:      NewPermissionStore(),
 		otelReceiver:     otel.NewReceiver(sqlDB, logger),
 		sqlDB:            sqlDB,
 		externalDetector: extDetector,
@@ -125,6 +127,9 @@ func (s *Server) setupRoutes() {
 		r.Get("/sessions/{id}/escalate", s.getPendingEscalation)
 		r.Post("/sessions/{id}/escalate", s.createEscalation)
 		r.Post("/sessions/{id}/escalate/respond", s.respondEscalation)
+		r.Get("/sessions/{id}/permission", s.getPendingPermission)
+		r.Post("/sessions/{id}/permission", s.createPermission)
+		r.Post("/sessions/{id}/permission/respond", s.respondPermission)
 		r.Post("/sessions/{id}/notify", s.sendNotification)
 		r.Post("/sessions/broadcast", s.broadcastToSessions)
 		r.Post("/sessions/controller/restart", s.restartController)
@@ -652,6 +657,115 @@ func (s *Server) respondEscalation(w http.ResponseWriter, r *http.Request) {
 
 	if !s.escalations.Respond(req.ID, req.Response) {
 		writeError(w, http.StatusNotFound, "escalation not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) getPendingPermission(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "id")
+	perm := s.permissions.GetBySession(sessionID)
+	if perm == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"permission": nil})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"permission": perm})
+}
+
+type createPermissionRequest struct {
+	ID             string          `json:"id"`
+	ToolName       string          `json:"tool_name"`
+	Input          json.RawMessage `json:"input"`
+	ToolUseID      string          `json:"tool_use_id"`
+	TimeoutSeconds *int            `json:"timeout_seconds,omitempty"`
+}
+
+func (s *Server) createPermission(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "id")
+	var req createPermissionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.ToolName == "" || req.ID == "" {
+		writeError(w, http.StatusBadRequest, "id and tool_name are required")
+		return
+	}
+
+	sess, err := s.sessions.Get(sessionID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	timeoutSeconds := 300
+	if req.TimeoutSeconds != nil && *req.TimeoutSeconds > 0 {
+		timeoutSeconds = *req.TimeoutSeconds
+	}
+
+	ch := s.permissions.Create(req.ID, sessionID, req.ToolName, req.Input, timeoutSeconds)
+
+	s.hub.Broadcast(Message{
+		Type: "permission_prompt",
+		Data: map[string]interface{}{
+			"id":             req.ID,
+			"sessionId":      sessionID,
+			"sessionName":    sess.Name,
+			"toolName":       req.ToolName,
+			"input":          json.RawMessage(req.Input),
+			"timeoutSeconds": timeoutSeconds,
+		},
+	})
+	timeout := time.Duration(timeoutSeconds) * time.Second
+
+	select {
+	case response := <-ch:
+		s.permissions.Cleanup(req.ID)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":    "responded",
+			"response":  response,
+			"timed_out": false,
+		})
+	case <-time.After(timeout):
+		autoResponse := "allow"
+		s.permissions.MarkTimedOut(req.ID, autoResponse)
+		s.hub.Broadcast(Message{
+			Type: "permission_timeout",
+			Data: map[string]interface{}{
+				"id":        req.ID,
+				"sessionId": sessionID,
+			},
+		})
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":    "timed_out",
+			"response":  autoResponse,
+			"timed_out": true,
+		})
+	case <-r.Context().Done():
+		s.permissions.Cleanup(req.ID)
+		writeError(w, http.StatusGatewayTimeout, "request cancelled")
+	}
+}
+
+type respondPermissionRequest struct {
+	ID       string `json:"id"`
+	Response string `json:"response"`
+}
+
+func (s *Server) respondPermission(w http.ResponseWriter, r *http.Request) {
+	var req respondPermissionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.ID == "" || req.Response == "" {
+		writeError(w, http.StatusBadRequest, "id and response are required")
+		return
+	}
+
+	if !s.permissions.Respond(req.ID, req.Response) {
+		writeError(w, http.StatusNotFound, "permission not found")
 		return
 	}
 
