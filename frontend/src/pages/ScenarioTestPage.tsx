@@ -2,9 +2,11 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { StreamOutputView } from "../components/session/StreamOutputView";
+import { PermissionPromptBanner } from "./SessionPage";
 import { IconButton } from "../components/ui/IconButton";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
 import { scenarioPresets } from "../fixtures/scenarios";
+import type { ScenarioPreset } from "../fixtures/scenarios";
 import type { StreamEntry } from "../models/stream";
 
 function countEventTypes(lines: unknown[]): Record<string, number> {
@@ -59,11 +61,13 @@ export function ScenarioTestPage() {
     setShowSidebar(false);
   };
 
+  const activePreset: ScenarioPreset | undefined = selectedPresetId
+    ? scenarioPresets.find((p) => p.id === selectedPresetId)
+    : undefined;
+
   const activeLabel = customLines
     ? "Custom JSONL"
-    : selectedPresetId
-      ? scenarioPresets.find((p) => p.id === selectedPresetId)?.label
-      : null;
+    : activePreset?.label ?? null;
 
   const sidebar = (
     <div className="p-4 flex-1 min-h-0 overflow-y-auto">
@@ -144,7 +148,7 @@ export function ScenarioTestPage() {
           {sidebar}
         </div>
 
-        {/* Right pane: StreamOutputView */}
+        {/* Right pane: StreamOutputView + simulated banners */}
         <div className="flex-1 flex flex-col min-h-0">
           <div className="flex-1 min-h-0 p-4">
             <StreamOutputView
@@ -152,6 +156,17 @@ export function ScenarioTestPage() {
               className="h-full"
             />
           </div>
+
+          {/* Simulated permission banner */}
+          {activePreset?.simulatedPermission && !customLines && (
+            <div className="px-4 sm:px-8">
+              <PermissionPromptBanner
+                permission={activePreset.simulatedPermission}
+                sessionId="scenario-test"
+                onResponded={() => {}}
+              />
+            </div>
+          )}
 
           {/* Footer stats */}
           {activeLines.length > 0 && (

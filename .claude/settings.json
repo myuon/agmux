@@ -24,6 +24,15 @@
             "command": ".claude/hooks/preview-hook.sh"
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/mask-fixtures.sh"
+          }
+        ]
       }
     ]
   }
