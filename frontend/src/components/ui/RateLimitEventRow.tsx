@@ -61,12 +61,14 @@ export function RateLimitEventRow({ item }: { item: RateLimitItem }) {
     : null;
 
   return (
-    <div className={`flex items-center gap-2 py-1.5 px-3 text-xs ${textColor} border-y border-dashed ${borderColor} ${bgColor}`}>
-      <span className={iconColor}>{isRejected ? "\u26D4" : "\u26A0"}</span>
-      <span className="font-medium">{statusLabel}</span>
-      <span className="text-gray-400">({windowLabel})</span>
+    <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1.5 px-3 text-xs ${textColor} border-y border-dashed ${borderColor} ${bgColor}`}>
+      <span className="inline-flex items-center gap-1 whitespace-nowrap">
+        <span className={iconColor}>{isRejected ? "\u26D4" : "\u26A0"}</span>
+        <span className="font-medium">{statusLabel}</span>
+        <span className="text-gray-400">({windowLabel})</span>
+      </span>
       {utilizationPercent != null && (
-        <span className="flex items-center gap-1">
+        <span className="inline-flex items-center gap-1 whitespace-nowrap">
           <span className="inline-block w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
             <span
               className={`block h-full rounded-full ${
@@ -83,9 +85,9 @@ export function RateLimitEventRow({ item }: { item: RateLimitItem }) {
         </span>
       )}
       {item.overageStatus && (
-        <span className="text-gray-400">overage: {item.overageStatus}</span>
+        <span className="whitespace-nowrap text-gray-400">overage: {item.overageStatus}</span>
       )}
-      {resetLabel && <span className="text-gray-400 ml-auto">{resetLabel}</span>}
+      {resetLabel && <span className="whitespace-nowrap text-gray-400 ml-auto">{resetLabel}</span>}
     </div>
   );
 }
