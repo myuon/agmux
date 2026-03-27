@@ -314,8 +314,8 @@ export function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
           className="text-xs text-amber-600 hover:text-amber-800 hover:underline cursor-pointer"
         >
           {expanded
-            ? `Show latest ${VISIBLE_WHEN_COLLAPSED}`
-            : `Show all (${visibleTasks.length})`}
+            ? `最新 ${VISIBLE_WHEN_COLLAPSED} 件のみ表示`
+            : `他 ${visibleTasks.length - VISIBLE_WHEN_COLLAPSED} 件を表示`}
         </button>
       )}
     </div>

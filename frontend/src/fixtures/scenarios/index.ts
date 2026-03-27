@@ -4,6 +4,7 @@ import { escalationLines } from "./escalation";
 import { agentSubtaskLines } from "./agentSubtask";
 import { normalConversationLines } from "./normalConversation";
 import { compactionLines } from "./compaction";
+import { multipleRunningTasksLines } from "./multipleRunningTasks";
 
 export interface SimulatedPermission {
   id: string;
@@ -109,5 +110,11 @@ export const scenarioPresets: ScenarioPreset[] = [
       timedOut: true,
       timeoutSeconds: 30,
     },
+  },
+  {
+    id: "multiple-running-tasks",
+    label: "Multiple Running Tasks",
+    description: "7つの並列タスクが同時実行（ActiveTasksPanel collapse検証用）",
+    lines: multipleRunningTasksLines,
   },
 ];

@@ -1,13 +1,14 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import { StreamOutputView } from "../components/session/StreamOutputView";
+import { StreamOutputView, ActiveTasksPanel } from "../components/session/StreamOutputView";
 import { PermissionPromptBanner, EscalationBanner } from "./SessionPage";
 import { IconButton } from "../components/ui/IconButton";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
 import { scenarioPresets } from "../fixtures/scenarios";
 import type { ScenarioPreset } from "../fixtures/scenarios";
 import type { StreamEntry } from "../models/stream";
+import { extractActiveTasks } from "../models/stream";
 
 function countEventTypes(lines: unknown[]): Record<string, number> {
   const counts: Record<string, number> = {};
@@ -37,6 +38,13 @@ export function ScenarioTestPage() {
   }, [selectedPresetId, customLines]);
 
   const stats = useMemo(() => countEventTypes(activeLines), [activeLines]);
+
+  const activeTasks = useMemo(() => {
+    const entries = activeLines
+      .map((line) => line as StreamEntry)
+      .filter((e) => e.type === "user" || e.type === "assistant" || e.type === "system");
+    return extractActiveTasks(entries);
+  }, [activeLines]);
 
   const handleLoadCustom = () => {
     setParseError(null);
@@ -156,6 +164,13 @@ export function ScenarioTestPage() {
               className="h-full"
             />
           </div>
+
+          {/* Active tasks panel */}
+          {activeTasks.length > 0 && (
+            <div className="px-4 sm:px-8 pb-2">
+              <ActiveTasksPanel tasks={activeTasks} />
+            </div>
+          )}
 
           {/* Simulated escalation banner */}
           {activePreset?.simulatedEscalation && !customLines && (
