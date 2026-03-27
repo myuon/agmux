@@ -365,6 +365,21 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   }}
                 />
               )}
+              {session.type !== "controller" && (
+                <ActionMenuItem
+                  icon={<GitBranch className="w-4 h-4" />}
+                  label="Fork"
+                  onClick={async () => {
+                    setShowActionMenu(false);
+                    try {
+                      const newSession = await api.forkSession(session.id);
+                      navigate(`/sessions/${newSession.id}`);
+                    } catch {
+                      alert("Failed to fork session");
+                    }
+                  }}
+                />
+              )}
               <ActionMenuItem
                 icon={<RotateCcw className="w-4 h-4" />}
                 label="Clear context"

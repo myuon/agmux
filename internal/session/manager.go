@@ -268,7 +268,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, current_task, goal, goals, last_error, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -282,8 +282,8 @@ func (m *Manager) List() ([]Session, error) {
 		var status string
 		var sessionType string
 		var providerStr string
-		var prompt, systemPrompt, currentTask, goal, goalsJSON, lastError sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		var prompt, systemPrompt, parentSessionID, currentTask, goal, goalsJSON, lastError sql.NullString
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = Status(status)
@@ -297,6 +297,9 @@ func (m *Manager) List() ([]Session, error) {
 		}
 		if systemPrompt.Valid {
 			s.SystemPrompt = systemPrompt.String
+		}
+		if parentSessionID.Valid {
+			s.ParentSessionID = parentSessionID.String
 		}
 		if currentTask.Valid {
 			s.CurrentTask = currentTask.String
@@ -322,11 +325,11 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var status string
 	var sessionType string
 	var providerStr string
-	var prompt, systemPrompt, currentTask, goal, goalsJSON, lastError sql.NullString
+	var prompt, systemPrompt, parentSessionID, currentTask, goal, goalsJSON, lastError sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, current_task, goal, goals, last_error, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -344,6 +347,9 @@ func (m *Manager) Get(id string) (*Session, error) {
 	}
 	if systemPrompt.Valid {
 		s.SystemPrompt = systemPrompt.String
+	}
+	if parentSessionID.Valid {
+		s.ParentSessionID = parentSessionID.String
 	}
 	if currentTask.Valid {
 		s.CurrentTask = currentTask.String
@@ -375,6 +381,119 @@ func (m *Manager) Duplicate(id string) (*Session, error) {
 		Model:        src.Model,
 		SystemPrompt: src.SystemPrompt,
 	})
+}
+
+// Fork creates a new session by forking an existing session's conversation history.
+// It copies the stream JSONL file and starts a new CLI process with --resume --fork-session.
+func (m *Manager) Fork(id string) (*Session, error) {
+	src, err := m.Get(id)
+	if err != nil {
+		return nil, err
+	}
+
+	provider := m.getProvider(src.Provider)
+
+	// Read the CLI session ID from the source session's stream file
+	cliSessionID := src.CliSessionID
+	if cliSessionID == "" {
+		cliSessionID = ReadCLISessionID(id, provider)
+	}
+	if cliSessionID == "" {
+		return nil, fmt.Errorf("cannot fork: source session has no CLI session ID")
+	}
+
+	newID, err := newSessionID()
+	if err != nil {
+		return nil, fmt.Errorf("generate session id: %w", err)
+	}
+
+	// Copy stream JSONL file from source to new session
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		return nil, fmt.Errorf("get streams dir: %w", err)
+	}
+	srcPath := filepath.Join(streamsDir, id+".jsonl")
+	dstPath := filepath.Join(streamsDir, newID+".jsonl")
+	if err := copyFile(srcPath, dstPath); err != nil {
+		return nil, fmt.Errorf("copy stream file: %w", err)
+	}
+
+	// Generate MCP config for new session
+	mcpConfigPath, err := provider.SetupMCP(newID, m.apiPort)
+	if err != nil {
+		return nil, fmt.Errorf("write mcp config: %w", err)
+	}
+
+	effectiveSystemPrompt := m.buildEffectiveSystemPrompt(src.SystemPrompt)
+
+	// Start new CLI process with --resume --fork-session
+	sp, err := StartStreamProcessWithOpts(StreamOpts{
+		SessionID:     newID,
+		ProjectPath:   src.ProjectPath,
+		MCPConfigPath: mcpConfigPath,
+		SystemPrompt:  effectiveSystemPrompt,
+		Resume:        true,
+		ForkSession:   true,
+		CLISessionID:  cliSessionID,
+		Model:         src.Model,
+		APIPort:       m.apiPort,
+	}, provider)
+	if err != nil {
+		return nil, fmt.Errorf("start stream process: %w", err)
+	}
+	m.wireSessionIDCallback(newID, sp)
+	m.streamMu.Lock()
+	m.streamProcesses[newID] = sp
+	m.streamMu.Unlock()
+
+	now := time.Now()
+	newName := src.Name + " (fork)"
+	s := &Session{
+		ID:              newID,
+		Name:            newName,
+		ProjectPath:     src.ProjectPath,
+		SystemPrompt:    src.SystemPrompt,
+		Status:          StatusWorking,
+		Type:            TypeWorker,
+		Provider:        src.Provider,
+		Model:           src.Model,
+		ParentSessionID: id,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+
+	if _, err := m.db.Exec(
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, "", "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.CreatedAt, s.UpdatedAt,
+	); err != nil {
+		return nil, fmt.Errorf("insert session: %w", err)
+	}
+
+	return s, nil
+}
+
+// copyFile copies the contents of src to dst.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // no stream file to copy is OK
+		}
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := out.ReadFrom(in); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (m *Manager) Stop(id string) error {

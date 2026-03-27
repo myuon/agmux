@@ -67,6 +67,9 @@ func (p *ClaudeProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 		"--permission-mode", p.permissionMode,
 		"--include-partial-messages",
 	}
+	if opts.ForkSession {
+		args = append(args, "--fork-session")
+	}
 	if opts.MCPConfigPath != "" {
 		args = append(args, "--permission-prompt-tool", "mcp__agmux__permission_prompt")
 	}

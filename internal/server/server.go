@@ -118,6 +118,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/goals", s.createGoal)
 		r.Post("/sessions/{id}/goals/complete", s.completeGoal)
 		r.Post("/sessions/{id}/duplicate", s.duplicateSession)
+		r.Post("/sessions/{id}/fork", s.forkSession)
 		r.Post("/sessions/{id}/reconnect", s.reconnectSession)
 		r.Post("/sessions/{id}/clear", s.clearSession)
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
@@ -319,6 +320,26 @@ func (s *Server) duplicateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordSessionAction(sess.ID, "session_duplicate", "duplicated from "+id)
+	writeJSON(w, http.StatusCreated, sess)
+}
+
+func (s *Server) forkSession(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	existing, err := s.sessions.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if existing.Type == session.TypeController {
+		writeError(w, http.StatusForbidden, "controller session cannot be forked")
+		return
+	}
+	sess, err := s.sessions.Fork(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordSessionAction(sess.ID, "session_fork", "forked from "+id)
 	writeJSON(w, http.StatusCreated, sess)
 }
 

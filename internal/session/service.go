@@ -12,6 +12,8 @@ type SessionService interface {
 	Create(name, projectPath, prompt string, worktree bool, opts ...CreateOpts) (*Session, error)
 	// Duplicate creates a copy of an existing session.
 	Duplicate(id string) (*Session, error)
+	// Fork creates a new session by forking an existing session's conversation history.
+	Fork(id string) (*Session, error)
 	// Stop stops a running session.
 	Stop(id string) error
 	// Delete deletes a session.
