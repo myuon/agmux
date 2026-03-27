@@ -248,10 +248,14 @@ function ActiveTaskItem({ task, onDismiss }: { task: ActiveTask; onDismiss?: (ta
   );
 }
 
+const COLLAPSE_THRESHOLD = 4;
+const VISIBLE_WHEN_COLLAPSED = 3;
+
 export function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   // Track previous task snapshots to detect task_progress updates for hidden tasks
   const prevTasksRef = useRef<Map<string, ActiveTask>>(new Map());
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     const prevMap = prevTasksRef.current;
@@ -278,17 +282,25 @@ export function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
     }
   }, [tasks, hiddenIds]);
 
+  // Reset expanded state when tasks drop below threshold
+  const visibleTasks = tasks.filter((t) => !hiddenIds.has(t.taskId));
+  useEffect(() => {
+    if (visibleTasks.length < COLLAPSE_THRESHOLD) {
+      setExpanded(false);
+    }
+  }, [visibleTasks.length]);
+
   const handleDismiss = useCallback((taskId: string) => {
     setHiddenIds((prev) => new Set(prev).add(taskId));
   }, []);
 
-  const visibleTasks = tasks.filter((t) => !hiddenIds.has(t.taskId));
-  const [expanded, setExpanded] = useState(false);
-
   if (visibleTasks.length === 0) return null;
 
-  const collapsible = visibleTasks.length >= 4;
-  const displayedTasks = collapsible && !expanded ? visibleTasks.slice(-3) : visibleTasks;
+  const collapsible = visibleTasks.length >= COLLAPSE_THRESHOLD;
+  const displayedTasks =
+    collapsible && !expanded
+      ? visibleTasks.slice(-VISIBLE_WHEN_COLLAPSED)
+      : visibleTasks;
 
   return (
     <div className="space-y-1.5">
@@ -305,7 +317,9 @@ export function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
           onClick={() => setExpanded((prev) => !prev)}
           className="text-xs text-amber-600 hover:text-amber-800 hover:underline cursor-pointer"
         >
-          {expanded ? "Show latest 3" : `Show all (${visibleTasks.length}件)`}
+          {expanded
+            ? `Show latest ${VISIBLE_WHEN_COLLAPSED}`
+            : `Show all (${visibleTasks.length})`}
         </button>
       )}
     </div>
