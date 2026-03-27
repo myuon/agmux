@@ -87,6 +87,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [pendingImages, setPendingImages] = useState<{ data: string; mediaType: string; preview: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingEscalationId, setPendingEscalationId] = useState<string | null>(null);
+  const [escalationMessage, setEscalationMessage] = useState<string | null>(null);
   const [escalationTimedOut, setEscalationTimedOut] = useState(false);
   const [escalationTimeoutSeconds, setEscalationTimeoutSeconds] = useState(300);
   const [pendingPermission, setPendingPermission] = useState<{ id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number } | null>(null);
@@ -138,9 +139,10 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   // Listen for WebSocket messages (escalation + stream updates)
   const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === "escalation") {
-      const data = msg.data as { id: string; sessionId: string; timeoutSeconds?: number };
+      const data = msg.data as { id: string; sessionId: string; message?: string; timeoutSeconds?: number };
       if (data.sessionId === sessionId) {
         setPendingEscalationId(data.id);
+        setEscalationMessage(data.message ?? null);
         setEscalationTimedOut(false);
         setEscalationTimeoutSeconds(data.timeoutSeconds ?? 300);
       }
@@ -259,6 +261,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     api.getPendingEscalation(sessionId).then((r) => {
       if (r.escalation) {
         setPendingEscalationId(r.escalation.id);
+        setEscalationMessage(r.escalation.message ?? null);
         setEscalationTimedOut(r.escalation.timedOut ?? false);
         setEscalationTimeoutSeconds(r.escalation.timeoutSeconds ?? 300);
       }
@@ -686,7 +689,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         </div>
       ) : (
         <div className="flex flex-col flex-1 min-h-0">
-          <StreamOutputView lines={streamLines} partialText={partialText} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={() => { setPendingEscalationId(null); setEscalationTimedOut(false); }} pendingPermission={pendingPermission ?? undefined} onPermissionResponded={() => { setPendingPermission(null); }} provider={session?.provider ?? undefined} onAnswer={async (text) => {
+          <StreamOutputView lines={streamLines} partialText={partialText} className="flex-1 min-h-0" sessionId={sessionId} pendingPermission={pendingPermission ?? undefined} onPermissionResponded={() => { setPendingPermission(null); }} provider={session?.provider ?? undefined} onAnswer={async (text) => {
             if (!sessionId) return;
             await api.sendToSession(sessionId, text);
           }} />
@@ -700,6 +703,15 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               permission={pendingPermission}
               sessionId={sessionId}
               onResponded={() => setPendingPermission(null)}
+            />
+          ) : pendingEscalationId && sessionId ? (
+            <EscalationBanner
+              escalationId={pendingEscalationId}
+              message={escalationMessage}
+              timedOut={escalationTimedOut}
+              timeoutSeconds={escalationTimeoutSeconds}
+              sessionId={sessionId}
+              onResponded={() => { setPendingEscalationId(null); setEscalationMessage(null); setEscalationTimedOut(false); }}
             />
           ) : sendForm}
         </div>
@@ -777,6 +789,101 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           />
         )}
       </Modal>
+    </div>
+  );
+}
+
+function formatTimeout(seconds: number): string {
+  if (seconds >= 60) {
+    const min = Math.floor(seconds / 60);
+    return `${min}分`;
+  }
+  return `${seconds}秒`;
+}
+
+export function EscalationBanner({ escalationId, message, timedOut, timeoutSeconds, sessionId, onResponded }: {
+  escalationId: string;
+  message: string | null;
+  timedOut: boolean;
+  timeoutSeconds: number;
+  sessionId: string;
+  onResponded: () => void;
+}) {
+  const [response, setResponse] = useState("");
+  const [sending, setSending] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const messageIsLong = message != null && message.split("\n").length > 6;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!response.trim() || sending) return;
+    setSending(true);
+    try {
+      await api.respondEscalation(sessionId, escalationId, response.trim());
+      setResponse("");
+      onResponded();
+    } catch {
+      // ignore
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="shrink-0 sticky bottom-0 bg-white pt-2 pb-4 px-4 sm:px-8 -mx-4 sm:-mx-8 border-t border-gray-100">
+      <div className="border border-red-300 rounded-lg bg-red-50 p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
+          <span className="font-medium text-sm text-red-800">Escalation</span>
+          {timeoutSeconds && !timedOut && (
+            <span className="text-xs text-gray-500">
+              (タイムアウト: {formatTimeout(timeoutSeconds)})
+            </span>
+          )}
+        </div>
+        {message && (
+          <div>
+            <div className="relative">
+              <div className={`text-sm text-gray-800 prose prose-sm max-w-none bg-white border border-gray-200 rounded px-2 py-1.5 ${!expanded && messageIsLong ? "max-h-24 overflow-hidden" : "max-h-80 overflow-y-auto"}`}>
+                <Markdown remarkPlugins={[remarkGfm]}>{message}</Markdown>
+              </div>
+              {messageIsLong && !expanded && (
+                <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent rounded-b pointer-events-none" />
+              )}
+            </div>
+            {messageIsLong && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="text-xs text-red-700 hover:text-red-900 hover:underline mt-1.5 relative z-10"
+              >
+                {expanded ? "折りたたむ" : "すべて表示"}
+              </button>
+            )}
+          </div>
+        )}
+        {timedOut ? (
+          <div className="text-xs text-amber-700">タイムアウト - エージェントは自動続行しました</div>
+        ) : (
+          <form onSubmit={handleSubmit} className="flex gap-2">
+            <input
+              type="text"
+              value={response}
+              onChange={(e) => setResponse(e.target.value)}
+              placeholder="応答を入力..."
+              className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-300"
+              disabled={sending}
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={sending || !response.trim()}
+              className="px-4 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 transition-colors"
+            >
+              {sending ? "..." : "応答"}
+            </button>
+          </form>
+        )}
+      </div>
     </div>
   );
 }
