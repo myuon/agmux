@@ -4,6 +4,7 @@
 Replaces:
 - Home directory paths (/Users/<username>/) -> /Users/user/
 - UUIDs -> deterministic dummy values (00000000-0000-0000-0000-XXXXXXXXXXXX)
+- URLs (https://...) -> https://example.com/masked
 """
 
 import re
@@ -23,6 +24,9 @@ def mask_file(path: str) -> bool:
 
     # Replace home directory
     content = content.replace(f"/Users/{HOME_USER}/", "/Users/user/")
+
+    # Replace URLs
+    content = re.sub(r"https?://[^\s\"'\\]+", "https://example.com/masked", content)
 
     # Replace UUIDs with deterministic dummies
     uuids = sorted(set(re.findall(r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", content)))

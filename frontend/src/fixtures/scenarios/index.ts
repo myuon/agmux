@@ -3,6 +3,7 @@ import { rateLimitRejectedLines } from "./rateLimitRejected";
 import { escalationLines } from "./escalation";
 import { agentSubtaskLines } from "./agentSubtask";
 import { normalConversationLines } from "./normalConversation";
+import { compactionLines } from "./compaction";
 
 export interface SimulatedPermission {
   id: string;
@@ -52,6 +53,12 @@ export const scenarioPresets: ScenarioPreset[] = [
     label: "Agent Subtask",
     description: "Agentツール呼び出しとtask_progress進行",
     lines: agentSubtaskLines,
+  },
+  {
+    id: "compaction",
+    label: "Compaction",
+    description: "コンテキストウィンドウ圧縮(compact_boundary)前後の会話",
+    lines: compactionLines,
   },
   {
     id: "normal-conversation",
