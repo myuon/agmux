@@ -579,12 +579,29 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             <StatusDot status={session.status} />
             <h2 className="text-xl sm:text-2xl font-bold">{session.name}</h2>
             <span className="text-xs text-gray-400">{session.status}</span>
-            {session.provider && (
-              <Chip color={session.provider === "codex" ? "green" : session.provider === "claude" ? "blue" : "gray"}>
-                {session.provider.charAt(0).toUpperCase() + session.provider.slice(1)}
-                {providerVersion && ` ${providerVersion.match(/\d+\.\d+\.\d+/)?.[0] ?? ""}`}
-              </Chip>
-            )}
+            {session.provider && (() => {
+              const versionMatch = providerVersion?.match(/\d+\.\d+\.\d+/)?.[0];
+              const chip = (
+                <Chip color={session.provider === "codex" ? "green" : session.provider === "claude" ? "blue" : "gray"}>
+                  {session.provider.charAt(0).toUpperCase() + session.provider.slice(1)}
+                  {versionMatch && ` ${versionMatch}`}
+                </Chip>
+              );
+              if (session.provider === "claude" && versionMatch) {
+                const fragment = versionMatch.replace(/\./g, "-");
+                return (
+                  <a
+                    href={`https://code.claude.com/docs/en/changelog#${fragment}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:opacity-80"
+                  >
+                    {chip}
+                  </a>
+                );
+              }
+              return chip;
+            })()}
             {session.model && (
               <Chip color="purple">{session.model}</Chip>
             )}
