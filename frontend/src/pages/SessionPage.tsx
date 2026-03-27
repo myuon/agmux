@@ -695,14 +695,13 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               <ActiveTasksPanel tasks={activeTasks} />
             </div>
           )}
-          {pendingPermission && sessionId && (
+          {pendingPermission && sessionId ? (
             <PermissionPromptBanner
               permission={pendingPermission}
               sessionId={sessionId}
               onResponded={() => setPendingPermission(null)}
             />
-          )}
-          {sendForm}
+          ) : sendForm}
         </div>
       )}
 
@@ -782,13 +781,16 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   );
 }
 
-function PermissionPromptBanner({ permission, sessionId, onResponded }: {
+export function PermissionPromptBanner({ permission, sessionId, onResponded }: {
   permission: { id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number };
   sessionId: string;
   onResponded: () => void;
 }) {
   const [sending, setSending] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const inp = permission.input as Record<string, unknown> | undefined;
+  const planText = typeof inp?.plan === "string" ? inp.plan : null;
+  const planIsLong = planText != null && planText.split("\n").length > 6;
 
   const handleRespond = async (response: "allow" | "deny") => {
     if (sending) return;
@@ -804,17 +806,30 @@ function PermissionPromptBanner({ permission, sessionId, onResponded }: {
   };
 
   return (
-    <div className="shrink-0 mx-4 sm:mx-8 -mx-4 sm:-mx-8 mb-2">
+    <div className="shrink-0 sticky bottom-0 bg-white pt-2 pb-4 px-4 sm:px-8 border-t border-gray-100">
       <div className="border border-amber-300 rounded-lg bg-amber-50 p-3 space-y-2">
         <div className="flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
           <span className="font-medium text-sm text-amber-800">Permission Request</span>
-          <span className="text-sm text-gray-700">{permission.toolName}</span>
+          <span className="text-xs text-gray-500 font-mono">{permission.toolName}</span>
         </div>
-        {typeof inp?.plan === "string" && (
-          <pre className="text-xs text-gray-600 bg-white border border-gray-200 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap max-h-40 overflow-y-auto">
-            {inp.plan}
-          </pre>
+        {planText && (
+          <div className="relative">
+            <pre className={`text-xs text-gray-600 bg-white border border-gray-200 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap ${!expanded && planIsLong ? "max-h-24 overflow-hidden" : "max-h-80 overflow-y-auto"}`}>
+              {planText}
+            </pre>
+            {planIsLong && !expanded && (
+              <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent rounded-b" />
+            )}
+            {planIsLong && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="text-xs text-amber-700 hover:text-amber-900 mt-1"
+              >
+                {expanded ? "折りたたむ" : "すべて表示"}
+              </button>
+            )}
+          </div>
         )}
         {permission.timedOut ? (
           <div className="text-xs text-amber-700">タイムアウト - 自動承認しました</div>
@@ -823,14 +838,14 @@ function PermissionPromptBanner({ permission, sessionId, onResponded }: {
             <button
               onClick={() => handleRespond("allow")}
               disabled={sending}
-              className="px-4 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+              className="px-4 py-1.5 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
             >
               {sending ? "..." : "承認"}
             </button>
             <button
               onClick={() => handleRespond("deny")}
               disabled={sending}
-              className="px-4 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+              className="px-4 py-1.5 text-sm border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100 disabled:opacity-50 transition-colors"
             >
               {sending ? "..." : "拒否"}
             </button>
