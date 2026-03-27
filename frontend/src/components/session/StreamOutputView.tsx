@@ -298,6 +298,7 @@ export function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
       ? visibleTasks.slice(-VISIBLE_WHEN_COLLAPSED)
       : visibleTasks;
 
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
