@@ -140,7 +140,9 @@ func serveCmd() *cobra.Command {
 					},
 				})
 				// Save system notification to DB
-				server.SaveNotification(database, sessionId, "system", fmt.Sprintf("[%s] %s", status, summary))
+				if err := server.SaveNotification(database, sessionId, "system", fmt.Sprintf("[%s] %s", status, summary)); err != nil {
+					slog.Error("failed to save system notification", "error", err)
+				}
 			})
 
 			ctx, cancel := context.WithCancel(context.Background())
