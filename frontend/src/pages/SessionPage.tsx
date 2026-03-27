@@ -105,6 +105,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [settingsJSONOpen, setSettingsJSONOpen] = useState(false);
   const [settingsJSONFiles, setSettingsJSONFiles] = useState<{ name: string; content: string }[]>([]);
   const [settingsJSONLoading, setSettingsJSONLoading] = useState(false);
+  const [showForkModal, setShowForkModal] = useState(false);
+  const [forkMessage, setForkMessage] = useState("");
+  const [forkLoading, setForkLoading] = useState(false);
 
   const providerVersion = deferred.providerVersion;
   const streamCursorRef = useRef<number | null>(null);
@@ -369,14 +372,10 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                 <ActionMenuItem
                   icon={<GitBranch className="w-4 h-4" />}
                   label="Fork"
-                  onClick={async () => {
+                  onClick={() => {
                     setShowActionMenu(false);
-                    try {
-                      const newSession = await api.forkSession(session.id);
-                      navigate(`/sessions/${newSession.id}`);
-                    } catch {
-                      alert("Failed to fork session");
-                    }
+                    setForkMessage("");
+                    setShowForkModal(true);
                   }}
                 />
               )}
@@ -803,6 +802,55 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             emptyMessage="No settings files found"
           />
         )}
+      </Modal>
+
+      {/* Fork Modal */}
+      <Modal open={showForkModal} onClose={() => setShowForkModal(false)} title="セッションをフォーク">
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (forkLoading || !session) return;
+            setForkLoading(true);
+            try {
+              const newSession = await api.forkSession(session.id);
+              if (forkMessage.trim()) {
+                await api.sendToSession(newSession.id, forkMessage.trim());
+              }
+              setShowForkModal(false);
+              navigate(`/sessions/${newSession.id}`);
+            } catch {
+              alert("フォークに失敗しました");
+            } finally {
+              setForkLoading(false);
+            }
+          }}
+          className="space-y-3"
+        >
+          <textarea
+            value={forkMessage}
+            onChange={(e) => setForkMessage(e.target.value)}
+            placeholder="フォーク後に送信するメッセージ（省略可）"
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+            rows={3}
+            autoFocus
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowForkModal(false)}
+              className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+            >
+              キャンセル
+            </button>
+            <button
+              type="submit"
+              disabled={forkLoading}
+              className="px-3 py-1.5 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
+            >
+              {forkLoading ? "フォーク中..." : "フォーク"}
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   );
