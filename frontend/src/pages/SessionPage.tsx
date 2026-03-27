@@ -814,17 +814,19 @@ export function PermissionPromptBanner({ permission, sessionId, onResponded }: {
           <span className="text-xs text-gray-500 font-mono">{permission.toolName}</span>
         </div>
         {planText && (
-          <div className="relative">
-            <pre className={`text-xs text-gray-600 bg-white border border-gray-200 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap ${!expanded && planIsLong ? "max-h-24 overflow-hidden" : "max-h-80 overflow-y-auto"}`}>
-              {planText}
-            </pre>
-            {planIsLong && !expanded && (
-              <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent rounded-b" />
-            )}
+          <div>
+            <div className="relative">
+              <pre className={`text-xs text-gray-600 bg-white border border-gray-200 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap ${!expanded && planIsLong ? "max-h-24 overflow-hidden" : "max-h-80 overflow-y-auto"}`}>
+                {planText}
+              </pre>
+              {planIsLong && !expanded && (
+                <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-white to-transparent rounded-b pointer-events-none" />
+              )}
+            </div>
             {planIsLong && (
               <button
                 onClick={() => setExpanded(!expanded)}
-                className="text-xs text-amber-700 hover:text-amber-900 mt-1"
+                className="text-xs text-amber-700 hover:text-amber-900 hover:underline mt-1.5 relative z-10"
               >
                 {expanded ? "折りたたむ" : "すべて表示"}
               </button>
