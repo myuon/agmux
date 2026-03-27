@@ -850,12 +850,18 @@ func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) saveNotification(sessionID, kind, message string) {
-	_, err := s.sqlDB.Exec(
+	SaveNotification(s.sqlDB, sessionID, kind, message)
+}
+
+// SaveNotification inserts a notification record into the database.
+// Exported so that callers outside the server package (e.g. main) can record system notifications.
+func SaveNotification(sqlDB *sql.DB, sessionID, kind, message string) {
+	_, err := sqlDB.Exec(
 		`INSERT INTO notifications (session_id, kind, message) VALUES (?, ?, ?)`,
 		sessionID, kind, message,
 	)
 	if err != nil {
-		s.logger.Error("failed to save notification", "error", err)
+		slog.Error("failed to save notification", "error", err)
 	}
 }
 

@@ -139,6 +139,8 @@ func serveCmd() *cobra.Command {
 						"summary":     summary,
 					},
 				})
+				// Save system notification to DB
+				server.SaveNotification(database, sessionId, "system", fmt.Sprintf("[%s] %s", status, summary))
 			})
 
 			ctx, cancel := context.WithCancel(context.Background())
