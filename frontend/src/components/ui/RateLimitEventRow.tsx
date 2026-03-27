@@ -61,15 +61,13 @@ export function RateLimitEventRow({ item }: { item: RateLimitItem }) {
     : null;
 
   return (
-    <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1.5 px-3 text-xs ${textColor} border-y border-dashed ${borderColor} ${bgColor}`}>
-      <span className="inline-flex items-center gap-1 whitespace-nowrap">
-        <span className={iconColor}>{isRejected ? "\u26D4" : "\u26A0"}</span>
-        <span className="font-medium">{statusLabel}</span>
-        <span className="text-gray-400">({windowLabel})</span>
-      </span>
+    <div className={`flex items-center gap-2 py-1.5 px-3 text-xs ${textColor} border-y border-dashed ${borderColor} ${bgColor} overflow-hidden`}>
+      <span className={`shrink-0 ${iconColor}`}>{isRejected ? "\u26D4" : "\u26A0"}</span>
+      <span className="font-medium shrink-0">{statusLabel}</span>
+      <span className="text-gray-400 shrink-0">({windowLabel})</span>
       {utilizationPercent != null && (
-        <span className="inline-flex items-center gap-1 whitespace-nowrap">
-          <span className="inline-block w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+        <span className="inline-flex items-center gap-1 shrink-0">
+          <span className="inline-block w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
             <span
               className={`block h-full rounded-full ${
                 utilizationPercent >= 90
@@ -85,9 +83,9 @@ export function RateLimitEventRow({ item }: { item: RateLimitItem }) {
         </span>
       )}
       {item.overageStatus && (
-        <span className="whitespace-nowrap text-gray-400">overage: {item.overageStatus}</span>
+        <span className="shrink-0 text-gray-400">{item.overageStatus}</span>
       )}
-      {resetLabel && <span className="whitespace-nowrap text-gray-400 ml-auto">{resetLabel}</span>}
+      {resetLabel && <span className="shrink-0 text-gray-400 ml-auto">{resetLabel}</span>}
     </div>
   );
 }

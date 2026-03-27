@@ -6,6 +6,11 @@
       "sourceType": "github",
       "computedHash": "57bfa07d34f966bccf791d49c9b6ce507fbba08f7dbf9e2ad15809e2dd29041e"
     },
+    "agmux:dispatch": {
+      "source": "myuon/agmux",
+      "sourceType": "github",
+      "computedHash": "f4ef124444483f34a5155f1635fe84133904b6a00ae5bdcfdafe3ff5e95a5a03"
+    },
     "commit": {
       "source": "myuon/agent-skills",
       "sourceType": "github",
