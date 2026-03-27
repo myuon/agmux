@@ -216,7 +216,93 @@ function EscalateCallView({ item, sessionId, escalationId, timedOut, timeoutSeco
   );
 }
 
-export function ToolCallView({ item, onAnswer, sessionId, escalationId, escalationTimedOut, escalationTimeoutSeconds, onEscalationResponded }: {
+function PermissionPromptCallView({ item, sessionId, pendingPermission, onResponded }: {
+  item: Extract<StreamDisplayItem, { kind: "tool_call" }>;
+  sessionId?: string;
+  pendingPermission?: { id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number };
+  onResponded?: () => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const [sending, setSending] = useState(false);
+  const inp = item.input as { tool_name?: string; input?: unknown } | undefined;
+  const isResolved = item.result !== undefined;
+
+  const handleRespond = async (response: "allow" | "deny") => {
+    if (!sessionId || sending) return;
+    if (!pendingPermission) return;
+    setSending(true);
+    try {
+      await api.respondPermission(sessionId, pendingPermission.id, response);
+      onResponded?.();
+    } catch {
+      // ignore errors
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="border border-amber-200 rounded-lg overflow-hidden bg-amber-50">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full text-left px-2.5 py-1.5 hover:bg-amber-100 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+          <span className="font-medium text-xs text-amber-800">Permission Request</span>
+          <span className="text-xs text-gray-600">{inp?.tool_name}</span>
+          {pendingPermission?.timedOut && !isResolved && (
+            <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
+              タイムアウト - 自動承認しました
+            </span>
+          )}
+          {isResolved && <CheckCircle2 className="w-3 h-3 text-green-500 ml-auto shrink-0" />}
+        </div>
+      </button>
+      {expanded && (
+        <div className="px-3 pb-3 space-y-2">
+          <div className="text-sm text-gray-800">
+            <span className="font-medium">Tool:</span> {inp?.tool_name}
+          </div>
+          {inp?.input != null && (
+            <pre className="text-xs text-gray-600 bg-white border border-gray-200 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap">
+              {JSON.stringify(inp.input, null, 2)}
+            </pre>
+          )}
+          {isResolved ? (
+            <div className="text-xs text-gray-500 bg-white border border-gray-200 rounded px-2 py-1.5">
+              <span className="text-gray-400">Response: </span>
+              {item.result}
+            </div>
+          ) : pendingPermission?.timedOut ? (
+            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+              タイムアウト - 自動承認しました
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleRespond("allow")}
+                disabled={sending}
+                className="px-3 py-1.5 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+              >
+                {sending ? "..." : "承認"}
+              </button>
+              <button
+                onClick={() => handleRespond("deny")}
+                disabled={sending}
+                className="px-3 py-1.5 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+              >
+                {sending ? "..." : "拒否"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ToolCallView({ item, onAnswer, sessionId, escalationId, escalationTimedOut, escalationTimeoutSeconds, onEscalationResponded, pendingPermission, onPermissionResponded }: {
   item: Extract<StreamDisplayItem, { kind: "tool_call" }>;
   onAnswer?: (text: string) => void;
   sessionId?: string;
@@ -224,6 +310,8 @@ export function ToolCallView({ item, onAnswer, sessionId, escalationId, escalati
   escalationTimedOut?: boolean;
   escalationTimeoutSeconds?: number;
   onEscalationResponded?: () => void;
+  pendingPermission?: { id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number };
+  onPermissionResponded?: () => void;
 }) {
   // Hooks must be called before any conditional returns (React Rules of Hooks)
   const [open, setOpen] = useState(false);
@@ -237,6 +325,9 @@ export function ToolCallView({ item, onAnswer, sessionId, escalationId, escalati
   }
   if (item.name === "mcp__agmux__escalate") {
     return <EscalateCallView item={item} sessionId={sessionId} escalationId={escalationId} timedOut={escalationTimedOut} timeoutSeconds={escalationTimeoutSeconds} onResponded={onEscalationResponded} />;
+  }
+  if (item.name === "mcp__agmux__permission_prompt") {
+    return <PermissionPromptCallView item={item} sessionId={sessionId} pendingPermission={pendingPermission} onResponded={onPermissionResponded} />;
   }
   const Icon = toolIcon(item.name);
   const desc = toolDescription(item.name, item.input);

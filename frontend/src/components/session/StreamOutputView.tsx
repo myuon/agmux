@@ -15,7 +15,7 @@ const roleStyles: Record<string, { bg: string; label: string; text: string }> = 
 
 type StreamViewMode = "markdown" | "json";
 
-export function StreamOutputView({ lines, partialText, className, onAnswer, sessionId, escalationId, escalationTimedOut, escalationTimeoutSeconds, onEscalationResponded, provider }: {
+export function StreamOutputView({ lines, partialText, className, onAnswer, sessionId, escalationId, escalationTimedOut, escalationTimeoutSeconds, onEscalationResponded, pendingPermission, onPermissionResponded, provider }: {
   lines: unknown[];
   partialText?: string;
   className?: string;
@@ -25,6 +25,8 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
   escalationTimedOut?: boolean;
   escalationTimeoutSeconds?: number;
   onEscalationResponded?: () => void;
+  pendingPermission?: { id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number };
+  onPermissionResponded?: () => void;
   provider?: string;
 }) {
   const { ref, onScroll } = useAutoScroll(lines);
@@ -65,7 +67,7 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
               return (
                 <div key={i}>
                   {group.items.map((item, j) => (
-                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={onEscalationResponded} />
+                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={onEscalationResponded} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} />
                   ))}
                 </div>
               );
@@ -80,7 +82,7 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
                 </div>
                 <div className="text-gray-800 break-words text-xs space-y-2">
                   {group.items.map((item, j) => (
-                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={onEscalationResponded} />
+                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={onEscalationResponded} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} />
                   ))}
                 </div>
               </div>

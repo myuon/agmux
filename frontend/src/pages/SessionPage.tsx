@@ -89,6 +89,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [pendingEscalationId, setPendingEscalationId] = useState<string | null>(null);
   const [escalationTimedOut, setEscalationTimedOut] = useState(false);
   const [escalationTimeoutSeconds, setEscalationTimeoutSeconds] = useState(300);
+  const [pendingPermission, setPendingPermission] = useState<{ id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number } | null>(null);
   const [reconnectToast, setReconnectToast] = useState(false);
   const [disconnectToast, setDisconnectToast] = useState(false);
   const [clearToast, setClearToast] = useState<"success" | "error" | null>(null);
@@ -148,6 +149,18 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       const data = msg.data as { id: string; sessionId: string };
       if (data.sessionId === sessionId) {
         setEscalationTimedOut(true);
+      }
+    }
+    if (msg.type === "permission_prompt") {
+      const data = msg.data as { id: string; sessionId: string; toolName: string; input: unknown; timeoutSeconds?: number };
+      if (data.sessionId === sessionId) {
+        setPendingPermission({ id: data.id, toolName: data.toolName, input: data.input, timeoutSeconds: data.timeoutSeconds ?? 300 });
+      }
+    }
+    if (msg.type === "permission_timeout") {
+      const data = msg.data as { id: string; sessionId: string };
+      if (data.sessionId === sessionId) {
+        setPendingPermission((prev) => prev && prev.id === data.id ? { ...prev, timedOut: true } : prev);
       }
     }
     if (msg.type === "stream_update") {
@@ -248,6 +261,11 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         setPendingEscalationId(r.escalation.id);
         setEscalationTimedOut(r.escalation.timedOut ?? false);
         setEscalationTimeoutSeconds(r.escalation.timeoutSeconds ?? 300);
+      }
+    }).catch(() => {});
+    api.getPendingPermission(sessionId).then((r) => {
+      if (r.permission) {
+        setPendingPermission({ id: r.permission.id, toolName: r.permission.toolName, input: r.permission.input, timedOut: r.permission.timedOut, timeoutSeconds: r.permission.timeoutSeconds ?? 300 });
       }
     }).catch(() => {});
 
@@ -668,7 +686,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         </div>
       ) : (
         <div className="flex flex-col flex-1 min-h-0">
-          <StreamOutputView lines={streamLines} partialText={partialText} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={() => { setPendingEscalationId(null); setEscalationTimedOut(false); }} provider={session?.provider ?? undefined} onAnswer={async (text) => {
+          <StreamOutputView lines={streamLines} partialText={partialText} className="flex-1 min-h-0" sessionId={sessionId} escalationId={pendingEscalationId ?? undefined} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={() => { setPendingEscalationId(null); setEscalationTimedOut(false); }} pendingPermission={pendingPermission ?? undefined} onPermissionResponded={() => { setPendingPermission(null); }} provider={session?.provider ?? undefined} onAnswer={async (text) => {
             if (!sessionId) return;
             await api.sendToSession(sessionId, text);
           }} />
