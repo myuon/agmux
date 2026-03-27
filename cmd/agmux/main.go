@@ -256,6 +256,7 @@ func sessionCmd() *cobra.Command {
 	cmd.AddCommand(sessionListCmd())
 	cmd.AddCommand(sessionStopCmd())
 	cmd.AddCommand(sessionDeleteCmd())
+	cmd.AddCommand(sessionForkCmd())
 	cmd.AddCommand(sessionSendCmd())
 	cmd.AddCommand(sessionBroadcastCmd())
 
@@ -337,6 +338,44 @@ func createSessionViaAPI(name, projectPath, prompt string, worktree bool, provid
 	}
 
 	fmt.Printf("Created session: %s (id: %s)\n", result.Name, result.ID)
+	return nil
+}
+
+func sessionForkCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "fork <id>",
+		Short: "Fork an existing session",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return forkSessionViaAPI(args[0])
+		},
+	}
+}
+
+func forkSessionViaAPI(id string) error {
+	cfg, _ := config.Load()
+	port := cfg.Server.Port
+
+	url := fmt.Sprintf("http://localhost:%d/api/sessions/%s/fork", port, id)
+	resp, err := http.Post(url, "application/json", nil)
+	if err != nil {
+		return fmt.Errorf("failed to connect to agmux server on port %d (is it running?): %w", port, err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		ID    string `json:"id"`
+		Name  string `json:"name"`
+		Error string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode server response: %w", err)
+	}
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("server error: %s", result.Error)
+	}
+
+	fmt.Printf("Forked session: %s (id: %s)\n", result.Name, result.ID)
 	return nil
 }
 

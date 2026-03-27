@@ -163,6 +163,12 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add parent_session_id column if missing (for fork tracking)
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN parent_session_id TEXT`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: remove UNIQUE constraint from tmux_session (no longer used)
 	// SQLite doesn't support DROP CONSTRAINT, so we recreate the table
 	{

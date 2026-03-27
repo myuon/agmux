@@ -7,6 +7,7 @@ export interface Session {
   type: "worker" | "controller" | "external";
   provider: string;
   model?: string;
+  parentSessionId?: string;
   currentTask?: string;
   goal?: string;
   goals?: { currentTask: string; goal: string }[];

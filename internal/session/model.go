@@ -32,22 +32,23 @@ const (
 )
 
 type Session struct {
-	ID            string       `json:"id"`
-	Name          string       `json:"name"`
-	ProjectPath   string       `json:"projectPath"`
-	InitialPrompt string       `json:"initialPrompt,omitempty"`
-	SystemPrompt  string       `json:"systemPrompt,omitempty"`
-	Status        Status       `json:"status"`
-	Type          SessionType  `json:"type"`
-	Provider      ProviderName `json:"provider"`
-	CliSessionID  string       `json:"cliSessionId,omitempty"`
-	Model         string       `json:"model,omitempty"`
-	CurrentTask   string       `json:"currentTask,omitempty"`
-	Goal          string       `json:"goal,omitempty"`
-	Goals         GoalStack    `json:"goals,omitempty"`
-	LastError     string       `json:"lastError,omitempty"`
-	CreatedAt     time.Time    `json:"createdAt"`
-	UpdatedAt     time.Time    `json:"updatedAt"`
+	ID              string       `json:"id"`
+	Name            string       `json:"name"`
+	ProjectPath     string       `json:"projectPath"`
+	InitialPrompt   string       `json:"initialPrompt,omitempty"`
+	SystemPrompt    string       `json:"systemPrompt,omitempty"`
+	Status          Status       `json:"status"`
+	Type            SessionType  `json:"type"`
+	Provider        ProviderName `json:"provider"`
+	CliSessionID    string       `json:"cliSessionId,omitempty"`
+	Model           string       `json:"model,omitempty"`
+	ParentSessionID string       `json:"parentSessionId,omitempty"`
+	CurrentTask     string       `json:"currentTask,omitempty"`
+	Goal            string       `json:"goal,omitempty"`
+	Goals           GoalStack    `json:"goals,omitempty"`
+	LastError       string       `json:"lastError,omitempty"`
+	CreatedAt       time.Time    `json:"createdAt"`
+	UpdatedAt       time.Time    `json:"updatedAt"`
 }
 
 type GoalEntry struct {
