@@ -283,8 +283,12 @@ export function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
   }, []);
 
   const visibleTasks = tasks.filter((t) => !hiddenIds.has(t.taskId));
+  const [expanded, setExpanded] = useState(false);
 
   if (visibleTasks.length === 0) return null;
+
+  const collapsible = visibleTasks.length >= 4;
+  const displayedTasks = collapsible && !expanded ? visibleTasks.slice(-3) : visibleTasks;
 
   return (
     <div className="space-y-1.5">
@@ -292,9 +296,18 @@ export function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
         <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
         Running Tasks ({visibleTasks.length})
       </div>
-      {visibleTasks.map((task) => (
+      {displayedTasks.map((task) => (
         <ActiveTaskItem key={task.taskId} task={task} onDismiss={handleDismiss} />
       ))}
+      {collapsible && (
+        <button
+          type="button"
+          onClick={() => setExpanded((prev) => !prev)}
+          className="text-xs text-amber-600 hover:text-amber-800 hover:underline cursor-pointer"
+        >
+          {expanded ? "Show latest 3" : `Show all (${visibleTasks.length}件)`}
+        </button>
+      )}
     </div>
   );
 }
