@@ -98,8 +98,10 @@ func (sc *StatusChecker) check() {
 		}
 
 		// Status detection via stream JSONL
+		// Note: idle/working transitions are handled by StreamProcess (result event + task tracking),
+		// so the monitor only detects question_waiting, alignment_needed, and paused.
 		result := sc.monitor.CheckStatus(s)
-		if result.Status != s.Status {
+		if result.Status != "" && result.Status != s.Status {
 			sc.logger.Info(fmt.Sprintf("%s (%s): %s -> %s (%s)",
 				s.Name, shortID,
 				s.Status, result.Status, result.Reason),

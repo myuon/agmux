@@ -543,6 +543,13 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *StreamProcess) {
 	} else {
 		m.logger.Warn("onNewLines callback is nil, WebSocket updates will not work", "sessionId", sessionID)
 	}
+	sp.SetOnStatusChange(func(sid string, status Status) {
+		if err := m.UpdateStatus(sid, status); err != nil {
+			m.logger.Error("failed to update status from stream event", "sessionId", sid, "status", status, "error", err)
+		} else {
+			m.logger.Info("status updated from stream event", "sessionId", sid, "status", status)
+		}
+	})
 	sp.SetOnProcessExit(func(sid string, exitErr error) {
 		// For Codex provider, exit code 0 is normal (exec finishes after each prompt).
 		// Keep the session running and the stream process in the map so that

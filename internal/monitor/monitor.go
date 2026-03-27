@@ -86,11 +86,10 @@ const StatusPrompt = `以下はClaude Codeセッションのstream-json出力の
 1行目にステータス、2行目に日本語で短い要約（何をしている/何を聞いている/何を待っているか）を出力してください。
 
 ステータス（1行目に以下のいずれか1つだけ）:
-- working: AIが作業中（ツール実行中、コード生成中、思考中など）
 - question_waiting: ユーザーに質問や確認をしている状態
 - alignment_needed: タスクの方針決定や仕様の確認など、ユーザーとのアラインメントが必要な状態
 - paused: ゴール未達成だが作業が中断している状態（次にやることはわかっている）
-- idle: ゴールを達成し、ユーザーの次の指示を待っている状態（明確にタスク完了した場合のみ）
+- none: 上記に該当しない（判定不要）
 
 例:
 question_waiting
@@ -133,10 +132,9 @@ func classifyWithLLM(lastLine string) CheckStatusResult {
 		return CheckStatusResult{session.StatusQuestionWaiting, reason, summary}
 	case strings.Contains(statusLine, "paused"):
 		return CheckStatusResult{session.StatusPaused, reason, summary}
-	case strings.Contains(statusLine, "idle"):
-		return CheckStatusResult{session.StatusIdle, reason, summary}
-	case strings.Contains(statusLine, "working"):
-		return CheckStatusResult{session.StatusWorking, reason, summary}
+	case strings.Contains(statusLine, "none"):
+		// LLM says none of the special statuses apply; keep current status
+		return CheckStatusResult{Status: "", Reason: "llm: none"}
 	}
 
 	return CheckStatusResult{Reason: fmt.Sprintf("llm unrecognized: %s", truncate(response, 60))}

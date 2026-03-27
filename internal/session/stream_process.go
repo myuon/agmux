@@ -50,6 +50,14 @@ type StreamProcess struct {
 	// onProcessExit is called when the CLI process exits unexpectedly.
 	// The callback receives the agmux session ID and the exit error (nil if exited cleanly).
 	onProcessExit func(sessionID string, exitErr error)
+
+	// onStatusChange is called when the stream detects a status transition
+	// (e.g. result event received → idle, user message sent → working).
+	onStatusChange func(sessionID string, status Status)
+
+	// runningTasks tracks the number of background Agent tasks currently in progress.
+	// Incremented on task_started, decremented on task_notification.
+	runningTasks int
 }
 
 // ReadCLISessionID reads the CLI-assigned session ID from a stream JSONL file.
@@ -275,12 +283,18 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 		// stream_event lines are only delivered via WebSocket (real-time),
 		// not persisted to .jsonl or included in the lines slice.
 		isStreamEvent := false
+		var peekType, peekSubtype string
 		if len(normalized) > 0 && normalized[0] == '{' {
 			var peek struct {
-				Type string `json:"type"`
+				Type    string `json:"type"`
+				Subtype string `json:"subtype"`
 			}
-			if json.Unmarshal(normalized, &peek) == nil && peek.Type == "stream_event" {
-				isStreamEvent = true
+			if json.Unmarshal(normalized, &peek) == nil {
+				peekType = peek.Type
+				peekSubtype = peek.Subtype
+				if peekType == "stream_event" {
+					isStreamEvent = true
+				}
 			}
 		}
 
@@ -292,7 +306,29 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 		}
 		total := len(sp.lines)
 		cb := sp.onNewLines
+
+		// Track running tasks and detect status transitions
+		var statusChange *Status
+		switch {
+		case peekType == "result":
+			if sp.runningTasks <= 0 {
+				idle := StatusIdle
+				statusChange = &idle
+			}
+		case peekSubtype == "task_started":
+			sp.runningTasks++
+		case peekSubtype == "task_notification":
+			sp.runningTasks--
+			if sp.runningTasks < 0 {
+				sp.runningTasks = 0
+			}
+		}
+		statusCb := sp.onStatusChange
 		sp.mu.Unlock()
+
+		if statusChange != nil && statusCb != nil {
+			statusCb(sp.streamOpts.SessionID, *statusChange)
+		}
 
 		if cb != nil {
 			cb(sp.streamOpts.SessionID, []string{normalizedStr}, total)
@@ -370,6 +406,12 @@ func (sp *StreamProcess) SetOnProcessExit(fn func(sessionID string, exitErr erro
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.onProcessExit = fn
+}
+
+func (sp *StreamProcess) SetOnStatusChange(fn func(sessionID string, status Status)) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.onStatusChange = fn
 }
 
 // ImageData represents a base64-encoded image to be sent with a message.
@@ -472,7 +514,13 @@ func (sp *StreamProcess) sendClaude(message string, images []ImageData) error {
 	sp.file.WriteString(line + "\n")
 	sp.file.Sync()
 	cb := sp.onNewLines
+	statusCb := sp.onStatusChange
 	sp.mu.Unlock()
+
+	// User message sent → working
+	if statusCb != nil {
+		statusCb(sp.streamOpts.SessionID, StatusWorking)
+	}
 
 	if cb != nil {
 		cb(sp.streamOpts.SessionID, []string{line}, total)
