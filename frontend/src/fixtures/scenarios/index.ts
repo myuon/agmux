@@ -5,6 +5,7 @@ import { agentSubtaskLines } from "./agentSubtask";
 import { normalConversationLines } from "./normalConversation";
 import { compactionLines } from "./compaction";
 import { multipleRunningTasksLines } from "./multipleRunningTasks";
+import { apiRetryLines } from "./apiRetry";
 
 export interface SimulatedPermission {
   id: string;
@@ -110,6 +111,12 @@ export const scenarioPresets: ScenarioPreset[] = [
       timedOut: true,
       timeoutSeconds: 30,
     },
+  },
+  {
+    id: "api-retry",
+    label: "API Retry",
+    description: "APIリトライ (rate_limit 529) の連続リトライ表示",
+    lines: apiRetryLines,
   },
   {
     id: "multiple-running-tasks",
