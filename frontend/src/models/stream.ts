@@ -53,7 +53,8 @@ export type StreamDisplayItem =
   | { kind: "image"; mediaType: string; data: string }
   | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; children?: StreamDisplayItem[] }
   | { kind: "thinking"; text: string }
-  | { kind: "system_event"; eventType: string; label: string; detail?: string };
+  | { kind: "system_event"; eventType: string; label: string; detail?: string }
+  | { kind: "rate_limit"; rateLimitType: string; status: string; resetsAt: number; utilization?: number; isUsingOverage?: boolean; overageStatus?: string };
 
 // Tool call history entry for tracking sub-agent activity
 export interface ToolCallHistoryEntry {
@@ -355,6 +356,25 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
       const sysItem = parseSystemEvent(entry);
       if (sysItem) {
         groups.push({ role: "system", items: [sysItem] });
+      }
+      continue;
+    }
+
+    // Handle rate_limit_event
+    if (entry.type === "rate_limit_event") {
+      const raw = entry as unknown as Record<string, unknown>;
+      const info = raw.rate_limit_info as Record<string, unknown> | undefined;
+      if (info) {
+        const item: StreamDisplayItem = {
+          kind: "rate_limit",
+          rateLimitType: (info.rateLimitType as string) || "unknown",
+          status: (info.status as string) || "unknown",
+          resetsAt: (info.resetsAt as number) || 0,
+          utilization: info.utilization as number | undefined,
+          isUsingOverage: info.isUsingOverage as boolean | undefined,
+          overageStatus: info.overageStatus as string | undefined,
+        };
+        groups.push({ role: "system", items: [item] });
       }
       continue;
     }

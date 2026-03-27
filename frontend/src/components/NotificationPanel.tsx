@@ -19,7 +19,7 @@ export function NotificationPanel() {
   // Reload on new notification via WebSocket
   const handleWsMessage = useCallback(
     (msg: { type: string }) => {
-      if (msg.type === "agent_notification" || msg.type === "escalation") {
+      if (msg.type === "agent_notification" || msg.type === "escalation" || msg.type === "notify") {
         load();
       }
     },
@@ -30,11 +30,13 @@ export function NotificationPanel() {
 
   const kindLabel = (kind: string) => {
     if (kind === "escalation") return "Escalation";
+    if (kind === "system") return "System";
     return "Notification";
   };
 
   const kindColor = (kind: string) => {
     if (kind === "escalation") return "text-orange-400";
+    if (kind === "system") return "text-gray-400";
     return "text-blue-400";
   };
 

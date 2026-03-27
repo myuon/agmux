@@ -546,7 +546,9 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.recordSessionAction(sessionID, "escalation", req.Message)
-	s.saveNotification(sessionID, "escalation", req.Message)
+	if err := s.saveNotification(sessionID, "escalation", req.Message); err != nil {
+		slog.Error("failed to save escalation notification", "error", err)
+	}
 
 	// Determine timeout duration
 	timeoutSeconds := 300 // default 5 minutes
@@ -624,7 +626,9 @@ func (s *Server) sendNotification(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.recordSessionAction(sessionID, "agent_notification", req.Message)
-	s.saveNotification(sessionID, "notification", req.Message)
+	if err := s.saveNotification(sessionID, "notification", req.Message); err != nil {
+		slog.Error("failed to save agent notification", "error", err)
+	}
 
 	// Broadcast WebSocket notification to all connected clients
 	s.hub.Broadcast(Message{
@@ -849,14 +853,21 @@ func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) saveNotification(sessionID, kind, message string) {
-	_, err := s.sqlDB.Exec(
+func (s *Server) saveNotification(sessionID, kind, message string) error {
+	return SaveNotification(s.sqlDB, sessionID, kind, message)
+}
+
+// SaveNotification inserts a notification record into the database.
+// Exported so that callers outside the server package (e.g. main) can record system notifications.
+func SaveNotification(sqlDB *sql.DB, sessionID, kind, message string) error {
+	_, err := sqlDB.Exec(
 		`INSERT INTO notifications (session_id, kind, message) VALUES (?, ?, ?)`,
 		sessionID, kind, message,
 	)
 	if err != nil {
-		s.logger.Error("failed to save notification", "error", err)
+		return fmt.Errorf("failed to save notification: %w", err)
 	}
+	return nil
 }
 
 type notificationRow struct {
