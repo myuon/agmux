@@ -5,6 +5,7 @@ import { agentSubtaskLines } from "./agentSubtask";
 import { normalConversationLines } from "./normalConversation";
 import { compactionLines } from "./compaction";
 import { multipleRunningTasksLines } from "./multipleRunningTasks";
+import { apiRetryLines, apiRetryResolvedLines } from "./apiRetry";
 
 export interface SimulatedPermission {
   id: string;
@@ -110,6 +111,18 @@ export const scenarioPresets: ScenarioPreset[] = [
       timedOut: true,
       timeoutSeconds: 30,
     },
+  },
+  {
+    id: "api-retry",
+    label: "API Retry (リトライ中)",
+    description: "最後のイベントがリトライ — 末尾にインジケーター表示",
+    lines: apiRetryLines,
+  },
+  {
+    id: "api-retry-resolved",
+    label: "API Retry (解消済み)",
+    description: "リトライ後にassistantが再開 — インジケーター非表示",
+    lines: apiRetryResolvedLines,
   },
   {
     id: "multiple-running-tasks",

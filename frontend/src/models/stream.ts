@@ -54,7 +54,8 @@ export type StreamDisplayItem =
   | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; children?: StreamDisplayItem[] }
   | { kind: "thinking"; text: string }
   | { kind: "system_event"; eventType: string; label: string; detail?: string }
-  | { kind: "rate_limit"; rateLimitType: string; status: string; resetsAt: number; utilization?: number; isUsingOverage?: boolean; overageStatus?: string };
+  | { kind: "rate_limit"; rateLimitType: string; status: string; resetsAt: number; utilization?: number; isUsingOverage?: boolean; overageStatus?: string }
+  | { kind: "api_retry"; attempt: number; maxRetries: number; retryDelayMs: number; errorStatus?: number; error?: string };
 
 // Tool call history entry for tracking sub-agent activity
 export interface ToolCallHistoryEntry {
@@ -220,6 +221,11 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
   }
 
   if (subtype === "init") {
+    return null;
+  }
+
+  if (subtype === "api_retry") {
+    // api_retry is not rendered inline; shown as a trailing indicator in StreamOutputView
     return null;
   }
 

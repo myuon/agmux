@@ -1,6 +1,7 @@
 import { CollapsibleText } from "../ui/CollapsibleText";
 import { SystemEventRow } from "../ui/SystemEventRow";
 import { RateLimitEventRow } from "../ui/RateLimitEventRow";
+import { ApiRetryEventRow } from "../ui/ApiRetryEventRow";
 import type { StreamDisplayItem } from "../../models/stream";
 import { ToolCallView } from "./ToolCallView";
 
@@ -43,6 +44,9 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermis
   }
   if (item.kind === "rate_limit") {
     return <RateLimitEventRow item={item} />;
+  }
+  if (item.kind === "api_retry") {
+    return <ApiRetryEventRow item={item} />;
   }
   return null;
 }
