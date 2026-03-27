@@ -806,7 +806,7 @@ export function PermissionPromptBanner({ permission, sessionId, onResponded }: {
   };
 
   return (
-    <div className="shrink-0 sticky bottom-0 bg-white pt-2 pb-4 px-4 sm:px-8 border-t border-gray-100">
+    <div className="shrink-0 sticky bottom-0 bg-white pt-2 pb-4 px-4 sm:px-8 -mx-4 sm:-mx-8 border-t border-gray-100">
       <div className="border border-amber-300 rounded-lg bg-amber-50 p-3 space-y-2">
         <div className="flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
