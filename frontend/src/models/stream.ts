@@ -225,14 +225,8 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
   }
 
   if (subtype === "api_retry") {
-    return {
-      kind: "api_retry",
-      attempt: (raw.attempt as number) || 0,
-      maxRetries: (raw.max_retries as number) || 0,
-      retryDelayMs: (raw.retry_delay_ms as number) || 0,
-      errorStatus: raw.error_status as number | undefined,
-      error: raw.error as string | undefined,
-    };
+    // api_retry is not rendered inline; shown as a trailing indicator in StreamOutputView
+    return null;
   }
 
   if (subtype === "task_notification") {

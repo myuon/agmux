@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import type { StreamEntry } from "../../models/stream";
 import { mergeStreamEntries } from "../../models/stream";
 import type { ActiveTask, ToolCallHistoryEntry } from "../../models/stream";
@@ -7,6 +7,7 @@ import { StreamDisplayItemView } from "./StreamDisplayItemView";
 import { toolIcon, toolDescription } from "../../models/tool";
 import { Modal } from "../ui/Modal";
 import { ToolInputView } from "./ToolInputView";
+import { RefreshCw } from "lucide-react";
 
 const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
   user: { bg: "bg-blue-50", label: "User", text: "text-blue-700" },
@@ -33,6 +34,26 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
     .filter((e) => e.type === "user" || e.type === "assistant" || e.type === "system" || e.type === "rate_limit_event");
 
   const groups = mergeStreamEntries(entries, partialText || undefined, provider);
+
+  // Show api_retry only when the last event is a retry (transient indicator)
+  const trailingRetry = useMemo(() => {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const e = entries[i];
+      if (e.type === "system" && (e as unknown as Record<string, unknown>).subtype === "api_retry") {
+        const raw = e as unknown as Record<string, unknown>;
+        return {
+          attempt: (raw.attempt as number) || 0,
+          maxRetries: (raw.max_retries as number) || 0,
+          retryDelayMs: (raw.retry_delay_ms as number) || 0,
+          errorStatus: raw.error_status as number | undefined,
+          error: raw.error as string | undefined,
+        };
+      }
+      // Stop at the first non-retry event
+      break;
+    }
+    return null;
+  }, [entries]);
 
   return (
     <div className={`flex flex-col ${className || ""}`}>
@@ -84,6 +105,22 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
               </div>
             );
           })
+        )}
+        {trailingRetry && (
+          <div className="flex items-center gap-2 py-1.5 px-3 text-xs text-amber-600 bg-amber-50 border-y border-dashed border-amber-200">
+            <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin" />
+            <span className="font-medium shrink-0">APIリトライ中 ({trailingRetry.attempt}/{trailingRetry.maxRetries})</span>
+            {trailingRetry.error && (
+              <span className="text-amber-500 shrink-0">
+                {trailingRetry.error}{trailingRetry.errorStatus ? ` (${trailingRetry.errorStatus})` : ""}
+              </span>
+            )}
+            <span className="shrink-0 text-amber-400 ml-auto">
+              待機 {trailingRetry.retryDelayMs >= 60000
+                ? `${(trailingRetry.retryDelayMs / 60000).toFixed(1)}分`
+                : `${(trailingRetry.retryDelayMs / 1000).toFixed(1)}秒`}
+            </span>
+          </div>
         )}
       </div>
     </div>

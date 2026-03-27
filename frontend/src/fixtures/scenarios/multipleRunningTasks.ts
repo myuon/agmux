@@ -39,8 +39,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "context_management": null
     },
     "parent_tool_use_id": null,
-    "session_id": "00000001-0000-4000-a000-000000000001",
-    "uuid": "00000002-0000-4000-a000-000000000002"
+    "session_id": "00000000-0000-0000-0000-000000000000",
+    "uuid": "00000000-0000-0000-0000-000000000001"
   },
   {
     "type": "system",
@@ -50,8 +50,8 @@ export const multipleRunningTasksLines: unknown[] = [
     "description": "Investigate #385 notification history",
     "task_type": "local_agent",
     "prompt": "You are investigating GitHub Issue #385 for the agmux project. The project is at /Users/user/ghq/github.com/myuon/agmux.\n\nIssue #385: 通知履歴を記録し一覧表示できるようにする\n- send_notification MCPツールやescalateで送信された通知を記録し、通知一覧として閲覧できるようにする\n\nInvestigate the following and provide a concrete implementation plan:\n1. How notifications are currently sent (find send_notification and escalate implementations)\n2. Current DB schema and how to add a notifications table\n3. Current API patterns for list endpoints\n4. Current frontend patterns for list views\n\nAfter investigation, post your findings as a comment on the issue using:\ngh issue comment 385 --body \"...\"\n\nThen remove the 調査必要 label and add 実装着手可能:\ngh issue edit 385 --remove-label \"調査必要\" --add-label \"実装着手可能\"\n\nBe thorough but concise in your investigation. Write the comment in Japanese.",
-    "uuid": "00000003-0000-4000-a000-000000000003",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000002",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "assistant",
@@ -93,8 +93,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "context_management": null
     },
     "parent_tool_use_id": null,
-    "session_id": "00000001-0000-4000-a000-000000000001",
-    "uuid": "00000004-0000-4000-a000-000000000004"
+    "session_id": "00000000-0000-0000-0000-000000000000",
+    "uuid": "00000000-0000-0000-0000-000000000003"
   },
   {
     "type": "system",
@@ -104,8 +104,8 @@ export const multipleRunningTasksLines: unknown[] = [
     "description": "Investigate #384 project history",
     "task_type": "local_agent",
     "prompt": "You are investigating GitHub Issue #384 for the agmux project. The project is at /Users/user/ghq/github.com/myuon/agmux.\n\nIssue #384: 直近のプロジェクト履歴を表示し、そこからセッション作成できるようにする\n- 過去のセッションのワーキングディレクトリを集計し、プロジェクト履歴として表示\n- ワンクリックでセッション作成\n\nInvestigate:\n1. Current DB schema for sessions (find the working directory field)\n2. How session creation works (API + frontend)\n3. How to query distinct working directories with last-used timestamps\n4. Current session creation form UI\n\nAfter investigation, post findings as a comment on the issue using:\ngh issue comment 384 --body \"...\"\n\nThen remove the 調査必要 label and add 実装着手可能:\ngh issue edit 384 --remove-label \"調査必要\" --add-label \"実装着手可能\"\n\nWrite the comment in Japanese with a concrete implementation plan.",
-    "uuid": "00000005-0000-4000-a000-000000000005",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000004",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "assistant",
@@ -147,8 +147,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "context_management": null
     },
     "parent_tool_use_id": null,
-    "session_id": "00000001-0000-4000-a000-000000000001",
-    "uuid": "00000006-0000-4000-a000-000000000006"
+    "session_id": "00000000-0000-0000-0000-000000000000",
+    "uuid": "00000000-0000-0000-0000-000000000005"
   },
   {
     "type": "system",
@@ -158,8 +158,8 @@ export const multipleRunningTasksLines: unknown[] = [
     "description": "Investigate #383 broadcast message",
     "task_type": "local_agent",
     "prompt": "You are investigating GitHub Issue #383 for the agmux project. The project is at /Users/user/ghq/github.com/myuon/agmux.\n\nIssue #383: 複数または起動中の全セッションに同じメッセージを一斉送信できるようにする\n\nInvestigate:\n1. How messages are currently sent to sessions (API endpoint, CLI command)\n2. How the send/sendKeys mechanism works\n3. Current session list/filter capabilities\n4. WebSocket architecture for real-time updates\n5. CLI command structure\n\nAfter investigation, post findings as a comment on the issue using:\ngh issue comment 383 --body \"...\"\n\nThen remove the 調査必要 label and add 実装着手可能:\ngh issue edit 383 --remove-label \"調査必要\" --add-label \"実装着手可能\"\n\nWrite the comment in Japanese with a concrete implementation plan covering API, CLI, and frontend changes.",
-    "uuid": "00000007-0000-4000-a000-000000000007",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000006",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -173,8 +173,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 8907
     },
     "last_tool_name": "Grep",
-    "uuid": "00000008-0000-4000-a000-000000000008",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000007",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -188,8 +188,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 9127
     },
     "last_tool_name": "Grep",
-    "uuid": "00000009-0000-4000-a000-000000000009",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000008",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -203,8 +203,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 4427
     },
     "last_tool_name": "Grep",
-    "uuid": "0000000a-0000-4000-a000-00000000000a",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000009",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -218,8 +218,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 5080
     },
     "last_tool_name": "Grep",
-    "uuid": "0000000b-0000-4000-a000-00000000000b",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000010",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -233,8 +233,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 5474
     },
     "last_tool_name": "Grep",
-    "uuid": "0000000c-0000-4000-a000-00000000000c",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000011",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -248,8 +248,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 5834
     },
     "last_tool_name": "Glob",
-    "uuid": "0000000d-0000-4000-a000-00000000000d",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000012",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -263,8 +263,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 10734
     },
     "last_tool_name": "Grep",
-    "uuid": "0000000e-0000-4000-a000-00000000000e",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000013",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -278,8 +278,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 6133
     },
     "last_tool_name": "Glob",
-    "uuid": "0000000f-0000-4000-a000-00000000000f",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000014",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -293,8 +293,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 11175
     },
     "last_tool_name": "Glob",
-    "uuid": "00000010-0000-4000-a000-000000000010",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000015",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -308,8 +308,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 11218
     },
     "last_tool_name": "Glob",
-    "uuid": "00000011-0000-4000-a000-000000000011",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000016",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -323,8 +323,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 4425
     },
     "last_tool_name": "Glob",
-    "uuid": "00000012-0000-4000-a000-000000000012",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000017",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "assistant",
@@ -366,8 +366,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "context_management": null
     },
     "parent_tool_use_id": null,
-    "session_id": "00000001-0000-4000-a000-000000000001",
-    "uuid": "00000013-0000-4000-a000-000000000013"
+    "session_id": "00000000-0000-0000-0000-000000000000",
+    "uuid": "00000000-0000-0000-0000-000000000018"
   },
   {
     "type": "system",
@@ -377,8 +377,8 @@ export const multipleRunningTasksLines: unknown[] = [
     "description": "Investigate #382 agmux dispatch",
     "task_type": "local_agent",
     "prompt": "You are investigating GitHub Issue #382 for the agmux project. The project is at /Users/user/ghq/github.com/myuon/agmux.\n\nIssue #382: agmux専用のdispatchスキルを追加する\n- 現在のグローバル dispatch スキルの agmux 専用版を作成\n- Agent ツールによるサブエージェントの代わりに agmux session としてタスクを実行\n\nInvestigate:\n1. Current dispatch skill location and contents (~/.claude/skills/dispatch/)\n2. How agmux sessions are created programmatically (API, CLI)\n3. How to monitor session completion\n4. Current MCP tools available (create_goal, escalate, etc.)\n5. How worktrees are used with sessions\n\nAfter investigation, post findings as a comment on the issue using:\ngh issue comment 382 --body \"...\"\n\nThen remove the 調査必要 label and add 実装着手可能:\ngh issue edit 382 --remove-label \"調査必要\" --add-label \"実装着手可能\"\n\nWrite the comment in Japanese with a concrete implementation plan.",
-    "uuid": "00000014-0000-4000-a000-000000000014",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000019",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -392,8 +392,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 5161
     },
     "last_tool_name": "Glob",
-    "uuid": "00000015-0000-4000-a000-000000000015",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000020",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -407,8 +407,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 5745
     },
     "last_tool_name": "Bash",
-    "uuid": "00000016-0000-4000-a000-000000000016",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000021",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "assistant",
@@ -450,8 +450,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "context_management": null
     },
     "parent_tool_use_id": null,
-    "session_id": "00000001-0000-4000-a000-000000000001",
-    "uuid": "00000017-0000-4000-a000-000000000017"
+    "session_id": "00000000-0000-0000-0000-000000000000",
+    "uuid": "00000000-0000-0000-0000-000000000022"
   },
   {
     "type": "system",
@@ -461,8 +461,8 @@ export const multipleRunningTasksLines: unknown[] = [
     "description": "Investigate #378 system prompt",
     "task_type": "local_agent",
     "prompt": "You are investigating GitHub Issue #378 for the agmux project. The project is at /Users/user/ghq/github.com/myuon/agmux.\n\nIssue #378: セッション起動時にシステムプロンプトを設定できるようにする\n\nInvestigate:\n1. How Claude CLI is launched (find provider_claude.go or similar)\n2. What flags Claude CLI supports for system prompts (--system-prompt, --append-system-prompt, etc.)\n3. Current session creation flow (DB schema, API, frontend form)\n4. How session options/config are stored and passed to the CLI\n\nAfter investigation, post findings as a comment on the issue using:\ngh issue comment 378 --body \"...\"\n\nThen remove the 調査必要 label and add 実装着手可能:\ngh issue edit 378 --remove-label \"調査必要\" --add-label \"実装着手可能\"\n\nWrite the comment in Japanese with a concrete implementation plan.",
-    "uuid": "00000018-0000-4000-a000-000000000018",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000023",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -476,8 +476,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 4123
     },
     "last_tool_name": "Grep",
-    "uuid": "00000019-0000-4000-a000-000000000019",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000024",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -491,8 +491,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 5225
     },
     "last_tool_name": "Grep",
-    "uuid": "0000001a-0000-4000-a000-00000000001a",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000025",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -506,8 +506,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 22048
     },
     "last_tool_name": "Read",
-    "uuid": "0000001b-0000-4000-a000-00000000001b",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000026",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -521,8 +521,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 6071
     },
     "last_tool_name": "Grep",
-    "uuid": "0000001c-0000-4000-a000-00000000001c",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000027",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -536,8 +536,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 6144
     },
     "last_tool_name": "Glob",
-    "uuid": "0000001d-0000-4000-a000-00000000001d",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000028",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -551,8 +551,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 22324
     },
     "last_tool_name": "Read",
-    "uuid": "0000001e-0000-4000-a000-00000000001e",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000029",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "assistant",
@@ -594,8 +594,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "context_management": null
     },
     "parent_tool_use_id": null,
-    "session_id": "00000001-0000-4000-a000-000000000001",
-    "uuid": "0000001f-0000-4000-a000-00000000001f"
+    "session_id": "00000000-0000-0000-0000-000000000000",
+    "uuid": "00000000-0000-0000-0000-000000000030"
   },
   {
     "type": "system",
@@ -609,8 +609,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 14697
     },
     "last_tool_name": "Read",
-    "uuid": "00000020-0000-4000-a000-000000000020",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000031",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -624,8 +624,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 17881
     },
     "last_tool_name": "Read",
-    "uuid": "00000021-0000-4000-a000-000000000021",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000032",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -639,8 +639,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 22796
     },
     "last_tool_name": "Read",
-    "uuid": "00000022-0000-4000-a000-000000000022",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000033",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -650,8 +650,8 @@ export const multipleRunningTasksLines: unknown[] = [
     "description": "Implement #391 resume bug fix",
     "task_type": "local_agent",
     "prompt": "You are implementing a fix for GitHub Issue #391 in the agmux project at /Users/user/ghq/github.com/myuon/agmux.\n\nIssue #391: session_reconnectで--resumeにagmux内部IDが渡されCLIがクラッシュする\n\nBug: When session_clear → session_reconnect is executed, the Claude CLI receives the agmux internal session ID (like \"OUfKD\") instead of the CLI session ID (UUID format) for the --resume flag.\n\nInvestigation points from the issue:\n- What gets set in StreamOpts.CLISessionID during session_reconnect\n- Where stream_process.go's sessionID field gets overwritten\n- Whether session_clear resets the CLI session ID\n\nSteps:\n1. Find and understand the session_reconnect flow\n2. Find where CLISessionID is set/cleared\n3. Find the session_clear logic\n4. Fix the bug so that the correct CLI session ID (UUID) is used for --resume\n5. Run tests with `make test`\n6. Commit the fix\n7. Push and create a PR with `Closes #391`\n\nUse conventional commits format. Write PR description in Japanese.",
-    "uuid": "00000023-0000-4000-a000-000000000023",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000034",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -665,8 +665,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 18234
     },
     "last_tool_name": "Read",
-    "uuid": "00000024-0000-4000-a000-000000000024",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000035",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -680,8 +680,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 15211
     },
     "last_tool_name": "Read",
-    "uuid": "00000025-0000-4000-a000-000000000025",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000036",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -695,8 +695,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 15477
     },
     "last_tool_name": "Read",
-    "uuid": "00000026-0000-4000-a000-000000000026",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000037",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -710,8 +710,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 18949
     },
     "last_tool_name": "Read",
-    "uuid": "00000027-0000-4000-a000-000000000027",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000038",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "assistant",
@@ -753,8 +753,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "context_management": null
     },
     "parent_tool_use_id": null,
-    "session_id": "00000001-0000-4000-a000-000000000001",
-    "uuid": "00000028-0000-4000-a000-000000000028"
+    "session_id": "00000000-0000-0000-0000-000000000000",
+    "uuid": "00000000-0000-0000-0000-000000000039"
   },
   {
     "type": "system",
@@ -764,8 +764,8 @@ export const multipleRunningTasksLines: unknown[] = [
     "description": "Implement #390 global CLAUDE.md",
     "task_type": "local_agent",
     "prompt": "You are implementing GitHub Issue #390 in the agmux project at /Users/user/ghq/github.com/myuon/agmux.\n\nIssue #390: CLAUDE.md表示画面でグローバルのCLAUDE.mdも表示する\n- CLAUDE.md表示画面でグローバルの ~/.claude/CLAUDE.md の内容も閲覧できる\n\nSteps:\n1. Find the current CLAUDE.md viewing feature (backend API + frontend)\n2. Add an API endpoint or modify existing one to also return global CLAUDE.md content\n3. Update the frontend to display both project and global CLAUDE.md\n4. Run tests with `make test`\n5. Build with `make build` to verify frontend compiles\n6. Commit the changes\n7. Push and create a PR with `Closes #390`\n\nThe global CLAUDE.md path is ~/.claude/CLAUDE.md. Make sure to handle the case where it doesn't exist.\n\nUse conventional commits format. Write PR description in Japanese.",
-    "uuid": "00000029-0000-4000-a000-000000000029",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000040",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -779,8 +779,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 4506
     },
     "last_tool_name": "Grep",
-    "uuid": "0000002a-0000-4000-a000-00000000002a",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000041",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -794,8 +794,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 4789
     },
     "last_tool_name": "Grep",
-    "uuid": "0000002b-0000-4000-a000-00000000002b",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000042",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -809,8 +809,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 5163
     },
     "last_tool_name": "Grep",
-    "uuid": "0000002c-0000-4000-a000-00000000002c",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000043",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -824,8 +824,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 15380
     },
     "last_tool_name": "Bash",
-    "uuid": "0000002d-0000-4000-a000-00000000002d",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000044",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -839,8 +839,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 15898
     },
     "last_tool_name": "Bash",
-    "uuid": "0000002e-0000-4000-a000-00000000002e",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000045",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -854,8 +854,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 16896
     },
     "last_tool_name": "Bash",
-    "uuid": "0000002f-0000-4000-a000-00000000002f",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000046",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -869,8 +869,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 13944
     },
     "last_tool_name": "Read",
-    "uuid": "00000030-0000-4000-a000-000000000030",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000047",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -884,8 +884,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 17633
     },
     "last_tool_name": "Grep",
-    "uuid": "00000031-0000-4000-a000-000000000031",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000048",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -899,8 +899,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 25297
     },
     "last_tool_name": "Grep",
-    "uuid": "00000032-0000-4000-a000-000000000032",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000049",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -914,8 +914,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 14394
     },
     "last_tool_name": "Read",
-    "uuid": "00000033-0000-4000-a000-000000000033",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000050",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -929,8 +929,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 26265
     },
     "last_tool_name": "Grep",
-    "uuid": "00000034-0000-4000-a000-000000000034",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000051",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -944,8 +944,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 15191
     },
     "last_tool_name": "Read",
-    "uuid": "00000035-0000-4000-a000-000000000035",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000052",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -959,8 +959,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 15585
     },
     "last_tool_name": "Read",
-    "uuid": "00000036-0000-4000-a000-000000000036",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000053",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -974,8 +974,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 5104
     },
     "last_tool_name": "Grep",
-    "uuid": "00000037-0000-4000-a000-000000000037",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000054",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -989,8 +989,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 9524
     },
     "last_tool_name": "Grep",
-    "uuid": "00000038-0000-4000-a000-000000000038",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000055",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1004,8 +1004,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 27329
     },
     "last_tool_name": "Grep",
-    "uuid": "00000039-0000-4000-a000-000000000039",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000056",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1019,8 +1019,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 6150
     },
     "last_tool_name": "Grep",
-    "uuid": "0000003a-0000-4000-a000-00000000003a",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000057",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1034,8 +1034,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 10410
     },
     "last_tool_name": "Grep",
-    "uuid": "0000003b-0000-4000-a000-00000000003b",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000058",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1049,8 +1049,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 26444
     },
     "last_tool_name": "Grep",
-    "uuid": "0000003c-0000-4000-a000-00000000003c",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000059",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1064,8 +1064,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 35123
     },
     "last_tool_name": "Grep",
-    "uuid": "0000003d-0000-4000-a000-00000000003d",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000060",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1079,8 +1079,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 27490
     },
     "last_tool_name": "Grep",
-    "uuid": "0000003e-0000-4000-a000-00000000003e",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000061",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1094,8 +1094,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 31294
     },
     "last_tool_name": "Read",
-    "uuid": "0000003f-0000-4000-a000-00000000003f",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000062",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1109,8 +1109,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 23826
     },
     "last_tool_name": "Read",
-    "uuid": "00000040-0000-4000-a000-000000000040",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000063",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1124,8 +1124,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 31690
     },
     "last_tool_name": "Read",
-    "uuid": "00000041-0000-4000-a000-000000000041",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000064",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1139,8 +1139,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 20567
     },
     "last_tool_name": "Grep",
-    "uuid": "00000042-0000-4000-a000-000000000042",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000065",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1154,8 +1154,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 28675
     },
     "last_tool_name": "Grep",
-    "uuid": "00000043-0000-4000-a000-000000000043",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000066",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1169,8 +1169,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 36836
     },
     "last_tool_name": "Grep",
-    "uuid": "00000044-0000-4000-a000-000000000044",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000067",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1184,8 +1184,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 24774
     },
     "last_tool_name": "Bash",
-    "uuid": "00000045-0000-4000-a000-000000000045",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000068",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1199,8 +1199,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 37626
     },
     "last_tool_name": "Glob",
-    "uuid": "00000046-0000-4000-a000-000000000046",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000069",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1208,10 +1208,10 @@ export const multipleRunningTasksLines: unknown[] = [
     "task_id": "agent_73ab6dc6bfbd9",
     "tool_use_id": "toolu_72b0c76100e090973485",
     "status": "stopped",
-    "output_file": "/private/tmp/claude-501/-Users-ioijoi-ghq-github-com-myuon-agmux/00000001-0000-4000-a000-000000000001/tasks/agent_73ab6dc6bfbd9.output",
+    "output_file": "/private/tmp/claude-501/-Users-ioijoi-ghq-github-com-myuon-agmux/00000000-0000-0000-0000-000000000000/tasks/agent_73ab6dc6bfbd9.output",
     "summary": "Agent \"Implement #391 resume bug fix\" was stopped",
-    "session_id": "00000001-0000-4000-a000-000000000001",
-    "uuid": "00000047-0000-4000-a000-000000000047"
+    "session_id": "00000000-0000-0000-0000-000000000000",
+    "uuid": "00000000-0000-0000-0000-000000000070"
   },
   {
     "type": "system",
@@ -1225,8 +1225,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 25630
     },
     "last_tool_name": "ToolSearch",
-    "uuid": "00000048-0000-4000-a000-000000000048",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000071",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1240,8 +1240,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 22380
     },
     "last_tool_name": "Grep",
-    "uuid": "00000049-0000-4000-a000-000000000049",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000072",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1255,8 +1255,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 11789
     },
     "last_tool_name": "Grep",
-    "uuid": "0000004a-0000-4000-a000-00000000004a",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000073",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1270,8 +1270,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 26397
     },
     "last_tool_name": "Grep",
-    "uuid": "0000004b-0000-4000-a000-00000000004b",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000074",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1285,8 +1285,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 22835
     },
     "last_tool_name": "Grep",
-    "uuid": "0000004c-0000-4000-a000-00000000004c",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000075",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1300,8 +1300,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 13026
     },
     "last_tool_name": "Grep",
-    "uuid": "0000004d-0000-4000-a000-00000000004d",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000076",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1315,8 +1315,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 36326
     },
     "last_tool_name": "Grep",
-    "uuid": "0000004e-0000-4000-a000-00000000004e",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000077",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1330,8 +1330,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 33263
     },
     "last_tool_name": "Read",
-    "uuid": "0000004f-0000-4000-a000-00000000004f",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000078",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1345,8 +1345,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 14724
     },
     "last_tool_name": "Grep",
-    "uuid": "00000050-0000-4000-a000-000000000050",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000079",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1360,8 +1360,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 33917
     },
     "last_tool_name": "Read",
-    "uuid": "00000051-0000-4000-a000-000000000051",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000080",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1375,8 +1375,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 34155
     },
     "last_tool_name": "Read",
-    "uuid": "00000052-0000-4000-a000-000000000052",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000081",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1390,8 +1390,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 37365
     },
     "last_tool_name": "Grep",
-    "uuid": "00000053-0000-4000-a000-000000000053",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000082",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1405,8 +1405,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 32101
     },
     "last_tool_name": "Read",
-    "uuid": "00000054-0000-4000-a000-000000000054",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000083",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1420,8 +1420,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 33537
     },
     "last_tool_name": "Grep",
-    "uuid": "00000055-0000-4000-a000-000000000055",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000084",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1435,8 +1435,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 34460
     },
     "last_tool_name": "Grep",
-    "uuid": "00000056-0000-4000-a000-000000000056",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000085",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1450,8 +1450,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 30919
     },
     "last_tool_name": "Grep",
-    "uuid": "00000057-0000-4000-a000-000000000057",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000086",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1465,8 +1465,8 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 31646
     },
     "last_tool_name": "Grep",
-    "uuid": "00000058-0000-4000-a000-000000000058",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000087",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   },
   {
     "type": "system",
@@ -1480,7 +1480,7 @@ export const multipleRunningTasksLines: unknown[] = [
       "duration_ms": 47882
     },
     "last_tool_name": "Grep",
-    "uuid": "00000059-0000-4000-a000-000000000059",
-    "session_id": "00000001-0000-4000-a000-000000000001"
+    "uuid": "00000000-0000-0000-0000-000000000088",
+    "session_id": "00000000-0000-0000-0000-000000000000"
   }
 ];
