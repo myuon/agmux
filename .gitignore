@@ -13,3 +13,7 @@ frontend/node_modules/
 
 # Preview worktrees
 .worktrees/
+
+# Installed skills (build artifacts from skill-lock)
+.agents/
+.claude/skills/
