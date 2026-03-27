@@ -1,5 +1,9 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import { StreamOutputView } from "../components/session/StreamOutputView";
+import { IconButton } from "../components/ui/IconButton";
+import { SecondaryButton } from "../components/ui/SecondaryButton";
 import { scenarioPresets } from "../fixtures/scenarios";
 import type { StreamEntry } from "../models/stream";
 
@@ -18,6 +22,8 @@ export function ScenarioTestPage() {
   const [customJsonl, setCustomJsonl] = useState("");
   const [customLines, setCustomLines] = useState<unknown[] | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [showSidebar, setShowSidebar] = useState(true);
+  const navigate = useNavigate();
 
   const activeLines = useMemo(() => {
     if (customLines) return customLines;
@@ -40,6 +46,7 @@ export function ScenarioTestPage() {
         .map((line) => JSON.parse(line));
       setCustomLines(lines);
       setSelectedPresetId(null);
+      setShowSidebar(false);
     } catch (e) {
       setParseError(e instanceof Error ? e.message : "Invalid JSONL");
     }
@@ -49,72 +56,92 @@ export function ScenarioTestPage() {
     setSelectedPresetId(id);
     setCustomLines(null);
     setParseError(null);
+    setShowSidebar(false);
   };
+
+  const activeLabel = customLines
+    ? "Custom JSONL"
+    : selectedPresetId
+      ? scenarioPresets.find((p) => p.id === selectedPresetId)?.label
+      : null;
+
+  const sidebar = (
+    <div className="p-4 flex-1 min-h-0 overflow-y-auto">
+      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+        Presets
+      </h2>
+      <div className="space-y-1">
+        {scenarioPresets.map((preset) => (
+          <button
+            key={preset.id}
+            onClick={() => handleSelectPreset(preset.id)}
+            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+              selectedPresetId === preset.id && !customLines
+                ? "bg-blue-50 text-blue-700 border border-blue-200"
+                : "hover:bg-gray-100 text-gray-700"
+            }`}
+          >
+            <div className="font-medium">{preset.label}</div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              {preset.description}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-6 mb-3">
+        Custom
+      </h2>
+      <textarea
+        value={customJsonl}
+        onChange={(e) => setCustomJsonl(e.target.value)}
+        placeholder={'Paste JSONL here...\n{"type":"user","message":{"role":"user","content":"Hello"}}'}
+        className="w-full h-32 border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+      />
+      {parseError && (
+        <div className="text-xs text-red-600 mt-1">{parseError}</div>
+      )}
+      <button
+        onClick={handleLoadCustom}
+        disabled={!customJsonl.trim()}
+        className="mt-2 w-full px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        Load
+      </button>
+    </div>
+  );
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-3 flex items-center justify-between shrink-0">
+      <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-3 flex items-center gap-3 shrink-0">
+        <IconButton onClick={() => navigate("/")} title="Back">
+          <ArrowLeft className="w-4 h-4" />
+        </IconButton>
         <h1 className="text-lg md:text-xl font-bold text-gray-900">
           Scenario Test
         </h1>
-        <a
-          href="/"
-          className="text-sm text-gray-500 hover:text-gray-700"
+        {/* Mobile: toggle sidebar / show active scenario */}
+        <SecondaryButton
+          onClick={() => setShowSidebar(!showSidebar)}
+          color="purple"
+          className="md:hidden"
         >
-          Back to Dashboard
-        </a>
+          {showSidebar ? "Hide scenarios" : activeLabel || "Select scenario"}
+        </SecondaryButton>
       </header>
 
       {/* Main content */}
-      <div className="flex-1 min-h-0 flex">
-        {/* Left pane: scenario selection */}
-        <div className="w-72 border-r border-gray-200 bg-white flex flex-col min-h-0 shrink-0">
-          {/* Presets */}
-          <div className="p-4 flex-1 min-h-0 overflow-y-auto">
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-              Presets
-            </h2>
-            <div className="space-y-1">
-              {scenarioPresets.map((preset) => (
-                <button
-                  key={preset.id}
-                  onClick={() => handleSelectPreset(preset.id)}
-                  className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                    selectedPresetId === preset.id && !customLines
-                      ? "bg-blue-50 text-blue-700 border border-blue-200"
-                      : "hover:bg-gray-100 text-gray-700"
-                  }`}
-                >
-                  <div className="font-medium">{preset.label}</div>
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    {preset.description}
-                  </div>
-                </button>
-              ))}
-            </div>
-
-            {/* Custom input */}
-            <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-6 mb-3">
-              Custom
-            </h2>
-            <textarea
-              value={customJsonl}
-              onChange={(e) => setCustomJsonl(e.target.value)}
-              placeholder={'Paste JSONL here...\n{"type":"user","message":{"role":"user","content":"Hello"}}'}
-              className="w-full h-32 border border-gray-300 rounded-lg px-3 py-2 text-xs font-mono resize-y focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
-            />
-            {parseError && (
-              <div className="text-xs text-red-600 mt-1">{parseError}</div>
-            )}
-            <button
-              onClick={handleLoadCustom}
-              disabled={!customJsonl.trim()}
-              className="mt-2 w-full px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              Load
-            </button>
-          </div>
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+        {/* Sidebar: always visible on md+, toggleable on mobile */}
+        <div
+          className={`${
+            showSidebar ? "flex" : "hidden"
+          } md:flex w-full md:w-72 border-b md:border-b-0 md:border-r border-gray-200 bg-white flex-col shrink-0 ${
+            showSidebar ? "max-h-[50vh] md:max-h-none" : ""
+          } min-h-0`}
+        >
+          {sidebar}
         </div>
 
         {/* Right pane: StreamOutputView */}
@@ -129,7 +156,7 @@ export function ScenarioTestPage() {
           {/* Footer stats */}
           {activeLines.length > 0 && (
             <div className="border-t border-gray-200 bg-white px-4 py-2 shrink-0">
-              <div className="flex items-center gap-4 text-xs text-gray-500">
+              <div className="flex flex-wrap items-center gap-2 md:gap-4 text-xs text-gray-500">
                 <span>
                   <span className="font-medium text-gray-700">
                     {activeLines.length}
