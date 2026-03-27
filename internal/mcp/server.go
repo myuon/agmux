@@ -167,6 +167,22 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 						"required": []string{"message"},
 					},
 				},
+				map[string]interface{}{
+					"name":        "EnterPlanMode",
+					"description": "Plan modeに入ります。",
+					"inputSchema": map[string]interface{}{
+						"type":       "object",
+						"properties": map[string]interface{}{},
+					},
+				},
+				map[string]interface{}{
+					"name":        "ExitPlanMode",
+					"description": "Plan modeから抜けます。",
+					"inputSchema": map[string]interface{}{
+						"type":       "object",
+						"properties": map[string]interface{}{},
+					},
+				},
 			},
 		}, nil
 
@@ -219,6 +235,10 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 		return s.handleSendNotification(args)
 	case "escalate":
 		return s.handleEscalate(args)
+	case "EnterPlanMode":
+		return toolResult("Plan mode entered", false), nil
+	case "ExitPlanMode":
+		return toolResult("Plan mode exited", false), nil
 	default:
 		return nil, &jsonRPCError{Code: -32602, Message: "unknown tool: " + name}
 	}
