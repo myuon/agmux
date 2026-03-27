@@ -8,14 +8,10 @@ function SystemEventView({ item }: { item: Extract<StreamDisplayItem, { kind: "s
   return <SystemEventRow label={item.label} detail={item.detail} />;
 }
 
-export function StreamDisplayItemView({ item, onAnswer, sessionId, escalationId, escalationTimedOut, escalationTimeoutSeconds, onEscalationResponded, pendingPermission, onPermissionResponded }: {
+export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermission, onPermissionResponded }: {
   item: StreamDisplayItem;
   onAnswer?: (text: string) => void;
   sessionId?: string;
-  escalationId?: string;
-  escalationTimedOut?: boolean;
-  escalationTimeoutSeconds?: number;
-  onEscalationResponded?: () => void;
   pendingPermission?: { id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number };
   onPermissionResponded?: () => void;
 }) {
@@ -40,7 +36,7 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, escalationId,
     );
   }
   if (item.kind === "tool_call") {
-    return <ToolCallView item={item} onAnswer={onAnswer} sessionId={sessionId} escalationId={escalationId} escalationTimedOut={escalationTimedOut} escalationTimeoutSeconds={escalationTimeoutSeconds} onEscalationResponded={onEscalationResponded} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} />;
+    return <ToolCallView item={item} onAnswer={onAnswer} sessionId={sessionId} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} />;
   }
   if (item.kind === "system_event") {
     return <SystemEventView item={item} />;

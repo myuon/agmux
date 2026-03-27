@@ -45,8 +45,25 @@ export const scenarioPresets: ScenarioPreset[] = [
   {
     id: "escalation",
     label: "Escalation",
-    description: "escalateツールでユーザーに質問",
+    description: "escalateツールでユーザーに質問（バナー付き）",
     lines: escalationLines,
+    simulatedEscalation: {
+      id: "esc-001",
+      message: "プレビュー環境の動作確認が完了しました。\n\n- セッション一覧: 正常表示\n- セッション詳細: ストリーム出力正常\n- エスカレーション: 応答可能\n\nこのままマージしてよいですか？",
+      timeoutSeconds: 300,
+    },
+  },
+  {
+    id: "escalation-timed-out",
+    label: "Escalation: Timed Out",
+    description: "エスカレーションがタイムアウトした状態",
+    lines: escalationLines,
+    simulatedEscalation: {
+      id: "esc-002",
+      message: "設計方針について確認したいことがあります。Fork機能の実装で、ファイルシステムは共有でよいですか？",
+      timedOut: true,
+      timeoutSeconds: 60,
+    },
   },
   {
     id: "agent-subtask",

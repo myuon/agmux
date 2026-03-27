@@ -11,13 +11,6 @@ import { toolIcon, toolDescription, toolSubDetail, parseTodoInput } from "../../
 import { api } from "../../api/client";
 import { ToolInputView } from "./ToolInputView";
 
-function formatTimeout(seconds: number): string {
-  if (seconds >= 60) {
-    const min = Math.floor(seconds / 60);
-    return `${min}分`;
-  }
-  return `${seconds}秒`;
-}
 
 function TodoCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool_call" }> }) {
   const [open, setOpen] = useState(false);
@@ -123,37 +116,12 @@ function AskUserQuestionCallView({ item, onAnswer }: { item: Extract<StreamDispl
   );
 }
 
-function EscalateCallView({ item, sessionId, escalationId, timedOut, timeoutSeconds, onResponded }: {
+function EscalateCallView({ item }: {
   item: Extract<StreamDisplayItem, { kind: "tool_call" }>;
-  sessionId?: string;
-  escalationId?: string;
-  timedOut?: boolean;
-  timeoutSeconds?: number;
-  onResponded?: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
-  const [response, setResponse] = useState("");
-  const [sending, setSending] = useState(false);
   const inp = item.input as { message?: string } | undefined;
   const isResolved = item.result !== undefined;
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!sessionId || !response.trim() || sending) return;
-
-    if (!escalationId) return;
-    const escId = escalationId;
-    setSending(true);
-    try {
-      await api.respondEscalation(sessionId, escId, response.trim());
-      setResponse("");
-      onResponded?.();
-    } catch {
-      // ignore errors
-    } finally {
-      setSending(false);
-    }
-  };
 
   return (
     <div className="border border-red-200 rounded-lg overflow-hidden bg-red-50">
@@ -164,17 +132,10 @@ function EscalateCallView({ item, sessionId, escalationId, timedOut, timeoutSeco
         <div className="flex items-center gap-2">
           <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0" />
           <span className="font-medium text-xs text-red-800">Escalation</span>
-          {timeoutSeconds && !isResolved && !timedOut && (
-            <span className="text-xs text-gray-500">
-              (タイムアウト: {formatTimeout(timeoutSeconds)})
-            </span>
-          )}
-          {timedOut && !isResolved && (
-            <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-              タイムアウト - エージェントは自動続行しました
-            </span>
-          )}
           {isResolved && <CheckCircle2 className="w-3 h-3 text-green-500 ml-auto shrink-0" />}
+          {!isResolved && (
+            <span className="text-xs text-amber-600 ml-auto shrink-0">待機中...</span>
+          )}
         </div>
       </button>
       {expanded && (
@@ -182,33 +143,11 @@ function EscalateCallView({ item, sessionId, escalationId, timedOut, timeoutSeco
           <div className="text-sm text-gray-800 prose prose-sm max-w-none">
             <Markdown remarkPlugins={[remarkGfm]}>{inp?.message ?? ""}</Markdown>
           </div>
-          {isResolved ? (
+          {isResolved && (
             <div className="text-xs text-gray-500 bg-white border border-gray-200 rounded px-2 py-1.5">
               <span className="text-gray-400">Response: </span>
               {item.result}
             </div>
-          ) : timedOut ? (
-            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
-              タイムアウト - エージェントは自動続行しました
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="flex gap-2">
-              <input
-                type="text"
-                value={response}
-                onChange={(e) => setResponse(e.target.value)}
-                placeholder="Enter your response..."
-                className="flex-1 border border-gray-300 rounded px-2 py-1.5 text-xs"
-                disabled={sending}
-              />
-              <button
-                type="submit"
-                disabled={sending || !response.trim()}
-                className="px-3 py-1.5 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
-              >
-                {sending ? "..." : "Respond"}
-              </button>
-            </form>
           )}
         </div>
       )}
@@ -302,14 +241,10 @@ function PermissionPromptCallView({ item, sessionId, pendingPermission, onRespon
   );
 }
 
-export function ToolCallView({ item, onAnswer, sessionId, escalationId, escalationTimedOut, escalationTimeoutSeconds, onEscalationResponded, pendingPermission, onPermissionResponded }: {
+export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onPermissionResponded }: {
   item: Extract<StreamDisplayItem, { kind: "tool_call" }>;
   onAnswer?: (text: string) => void;
   sessionId?: string;
-  escalationId?: string;
-  escalationTimedOut?: boolean;
-  escalationTimeoutSeconds?: number;
-  onEscalationResponded?: () => void;
   pendingPermission?: { id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number };
   onPermissionResponded?: () => void;
 }) {
@@ -324,7 +259,7 @@ export function ToolCallView({ item, onAnswer, sessionId, escalationId, escalati
     return <AskUserQuestionCallView item={item} onAnswer={onAnswer} />;
   }
   if (item.name === "mcp__agmux__escalate") {
-    return <EscalateCallView item={item} sessionId={sessionId} escalationId={escalationId} timedOut={escalationTimedOut} timeoutSeconds={escalationTimeoutSeconds} onResponded={onEscalationResponded} />;
+    return <EscalateCallView item={item} />;
   }
   if (item.name === "mcp__agmux__permission_prompt") {
     return <PermissionPromptCallView item={item} sessionId={sessionId} pendingPermission={pendingPermission} onResponded={onPermissionResponded} />;

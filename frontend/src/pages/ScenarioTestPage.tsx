@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { StreamOutputView } from "../components/session/StreamOutputView";
-import { PermissionPromptBanner } from "./SessionPage";
+import { PermissionPromptBanner, EscalationBanner } from "./SessionPage";
 import { IconButton } from "../components/ui/IconButton";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
 import { scenarioPresets } from "../fixtures/scenarios";
@@ -156,6 +156,20 @@ export function ScenarioTestPage() {
               className="h-full"
             />
           </div>
+
+          {/* Simulated escalation banner */}
+          {activePreset?.simulatedEscalation && !customLines && (
+            <div className="px-4 sm:px-8">
+              <EscalationBanner
+                escalationId={activePreset.simulatedEscalation.id}
+                message={activePreset.simulatedEscalation.message}
+                timedOut={activePreset.simulatedEscalation.timedOut ?? false}
+                timeoutSeconds={activePreset.simulatedEscalation.timeoutSeconds ?? 300}
+                sessionId="scenario-test"
+                onResponded={() => {}}
+              />
+            </div>
+          )}
 
           {/* Simulated permission banner */}
           {activePreset?.simulatedPermission && !customLines && (
