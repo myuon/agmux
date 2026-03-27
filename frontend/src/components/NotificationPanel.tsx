@@ -53,7 +53,7 @@ export function NotificationPanel() {
               {notifications.map((n) => (
                 <tr key={n.id} className="align-top hover:bg-gray-800">
                   <td className="text-gray-500 pr-2 whitespace-nowrap py-0.5">
-                    {new Date(n.createdAt + "Z").toLocaleTimeString()}
+                    {new Date(n.createdAt).toLocaleTimeString()}
                   </td>
                   <td className={`pr-2 whitespace-nowrap py-0.5 ${kindColor(n.kind)}`}>
                     {kindLabel(n.kind)}
