@@ -4,6 +4,7 @@ import { SessionPage } from "./pages/SessionPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { PreviewPage } from "./pages/PreviewPage";
+import { ScenarioTestPage } from "./pages/ScenarioTestPage";
 import { api } from "./api/client";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 
@@ -54,6 +55,10 @@ export const router = createBrowserRouter([
       {
         path: "preview",
         element: <PreviewPage />,
+      },
+      {
+        path: "scenarios",
+        element: <ScenarioTestPage />,
       },
       {
         path: "metrics",
