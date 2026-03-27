@@ -1,5 +1,6 @@
 import { CollapsibleText } from "../ui/CollapsibleText";
 import { SystemEventRow } from "../ui/SystemEventRow";
+import { RateLimitEventRow } from "../ui/RateLimitEventRow";
 import type { StreamDisplayItem } from "../../models/stream";
 import { ToolCallView } from "./ToolCallView";
 
@@ -43,6 +44,9 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, escalationId,
   }
   if (item.kind === "system_event") {
     return <SystemEventView item={item} />;
+  }
+  if (item.kind === "rate_limit") {
+    return <RateLimitEventRow item={item} />;
   }
   return null;
 }
