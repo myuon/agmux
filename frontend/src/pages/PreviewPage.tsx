@@ -602,6 +602,50 @@ function ActiveTasksPanelPreview() {
           <ActiveTasksPanel tasks={mockTasks} />
         </div>
         <div>
+          <p className="text-xs text-gray-500 mb-1">5つのタスク (折りたたみ表示)</p>
+          <ActiveTasksPanel tasks={[
+            ...mockTasks,
+            {
+              taskId: "task-jkl-001",
+              taskType: "local_agent",
+              agentId: "agent-mno-002",
+              description: "Investigate #384 project history",
+              lastToolName: "Read",
+              lastToolInput: { file_path: "internal/db/sqlite.go" },
+              usage: { inputTokens: 8200, outputTokens: 1800 },
+              toolCallHistory: [
+                { toolName: "Grep", description: "Searching for CREATE TABLE" },
+                { toolName: "Read", description: "Reading internal/db/sqlite.go" },
+              ],
+            },
+            {
+              taskId: "task-pqr-003",
+              taskType: "local_agent",
+              agentId: "agent-stu-004",
+              description: "Implement broadcast message",
+              lastToolName: "Edit",
+              lastToolInput: { file_path: "internal/server/server.go" },
+              usage: { inputTokens: 15000, outputTokens: 4500 },
+              toolCallHistory: [
+                { toolName: "Grep", description: "Searching for SendKeys" },
+                { toolName: "Read", description: "Reading internal/session/manager.go" },
+                { toolName: "Edit", description: "Editing internal/server/server.go" },
+              ],
+            },
+            {
+              taskId: "task-vwx-005",
+              taskType: "local_agent",
+              description: "Review PR #410 changes",
+              lastToolName: "Bash",
+              lastToolInput: { command: "git diff main...HEAD" },
+              usage: { inputTokens: 5000, outputTokens: 2000 },
+              toolCallHistory: [
+                { toolName: "Bash", description: "Running git diff" },
+              ],
+            },
+          ]} />
+        </div>
+        <div>
           <p className="text-xs text-gray-500 mb-1">空の状態</p>
           <ActiveTasksPanel tasks={[]} />
         </div>
