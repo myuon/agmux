@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -64,13 +63,6 @@ func (c ClaudeConfig) ClaudePermissionMode() string {
 	return c.PermissionMode
 }
 
-func (d DaemonConfig) IntervalDuration() time.Duration {
-	dur, err := time.ParseDuration(d.Interval)
-	if err != nil {
-		return 30 * time.Second
-	}
-	return dur
-}
 
 func Default() *Config {
 	return &Config{
