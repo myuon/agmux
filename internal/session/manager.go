@@ -96,9 +96,12 @@ func (m *Manager) buildEffectiveSystemPrompt(customSystemPrompt string) string {
 // If a holder process is still alive (survived server restart), reconnect to it.
 // Otherwise, start a new holder process with --resume.
 func (m *Manager) RecoverStreamProcesses() {
+	// Recover working sessions AND stopped sessions that still have a live holder process.
+	// Stopped sessions with holder_pid > 0 need to be in the streamProcesses map
+	// so that future Delete() calls can reach and kill the holder.
 	rows, err := m.db.Query(
-		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid FROM sessions WHERE status = ? AND type != 'controller'`,
-		string(StatusWorking),
+		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid, status FROM sessions WHERE (status = ? AND type != 'controller') OR (status = ? AND holder_pid > 0)`,
+		string(StatusWorking), string(StatusStopped),
 	)
 	if err != nil {
 		m.logger.Error("recover stream processes: query failed", "error", err)
@@ -107,13 +110,15 @@ func (m *Manager) RecoverStreamProcesses() {
 	defer rows.Close()
 
 	for rows.Next() {
-		var id, projectPath, providerStr, dbCliSessionID, dbModel string
+		var id, projectPath, providerStr, dbCliSessionID, dbModel, statusStr string
 		var dbSystemPrompt sql.NullString
 		var holderPID int
-		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt, &holderPID); err != nil {
+		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt, &holderPID, &statusStr); err != nil {
 			m.logger.Error("recover stream processes: scan failed", "error", err)
 			continue
 		}
+		isStopped := Status(statusStr) == StatusStopped
+
 		provider := m.getProvider(ProviderName(providerStr))
 		mcpPath, err := provider.SetupMCP(id, m.apiPort)
 		if err != nil {
@@ -150,21 +155,29 @@ func (m *Manager) RecoverStreamProcesses() {
 
 		// Try to reconnect to existing holder first
 		if holderPID > 0 && IsHolderAlive(holderPID) {
-			m.logger.Info("holder still alive, reconnecting", "sessionId", id, "holderPid", holderPID)
+			m.logger.Info("holder still alive, reconnecting", "sessionId", id, "holderPid", holderPID, "status", statusStr)
 			sp, err := ReconnectHolderStreamProcess(opts, provider, holderPID)
 			if err != nil {
-				m.logger.Warn("reconnect to holder failed, will start new holder", "sessionId", id, "error", err)
+				m.logger.Warn("reconnect to holder failed", "sessionId", id, "error", err)
+				if isStopped {
+					// For stopped sessions, we only reconnect; don't start a new holder
+					continue
+				}
+				m.logger.Info("will start new holder for working session", "sessionId", id)
 			} else {
 				m.wireSessionIDCallback(id, sp)
 				m.streamMu.Lock()
 				m.streamProcesses[id] = sp
 				m.streamMu.Unlock()
-				m.logger.Info("reconnected to existing holder", "sessionId", id, "holderPid", holderPID)
+				m.logger.Info("reconnected to existing holder", "sessionId", id, "holderPid", holderPID, "status", statusStr)
 				continue
 			}
+		} else if isStopped {
+			// Stopped session with no alive holder - nothing to recover
+			continue
 		}
 
-		// Start new holder process
+		// Start new holder process (only for working sessions)
 		sp, err := StartHolderStreamProcess(opts, provider)
 		if err != nil {
 			m.logger.Error("recover stream processes: start holder failed", "sessionId", id, "error", err)
@@ -553,6 +566,18 @@ func (m *Manager) Delete(id string) error {
 
 	// Stop stream process if exists
 	m.stopStreamProcess(id)
+
+	// Kill holder process via DB holder_pid even if not in streamProcesses map
+	// (e.g. after server restart, the map may not have the entry)
+	var holderPID int
+	if err := m.db.QueryRow("SELECT holder_pid FROM sessions WHERE id = ?", id).Scan(&holderPID); err == nil {
+		if holderPID > 0 && IsHolderAlive(holderPID) {
+			if proc, err := os.FindProcess(holderPID); err == nil {
+				proc.Kill()
+				m.logger.Info("killed orphan holder process via DB pid", "sessionId", id, "holderPid", holderPID)
+			}
+		}
+	}
 
 	_, err = m.db.Exec("DELETE FROM sessions WHERE id = ?", id)
 	return err
