@@ -26,6 +26,7 @@ type StreamOpts struct {
 	Model          string // model to use (e.g. "claude-sonnet-4-5", "o4-mini")
 	FullAuto       bool   // enable full-auto mode (Codex: --full-auto instead of --sandbox)
 	APIPort        int    // API server port (used by Codex to set env vars for MCP)
+	ClearOffset    int64  // byte offset in JSONL file; lines before this offset are hidden after Clear
 }
 
 // Provider abstracts CLI-specific behavior so agmux can support multiple AI CLIs.

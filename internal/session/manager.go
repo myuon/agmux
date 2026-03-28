@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"database/sql"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"os"
@@ -113,7 +114,7 @@ func (m *Manager) buildEffectiveSystemPrompt(customSystemPrompt string) string {
 // Otherwise, start a new holder process with --resume.
 func (m *Manager) RecoverStreamProcesses() {
 	rows, err := m.db.Query(
-		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid FROM sessions WHERE holder_pid > 0`,
+		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid, clear_offset FROM sessions WHERE holder_pid > 0`,
 	)
 	if err != nil {
 		m.logger.Error("recover stream processes: query failed", "error", err)
@@ -125,7 +126,8 @@ func (m *Manager) RecoverStreamProcesses() {
 		var id, projectPath, providerStr, dbCliSessionID, dbModel string
 		var dbSystemPrompt sql.NullString
 		var holderPID int
-		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt, &holderPID); err != nil {
+		var clearOffset int64
+		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt, &holderPID, &clearOffset); err != nil {
 			m.logger.Error("recover stream processes: scan failed", "error", err)
 			continue
 		}
@@ -162,6 +164,7 @@ func (m *Manager) RecoverStreamProcesses() {
 			CLISessionID:  cliSessionID,
 			Model:         dbModel,
 			APIPort:       m.apiPort,
+			ClearOffset:   clearOffset,
 		}
 
 		// Try to reconnect to existing holder first
@@ -318,7 +321,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, current_task, goal, goals, last_error, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, current_task, goal, goals, last_error, clear_offset, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -333,7 +336,7 @@ func (m *Manager) List() ([]Session, error) {
 		var sessionType string
 		var providerStr string
 		var prompt, systemPrompt, parentSessionID, currentTask, goal, goalsJSON, lastError sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &currentTask, &goal, &goalsJSON, &lastError, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = Status(status)
@@ -377,9 +380,9 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var providerStr string
 	var prompt, systemPrompt, parentSessionID, currentTask, goal, goalsJSON, lastError sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, current_task, goal, goals, last_error, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, current_task, goal, goals, last_error, clear_offset, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &currentTask, &goal, &goalsJSON, &lastError, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -695,23 +698,35 @@ func (m *Manager) StopAllStreamProcesses() {
 	}
 }
 
-// Clear resets the session context by truncating the JSONL stream file
-// and resetting the task, goal, and goals fields in the database.
+// Clear resets the session context by recording a clear offset in the DB
+// (the current JSONL file size) instead of truncating the file.
+// This preserves the JSONL data on disk while hiding it from the UI.
 func (m *Manager) Clear(id string) error {
 	_, err := m.Get(id)
 	if err != nil {
 		return err
 	}
 
-	// Clear the JSONL stream file (truncate) — do NOT stop/restart the process
+	// Get current JSONL file size to use as clear offset
+	var clearOffset int64
 	streamsDir, err := db.StreamsDir()
 	if err == nil {
 		streamPath := filepath.Join(streamsDir, id+".jsonl")
-		_ = os.Truncate(streamPath, 0)
+		if info, statErr := os.Stat(streamPath); statErr == nil {
+			clearOffset = info.Size()
+		}
 	}
 
-	// Reset task/goal but keep the existing process and CLI session running.
-	_, err = m.db.Exec("UPDATE sessions SET last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', updated_at = ? WHERE id = ?", time.Now(), id)
+	// Clear in-memory lines in the stream process
+	m.streamMu.Lock()
+	sp, ok := m.streamProcesses[id]
+	m.streamMu.Unlock()
+	if ok {
+		sp.ClearLines()
+	}
+
+	// Store clear_offset and reset task/goal but keep the existing process and CLI session running.
+	_, err = m.db.Exec("UPDATE sessions SET last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', clear_offset = ?, updated_at = ? WHERE id = ?", clearOffset, time.Now(), id)
 	return err
 }
 
@@ -750,6 +765,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 				CLISessionID:  cliSessionID,
 				Model:         s.Model,
 				APIPort:       m.apiPort,
+				ClearOffset:   s.ClearOffset,
 			}, provider)
 			if err != nil {
 				return fmt.Errorf("restart stream process: %w", err)
@@ -773,6 +789,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			CLISessionID:  cliSessionID,
 			Model:         s.Model,
 			APIPort:       m.apiPort,
+			ClearOffset:   s.ClearOffset,
 		}, provider)
 		if err != nil {
 			return fmt.Errorf("restart stream process: %w", err)
@@ -800,8 +817,14 @@ func (m *Manager) GetStreamLines(id string, limit int) ([]string, int, error) {
 		return sp.GetLines(limit), total, nil
 	}
 
+	// Get clear_offset from DB
+	s, err := m.Get(id)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	// Fallback: read all lines from file, then truncate to limit
-	allLines, err := m.readStreamFile(id, 0)
+	allLines, err := m.readStreamFile(id, 0, s.ClearOffset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -812,7 +835,7 @@ func (m *Manager) GetStreamLines(id string, limit int) ([]string, int, error) {
 	return allLines, total, nil
 }
 
-func (m *Manager) readStreamFile(id string, limit int) ([]string, error) {
+func (m *Manager) readStreamFile(id string, limit int, clearOffset int64) ([]string, error) {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
 		return nil, err
@@ -824,6 +847,13 @@ func (m *Manager) readStreamFile(id string, limit int) ([]string, error) {
 		return []string{}, nil
 	}
 	defer f.Close()
+
+	// Seek past the clear offset so only post-clear content is read
+	if clearOffset > 0 {
+		if _, err := f.Seek(clearOffset, io.SeekStart); err != nil {
+			return []string{}, nil
+		}
+	}
 
 	var lines []string
 	scanner := bufio.NewScanner(f)
@@ -849,8 +879,14 @@ func (m *Manager) GetStreamLinesAfter(id string, after int) ([]string, int, erro
 		return lines, total, nil
 	}
 
+	// Get clear_offset from DB
+	s, err := m.Get(id)
+	if err != nil {
+		return nil, 0, err
+	}
+
 	// Fallback: read from file
-	lines, err := m.readStreamFileAfter(id, after)
+	lines, err := m.readStreamFileAfter(id, after, s.ClearOffset)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -858,7 +894,7 @@ func (m *Manager) GetStreamLinesAfter(id string, after int) ([]string, int, erro
 	return lines, total, nil
 }
 
-func (m *Manager) readStreamFileAfter(id string, after int) ([]string, error) {
+func (m *Manager) readStreamFileAfter(id string, after int, clearOffset int64) ([]string, error) {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
 		return nil, err
@@ -870,6 +906,13 @@ func (m *Manager) readStreamFileAfter(id string, after int) ([]string, error) {
 		return []string{}, nil
 	}
 	defer f.Close()
+
+	// Seek past the clear offset so only post-clear content is read
+	if clearOffset > 0 {
+		if _, err := f.Seek(clearOffset, io.SeekStart); err != nil {
+			return []string{}, nil
+		}
+	}
 
 	var lines []string
 	scanner := bufio.NewScanner(f)
@@ -892,9 +935,9 @@ func (m *Manager) GetController() (*Session, error) {
 	var providerStr string
 	var prompt, systemPrompt, currentTask, goal, goalsJSON, lastError sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, clear_offset, created_at, updated_at
 		 FROM sessions WHERE type = ? LIMIT 1`, string(TypeController),
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -1151,6 +1194,7 @@ func (m *Manager) Reconnect(id string) error {
 		CLISessionID:  cliSessionID,
 		Model:         s.Model,
 		APIPort:       m.apiPort,
+		ClearOffset:   s.ClearOffset,
 	}, provider)
 	if err != nil {
 		return fmt.Errorf("start stream process: %w", err)
