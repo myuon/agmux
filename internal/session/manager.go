@@ -689,8 +689,8 @@ func (m *Manager) StopAllStreamProcesses() {
 	}
 }
 
-// Clear resets the session context by stopping the current process,
-// clearing the stream history, and restarting without --resume.
+// Clear resets the session context by truncating the JSONL stream file
+// and resetting the task, goal, and goals fields in the database.
 func (m *Manager) Clear(id string) error {
 	_, err := m.Get(id)
 	if err != nil {
