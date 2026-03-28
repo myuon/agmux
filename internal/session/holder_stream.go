@@ -37,12 +37,13 @@ type HolderStreamProcess struct {
 	modelCaptured bool
 
 	// Callbacks
-	onSessionID    func(cliSessionID string)
-	onModel        func(model string)
-	onNewLines     func(sessionID string, newLines []string, total int)
-	onProcessExit  func(sessionID string, exitErr error)
-	onTurnComplete func(sessionID string)
-	runningTasks   int
+	onSessionID      func(cliSessionID string)
+	onModel          func(model string)
+	onNewLines       func(sessionID string, newLines []string, total int)
+	onProcessExit    func(sessionID string, exitErr error)
+	onTurnComplete   func(sessionID string)
+	onHolderRestart  func(sessionID string, newPID int)
+	runningTasks     int
 }
 
 // StartHolderStreamProcess starts a CLI process via a holder subprocess.
@@ -325,6 +326,12 @@ func (sp *HolderStreamProcess) SetOnTurnComplete(fn func(sessionID string)) {
 	sp.onTurnComplete = fn
 }
 
+func (sp *HolderStreamProcess) SetOnHolderRestart(fn func(sessionID string, newPID int)) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.onHolderRestart = fn
+}
+
 // Send writes a user message to the holder's socket.
 func (sp *HolderStreamProcess) Send(message string) error {
 	return sp.SendWithImages(message, nil)
@@ -529,9 +536,14 @@ func (sp *HolderStreamProcess) restartForCodex(message, cliSessionID string) err
 	sp.holderPID = pid
 	sp.done = make(chan struct{})
 	sp.stopped = false
+	onRestart := sp.onHolderRestart
 	sp.mu.Unlock()
 
 	go sp.readLoop()
+
+	if onRestart != nil {
+		onRestart(opts.SessionID, pid)
+	}
 
 	return nil
 }

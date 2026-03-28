@@ -130,18 +130,6 @@ func serveCmd() *cobra.Command {
 
 			var srv *server.Server
 
-			// Create controller session (singleton)
-			controllerDir, err := db.ControllerDir()
-			if err != nil {
-				return fmt.Errorf("controller dir: %w", err)
-			}
-			controllerSess, err := mgr.CreateController(controllerDir)
-			if err != nil {
-				logger.Warn("failed to create controller session", "error", err)
-			} else {
-				logger.Info("controller session ready", "id", controllerSess.ID)
-			}
-
 			logPath, _ := logging.LogPath()
 			srv = server.New(mgr, hub, devMode, logPath, logger, database)
 
@@ -160,6 +148,19 @@ func serveCmd() *cobra.Command {
 			// Recover stream processes AFTER server.New() so that
 			// SetOnNewLines callback is already registered on the manager.
 			mgr.RecoverStreamProcesses()
+
+			// Create controller session (singleton) AFTER recovery so that
+			// a surviving controller holder can be reconnected first.
+			controllerDir, err := db.ControllerDir()
+			if err != nil {
+				return fmt.Errorf("controller dir: %w", err)
+			}
+			controllerSess, err := mgr.CreateController(controllerDir)
+			if err != nil {
+				logger.Warn("failed to create controller session", "error", err)
+			} else {
+				logger.Info("controller session ready", "id", controllerSess.ID)
+			}
 
 			if !devMode {
 				// Resolve frontend directory: CLI flag > config > embedded

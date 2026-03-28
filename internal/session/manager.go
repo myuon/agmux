@@ -113,7 +113,7 @@ func (m *Manager) buildEffectiveSystemPrompt(customSystemPrompt string) string {
 // Otherwise, start a new holder process with --resume.
 func (m *Manager) RecoverStreamProcesses() {
 	rows, err := m.db.Query(
-		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid FROM sessions WHERE holder_pid > 0 AND type != 'controller'`,
+		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid FROM sessions WHERE holder_pid > 0`,
 	)
 	if err != nil {
 		m.logger.Error("recover stream processes: query failed", "error", err)
@@ -614,6 +614,12 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp StreamProcessInterf
 			m.logger.Error("failed to update status after turn complete", "sessionId", sid, "error", err)
 		}
 	})
+	if hsp, ok := sp.(*HolderStreamProcess); ok {
+		hsp.SetOnHolderRestart(func(sid string, newPID int) {
+			m.logger.Info("holder restarted (codex resume), updating holder_pid", "sessionId", sid, "newPid", newPID)
+			m.updateHolderPID(sid, newPID)
+		})
+	}
 	sp.SetOnProcessExit(func(sid string, exitErr error) {
 		// For Codex provider, exit code 0 is normal (exec finishes after each prompt).
 		// Keep the session running and the stream process in the map so that
@@ -981,9 +987,9 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 	}
 
 	_, err = m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, holder_pid, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), sp.HolderPID(), s.CreatedAt, s.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert controller session: %w", err)
