@@ -42,6 +42,7 @@ type HolderStreamProcess struct {
 	onNewLines     func(sessionID string, newLines []string, total int)
 	onProcessExit  func(sessionID string, exitErr error)
 	onTurnComplete func(sessionID string)
+	runningTasks   int
 }
 
 // StartHolderStreamProcess starts a CLI process via a holder subprocess.
@@ -214,13 +215,28 @@ func (sp *HolderStreamProcess) readLoop() {
 			}
 		}
 
-		// Detect result events for turn completion.
-		if isResultSuccess([]byte(line)) {
-			sp.mu.RLock()
-			tcb := sp.onTurnComplete
-			sp.mu.RUnlock()
-			if tcb != nil {
-				tcb(sp.streamOpts.SessionID)
+		// Track background tasks and detect turn completion.
+		ev := parseStreamEvent([]byte(line))
+		switch ev.Type {
+		case "task_started":
+			sp.mu.Lock()
+			sp.runningTasks++
+			sp.mu.Unlock()
+		case "task_notification":
+			sp.mu.Lock()
+			if sp.runningTasks > 0 {
+				sp.runningTasks--
+			}
+			sp.mu.Unlock()
+		case "result":
+			if ev.Subtype == "success" {
+				sp.mu.RLock()
+				idle := sp.runningTasks == 0
+				tcb := sp.onTurnComplete
+				sp.mu.RUnlock()
+				if idle && tcb != nil {
+					tcb(sp.streamOpts.SessionID)
+				}
 			}
 		}
 

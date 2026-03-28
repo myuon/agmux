@@ -51,24 +51,31 @@ type StreamProcess struct {
 	// The callback receives the agmux session ID and the exit error (nil if exited cleanly).
 	onProcessExit func(sessionID string, exitErr error)
 
-	// onTurnComplete is called when the CLI completes a turn (result event detected).
+	// onTurnComplete is called when the CLI completes a turn (result event detected)
+	// and no background tasks are running.
 	onTurnComplete func(sessionID string)
+
+	// runningTasks tracks the number of currently running background tasks/agents.
+	runningTasks int
 }
 
-// isResultSuccess checks if a JSONL line is a result event with subtype "success",
-// indicating that the CLI has completed a turn (end_turn).
-func isResultSuccess(line []byte) bool {
+// streamEvent is a minimal struct for parsing event type and subtype from JSONL lines.
+type streamEvent struct {
+	Type    string `json:"type"`
+	Subtype string `json:"subtype"`
+}
+
+// parseStreamEvent parses the type and subtype from a JSONL line.
+// Returns zero value if the line is not valid JSON.
+func parseStreamEvent(line []byte) streamEvent {
 	if len(line) == 0 || line[0] != '{' {
-		return false
+		return streamEvent{}
 	}
-	var ev struct {
-		Type    string `json:"type"`
-		Subtype string `json:"subtype"`
-	}
+	var ev streamEvent
 	if json.Unmarshal(line, &ev) != nil {
-		return false
+		return streamEvent{}
 	}
-	return ev.Type == "result" && ev.Subtype == "success"
+	return ev
 }
 
 // ReadCLISessionID reads the CLI-assigned session ID from a stream JSONL file.
@@ -283,13 +290,28 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 			}
 		}
 
-		// Detect result events for turn completion.
-		if isResultSuccess([]byte(line)) {
-			sp.mu.RLock()
-			tcb := sp.onTurnComplete
-			sp.mu.RUnlock()
-			if tcb != nil {
-				tcb(sp.streamOpts.SessionID)
+		// Track background tasks and detect turn completion.
+		ev := parseStreamEvent([]byte(line))
+		switch ev.Type {
+		case "task_started":
+			sp.mu.Lock()
+			sp.runningTasks++
+			sp.mu.Unlock()
+		case "task_notification":
+			sp.mu.Lock()
+			if sp.runningTasks > 0 {
+				sp.runningTasks--
+			}
+			sp.mu.Unlock()
+		case "result":
+			if ev.Subtype == "success" {
+				sp.mu.RLock()
+				idle := sp.runningTasks == 0
+				tcb := sp.onTurnComplete
+				sp.mu.RUnlock()
+				if idle && tcb != nil {
+					tcb(sp.streamOpts.SessionID)
+				}
 			}
 		}
 
