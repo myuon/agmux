@@ -579,6 +579,14 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp StreamProcessInterf
 	} else {
 		m.logger.Warn("onNewLines callback is nil, WebSocket updates will not work", "sessionId", sessionID)
 	}
+	sp.SetOnTurnComplete(func(sid string) {
+		m.logger.Info("turn completed (result event detected), setting status to idle",
+			"sessionId", sid,
+		)
+		if err := m.UpdateStatus(sid, StatusIdle); err != nil {
+			m.logger.Error("failed to update status after turn complete", "sessionId", sid, "error", err)
+		}
+	})
 	sp.SetOnProcessExit(func(sid string, exitErr error) {
 		// For Codex provider, exit code 0 is normal (exec finishes after each prompt).
 		// Keep the session running and the stream process in the map so that

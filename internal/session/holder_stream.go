@@ -37,10 +37,11 @@ type HolderStreamProcess struct {
 	modelCaptured bool
 
 	// Callbacks
-	onSessionID   func(cliSessionID string)
-	onModel       func(model string)
-	onNewLines    func(sessionID string, newLines []string, total int)
-	onProcessExit func(sessionID string, exitErr error)
+	onSessionID    func(cliSessionID string)
+	onModel        func(model string)
+	onNewLines     func(sessionID string, newLines []string, total int)
+	onProcessExit  func(sessionID string, exitErr error)
+	onTurnComplete func(sessionID string)
 }
 
 // StartHolderStreamProcess starts a CLI process via a holder subprocess.
@@ -213,6 +214,16 @@ func (sp *HolderStreamProcess) readLoop() {
 			}
 		}
 
+		// Detect result events for turn completion.
+		if isResultSuccess([]byte(line)) {
+			sp.mu.RLock()
+			tcb := sp.onTurnComplete
+			sp.mu.RUnlock()
+			if tcb != nil {
+				tcb(sp.streamOpts.SessionID)
+			}
+		}
+
 		// Normalize the line
 		normalized := sp.provider.NormalizeStreamLine([]byte(line))
 		if normalized == nil {
@@ -289,6 +300,13 @@ func (sp *HolderStreamProcess) SetOnProcessExit(fn func(sessionID string, exitEr
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.onProcessExit = fn
+}
+
+// SetOnTurnComplete sets a callback for when the CLI completes a turn.
+func (sp *HolderStreamProcess) SetOnTurnComplete(fn func(sessionID string)) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.onTurnComplete = fn
 }
 
 // Send writes a user message to the holder's socket.

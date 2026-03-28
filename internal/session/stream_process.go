@@ -50,6 +50,25 @@ type StreamProcess struct {
 	// onProcessExit is called when the CLI process exits unexpectedly.
 	// The callback receives the agmux session ID and the exit error (nil if exited cleanly).
 	onProcessExit func(sessionID string, exitErr error)
+
+	// onTurnComplete is called when the CLI completes a turn (result event detected).
+	onTurnComplete func(sessionID string)
+}
+
+// isResultSuccess checks if a JSONL line is a result event with subtype "success",
+// indicating that the CLI has completed a turn (end_turn).
+func isResultSuccess(line []byte) bool {
+	if len(line) == 0 || line[0] != '{' {
+		return false
+	}
+	var ev struct {
+		Type    string `json:"type"`
+		Subtype string `json:"subtype"`
+	}
+	if json.Unmarshal(line, &ev) != nil {
+		return false
+	}
+	return ev.Type == "result" && ev.Subtype == "success"
 }
 
 // ReadCLISessionID reads the CLI-assigned session ID from a stream JSONL file.
@@ -264,6 +283,16 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 			}
 		}
 
+		// Detect result events for turn completion.
+		if isResultSuccess([]byte(line)) {
+			sp.mu.RLock()
+			tcb := sp.onTurnComplete
+			sp.mu.RUnlock()
+			if tcb != nil {
+				tcb(sp.streamOpts.SessionID)
+			}
+		}
+
 		// Normalize the line into Claude-compatible format.
 		normalized := sp.provider.NormalizeStreamLine([]byte(line))
 		if normalized == nil {
@@ -370,6 +399,13 @@ func (sp *StreamProcess) SetOnProcessExit(fn func(sessionID string, exitErr erro
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.onProcessExit = fn
+}
+
+// SetOnTurnComplete sets a callback that fires when the CLI completes a turn.
+func (sp *StreamProcess) SetOnTurnComplete(fn func(sessionID string)) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.onTurnComplete = fn
 }
 
 // ImageData represents a base64-encoded image to be sent with a message.
