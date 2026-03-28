@@ -111,37 +111,24 @@ func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []str
 	// Accept socket connections in a goroutine
 	go h.acceptLoop()
 
-	// Handle signals
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
+	// Ignore SIGTERM so that holder survives server restarts (launchctl kickstart -k).
+	// Holder shutdown is controlled via socket "stop" command, not OS signals.
+	signal.Ignore(syscall.SIGTERM)
 
-	// Wait for CLI process to exit or signal
-	select {
-	case <-h.done:
-		// CLI process exited naturally
-		exitCode := 0
-		if err := cmd.Wait(); err != nil {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				exitCode = exitErr.ExitCode()
-			}
-		}
-		slog.Info("holder: CLI process exited", "code", exitCode, "sessionId", sessionID)
-		h.broadcastControl(HolderControlMessage{
-			Type:  "control",
-			Event: "exited",
-			Code:  exitCode,
-		})
-	case sig := <-sigCh:
-		slog.Info("holder: received signal, stopping CLI process", "signal", sig, "sessionId", sessionID)
-		stdinPipe.Close()
-		select {
-		case <-h.done:
-			cmd.Wait()
-		case <-time.After(5 * time.Second):
-			cmd.Process.Kill()
-			cmd.Wait()
+	// Wait for CLI process to exit
+	<-h.done
+	exitCode := 0
+	if err := cmd.Wait(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
 		}
 	}
+	slog.Info("holder: CLI process exited", "code", exitCode, "sessionId", sessionID)
+	h.broadcastControl(HolderControlMessage{
+		Type:  "control",
+		Event: "exited",
+		Code:  exitCode,
+	})
 
 	// Give clients a moment to receive the exit notification
 	time.Sleep(100 * time.Millisecond)
