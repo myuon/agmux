@@ -19,6 +19,9 @@ type StreamProcessInterface interface {
 	SetOnNewLines(fn func(sessionID string, newLines []string, total int))
 	// SetOnProcessExit sets a callback for process exit.
 	SetOnProcessExit(fn func(sessionID string, exitErr error))
+	// SetOnTurnComplete sets a callback for when the CLI completes a turn
+	// (detected via result event with subtype "success").
+	SetOnTurnComplete(fn func(sessionID string))
 
 	// GetLines returns the last N lines.
 	GetLines(limit int) []string

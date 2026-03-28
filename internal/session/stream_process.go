@@ -50,6 +50,32 @@ type StreamProcess struct {
 	// onProcessExit is called when the CLI process exits unexpectedly.
 	// The callback receives the agmux session ID and the exit error (nil if exited cleanly).
 	onProcessExit func(sessionID string, exitErr error)
+
+	// onTurnComplete is called when the CLI completes a turn (result event detected)
+	// and no background tasks are running.
+	onTurnComplete func(sessionID string)
+
+	// runningTasks tracks the number of currently running background tasks/agents.
+	runningTasks int
+}
+
+// streamEvent is a minimal struct for parsing event type and subtype from JSONL lines.
+type streamEvent struct {
+	Type    string `json:"type"`
+	Subtype string `json:"subtype"`
+}
+
+// parseStreamEvent parses the type and subtype from a JSONL line.
+// Returns zero value if the line is not valid JSON.
+func parseStreamEvent(line []byte) streamEvent {
+	if len(line) == 0 || line[0] != '{' {
+		return streamEvent{}
+	}
+	var ev streamEvent
+	if json.Unmarshal(line, &ev) != nil {
+		return streamEvent{}
+	}
+	return ev
 }
 
 // ReadCLISessionID reads the CLI-assigned session ID from a stream JSONL file.
@@ -264,6 +290,31 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 			}
 		}
 
+		// Track background tasks and detect turn completion.
+		ev := parseStreamEvent([]byte(line))
+		switch ev.Type {
+		case "task_started":
+			sp.mu.Lock()
+			sp.runningTasks++
+			sp.mu.Unlock()
+		case "task_notification":
+			sp.mu.Lock()
+			if sp.runningTasks > 0 {
+				sp.runningTasks--
+			}
+			sp.mu.Unlock()
+		case "result":
+			if ev.Subtype == "success" {
+				sp.mu.RLock()
+				idle := sp.runningTasks == 0
+				tcb := sp.onTurnComplete
+				sp.mu.RUnlock()
+				if idle && tcb != nil {
+					tcb(sp.streamOpts.SessionID)
+				}
+			}
+		}
+
 		// Normalize the line into Claude-compatible format.
 		normalized := sp.provider.NormalizeStreamLine([]byte(line))
 		if normalized == nil {
@@ -370,6 +421,13 @@ func (sp *StreamProcess) SetOnProcessExit(fn func(sessionID string, exitErr erro
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.onProcessExit = fn
+}
+
+// SetOnTurnComplete sets a callback that fires when the CLI completes a turn.
+func (sp *StreamProcess) SetOnTurnComplete(fn func(sessionID string)) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.onTurnComplete = fn
 }
 
 // ImageData represents a base64-encoded image to be sent with a message.

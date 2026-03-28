@@ -24,7 +24,6 @@ import (
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/logging"
-	"github.com/myuon/agmux/internal/monitor"
 	"github.com/myuon/agmux/internal/otel"
 	"github.com/myuon/agmux/internal/session"
 )
@@ -999,7 +998,6 @@ type configJSON struct {
 }
 
 type configPromptsJSON struct {
-	StatusCheck  string `json:"statusCheck"`
 	SystemPrompt string `json:"systemPrompt"`
 }
 
@@ -1042,7 +1040,6 @@ func (s *Server) getConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	result := configToJSON(cfg)
 	result.Prompts = &configPromptsJSON{
-		StatusCheck:  monitor.StatusPrompt,
 		SystemPrompt: s.sessions.SystemPrompt(),
 	}
 	writeJSON(w, http.StatusOK, result)
