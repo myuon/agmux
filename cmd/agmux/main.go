@@ -130,22 +130,6 @@ func serveCmd() *cobra.Command {
 					Data: sessions,
 				})
 			})
-			checker.SetOnNotify(func(sessionId, sessionName, status, summary string) {
-				hub.Broadcast(server.Message{
-					Type: "notify",
-					Data: map[string]string{
-						"sessionId":   sessionId,
-						"sessionName": sessionName,
-						"status":      status,
-						"summary":     summary,
-					},
-				})
-				// Save system notification to DB
-				if err := server.SaveNotification(database, sessionId, "system", fmt.Sprintf("[%s] %s", status, summary)); err != nil {
-					slog.Error("failed to save system notification", "error", err)
-				}
-			})
-
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			go checker.Start(ctx)
