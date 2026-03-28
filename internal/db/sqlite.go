@@ -169,6 +169,12 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add holder_pid column if missing (for holder process tracking)
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN holder_pid INTEGER NOT NULL DEFAULT 0`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: remove UNIQUE constraint from tmux_session (no longer used)
 	// SQLite doesn't support DROP CONSTRAINT, so we recreate the table
 	{

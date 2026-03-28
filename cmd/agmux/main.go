@@ -43,6 +43,7 @@ func main() {
 	rootCmd.AddCommand(mcpCmd())
 	rootCmd.AddCommand(logsCmd())
 	rootCmd.AddCommand(daemonCmd())
+	rootCmd.AddCommand(holderCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -716,6 +717,43 @@ func daemonCmd() *cobra.Command {
 			return daemon.Uninstall()
 		},
 	})
+
+	return cmd
+}
+
+func holderCmd() *cobra.Command {
+	var sessionID string
+	var projectPath string
+
+	cmd := &cobra.Command{
+		Use:    "holder",
+		Short:  "Run as a holder process for a session (internal use)",
+		Hidden: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if sessionID == "" {
+				return fmt.Errorf("--session-id is required")
+			}
+			if projectPath == "" {
+				return fmt.Errorf("--project-path is required")
+			}
+
+			// Everything after "--" is the CLI command to execute
+			cmdArgs := cmd.Flags().Args()
+			if len(cmdArgs) == 0 {
+				return fmt.Errorf("no command specified after --")
+			}
+
+			// Collect environment from current process
+			env := os.Environ()
+
+			return session.RunHolder(sessionID, cmdArgs, projectPath, env)
+		},
+	}
+
+	cmd.Flags().StringVar(&sessionID, "session-id", "", "Session ID")
+	cmd.Flags().StringVar(&projectPath, "project-path", "", "Project directory path")
+	// Allow passing arbitrary args after "--"
+	cmd.Flags().SetInterspersed(false)
 
 	return cmd
 }
