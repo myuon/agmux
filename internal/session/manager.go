@@ -56,6 +56,22 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 	}
 }
 
+// ManagedHolderPIDs returns the PIDs of all holder processes currently managed by this Manager.
+func (m *Manager) ManagedHolderPIDs() []int {
+	m.streamMu.Lock()
+	defer m.streamMu.Unlock()
+
+	var pids []int
+	for _, sp := range m.streamProcesses {
+		if hsp, ok := sp.(*HolderStreamProcess); ok {
+			if pid := hsp.HolderPID(); pid > 0 {
+				pids = append(pids, pid)
+			}
+		}
+	}
+	return pids
+}
+
 // SetCodexCommand sets the codex command for the manager.
 func (m *Manager) SetCodexCommand(cmd string) {
 	if cmd != "" {
