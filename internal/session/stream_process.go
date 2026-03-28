@@ -698,6 +698,11 @@ func (sp *StreamProcess) Stop() {
 	sp.file.Close()
 }
 
+// ProviderName returns the name of the provider used by this process.
+func (sp *StreamProcess) ProviderName() ProviderName {
+	return sp.provider.Name()
+}
+
 // Done returns a channel that is closed when the process exits.
 func (sp *StreamProcess) Done() <-chan struct{} {
 	sp.mu.RLock()

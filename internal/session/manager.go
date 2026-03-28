@@ -22,7 +22,7 @@ type Manager struct {
 	permissionMode  string
 	apiPort         int
 	systemPrompt    string
-	streamProcesses map[string]*StreamProcess
+	streamProcesses map[string]StreamProcessInterface
 	streamMu        sync.Mutex
 	logger          *slog.Logger
 	onNewLines      func(sessionID string, newLines []string, total int)
@@ -51,7 +51,7 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 		permissionMode:  permissionMode,
 		apiPort:         apiPort,
 		systemPrompt:    systemPrompt,
-		streamProcesses: make(map[string]*StreamProcess),
+		streamProcesses: make(map[string]StreamProcessInterface),
 		logger:          logger.With("component", "session_manager"),
 	}
 }
@@ -92,12 +92,12 @@ func (m *Manager) buildEffectiveSystemPrompt(customSystemPrompt string) string {
 	return m.systemPrompt + "\n\n" + customSystemPrompt
 }
 
-// RecoverStreamProcesses restarts stream processes for all working sessions.
-// This should be called at server startup to recover sessions that were running
-// before the server was restarted.
+// RecoverStreamProcesses recovers stream processes for all working sessions.
+// If a holder process is still alive (survived server restart), reconnect to it.
+// Otherwise, start a new holder process with --resume.
 func (m *Manager) RecoverStreamProcesses() {
 	rows, err := m.db.Query(
-		`SELECT id, project_path, provider, cli_session_id, model, system_prompt FROM sessions WHERE status = ? AND type != 'controller'`,
+		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid FROM sessions WHERE status = ? AND type != 'controller'`,
 		string(StatusWorking),
 	)
 	if err != nil {
@@ -109,7 +109,8 @@ func (m *Manager) RecoverStreamProcesses() {
 	for rows.Next() {
 		var id, projectPath, providerStr, dbCliSessionID, dbModel string
 		var dbSystemPrompt sql.NullString
-		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt); err != nil {
+		var holderPID int
+		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt, &holderPID); err != nil {
 			m.logger.Error("recover stream processes: scan failed", "error", err)
 			continue
 		}
@@ -135,7 +136,8 @@ func (m *Manager) RecoverStreamProcesses() {
 		if dbSystemPrompt.Valid {
 			customPrompt = dbSystemPrompt.String
 		}
-		sp, err := StartStreamProcessWithOpts(StreamOpts{
+
+		opts := StreamOpts{
 			SessionID:     id,
 			ProjectPath:   projectPath,
 			MCPConfigPath: mcpPath,
@@ -144,16 +146,44 @@ func (m *Manager) RecoverStreamProcesses() {
 			CLISessionID:  cliSessionID,
 			Model:         dbModel,
 			APIPort:       m.apiPort,
-		}, provider)
+		}
+
+		// Try to reconnect to existing holder first
+		if holderPID > 0 && IsHolderAlive(holderPID) {
+			m.logger.Info("holder still alive, reconnecting", "sessionId", id, "holderPid", holderPID)
+			sp, err := ReconnectHolderStreamProcess(opts, provider, holderPID)
+			if err != nil {
+				m.logger.Warn("reconnect to holder failed, will start new holder", "sessionId", id, "error", err)
+			} else {
+				m.wireSessionIDCallback(id, sp)
+				m.streamMu.Lock()
+				m.streamProcesses[id] = sp
+				m.streamMu.Unlock()
+				m.logger.Info("reconnected to existing holder", "sessionId", id, "holderPid", holderPID)
+				continue
+			}
+		}
+
+		// Start new holder process
+		sp, err := StartHolderStreamProcess(opts, provider)
 		if err != nil {
-			m.logger.Error("recover stream processes: start failed", "sessionId", id, "error", err)
+			m.logger.Error("recover stream processes: start holder failed", "sessionId", id, "error", err)
 			continue
 		}
 		m.wireSessionIDCallback(id, sp)
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
 		m.streamMu.Unlock()
-		m.logger.Info("recovered stream process", "sessionId", id)
+		// Persist new holder PID
+		m.updateHolderPID(id, sp.HolderPID())
+		m.logger.Info("recovered stream process via new holder", "sessionId", id, "holderPid", sp.HolderPID())
+	}
+}
+
+// updateHolderPID persists the holder PID to the database.
+func (m *Manager) updateHolderPID(id string, pid int) {
+	if _, err := m.db.Exec("UPDATE sessions SET holder_pid = ?, updated_at = ? WHERE id = ?", pid, time.Now(), id); err != nil {
+		m.logger.Error("failed to update holder_pid", "sessionId", id, "pid", pid, "error", err)
 	}
 }
 
@@ -211,34 +241,39 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		FullAuto:      fullAuto,
 	}
 	streamOpts.APIPort = m.apiPort
-	var sp *StreamProcess
+	var sp StreamProcessInterface
 	if pn == ProviderCodex && prompt != "" {
 		// Codex: pass initial prompt as command-line argument (not stdin)
 		streamOpts.InitialPrompt = prompt
-		var err error
-		sp, err = StartStreamProcessWithOpts(streamOpts, provider)
+		hsp, err := StartHolderStreamProcess(streamOpts, provider)
 		if err != nil {
 			return nil, fmt.Errorf("start stream process: %w", err)
 		}
 		// Record the user message in the stream for UI display
-		sp.recordUserMessage(prompt)
+		hsp.recordUserMessage(prompt)
+		sp = hsp
 	} else {
-		var err error
-		sp, err = StartStreamProcessWithOpts(streamOpts, provider)
+		hsp, err := StartHolderStreamProcess(streamOpts, provider)
 		if err != nil {
 			return nil, fmt.Errorf("start stream process: %w", err)
 		}
 		// Send initial prompt via stream process (stdin for Claude)
 		if prompt != "" {
-			if err := sp.Send(prompt); err != nil {
+			if err := hsp.Send(prompt); err != nil {
 				return nil, fmt.Errorf("send initial prompt: %w", err)
 			}
 		}
+		sp = hsp
 	}
 	m.wireSessionIDCallback(id, sp)
 	m.streamMu.Lock()
 	m.streamProcesses[id] = sp
 	m.streamMu.Unlock()
+
+	// Persist holder PID
+	if hsp, ok := sp.(*HolderStreamProcess); ok {
+		m.updateHolderPID(id, hsp.HolderPID())
+	}
 
 	now := time.Now()
 	s := &Session{
@@ -426,8 +461,8 @@ func (m *Manager) Fork(id string) (*Session, error) {
 
 	effectiveSystemPrompt := m.buildEffectiveSystemPrompt(src.SystemPrompt)
 
-	// Start new CLI process with --resume --fork-session
-	sp, err := StartStreamProcessWithOpts(StreamOpts{
+	// Start new CLI process with --resume --fork-session via holder
+	sp, err := StartHolderStreamProcess(StreamOpts{
 		SessionID:     newID,
 		ProjectPath:   src.ProjectPath,
 		MCPConfigPath: mcpConfigPath,
@@ -445,6 +480,7 @@ func (m *Manager) Fork(id string) (*Session, error) {
 	m.streamMu.Lock()
 	m.streamProcesses[newID] = sp
 	m.streamMu.Unlock()
+	m.updateHolderPID(newID, sp.HolderPID())
 
 	now := time.Now()
 	newName := src.Name + " (fork)"
@@ -505,7 +541,7 @@ func (m *Manager) Stop(id string) error {
 	// Stop stream process if exists
 	m.stopStreamProcess(id)
 
-	_, err = m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(StatusStopped), time.Now(), id)
+	_, err = m.db.Exec("UPDATE sessions SET status = ?, holder_pid = 0, updated_at = ? WHERE id = ?", string(StatusStopped), time.Now(), id)
 	return err
 }
 
@@ -524,7 +560,7 @@ func (m *Manager) Delete(id string) error {
 
 // wireSessionIDCallback sets up the onSessionID callback on a stream process
 // so that when the CLI session ID is captured, it gets persisted to the DB.
-func (m *Manager) wireSessionIDCallback(sessionID string, sp *StreamProcess) {
+func (m *Manager) wireSessionIDCallback(sessionID string, sp StreamProcessInterface) {
 	sp.SetOnSessionID(func(cliSessionID string) {
 		if err := m.UpdateCliSessionID(sessionID, cliSessionID); err != nil {
 			m.logger.Error("failed to persist cli session id", "sessionId", sessionID, "cliSessionId", cliSessionID, "error", err)
@@ -547,7 +583,7 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *StreamProcess) {
 		// For Codex provider, exit code 0 is normal (exec finishes after each prompt).
 		// Keep the session running and the stream process in the map so that
 		// sendCodex can restart it with "codex exec resume" on the next message.
-		if sp.provider.Name() == ProviderCodex && exitErr == nil {
+		if sp.ProviderName() == ProviderCodex && exitErr == nil {
 			m.logger.Info("codex process exited normally (exit code 0), keeping session running for resume",
 				"sessionId", sid,
 			)
@@ -595,18 +631,26 @@ func (m *Manager) stopStreamProcess(id string) {
 	}
 }
 
-// StopAllStreamProcesses gracefully stops all running stream processes.
-// This should be called during server shutdown to ensure output is flushed.
+// StopAllStreamProcesses disconnects from all holder processes on server shutdown.
+// Unlike the old behavior, holders are NOT killed -- they survive server restart.
+// Only the server's socket connections are closed.
 func (m *Manager) StopAllStreamProcesses() {
 	m.streamMu.Lock()
-	processes := make(map[string]*StreamProcess, len(m.streamProcesses))
+	processes := make(map[string]StreamProcessInterface, len(m.streamProcesses))
 	maps.Copy(processes, m.streamProcesses)
-	m.streamProcesses = make(map[string]*StreamProcess)
+	m.streamProcesses = make(map[string]StreamProcessInterface)
 	m.streamMu.Unlock()
 
 	for id, sp := range processes {
-		m.logger.Info("stopping stream process", "sessionId", id)
-		sp.Stop()
+		if hsp, ok := sp.(*HolderStreamProcess); ok {
+			// Just close the socket connection; don't kill the holder
+			m.logger.Info("disconnecting from holder (holder stays alive)", "sessionId", id, "holderPid", hsp.HolderPID())
+			hsp.conn.Close()
+		} else {
+			// Legacy StreamProcess: stop as before
+			m.logger.Info("stopping stream process", "sessionId", id)
+			sp.Stop()
+		}
 	}
 }
 
@@ -638,7 +682,7 @@ func (m *Manager) Clear(id string) error {
 
 	// Start fresh without CLISessionID — BuildStreamCommand will generate a
 	// new UUID for --session-id automatically.
-	sp, err := StartStreamProcessWithOpts(StreamOpts{
+	sp, err := StartHolderStreamProcess(StreamOpts{
 		SessionID:     id,
 		ProjectPath:   s.ProjectPath,
 		MCPConfigPath: mcpConfigPath,
@@ -653,6 +697,7 @@ func (m *Manager) Clear(id string) error {
 	m.streamMu.Lock()
 	m.streamProcesses[id] = sp
 	m.streamMu.Unlock()
+	m.updateHolderPID(id, sp.HolderPID())
 
 	// Reset task/goal and set status to working.
 	// Clear cli_session_id so that Reconnect does not reuse a stale/invalid ID;
@@ -674,7 +719,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 	sp, ok := m.streamProcesses[id]
 	m.streamMu.Unlock()
 	if !ok {
-		// Auto-recover: restart stream process after server restart
+		// Auto-recover: restart stream process via holder after server restart
 		provider := m.getProvider(s.Provider)
 		mcpPath, _ := provider.SetupMCP(s.ID, m.apiPort)
 		// Prefer DB-stored cli_session_id; fall back to JSONL file scan
@@ -684,11 +729,9 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 		}
 
 		effectiveSP := m.buildEffectiveSystemPrompt(s.SystemPrompt)
-		var err error
 		if s.Provider == ProviderCodex && cliSessionID != "" {
 			// For Codex, start resume directly with the prompt as a positional arg.
-			// Codex exec exits after processing, so we can't send via stdin later.
-			sp, err = StartStreamProcessWithOpts(StreamOpts{
+			hsp, err := StartHolderStreamProcess(StreamOpts{
 				SessionID:     s.ID,
 				ProjectPath:   s.ProjectPath,
 				MCPConfigPath: mcpPath,
@@ -702,15 +745,17 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			if err != nil {
 				return fmt.Errorf("restart stream process: %w", err)
 			}
-			sp.recordUserMessage(text)
+			hsp.recordUserMessage(text)
+			sp = hsp
 			m.wireSessionIDCallback(id, sp)
 			m.streamMu.Lock()
 			m.streamProcesses[id] = sp
 			m.streamMu.Unlock()
+			m.updateHolderPID(id, hsp.HolderPID())
 			return nil
 		}
 
-		sp, err = StartStreamProcessWithOpts(StreamOpts{
+		hsp, err := StartHolderStreamProcess(StreamOpts{
 			SessionID:     s.ID,
 			ProjectPath:   s.ProjectPath,
 			MCPConfigPath: mcpPath,
@@ -718,14 +763,17 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			Resume:        true,
 			CLISessionID:  cliSessionID,
 			Model:         s.Model,
+			APIPort:       m.apiPort,
 		}, provider)
 		if err != nil {
 			return fmt.Errorf("restart stream process: %w", err)
 		}
+		sp = hsp
 		m.wireSessionIDCallback(id, sp)
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
 		m.streamMu.Unlock()
+		m.updateHolderPID(id, hsp.HolderPID())
 	}
 	return sp.SendWithImages(text, images)
 }
@@ -901,8 +949,8 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 		return nil, fmt.Errorf("write mcp config: %w", err)
 	}
 
-	// Start stream process
-	sp, err := StartStreamProcessWithOpts(StreamOpts{
+	// Start stream process via holder
+	sp, err := StartHolderStreamProcess(StreamOpts{
 		SessionID:     id,
 		ProjectPath:   projectPath,
 		MCPConfigPath: mcpConfigPath,
@@ -948,7 +996,7 @@ func (m *Manager) UpdateStatus(id string, status Status) error {
 
 // UpdateStatusWithError updates the session status and records the last error message.
 func (m *Manager) UpdateStatusWithError(id string, status Status, lastError string) error {
-	_, err := m.db.Exec("UPDATE sessions SET status = ?, last_error = ?, updated_at = ? WHERE id = ?", string(status), lastError, time.Now(), id)
+	_, err := m.db.Exec("UPDATE sessions SET status = ?, last_error = ?, holder_pid = 0, updated_at = ? WHERE id = ?", string(status), lastError, time.Now(), id)
 	return err
 }
 
@@ -1085,7 +1133,7 @@ func (m *Manager) Reconnect(id string) error {
 	if cliSessionID == "" {
 		cliSessionID = ReadCLISessionID(id, provider)
 	}
-	sp, err := StartStreamProcessWithOpts(StreamOpts{
+	sp, err := StartHolderStreamProcess(StreamOpts{
 		SessionID:     id,
 		ProjectPath:   s.ProjectPath,
 		MCPConfigPath: mcpConfigPath,
@@ -1102,6 +1150,7 @@ func (m *Manager) Reconnect(id string) error {
 	m.streamMu.Lock()
 	m.streamProcesses[id] = sp
 	m.streamMu.Unlock()
+	m.updateHolderPID(id, sp.HolderPID())
 
 	_, err = m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
 	return err
