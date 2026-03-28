@@ -26,7 +26,7 @@ import (
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/logging"
 	"github.com/myuon/agmux/internal/mcp"
-	"github.com/myuon/agmux/internal/monitor"
+
 	"github.com/myuon/agmux/internal/server"
 	"github.com/myuon/agmux/internal/session"
 	"github.com/spf13/cobra"
@@ -128,27 +128,7 @@ func serveCmd() *cobra.Command {
 			hub := server.NewHub()
 			go hub.Run()
 
-			// Declare srv early so the checker callback can reference it
 			var srv *server.Server
-
-			// Status checker
-			mon := monitor.New()
-			checker := monitor.NewStatusChecker(mon, mgr, cfg.Daemon.IntervalDuration(), logger)
-			checker.SetOnUpdate(func(sessions []session.Session) {
-				// Merge external (non-agmux) Claude sessions into the update
-				if srv != nil {
-					if extDet := srv.ExternalDetector(); extDet != nil {
-						sessions = append(sessions, extDet.Sessions()...)
-					}
-				}
-				hub.Broadcast(server.Message{
-					Type: "session_update",
-					Data: sessions,
-				})
-			})
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
-			go checker.Start(ctx)
 
 			// Create controller session (singleton)
 			controllerDir, err := db.ControllerDir()
@@ -208,7 +188,7 @@ func serveCmd() *cobra.Command {
 
 			addr := fmt.Sprintf(":%d", port)
 			srvLogger.Printf("Starting agmux on http://localhost:%d", port)
-			srvLogger.Printf("Config: check interval=%s", cfg.Daemon.Interval)
+
 
 			httpSrv := srv.NewHTTPServer(addr)
 
