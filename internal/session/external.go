@@ -20,12 +20,13 @@ type ExternalProcess struct {
 
 // ExternalDetector detects Claude processes running outside of agmux.
 type ExternalDetector struct {
-	mu        sync.RWMutex
-	sessions  []Session
-	knownTime map[string]time.Time // ID -> first seen CreatedAt
-	logger    *slog.Logger
-	stopCh    chan struct{}
-	interval  time.Duration
+	mu              sync.RWMutex
+	sessions        []Session
+	knownTime       map[string]time.Time // ID -> first seen CreatedAt
+	logger          *slog.Logger
+	stopCh          chan struct{}
+	interval        time.Duration
+	managedPIDsFunc func() []int // returns PIDs of managed holder processes
 }
 
 // NewExternalDetector creates a new ExternalDetector.
@@ -39,6 +40,12 @@ func NewExternalDetector(logger *slog.Logger, interval time.Duration) *ExternalD
 		stopCh:    make(chan struct{}),
 		interval:  interval,
 	}
+}
+
+// SetManagedPIDsFunc sets a callback that returns PIDs of managed holder processes.
+// These PIDs and their descendants will be excluded from external process detection.
+func (d *ExternalDetector) SetManagedPIDsFunc(fn func() []int) {
+	d.managedPIDsFunc = fn
 }
 
 // Start begins periodic detection of external Claude processes.
@@ -75,7 +82,11 @@ func (d *ExternalDetector) Sessions() []Session {
 
 // detect finds external Claude and Codex processes and updates the sessions list.
 func (d *ExternalDetector) detect() {
-	processes, err := findExternalProcesses()
+	var managedPIDs []int
+	if d.managedPIDsFunc != nil {
+		managedPIDs = d.managedPIDsFunc()
+	}
+	processes, err := findExternalProcesses(managedPIDs)
 	if err != nil {
 		d.logger.Error("failed to detect external processes", "error", err)
 		return
@@ -125,7 +136,8 @@ func (d *ExternalDetector) detect() {
 }
 
 // findExternalProcesses finds Claude and Codex processes not managed by this agmux instance.
-func findExternalProcesses() ([]ExternalProcess, error) {
+// managedPIDs are additional root PIDs (e.g. holder processes) whose process trees should be excluded.
+func findExternalProcesses(managedPIDs []int) ([]ExternalProcess, error) {
 	myPID := os.Getpid()
 
 	// Get all processes: ps -eo pid,ppid,comm
@@ -135,14 +147,22 @@ func findExternalProcesses() ([]ExternalProcess, error) {
 	}
 
 	// Collect all PIDs in the agmux process tree
-	agmuxPIDs := collectProcessTree(myPID, string(out))
+	psOutput := string(out)
+	agmuxPIDs := collectProcessTree(myPID, psOutput)
+
+	// Also exclude process trees rooted at managed holder PIDs
+	for _, pid := range managedPIDs {
+		for k, v := range collectProcessTree(pid, psOutput) {
+			agmuxPIDs[k] = v
+		}
+	}
 
 	type pidWithProvider struct {
 		PID      int
 		Provider ProviderName
 	}
 	var externalPIDs []pidWithProvider
-	for _, line := range strings.Split(string(out), "\n") {
+	for _, line := range strings.Split(psOutput, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 3 {
 			continue

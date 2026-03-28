@@ -165,6 +165,14 @@ func serveCmd() *cobra.Command {
 			logPath, _ := logging.LogPath()
 			srv = server.New(mgr, hub, devMode, logPath, logger, database)
 
+			// Wire managed holder PIDs into external detector so holder
+			// processes and their children are not detected as external.
+			if extDet := srv.ExternalDetector(); extDet != nil {
+				if m, ok := mgr.(*session.Manager); ok {
+					extDet.SetManagedPIDsFunc(m.ManagedHolderPIDs)
+				}
+			}
+
 			// Recover stream processes AFTER server.New() so that
 			// SetOnNewLines callback is already registered on the manager.
 			mgr.RecoverStreamProcesses()
