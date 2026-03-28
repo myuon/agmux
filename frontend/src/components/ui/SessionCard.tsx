@@ -34,6 +34,8 @@ export function SessionCard({
     navigator.clipboard.writeText(name).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {
+      // クリップボードAPIが利用できない環境では何もしない
     });
   }, [name]);
 
@@ -45,9 +47,9 @@ export function SessionCard({
       <div className="flex items-center gap-2 mb-1">
         <StatusDot status={status} />
         <span
-          className="font-medium text-sm truncate hover:text-indigo-600 transition-colors"
+          className="font-medium text-sm truncate hover:text-indigo-600 transition-colors cursor-pointer"
           onClick={handleCopyName}
-          title="Click to copy session name"
+          title="クリックでセッション名をコピー"
         >
           {copied ? "Copied!" : name}
         </span>
