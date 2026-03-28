@@ -83,6 +83,22 @@ func serveCmd() *cobra.Command {
 				port = cfg.Server.Port
 			}
 
+			// Acquire exclusive file lock to prevent multiple server instances
+			agmuxDir, err := db.AgmuxDir()
+			if err != nil {
+				return fmt.Errorf("get agmux dir: %w", err)
+			}
+			lockPath := filepath.Join(agmuxDir, "server.lock")
+			lockFile, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+			if err != nil {
+				return fmt.Errorf("open lock file: %w", err)
+			}
+			defer lockFile.Close()
+			if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+				return fmt.Errorf("another agmux server is already running (lock: %s)", lockPath)
+			}
+			defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
+
 			// Daemon logger (slog → stderr + ~/.agmux/agmux.log)
 			logFile, logger, err := logging.Setup()
 			if err != nil {
