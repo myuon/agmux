@@ -44,7 +44,6 @@ type Server struct {
 
 func New(sessions session.SessionService, hub *Hub, devMode bool, logPath string, logger *slog.Logger, sqlDB *sql.DB) *Server {
 	extDetector := session.NewExternalDetector(logger, 10*time.Second)
-	go extDetector.Start()
 
 	s := &Server{
 		sessions:         sessions,

@@ -167,10 +167,14 @@ func serveCmd() *cobra.Command {
 
 			// Wire managed holder PIDs into external detector so holder
 			// processes and their children are not detected as external.
+			// SetManagedPIDsFunc must be called BEFORE Start() to avoid
+			// the first detect() cycle seeing nil and misclassifying
+			// holder-managed processes as external.
 			if extDet := srv.ExternalDetector(); extDet != nil {
 				if m, ok := mgr.(*session.Manager); ok {
 					extDet.SetManagedPIDsFunc(m.ManagedHolderPIDs)
 				}
+				go extDet.Start()
 			}
 
 			// Recover stream processes AFTER server.New() so that
