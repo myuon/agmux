@@ -92,13 +92,12 @@ func (m *Manager) buildEffectiveSystemPrompt(customSystemPrompt string) string {
 	return m.systemPrompt + "\n\n" + customSystemPrompt
 }
 
-// RecoverStreamProcesses recovers stream processes for all working sessions.
+// RecoverStreamProcesses recovers stream processes for all sessions with holder_pid > 0.
 // If a holder process is still alive (survived server restart), reconnect to it.
 // Otherwise, start a new holder process with --resume.
 func (m *Manager) RecoverStreamProcesses() {
 	rows, err := m.db.Query(
-		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid FROM sessions WHERE status = ? AND type != 'controller'`,
-		string(StatusWorking),
+		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid FROM sessions WHERE holder_pid > 0 AND type != 'controller'`,
 	)
 	if err != nil {
 		m.logger.Error("recover stream processes: query failed", "error", err)
@@ -114,6 +113,7 @@ func (m *Manager) RecoverStreamProcesses() {
 			m.logger.Error("recover stream processes: scan failed", "error", err)
 			continue
 		}
+
 		provider := m.getProvider(ProviderName(providerStr))
 		mcpPath, err := provider.SetupMCP(id, m.apiPort)
 		if err != nil {
@@ -174,7 +174,6 @@ func (m *Manager) RecoverStreamProcesses() {
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
 		m.streamMu.Unlock()
-		// Persist new holder PID
 		m.updateHolderPID(id, sp.HolderPID())
 		m.logger.Info("recovered stream process via new holder", "sessionId", id, "holderPid", sp.HolderPID())
 	}
@@ -553,6 +552,18 @@ func (m *Manager) Delete(id string) error {
 
 	// Stop stream process if exists
 	m.stopStreamProcess(id)
+
+	// Kill holder process via DB holder_pid even if not in streamProcesses map
+	// (e.g. after server restart, the map may not have the entry)
+	var holderPID int
+	if err := m.db.QueryRow("SELECT holder_pid FROM sessions WHERE id = ?", id).Scan(&holderPID); err == nil {
+		if holderPID > 0 && IsHolderAlive(holderPID) {
+			if proc, err := os.FindProcess(holderPID); err == nil {
+				proc.Kill()
+				m.logger.Info("killed orphan holder process via DB pid", "sessionId", id, "holderPid", holderPID)
+			}
+		}
+	}
 
 	_, err = m.db.Exec("DELETE FROM sessions WHERE id = ?", id)
 	return err
