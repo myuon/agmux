@@ -1,3 +1,4 @@
+import { useState, useCallback } from "react";
 import type { Session } from "../../types/session";
 import { StatusDot } from "../StatusBadge";
 import { Chip } from "./Chip";
@@ -27,6 +28,15 @@ export function SessionCard({
   onClick,
   actions,
 }: SessionCardProps) {
+  const [copied, setCopied] = useState(false);
+  const handleCopyName = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(name).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [name]);
+
   return (
     <div
       onClick={onClick}
@@ -34,7 +44,13 @@ export function SessionCard({
     >
       <div className="flex items-center gap-2 mb-1">
         <StatusDot status={status} />
-        <span className="font-medium text-sm truncate">{name}</span>
+        <span
+          className="font-medium text-sm truncate hover:text-indigo-600 transition-colors"
+          onClick={handleCopyName}
+          title="Click to copy session name"
+        >
+          {copied ? "Copied!" : name}
+        </span>
         {type === "controller" && (
           <Chip color="purple">Controller</Chip>
         )}
