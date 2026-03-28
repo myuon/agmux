@@ -692,52 +692,20 @@ func (m *Manager) StopAllStreamProcesses() {
 // Clear resets the session context by stopping the current process,
 // clearing the stream history, and restarting without --resume.
 func (m *Manager) Clear(id string) error {
-	s, err := m.Get(id)
+	_, err := m.Get(id)
 	if err != nil {
 		return err
 	}
 
-	provider := m.getProvider(s.Provider)
-
-	// Stop existing stream process if any
-	m.stopStreamProcess(id)
-
-	// Clear the JSONL stream file (truncate)
+	// Clear the JSONL stream file (truncate) — do NOT stop/restart the process
 	streamsDir, err := db.StreamsDir()
 	if err == nil {
 		streamPath := filepath.Join(streamsDir, id+".jsonl")
 		_ = os.Truncate(streamPath, 0)
 	}
 
-	// Generate fresh MCP config
-	mcpConfigPath, err := provider.SetupMCP(id, m.apiPort)
-	if err != nil {
-		return fmt.Errorf("write mcp config: %w", err)
-	}
-
-	// Start fresh without CLISessionID — BuildStreamCommand will generate a
-	// new UUID for --session-id automatically.
-	sp, err := StartHolderStreamProcess(StreamOpts{
-		SessionID:     id,
-		ProjectPath:   s.ProjectPath,
-		MCPConfigPath: mcpConfigPath,
-		SystemPrompt:  m.buildEffectiveSystemPrompt(s.SystemPrompt),
-		Model:         s.Model,
-		APIPort:       m.apiPort,
-	}, provider)
-	if err != nil {
-		return fmt.Errorf("start stream process: %w", err)
-	}
-	m.wireSessionIDCallback(id, sp)
-	m.streamMu.Lock()
-	m.streamProcesses[id] = sp
-	m.streamMu.Unlock()
-	m.updateHolderPID(id, sp.HolderPID())
-
-	// Reset task/goal and set status to working.
-	// Clear cli_session_id so that Reconnect does not reuse a stale/invalid ID;
-	// wireSessionIDCallback will persist the real CLI session ID once captured.
-	_, err = m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', cli_session_id = '', updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
+	// Reset task/goal but keep the existing process and CLI session running.
+	_, err = m.db.Exec("UPDATE sessions SET last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', updated_at = ? WHERE id = ?", time.Now(), id)
 	return err
 }
 
