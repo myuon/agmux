@@ -723,10 +723,17 @@ func tailSessionLogFormatted(logPath string, n int, follow bool, clearOffset int
 		return err
 	}
 
-	if n > 0 && len(allLines) > n {
-		allLines = allLines[len(allLines)-n:]
-	}
+	// Filter to displayable lines before applying -n
+	var displayable []string
 	for _, line := range allLines {
+		if isDisplayableLine(line) {
+			displayable = append(displayable, line)
+		}
+	}
+	if n > 0 && len(displayable) > n {
+		displayable = displayable[len(displayable)-n:]
+	}
+	for _, line := range displayable {
 		formatSessionLine(line)
 	}
 
@@ -766,6 +773,24 @@ func tailSessionLogFormatted(logPath string, n int, follow bool, clearOffset int
 			formatSessionLine(strings.TrimRight(line, "\n"))
 		}
 	}
+}
+
+func isDisplayableLine(line string) bool {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "//") {
+		return false
+	}
+	var entry struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		return false
+	}
+	switch entry.Type {
+	case "stream_event", "rate_limit_event":
+		return false
+	}
+	return true
 }
 
 func formatSessionLine(line string) {
