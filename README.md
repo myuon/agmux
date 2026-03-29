@@ -31,13 +31,24 @@
 
 ## インストール
 
-```bash
-go install github.com/myuon/agmux/cmd/agmux@latest
-```
+[GitHub Releases](https://github.com/myuon/agmux/releases) からビルド済みバイナリをダウンロードできます。
 
-前提条件:
-- Go 1.21+
-- Node.js 18+ (ビルド時のみ)
+```bash
+# macOS (Apple Silicon)
+curl -L -o agmux https://github.com/myuon/agmux/releases/latest/download/agmux-darwin-arm64
+chmod +x agmux
+sudo mv agmux /usr/local/bin/
+
+# macOS (Intel)
+curl -L -o agmux https://github.com/myuon/agmux/releases/latest/download/agmux-darwin-amd64
+chmod +x agmux
+sudo mv agmux /usr/local/bin/
+
+# Linux (amd64)
+curl -L -o agmux https://github.com/myuon/agmux/releases/latest/download/agmux-linux-amd64
+chmod +x agmux
+sudo mv agmux /usr/local/bin/
+```
 
 ### ソースからビルド
 
