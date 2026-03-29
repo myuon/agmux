@@ -195,9 +195,7 @@ func serveCmd() *cobra.Command {
 			// the first detect() cycle seeing nil and misclassifying
 			// holder-managed processes as external.
 			if extDet := srv.ExternalDetector(); extDet != nil {
-				if m, ok := mgr.(*session.Manager); ok {
-					extDet.SetManagedPIDsFunc(m.ManagedHolderPIDs)
-				}
+				extDet.SetManagedPIDsFunc(mgr.ManagedHolderPIDs)
 				go extDet.Start()
 			}
 
@@ -760,28 +758,29 @@ func sessionInfoCmd() *cobra.Command {
 			prefix := args[0]
 
 			cfg, _ := config.Load()
-			_, database, err := initManager(cfg, cfg.Server.Port, nil)
+			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
-			defer database.Close()
 
-			// Find session by prefix match
-			var s session.Session
-			var status, sessionType, providerStr string
-			var prompt, systemPrompt, parentSessionID, currentTask, goal, lastError, roleTemplate sql.NullString
-			var holderPID int
-			err = database.QueryRow(
-				`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, current_task, goal, last_error, holder_pid, clear_offset, role_template, created_at, updated_at
-				 FROM sessions WHERE id LIKE ?`,
-				prefix+"%",
-			).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &currentTask, &goal, &lastError, &holderPID, &s.ClearOffset, &roleTemplate, &s.CreatedAt, &s.UpdatedAt)
+			// Find session by prefix match using SessionService
+			sessions, err := mgr.List()
 			if err != nil {
+				return err
+			}
+			var s *session.Session
+			for _, sess := range sessions {
+				if strings.HasPrefix(sess.ID, prefix) {
+					if s != nil {
+						return fmt.Errorf("ambiguous session prefix %q: matches %s and %s", prefix, s.ID, sess.ID)
+					}
+					sessCopy := sess
+					s = &sessCopy
+				}
+			}
+			if s == nil {
 				return fmt.Errorf("session not found: %s", prefix)
 			}
-			s.Status = session.Status(status)
-			s.Type = session.SessionType(sessionType)
-			s.Provider = session.ProviderName(providerStr)
 
 			// Session metadata
 			fmt.Printf("Session:        %s\n", s.ID)
@@ -790,22 +789,22 @@ func sessionInfoCmd() *cobra.Command {
 			fmt.Printf("Type:           %s\n", s.Type)
 			fmt.Printf("Provider:       %s\n", s.Provider)
 			fmt.Printf("Model:          %s\n", s.Model)
-			if roleTemplate.Valid && roleTemplate.String != "" {
-				fmt.Printf("Role:           %s\n", roleTemplate.String)
+			if s.RoleTemplate != "" {
+				fmt.Printf("Role:           %s\n", s.RoleTemplate)
 			}
 			fmt.Printf("Project:        %s\n", s.ProjectPath)
 			fmt.Printf("CLI Session ID: %s\n", s.CliSessionID)
-			if parentSessionID.Valid && parentSessionID.String != "" {
-				fmt.Printf("Parent:         %s\n", parentSessionID.String)
+			if s.ParentSessionID != "" {
+				fmt.Printf("Parent:         %s\n", s.ParentSessionID)
 			}
-			if currentTask.Valid && currentTask.String != "" {
-				fmt.Printf("Current Task:   %s\n", currentTask.String)
+			if s.CurrentTask != "" {
+				fmt.Printf("Current Task:   %s\n", s.CurrentTask)
 			}
-			if goal.Valid && goal.String != "" {
-				fmt.Printf("Goal:           %s\n", goal.String)
+			if s.Goal != "" {
+				fmt.Printf("Goal:           %s\n", s.Goal)
 			}
-			if lastError.Valid && lastError.String != "" {
-				fmt.Printf("Last Error:     %s\n", lastError.String)
+			if s.LastError != "" {
+				fmt.Printf("Last Error:     %s\n", s.LastError)
 			}
 			fmt.Printf("Clear Offset:   %d\n", s.ClearOffset)
 			fmt.Printf("Created:        %s\n", s.CreatedAt.Format("2006-01-02 15:04:05"))
@@ -813,13 +812,13 @@ func sessionInfoCmd() *cobra.Command {
 
 			// Process info
 			fmt.Println()
-			fmt.Printf("Holder PID:     %d\n", holderPID)
-			if holderPID > 0 {
-				alive := session.IsHolderAlive(holderPID)
+			fmt.Printf("Holder PID:     %d\n", s.HolderPID)
+			if s.HolderPID > 0 {
+				alive := session.IsHolderAlive(s.HolderPID)
 				fmt.Printf("Holder Alive:   %v\n", alive)
 				if alive {
 					// Find child CLI process
-					childPIDs, _ := findChildPIDs(holderPID)
+					childPIDs, _ := findChildPIDs(s.HolderPID)
 					for _, cpid := range childPIDs {
 						fmt.Printf("Child PID:      %d\n", cpid)
 					}

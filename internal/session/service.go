@@ -68,6 +68,9 @@ type SessionService interface {
 
 	// ListRecentProjects returns recently used project paths.
 	ListRecentProjects(limit int) ([]RecentProject, error)
+
+	// ManagedHolderPIDs returns the PIDs of all holder processes currently managed.
+	ManagedHolderPIDs() []int
 }
 
 // Verify Manager implements SessionService at compile time.

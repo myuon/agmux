@@ -351,7 +351,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, clear_offset, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, holder_pid, clear_offset, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -366,7 +366,7 @@ func (m *Manager) List() ([]Session, error) {
 		var sessionType string
 		var providerStr string
 		var prompt, systemPrompt, parentSessionID, roleTemplate, currentTask, goal, goalsJSON, lastError sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = Status(status)
@@ -413,9 +413,9 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var providerStr string
 	var prompt, systemPrompt, parentSessionID, roleTemplate, currentTask, goal, goalsJSON, lastError sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, clear_offset, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, holder_pid, clear_offset, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
