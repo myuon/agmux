@@ -7,10 +7,12 @@ interface SessionCardProps {
   status: Session["status"];
   type?: string;
   provider?: string;
+  roleTemplate?: string;
   currentTask?: string;
   lastError?: string;
   projectPath: string;
   timeAgo: string;
+  isSubSession?: boolean;
   onClick?: () => void;
   actions?: React.ReactNode;
 }
@@ -20,17 +22,19 @@ export function SessionCard({
   status,
   type,
   provider,
+  roleTemplate,
   currentTask,
   lastError,
   projectPath,
   timeAgo,
+  isSubSession,
   onClick,
   actions,
 }: SessionCardProps) {
   return (
     <div
       onClick={onClick}
-      className="border border-gray-200 rounded-lg p-3 transition-shadow bg-white hover:shadow-sm cursor-pointer"
+      className={`border rounded-lg p-3 transition-shadow bg-white hover:shadow-sm cursor-pointer ${isSubSession ? "border-blue-200 border-l-blue-400 border-l-2" : "border-gray-200"}`}
     >
       <div className="flex items-center gap-2 mb-1">
         <StatusDot status={status} />
@@ -39,6 +43,9 @@ export function SessionCard({
         </span>
         {type === "controller" && (
           <Chip color="purple">Controller</Chip>
+        )}
+        {roleTemplate && (
+          <Chip color="orange">{roleTemplate}</Chip>
         )}
         {provider && provider !== "claude" && (
           <Chip color={provider === "codex" ? "green" : "gray"}>
