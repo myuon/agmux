@@ -10,7 +10,6 @@ import type { ScenarioPreset } from "../fixtures/scenarios";
 import type { StreamEntry } from "../models/stream";
 import { extractActiveTasks } from "../models/stream";
 import { SessionList } from "../components/SessionList";
-import { mockSessions } from "../fixtures/scenarios/sessionListScenarios";
 
 function countEventTypes(lines: unknown[]): Record<string, number> {
   const counts: Record<string, number> = {};
@@ -22,10 +21,10 @@ function countEventTypes(lines: unknown[]): Record<string, number> {
   return counts;
 }
 
-type TabId = "stream" | "session-list";
+const streamPresets = scenarioPresets.filter((p) => p.type === "stream");
+const sessionListPresets = scenarioPresets.filter((p) => p.type === "session-list");
 
 export function ScenarioTestPage() {
-  const [activeTab, setActiveTab] = useState<TabId>("stream");
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [customJsonl, setCustomJsonl] = useState("");
   const [customLines, setCustomLines] = useState<unknown[] | null>(null);
@@ -33,14 +32,15 @@ export function ScenarioTestPage() {
   const [showSidebar, setShowSidebar] = useState(true);
   const navigate = useNavigate();
 
+  const activePreset: ScenarioPreset | undefined = selectedPresetId
+    ? scenarioPresets.find((p) => p.id === selectedPresetId)
+    : undefined;
+
   const activeLines = useMemo(() => {
     if (customLines) return customLines;
-    if (selectedPresetId) {
-      const preset = scenarioPresets.find((p) => p.id === selectedPresetId);
-      return preset?.lines || [];
-    }
+    if (activePreset?.lines) return activePreset.lines;
     return [];
-  }, [selectedPresetId, customLines]);
+  }, [activePreset, customLines]);
 
   const stats = useMemo(() => countEventTypes(activeLines), [activeLines]);
 
@@ -74,21 +74,41 @@ export function ScenarioTestPage() {
     setShowSidebar(false);
   };
 
-  const activePreset: ScenarioPreset | undefined = selectedPresetId
-    ? scenarioPresets.find((p) => p.id === selectedPresetId)
-    : undefined;
-
   const activeLabel = customLines
     ? "Custom JSONL"
     : activePreset?.label ?? null;
 
+  const isSessionList = activePreset?.type === "session-list";
+
   const sidebar = (
     <div className="p-4 flex-1 min-h-0 overflow-y-auto">
       <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-        Presets
+        Stream Output
       </h2>
       <div className="space-y-1">
-        {scenarioPresets.map((preset) => (
+        {streamPresets.map((preset) => (
+          <button
+            key={preset.id}
+            onClick={() => handleSelectPreset(preset.id)}
+            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
+              selectedPresetId === preset.id && !customLines
+                ? "bg-blue-50 text-blue-700 border border-blue-200"
+                : "hover:bg-gray-100 text-gray-700"
+            }`}
+          >
+            <div className="font-medium">{preset.label}</div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              {preset.description}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-6 mb-3">
+        Session List
+      </h2>
+      <div className="space-y-1">
+        {sessionListPresets.map((preset) => (
           <button
             key={preset.id}
             onClick={() => handleSelectPreset(preset.id)}
@@ -139,53 +159,40 @@ export function ScenarioTestPage() {
           Scenario Test
         </h1>
 
-        {/* Tab switcher */}
-        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 ml-2">
-          {([
-            { id: "stream" as TabId, label: "Stream Output" },
-            { id: "session-list" as TabId, label: "Session List" },
-          ]).map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1 text-sm rounded-md transition-colors ${
-                activeTab === tab.id
-                  ? "bg-white text-gray-900 shadow-sm font-medium"
-                  : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
         {/* Mobile: toggle sidebar / show active scenario */}
-        {activeTab === "stream" && (
-          <SecondaryButton
-            onClick={() => setShowSidebar(!showSidebar)}
-            color="purple"
-            className="md:hidden ml-auto"
-          >
-            {showSidebar ? "Hide scenarios" : activeLabel || "Select scenario"}
-          </SecondaryButton>
-        )}
+        <SecondaryButton
+          onClick={() => setShowSidebar(!showSidebar)}
+          color="purple"
+          className="md:hidden ml-auto"
+        >
+          {showSidebar ? "Hide scenarios" : activeLabel || "Select scenario"}
+        </SecondaryButton>
       </header>
 
       {/* Main content */}
-      {activeTab === "stream" ? (
-        <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-          {/* Sidebar: always visible on md+, toggleable on mobile */}
-          <div
-            className={`${
-              showSidebar ? "flex" : "hidden"
-            } md:flex w-full md:w-72 border-b md:border-b-0 md:border-r border-gray-200 bg-white flex-col shrink-0 ${
-              showSidebar ? "max-h-[50vh] md:max-h-none" : ""
-            } min-h-0`}
-          >
-            {sidebar}
-          </div>
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+        {/* Sidebar: always visible on md+, toggleable on mobile */}
+        <div
+          className={`${
+            showSidebar ? "flex" : "hidden"
+          } md:flex w-full md:w-72 border-b md:border-b-0 md:border-r border-gray-200 bg-white flex-col shrink-0 ${
+            showSidebar ? "max-h-[50vh] md:max-h-none" : ""
+          } min-h-0`}
+        >
+          {sidebar}
+        </div>
 
-          {/* Right pane: StreamOutputView + simulated banners */}
+        {/* Right pane */}
+        {isSessionList ? (
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8">
+            <div className="max-w-3xl mx-auto">
+              <SessionList
+                sessions={activePreset?.mockSessions ?? []}
+                onRestartController={() => {}}
+              />
+            </div>
+          </div>
+        ) : (
           <div className="flex-1 flex flex-col min-h-0">
             <div className="flex-1 min-h-0 p-4">
               <StreamOutputView
@@ -248,20 +255,8 @@ export function ScenarioTestPage() {
               </div>
             )}
           </div>
-        </div>
-      ) : (
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8">
-          <div className="max-w-3xl mx-auto">
-            <p className="text-sm text-gray-500 mb-4">
-              Mock session cards displaying various states: working, idle, waiting_input, exited (clean/error), role templates, sub-sessions, and different providers.
-            </p>
-            <SessionList
-              sessions={mockSessions}
-              onRestartController={() => {}}
-            />
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
