@@ -49,6 +49,7 @@ function SessionPageSkeleton() {
 }
 
 export function SessionPage() {
+  const { id: sessionId } = useParams<{ id: string }>();
   const loaderData = useLoaderData<{
     session: Session;
     streamOutput: Promise<DeferredData["streamOutput"]>;
@@ -65,7 +66,7 @@ export function SessionPage() {
   );
 
   return (
-    <Suspense fallback={<SessionPageSkeleton />}>
+    <Suspense key={sessionId} fallback={<SessionPageSkeleton />}>
       <Await resolve={deferredPromise}>
         {(deferred: DeferredData) => (
           <SessionPageInner session={loaderData.session} deferred={deferred} />
@@ -84,6 +85,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [streamLines, setStreamLines] = useState<unknown[]>(deferred.streamOutput.lines);
   const [partialText, setPartialText] = useState("");
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>(deferred.diff.files);
+
+
   const [pendingImages, setPendingImages] = useState<{ data: string; mediaType: string; preview: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingEscalationId, setPendingEscalationId] = useState<string | null>(null);
