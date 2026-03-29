@@ -593,7 +593,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   const fragment = versionMatch.replace(/\./g, "-");
                   href = `https://code.claude.com/docs/en/changelog#${fragment}`;
                 } else if (session.provider === "codex") {
-                  href = `https://github.com/openai/codex/releases/tag/${versionMatch}`;
+                  href = `https://github.com/openai/codex/releases/tag/rust-v${versionMatch}`;
                 }
                 if (href) {
                   return (
