@@ -92,7 +92,11 @@ func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []str
 	}
 	defer func() {
 		listener.Close()
-		os.Remove(sockPath)
+		// NOTE: We intentionally do NOT remove the socket file here.
+		// If a new holder has already been spawned for the same session,
+		// removing the file would delete the new holder's socket, causing
+		// the new holder's connections to break. The new holder cleans up
+		// the stale socket file itself before creating its listener.
 	}()
 
 	slog.Info("holder: listening on socket", "path", sockPath)
