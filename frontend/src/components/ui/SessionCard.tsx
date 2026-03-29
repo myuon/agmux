@@ -7,6 +7,7 @@ interface SessionCardProps {
   status: Session["status"];
   type?: string;
   provider?: string;
+  roleTemplate?: string;
   currentTask?: string;
   lastError?: string;
   projectPath: string;
@@ -20,6 +21,7 @@ export function SessionCard({
   status,
   type,
   provider,
+  roleTemplate,
   currentTask,
   lastError,
   projectPath,
@@ -39,6 +41,9 @@ export function SessionCard({
         </span>
         {type === "controller" && (
           <Chip color="purple">Controller</Chip>
+        )}
+        {roleTemplate && (
+          <Chip color="orange">{roleTemplate}</Chip>
         )}
         {provider && provider !== "claude" && (
           <Chip color={provider === "codex" ? "green" : "gray"}>

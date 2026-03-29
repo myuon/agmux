@@ -211,6 +211,7 @@ type CreateOpts struct {
 	Model        string
 	FullAuto     bool   // enable full-auto mode (bypasses permission prompts for Codex)
 	SystemPrompt string // per-session custom system prompt (appended to defaultSystemPrompt)
+	RoleTemplate string // name of the role template used to create this session
 }
 
 func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts ...CreateOpts) (*Session, error) {
@@ -218,6 +219,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	model := ""
 	fullAuto := false
 	customSystemPrompt := ""
+	roleTemplate := ""
 	if len(opts) > 0 {
 		if opts[0].Provider != "" {
 			pn = opts[0].Provider
@@ -225,6 +227,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		model = opts[0].Model
 		fullAuto = opts[0].FullAuto
 		customSystemPrompt = opts[0].SystemPrompt
+		roleTemplate = opts[0].RoleTemplate
 	}
 
 	// For Codex, resolve default model from config if not explicitly specified
@@ -304,14 +307,15 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		Type:          TypeWorker,
 		Provider:      pn,
 		Model:         model,
+		RoleTemplate:  roleTemplate,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
 
 	if _, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, role_template, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.RoleTemplate, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
@@ -321,7 +325,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, current_task, goal, goals, last_error, clear_offset, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, clear_offset, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -335,8 +339,8 @@ func (m *Manager) List() ([]Session, error) {
 		var status string
 		var sessionType string
 		var providerStr string
-		var prompt, systemPrompt, parentSessionID, currentTask, goal, goalsJSON, lastError sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &currentTask, &goal, &goalsJSON, &lastError, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		var prompt, systemPrompt, parentSessionID, roleTemplate, currentTask, goal, goalsJSON, lastError sql.NullString
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.Status = Status(status)
@@ -353,6 +357,9 @@ func (m *Manager) List() ([]Session, error) {
 		}
 		if parentSessionID.Valid {
 			s.ParentSessionID = parentSessionID.String
+		}
+		if roleTemplate.Valid {
+			s.RoleTemplate = roleTemplate.String
 		}
 		if currentTask.Valid {
 			s.CurrentTask = currentTask.String
@@ -378,11 +385,11 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var status string
 	var sessionType string
 	var providerStr string
-	var prompt, systemPrompt, parentSessionID, currentTask, goal, goalsJSON, lastError sql.NullString
+	var prompt, systemPrompt, parentSessionID, roleTemplate, currentTask, goal, goalsJSON, lastError sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, current_task, goal, goals, last_error, clear_offset, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, clear_offset, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &currentTask, &goal, &goalsJSON, &lastError, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -403,6 +410,9 @@ func (m *Manager) Get(id string) (*Session, error) {
 	}
 	if parentSessionID.Valid {
 		s.ParentSessionID = parentSessionID.String
+	}
+	if roleTemplate.Valid {
+		s.RoleTemplate = roleTemplate.String
 	}
 	if currentTask.Valid {
 		s.CurrentTask = currentTask.String
@@ -433,6 +443,7 @@ func (m *Manager) Duplicate(id string) (*Session, error) {
 		Provider:     src.Provider,
 		Model:        src.Model,
 		SystemPrompt: src.SystemPrompt,
+		RoleTemplate: src.RoleTemplate,
 	})
 }
 

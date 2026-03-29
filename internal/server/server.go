@@ -144,6 +144,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/metrics", s.getMetrics)
 		r.Get("/metrics/summary", s.getMetricsSummary)
 		r.Get("/metrics/events", s.getMetricsEvents)
+
 	})
 
 	s.router = r
@@ -186,6 +187,7 @@ type createSessionRequest struct {
 	Model        string `json:"model,omitempty"`
 	AutoApprove  bool   `json:"autoApprove,omitempty"`
 	SystemPrompt string `json:"systemPrompt,omitempty"`
+	RoleTemplate string `json:"roleTemplate,omitempty"`
 }
 
 type sendImageData struct {
@@ -244,7 +246,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name and projectPath are required")
 		return
 	}
-	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model, FullAuto: req.AutoApprove, SystemPrompt: req.SystemPrompt})
+	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model, FullAuto: req.AutoApprove, SystemPrompt: req.SystemPrompt, RoleTemplate: req.RoleTemplate})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1009,12 +1011,20 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, logs)
 }
 
+type configTemplateJSON struct {
+	Name         string `json:"name"`
+	Provider     string `json:"provider"`
+	Model        string `json:"model,omitempty"`
+	SystemPrompt string `json:"systemPrompt"`
+}
+
 type configJSON struct {
-	Server  configServerJSON   `json:"server"`
-	Daemon  configDaemonJSON   `json:"daemon"`
-	Session configSessionJSON  `json:"session"`
-	Claude  configClaudeJSON   `json:"claude"`
-	Prompts *configPromptsJSON `json:"prompts,omitempty"`
+	Server    configServerJSON     `json:"server"`
+	Daemon    configDaemonJSON     `json:"daemon"`
+	Session   configSessionJSON    `json:"session"`
+	Claude    configClaudeJSON     `json:"claude"`
+	Prompts   *configPromptsJSON   `json:"prompts,omitempty"`
+	Templates []configTemplateJSON `json:"templates"`
 }
 
 type configPromptsJSON struct {
@@ -1035,20 +1045,40 @@ type configClaudeJSON struct {
 }
 
 func configToJSON(cfg *config.Config) configJSON {
+	templates := make([]configTemplateJSON, len(cfg.Templates))
+	for i, t := range cfg.Templates {
+		templates[i] = configTemplateJSON{
+			Name:         t.Name,
+			Provider:     t.Provider,
+			Model:        t.Model,
+			SystemPrompt: t.SystemPrompt,
+		}
+	}
 	return configJSON{
-		Server:  configServerJSON{Port: cfg.Server.Port},
-		Daemon:  configDaemonJSON{Interval: cfg.Daemon.Interval},
-		Session: configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
-		Claude:  configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
+		Server:    configServerJSON{Port: cfg.Server.Port},
+		Daemon:    configDaemonJSON{Interval: cfg.Daemon.Interval},
+		Session:   configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
+		Claude:    configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
+		Templates: templates,
 	}
 }
 
 func jsonToConfig(j configJSON) *config.Config {
+	templates := make([]config.RoleTemplate, len(j.Templates))
+	for i, t := range j.Templates {
+		templates[i] = config.RoleTemplate{
+			Name:         t.Name,
+			Provider:     t.Provider,
+			Model:        t.Model,
+			SystemPrompt: t.SystemPrompt,
+		}
+	}
 	return &config.Config{
-		Server:  config.ServerConfig{Port: j.Server.Port},
-		Daemon:  config.DaemonConfig{Interval: j.Daemon.Interval},
-		Session: config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand},
-		Claude:  config.ClaudeConfig{PermissionMode: j.Claude.PermissionMode},
+		Server:    config.ServerConfig{Port: j.Server.Port},
+		Daemon:    config.DaemonConfig{Interval: j.Daemon.Interval},
+		Session:   config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand},
+		Claude:    config.ClaudeConfig{PermissionMode: j.Claude.PermissionMode},
+		Templates: templates,
 	}
 }
 

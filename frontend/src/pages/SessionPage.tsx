@@ -624,6 +624,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             {session.model && (
               <Chip color="purple">{session.model}</Chip>
             )}
+            {session.roleTemplate && (
+              <Chip color="orange">{session.roleTemplate}</Chip>
+            )}
           </>
         ) : (
           <>
