@@ -228,8 +228,8 @@ func StartStreamProcessWithOpts(opts StreamOpts, provider Provider) (*StreamProc
 		streamOpts: opts,
 	}
 
-	// Read existing lines from file for continuity
-	sp.loadExistingLines(streamPath)
+	// Read existing lines from file for continuity (respecting clear offset)
+	sp.loadExistingLines(streamPath, opts.ClearOffset)
 
 	// Start stdout reader goroutine
 	go sp.readLoop(stdoutPipe)
@@ -240,12 +240,19 @@ func StartStreamProcessWithOpts(opts StreamOpts, provider Provider) (*StreamProc
 	return sp, nil
 }
 
-func (sp *StreamProcess) loadExistingLines(path string) {
+func (sp *StreamProcess) loadExistingLines(path string, clearOffset int64) {
 	f, err := os.Open(path)
 	if err != nil {
 		return
 	}
 	defer f.Close()
+
+	// Seek past the clear offset so only post-clear content is loaded
+	if clearOffset > 0 {
+		if _, err := f.Seek(clearOffset, io.SeekStart); err != nil {
+			return
+		}
+	}
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
@@ -730,6 +737,13 @@ func (sp *StreamProcess) TotalLines() int {
 	sp.mu.RLock()
 	defer sp.mu.RUnlock()
 	return len(sp.lines)
+}
+
+// ClearLines clears the in-memory lines buffer.
+func (sp *StreamProcess) ClearLines() {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.lines = nil
 }
 
 // Stop gracefully stops the stream process.

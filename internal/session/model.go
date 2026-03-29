@@ -47,6 +47,7 @@ type Session struct {
 	Goal            string       `json:"goal,omitempty"`
 	Goals           GoalStack    `json:"goals,omitempty"`
 	LastError       string       `json:"lastError,omitempty"`
+	ClearOffset     int64        `json:"clearOffset"`
 	CreatedAt       time.Time    `json:"createdAt"`
 	UpdatedAt       time.Time    `json:"updatedAt"`
 }

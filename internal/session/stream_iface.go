@@ -29,6 +29,8 @@ type StreamProcessInterface interface {
 	GetLinesAfter(after int) ([]string, int)
 	// TotalLines returns the total line count.
 	TotalLines() int
+	// ClearLines clears the in-memory lines buffer (used on Clear).
+	ClearLines()
 
 	// Stop stops the process.
 	Stop()

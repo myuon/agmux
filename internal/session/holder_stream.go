@@ -75,8 +75,8 @@ func StartHolderStreamProcess(opts StreamOpts, provider Provider) (*HolderStream
 		streamOpts: opts,
 	}
 
-	// Load existing lines from JSONL file
-	sp.loadExistingLines(opts.SessionID)
+	// Load existing lines from JSONL file (respecting clear offset)
+	sp.loadExistingLines(opts.SessionID, opts.ClearOffset)
 
 	// Start reading from the socket
 	go sp.readLoop()
@@ -104,8 +104,8 @@ func ReconnectHolderStreamProcess(opts StreamOpts, provider Provider, holderPID 
 		streamOpts: opts,
 	}
 
-	// Load all existing lines from JSONL file
-	sp.loadExistingLines(opts.SessionID)
+	// Load all existing lines from JSONL file (respecting clear offset)
+	sp.loadExistingLines(opts.SessionID, opts.ClearOffset)
 
 	// Start reading from the socket
 	go sp.readLoop()
@@ -113,7 +113,7 @@ func ReconnectHolderStreamProcess(opts StreamOpts, provider Provider, holderPID 
 	return sp, nil
 }
 
-func (sp *HolderStreamProcess) loadExistingLines(sessionID string) {
+func (sp *HolderStreamProcess) loadExistingLines(sessionID string, clearOffset int64) {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
 		return
@@ -124,6 +124,13 @@ func (sp *HolderStreamProcess) loadExistingLines(sessionID string) {
 		return
 	}
 	defer f.Close()
+
+	// Seek past the clear offset so only post-clear content is loaded
+	if clearOffset > 0 {
+		if _, err := f.Seek(clearOffset, io.SeekStart); err != nil {
+			return
+		}
+	}
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
@@ -613,6 +620,13 @@ func (sp *HolderStreamProcess) TotalLines() int {
 	sp.mu.RLock()
 	defer sp.mu.RUnlock()
 	return len(sp.lines)
+}
+
+// ClearLines clears the in-memory lines buffer.
+func (sp *HolderStreamProcess) ClearLines() {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.lines = nil
 }
 
 // Stop sends a stop command to the holder.

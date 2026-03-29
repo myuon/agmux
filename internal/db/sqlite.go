@@ -175,6 +175,12 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add clear_offset column if missing (byte offset for JSONL clear point)
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN clear_offset INTEGER NOT NULL DEFAULT 0`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: remove UNIQUE constraint from tmux_session (no longer used)
 	// SQLite doesn't support DROP CONSTRAINT, so we recreate the table
 	{
