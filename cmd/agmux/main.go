@@ -633,7 +633,7 @@ The session ID can be a short prefix (e.g. first 8 characters from "session list
 		},
 	}
 
-	cmd.Flags().IntVarP(&lines, "lines", "n", 0, "Number of recent lines to show (0 = all)")
+	cmd.Flags().IntVarP(&lines, "lines", "n", 50, "Number of recent lines to show (0 = all)")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output in realtime")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output raw JSONL lines")
 
