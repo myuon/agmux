@@ -18,14 +18,16 @@ import (
 	"github.com/myuon/agmux/internal/db"
 )
 
-const (
-	// SocketDir is the directory for holder Unix sockets.
-	SocketDir = "/tmp/agmux/socks"
-)
+// SocketDir returns the directory for holder Unix sockets.
+// It uses os.TempDir() which respects the $TMPDIR environment variable,
+// avoiding issues with macOS cleaning /private/tmp for long-running processes.
+func SocketDir() string {
+	return filepath.Join(os.TempDir(), "agmux", "socks")
+}
 
 // SocketPath returns the Unix socket path for a session.
 func SocketPath(sessionID string) string {
-	return filepath.Join(SocketDir, sessionID+".sock")
+	return filepath.Join(SocketDir(), sessionID+".sock")
 }
 
 // HolderControlMessage is a message sent over the socket for control purposes.
@@ -40,7 +42,7 @@ type HolderControlMessage struct {
 // RunHolder is the main entry point for the holder subprocess.
 // It starts the CLI process, listens on a Unix socket, and manages the lifecycle.
 func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []string) error {
-	if err := os.MkdirAll(SocketDir, 0700); err != nil {
+	if err := os.MkdirAll(SocketDir(), 0700); err != nil {
 		return fmt.Errorf("create socket dir: %w", err)
 	}
 
@@ -276,7 +278,7 @@ func (h *holder) handleControl(msg HolderControlMessage) {
 // SpawnHolder starts a new holder process that is detached from the current process group.
 // It returns the PID of the holder process.
 func SpawnHolder(sessionID string, cmdArgs []string, projectPath string, env []string) (int, error) {
-	if err := os.MkdirAll(SocketDir, 0700); err != nil {
+	if err := os.MkdirAll(SocketDir(), 0700); err != nil {
 		return 0, fmt.Errorf("create socket dir: %w", err)
 	}
 
@@ -300,7 +302,7 @@ func SpawnHolder(sessionID string, cmdArgs []string, projectPath string, env []s
 	}
 
 	// Redirect holder's stdout/stderr to a log file for debugging
-	holderLogDir := filepath.Join(SocketDir, "..", "logs")
+	holderLogDir := filepath.Join(SocketDir(), "..", "logs")
 	os.MkdirAll(holderLogDir, 0700)
 	logPath := filepath.Join(holderLogDir, sessionID+".log")
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
