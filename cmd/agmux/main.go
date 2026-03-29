@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -253,6 +254,7 @@ func sessionCmd() *cobra.Command {
 	cmd.AddCommand(sessionForkCmd())
 	cmd.AddCommand(sessionSendCmd())
 	cmd.AddCommand(sessionBroadcastCmd())
+	cmd.AddCommand(sessionHistoryCmd())
 
 	return cmd
 }
@@ -573,6 +575,289 @@ func broadcastViaAPI(text string, sessionIDs []string, filter string, port int) 
 	}
 	fmt.Printf("Broadcast complete: %d session(s)\n", len(result.Results))
 	return nil
+}
+
+func sessionHistoryCmd() *cobra.Command {
+	var lines int
+	var follow bool
+	var jsonOutput bool
+
+	cmd := &cobra.Command{
+		Use:   "history <id>",
+		Short: "Show conversation history of a session",
+		Long: `Display the conversation history from a session's JSONL stream log.
+
+The session ID can be a short prefix (e.g. first 8 characters from "session list").`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			prefix := args[0]
+
+			cfg, _ := config.Load()
+			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
+			if err != nil {
+				return err
+			}
+			defer database.Close()
+
+			// Find session by prefix match
+			sessions, err := mgr.List()
+			if err != nil {
+				return err
+			}
+			var matched *session.Session
+			for _, s := range sessions {
+				if strings.HasPrefix(s.ID, prefix) {
+					if matched != nil {
+						return fmt.Errorf("ambiguous session prefix %q: matches %s and %s", prefix, matched.ID, s.ID)
+					}
+					sCopy := s
+					matched = &sCopy
+				}
+			}
+			if matched == nil {
+				return fmt.Errorf("no session found matching prefix: %s", prefix)
+			}
+
+			// Get stream file path
+			streamsDir, err := db.StreamsDir()
+			if err != nil {
+				return fmt.Errorf("get streams dir: %w", err)
+			}
+			logPath := filepath.Join(streamsDir, matched.ID+".jsonl")
+
+			if jsonOutput {
+				return tailSessionLogRaw(logPath, lines, follow, matched.ClearOffset)
+			}
+			return tailSessionLogFormatted(logPath, lines, follow, matched.ClearOffset)
+		},
+	}
+
+	cmd.Flags().IntVarP(&lines, "lines", "n", 0, "Number of recent lines to show (0 = all)")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output in realtime")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output raw JSONL lines")
+
+	return cmd
+}
+
+// readSessionLines reads JSONL lines from a stream file, respecting clearOffset.
+func readSessionLines(logPath string, clearOffset int64) ([]string, error) {
+	f, err := os.Open(logPath)
+	if err != nil {
+		return nil, fmt.Errorf("open stream file: %w", err)
+	}
+	defer f.Close()
+
+	if clearOffset > 0 {
+		if _, err := f.Seek(clearOffset, io.SeekStart); err != nil {
+			return nil, fmt.Errorf("seek to clear offset: %w", err)
+		}
+	}
+
+	var allLines []string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	for scanner.Scan() {
+		allLines = append(allLines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return allLines, nil
+}
+
+func tailSessionLogRaw(logPath string, n int, follow bool, clearOffset int64) error {
+	allLines, err := readSessionLines(logPath, clearOffset)
+	if err != nil {
+		return err
+	}
+
+	if n > 0 && len(allLines) > n {
+		allLines = allLines[len(allLines)-n:]
+	}
+	for _, line := range allLines {
+		fmt.Println(line)
+	}
+
+	if !follow {
+		return nil
+	}
+
+	// For follow mode, open the file and seek to the end
+	f, err := os.Open(logPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.Seek(0, io.SeekEnd); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() { <-sigCh; cancel() }()
+
+	reader := bufio.NewReader(f)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				return err
+			}
+			fmt.Print(line)
+		}
+	}
+}
+
+func tailSessionLogFormatted(logPath string, n int, follow bool, clearOffset int64) error {
+	allLines, err := readSessionLines(logPath, clearOffset)
+	if err != nil {
+		return err
+	}
+
+	if n > 0 && len(allLines) > n {
+		allLines = allLines[len(allLines)-n:]
+	}
+	for _, line := range allLines {
+		formatSessionLine(line)
+	}
+
+	if !follow {
+		return nil
+	}
+
+	f, err := os.Open(logPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.Seek(0, io.SeekEnd); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() { <-sigCh; cancel() }()
+
+	reader := bufio.NewReader(f)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				return err
+			}
+			formatSessionLine(strings.TrimRight(line, "\n"))
+		}
+	}
+}
+
+func formatSessionLine(line string) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "//") {
+		return
+	}
+
+	var entry struct {
+		Type    string `json:"type"`
+		Subtype string `json:"subtype"`
+		Message struct {
+			Role    string `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"message"`
+		Result   string `json:"result"`
+		StopReason string `json:"stop_reason"`
+	}
+	if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		return
+	}
+
+	switch entry.Type {
+	case "user":
+		// User message: content can be a string
+		var text string
+		if err := json.Unmarshal(entry.Message.Content, &text); err == nil {
+			fmt.Printf("\033[1;34m[user]\033[0m %s\n", text)
+			return
+		}
+		fmt.Printf("\033[1;34m[user]\033[0m %s\n", string(entry.Message.Content))
+
+	case "assistant":
+		// Assistant message: content is an array of blocks
+		var blocks []struct {
+			Type  string `json:"type"`
+			Text  string `json:"text"`
+			Name  string `json:"name"`
+			Input json.RawMessage `json:"input"`
+		}
+		if err := json.Unmarshal(entry.Message.Content, &blocks); err != nil {
+			fmt.Printf("\033[1;32m[assistant]\033[0m %s\n", string(entry.Message.Content))
+			return
+		}
+		for _, b := range blocks {
+			switch b.Type {
+			case "text":
+				fmt.Printf("\033[1;32m[assistant]\033[0m %s\n", b.Text)
+			case "tool_use":
+				inputStr := string(b.Input)
+				if len(inputStr) > 200 {
+					inputStr = inputStr[:200] + "..."
+				}
+				fmt.Printf("\033[1;33m[tool: %s]\033[0m %s\n", b.Name, inputStr)
+			case "tool_result":
+				fmt.Printf("\033[0;36m[tool_result]\033[0m %s\n", b.Text)
+			}
+		}
+
+	case "result":
+		if entry.Result != "" {
+			summary := entry.Result
+			if len(summary) > 200 {
+				summary = summary[:200] + "..."
+			}
+			fmt.Printf("\033[1;35m[result:%s]\033[0m %s\n", entry.Subtype, summary)
+		} else {
+			fmt.Printf("\033[1;35m[result:%s]\033[0m (stop_reason: %s)\n", entry.Subtype, entry.StopReason)
+		}
+
+	case "system":
+		switch entry.Subtype {
+		case "init":
+			fmt.Printf("\033[0;90m[system:init]\033[0m session started\n")
+		case "task_started":
+			// skip verbose task events
+		case "task_progress":
+			// skip
+		case "task_notification":
+			// skip
+		default:
+			if entry.Subtype != "" {
+				fmt.Printf("\033[0;90m[system:%s]\033[0m\n", entry.Subtype)
+			}
+		}
+
+	case "stream_event":
+		// Skip transient stream events in formatted output
+
+	case "rate_limit_event":
+		// Skip rate limit events
+	}
 }
 
 func mcpCmd() *cobra.Command {
