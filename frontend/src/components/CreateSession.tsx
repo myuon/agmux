@@ -39,15 +39,15 @@ export function CreateSession({ onClose, onCreate }: Props) {
     api.getRecentProjects()
       .then(setRecentProjects)
       .catch(() => setRecentProjects([]));
-    api.listTemplates()
-      .then(setTemplates)
+    api.getConfig()
+      .then((cfg) => setTemplates(cfg.templates || []))
       .catch(() => setTemplates([]));
   }, []);
 
-  const handleTemplateChange = (templateId: string) => {
-    setSelectedTemplate(templateId);
-    if (!templateId) return;
-    const tmpl = templates.find((t) => t.id === templateId);
+  const handleTemplateChange = (templateName: string) => {
+    setSelectedTemplate(templateName);
+    if (!templateName) return;
+    const tmpl = templates.find((t) => t.name === templateName);
     if (tmpl) {
       if (tmpl.provider) setProvider(tmpl.provider);
       if (tmpl.model) setModel(tmpl.model);
@@ -107,7 +107,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
               >
                 <option value="">None</option>
                 {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
+                  <option key={t.name} value={t.name}>
                     {t.name}
                   </option>
                 ))}

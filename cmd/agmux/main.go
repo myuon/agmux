@@ -13,7 +13,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -417,35 +416,18 @@ func createSessionViaAPIWithSystemPrompt(name, projectPath, prompt string, workt
 	return nil
 }
 
-// resolveTemplate fetches a template by name from the running agmux server.
+// resolveTemplate looks up a template by name from config.toml.
 func resolveTemplate(name string) (*struct {
 	Provider     string
 	Model        string
 	SystemPrompt string
 }, error) {
-	cfg, _ := config.Load()
-	port := cfg.Server.Port
-
-	reqURL := fmt.Sprintf("http://localhost:%d/api/templates?name=%s", port, url.QueryEscape(name))
-	resp, err := http.Get(reqURL)
+	cfg, err := config.Load()
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to agmux server on port %d (is it running?): %w", port, err)
-	}
-	defer resp.Body.Close()
-
-	var templates []struct {
-		ID           string `json:"id"`
-		Name         string `json:"name"`
-		SystemPrompt string `json:"systemPrompt"`
-		Provider     string `json:"provider"`
-		Model        string `json:"model"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&templates); err != nil {
-		return nil, fmt.Errorf("decode templates response: %w", err)
+		return nil, fmt.Errorf("load config: %w", err)
 	}
 
-	// Find exact match by name
-	for _, t := range templates {
+	for _, t := range cfg.Templates {
 		if t.Name == name {
 			return &struct {
 				Provider     string

@@ -3,7 +3,6 @@ package server
 import (
 	"bufio"
 	"database/sql"
-	"errors"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -41,7 +40,6 @@ type Server struct {
 	otelReceiver     *otel.Receiver
 	sqlDB            *sql.DB
 	externalDetector *session.ExternalDetector
-	templates        *session.TemplateStore
 }
 
 func New(sessions session.SessionService, hub *Hub, devMode bool, logPath string, logger *slog.Logger, sqlDB *sql.DB) *Server {
@@ -58,7 +56,6 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logPath string
 		otelReceiver:     otel.NewReceiver(sqlDB, logger),
 		sqlDB:            sqlDB,
 		externalDetector: extDetector,
-		templates:        session.NewTemplateStore(sqlDB),
 	}
 
 	// Wire real-time stream updates via WebSocket
@@ -148,11 +145,6 @@ func (s *Server) setupRoutes() {
 		r.Get("/metrics/summary", s.getMetricsSummary)
 		r.Get("/metrics/events", s.getMetricsEvents)
 
-		r.Get("/templates", s.listTemplates)
-		r.Post("/templates", s.createTemplate)
-		r.Get("/templates/{id}", s.getTemplate)
-		r.Put("/templates/{id}", s.updateTemplate)
-		r.Delete("/templates/{id}", s.deleteTemplate)
 	})
 
 	s.router = r
@@ -1018,12 +1010,20 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, logs)
 }
 
+type configTemplateJSON struct {
+	Name         string `json:"name"`
+	Provider     string `json:"provider"`
+	Model        string `json:"model,omitempty"`
+	SystemPrompt string `json:"systemPrompt"`
+}
+
 type configJSON struct {
-	Server  configServerJSON   `json:"server"`
-	Daemon  configDaemonJSON   `json:"daemon"`
-	Session configSessionJSON  `json:"session"`
-	Claude  configClaudeJSON   `json:"claude"`
-	Prompts *configPromptsJSON `json:"prompts,omitempty"`
+	Server    configServerJSON     `json:"server"`
+	Daemon    configDaemonJSON     `json:"daemon"`
+	Session   configSessionJSON    `json:"session"`
+	Claude    configClaudeJSON     `json:"claude"`
+	Prompts   *configPromptsJSON   `json:"prompts,omitempty"`
+	Templates []configTemplateJSON `json:"templates"`
 }
 
 type configPromptsJSON struct {
@@ -1044,20 +1044,40 @@ type configClaudeJSON struct {
 }
 
 func configToJSON(cfg *config.Config) configJSON {
+	templates := make([]configTemplateJSON, len(cfg.Templates))
+	for i, t := range cfg.Templates {
+		templates[i] = configTemplateJSON{
+			Name:         t.Name,
+			Provider:     t.Provider,
+			Model:        t.Model,
+			SystemPrompt: t.SystemPrompt,
+		}
+	}
 	return configJSON{
-		Server:  configServerJSON{Port: cfg.Server.Port},
-		Daemon:  configDaemonJSON{Interval: cfg.Daemon.Interval},
-		Session: configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
-		Claude:  configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
+		Server:    configServerJSON{Port: cfg.Server.Port},
+		Daemon:    configDaemonJSON{Interval: cfg.Daemon.Interval},
+		Session:   configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
+		Claude:    configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
+		Templates: templates,
 	}
 }
 
 func jsonToConfig(j configJSON) *config.Config {
+	templates := make([]config.RoleTemplate, len(j.Templates))
+	for i, t := range j.Templates {
+		templates[i] = config.RoleTemplate{
+			Name:         t.Name,
+			Provider:     t.Provider,
+			Model:        t.Model,
+			SystemPrompt: t.SystemPrompt,
+		}
+	}
 	return &config.Config{
-		Server:  config.ServerConfig{Port: j.Server.Port},
-		Daemon:  config.DaemonConfig{Interval: j.Daemon.Interval},
-		Session: config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand},
-		Claude:  config.ClaudeConfig{PermissionMode: j.Claude.PermissionMode},
+		Server:    config.ServerConfig{Port: j.Server.Port},
+		Daemon:    config.DaemonConfig{Interval: j.Daemon.Interval},
+		Session:   config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand},
+		Claude:    config.ClaudeConfig{PermissionMode: j.Claude.PermissionMode},
+		Templates: templates,
 	}
 }
 
@@ -1342,98 +1362,6 @@ func (s *Server) getCodexVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	version := strings.TrimSpace(string(out))
 	writeJSON(w, http.StatusOK, map[string]string{"version": version})
-}
-
-// Template handlers
-
-type templateRequest struct {
-	Name         string `json:"name"`
-	SystemPrompt string `json:"systemPrompt"`
-	Provider     string `json:"provider"`
-	Model        string `json:"model"`
-}
-
-func (s *Server) listTemplates(w http.ResponseWriter, r *http.Request) {
-	nameFilter := r.URL.Query().Get("name")
-	if nameFilter != "" {
-		tmpl, err := s.templates.GetByName(nameFilter)
-		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				writeJSON(w, http.StatusOK, []session.RoleTemplate{})
-				return
-			}
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, []session.RoleTemplate{*tmpl})
-		return
-	}
-
-	templates, err := s.templates.List()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if templates == nil {
-		templates = []session.RoleTemplate{}
-	}
-	writeJSON(w, http.StatusOK, templates)
-}
-
-func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
-	var req templateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "name is required")
-		return
-	}
-	t, err := s.templates.Create(req.Name, req.SystemPrompt, session.ProviderName(req.Provider), req.Model)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusCreated, t)
-}
-
-func (s *Server) getTemplate(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	t, err := s.templates.Get(id)
-	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, t)
-}
-
-func (s *Server) updateTemplate(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	var req templateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
-	if req.Name == "" {
-		writeError(w, http.StatusBadRequest, "name is required")
-		return
-	}
-	t, err := s.templates.Update(id, req.Name, req.SystemPrompt, session.ProviderName(req.Provider), req.Model)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, t)
-}
-
-func (s *Server) deleteTemplate(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if err := s.templates.Delete(id); err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // helpers
