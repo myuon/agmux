@@ -244,7 +244,7 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
 }
 
 export type DisplayGroup =
-  | { role: "user" | "user_btw" | "assistant"; items: StreamDisplayItem[] }
+  | { role: "user" | "assistant"; items: StreamDisplayItem[] }
   | { role: "system"; items: StreamDisplayItem[] };
 
 // Merge assistant/user entries into display items, pairing tool_use with tool_result by id
@@ -387,7 +387,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
 
     const blocks = parseStreamContentBlocks(entry);
 
-    const role = entry.type as "user" | "user_btw" | "assistant";
+    const role = entry.type as "user" | "assistant";
     const items: StreamDisplayItem[] = [];
 
     if (entry.type === "assistant") {
@@ -512,7 +512,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
           }
         }
       }
-    } else if (entry.type === "user" || entry.type === "user_btw") {
+    } else if (entry.type === "user") {
       // Skip user text that was folded into a Skill tool call
       if (skillSkipIndices.has(idx)) {
         continue;

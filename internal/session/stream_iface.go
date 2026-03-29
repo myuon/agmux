@@ -10,8 +10,6 @@ type StreamProcessInterface interface {
 	Send(message string) error
 	// SendWithImages writes a user message with optional images.
 	SendWithImages(message string, images []ImageData) error
-	// SendBtw writes an off-topic (btw) message that doesn't pollute the main context.
-	SendBtw(message string) error
 
 	// SetOnSessionID sets a callback for CLI session ID capture.
 	SetOnSessionID(fn func(cliSessionID string))

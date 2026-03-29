@@ -6,7 +6,7 @@ import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, FolderOpen,
   Sparkles, Settings, Copy,
   RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
-  Code, Eye, X, AlertTriangle, MessageCircleMore,
+  Code, Eye, X, AlertTriangle,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
@@ -140,7 +140,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const activeTasks = useMemo(() => {
     const entries = streamLines
       .map((line) => line as StreamEntry)
-      .filter((e: StreamEntry) => e.type === "user" || e.type === "user_btw" || e.type === "assistant" || e.type === "system");
+      .filter((e: StreamEntry) => e.type === "user" || e.type === "assistant" || e.type === "system");
     return extractActiveTasks(entries);
   }, [streamLines]);
 
@@ -325,12 +325,6 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     setMessage("");
     setPendingImages([]);
     // Stream mode updates arrive via WebSocket automatically
-  };
-
-  const handleBtw = async () => {
-    if (!sessionId || !message.trim()) return;
-    await api.sendBtwToSession(sessionId, message);
-    setMessage("");
   };
 
   const sendForm = session ? (
@@ -602,16 +596,6 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             className="block w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none h-9 overflow-auto"
           />
         </div>
-        {/* BTW button */}
-        <IconButton
-          shape="circle"
-          variant="secondary"
-          type="button"
-          onClick={handleBtw}
-          title="BTW (off-topic message)"
-        >
-          <MessageCircleMore className="w-4 h-4" />
-        </IconButton>
         {/* Send button */}
         <IconButton shape="circle" variant="primary" type="submit">
           <SendHorizonal className="w-4 h-4" />
