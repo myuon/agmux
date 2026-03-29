@@ -35,6 +35,22 @@ type DeferredData = {
   providerVersion: string | null;
 };
 
+function ParentSessionLink({ parentId }: { parentId: string }) {
+  const [parentName, setParentName] = useState<string | null>(null);
+  useEffect(() => {
+    api.getSession(parentId).then((s) => setParentName(s.name)).catch(() => {});
+  }, [parentId]);
+  return (
+    <div className="flex items-center gap-1 mb-1 text-xs sm:text-sm text-blue-500">
+      <GitBranch className="w-3.5 h-3.5 shrink-0" />
+      <span>Sub-session of</span>
+      <Link to={`/sessions/${parentId}`} className="underline hover:text-blue-700">
+        {parentName ?? parentId}
+      </Link>
+    </div>
+  );
+}
+
 function SessionPageSkeleton() {
   return (
     <div className="h-dvh flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 max-w-4xl mx-auto">
@@ -650,16 +666,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         )}
       </div>
       {session?.parentSessionId && (
-        <div className="flex items-center gap-1 mb-1 text-xs text-blue-500">
-          <GitBranch className="w-3 h-3 shrink-0" />
-          <span>Sub-session of </span>
-          <Link
-            to={`/sessions/${session.parentSessionId}`}
-            className="underline hover:text-blue-700"
-          >
-            {session.parentSessionId.slice(0, 8)}...
-          </Link>
-        </div>
+        <ParentSessionLink parentId={session.parentSessionId} />
       )}
       {session ? (
         <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm text-gray-500">
