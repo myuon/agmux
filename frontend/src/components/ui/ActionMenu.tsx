@@ -35,7 +35,7 @@ export function ActionMenuItem({ icon, label, onClick, variant = "default", disa
       }}
       disabled={disabled}
     >
-      {icon} {label}
+      <span className="w-4 h-4 shrink-0 flex items-center justify-center">{icon}</span> {label}
     </button>
   );
 }
