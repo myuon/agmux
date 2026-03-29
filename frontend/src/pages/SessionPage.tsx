@@ -647,11 +647,12 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         )}
       </div>
       {session?.parentSessionId && (
-        <div className="flex items-center gap-1 mb-1 text-xs text-blue-500">
+        <div className="flex items-center gap-1 mb-1 text-xs text-blue-500 relative z-10">
           <GitBranch className="w-3 h-3" />
           <span>Sub-session of </span>
           <button
-            className="underline hover:text-blue-700"
+            type="button"
+            className="underline hover:text-blue-700 cursor-pointer"
             onClick={() => navigate(`/sessions/${session.parentSessionId}`)}
           >
             {session.parentSessionId.slice(0, 8)}...
@@ -945,7 +946,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         >
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              セッ���ョン名
+              セッション名
             </label>
             <input
               type="text"
