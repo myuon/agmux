@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate, useLoaderData, Await } from "react-router-dom";
+import { useParams, useNavigate, useLoaderData, Await, Link } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -647,16 +647,15 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         )}
       </div>
       {session?.parentSessionId && (
-        <div className="flex items-center gap-1 mb-1 text-xs text-blue-500 relative z-10">
-          <GitBranch className="w-3 h-3" />
+        <div className="flex items-center gap-1 mb-1 text-xs text-blue-500">
+          <GitBranch className="w-3 h-3 shrink-0" />
           <span>Sub-session of </span>
-          <button
-            type="button"
-            className="underline hover:text-blue-700 cursor-pointer"
-            onClick={() => navigate(`/sessions/${session.parentSessionId}`)}
+          <Link
+            to={`/sessions/${session.parentSessionId}`}
+            className="underline hover:text-blue-700"
           >
             {session.parentSessionId.slice(0, 8)}...
-          </button>
+          </Link>
         </div>
       )}
       {session ? (
