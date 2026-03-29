@@ -87,6 +87,14 @@ Other Commands:{{range .Commands}}{{if and (ne .Name "session") (not .Hidden) .I
 
 Flags:
 {{.LocalFlags.FlagUsages}}
+Examples:
+  agmux session create my-task -m "Fix the login bug" -p ./my-project
+  agmux session create codex-task --provider codex --model o4-mini -m "Add tests"
+  agmux session list
+  agmux session send 5LEsz "Please also update the README"
+  agmux session history 5LEsz -n 20
+  agmux session history 5LEsz -f
+
 Use "agmux [command] --help" for more information about a command.
 `)
 
