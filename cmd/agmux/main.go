@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -95,6 +96,7 @@ Examples:
   agmux session history 5LEsz -n 20                           # Show last 20 conversation entries
   agmux session history 5LEsz --offset 10 -n 20               # Show 20 entries starting from the 11th
   agmux session history 5LEsz -f                              # Follow conversation in realtime
+  agmux session info 5LEsz                                    # Show detailed session info (process, socket, stream)
 
 Use "agmux [command] --help" for more information about a command.
 `)
@@ -308,6 +310,7 @@ func sessionCmd() *cobra.Command {
 	cmd.AddCommand(sessionSendCmd())
 	cmd.AddCommand(sessionBroadcastCmd())
 	cmd.AddCommand(sessionHistoryCmd())
+	cmd.AddCommand(sessionInfoCmd())
 
 	return cmd
 }
@@ -692,6 +695,131 @@ The session ID can be a short prefix (e.g. first 8 characters from "session list
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output raw JSONL lines")
 
 	return cmd
+}
+
+func sessionInfoCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "info <id>",
+		Short: "Show detailed session information (for debugging)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			prefix := args[0]
+
+			cfg, _ := config.Load()
+			_, database, err := initManager(cfg, cfg.Server.Port, nil)
+			if err != nil {
+				return err
+			}
+			defer database.Close()
+
+			// Find session by prefix match
+			var s session.Session
+			var status, sessionType, providerStr string
+			var prompt, systemPrompt, parentSessionID, currentTask, goal, lastError sql.NullString
+			var holderPID int
+			err = database.QueryRow(
+				`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, current_task, goal, last_error, holder_pid, clear_offset, created_at, updated_at
+				 FROM sessions WHERE id LIKE ?`,
+				prefix+"%",
+			).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &currentTask, &goal, &lastError, &holderPID, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt)
+			if err != nil {
+				return fmt.Errorf("session not found: %s", prefix)
+			}
+			s.Status = session.Status(status)
+			s.Type = session.SessionType(sessionType)
+			s.Provider = session.ProviderName(providerStr)
+
+			// Session metadata
+			fmt.Printf("Session:        %s\n", s.ID)
+			fmt.Printf("Name:           %s\n", s.Name)
+			fmt.Printf("Status:         %s\n", s.Status)
+			fmt.Printf("Type:           %s\n", s.Type)
+			fmt.Printf("Provider:       %s\n", s.Provider)
+			fmt.Printf("Model:          %s\n", s.Model)
+			fmt.Printf("Project:        %s\n", s.ProjectPath)
+			fmt.Printf("CLI Session ID: %s\n", s.CliSessionID)
+			if parentSessionID.Valid && parentSessionID.String != "" {
+				fmt.Printf("Parent:         %s\n", parentSessionID.String)
+			}
+			if currentTask.Valid && currentTask.String != "" {
+				fmt.Printf("Current Task:   %s\n", currentTask.String)
+			}
+			if goal.Valid && goal.String != "" {
+				fmt.Printf("Goal:           %s\n", goal.String)
+			}
+			if lastError.Valid && lastError.String != "" {
+				fmt.Printf("Last Error:     %s\n", lastError.String)
+			}
+			fmt.Printf("Clear Offset:   %d\n", s.ClearOffset)
+			fmt.Printf("Created:        %s\n", s.CreatedAt.Format("2006-01-02 15:04:05"))
+			fmt.Printf("Updated:        %s\n", s.UpdatedAt.Format("2006-01-02 15:04:05"))
+
+			// Process info
+			fmt.Println()
+			fmt.Printf("Holder PID:     %d\n", holderPID)
+			if holderPID > 0 {
+				alive := session.IsHolderAlive(holderPID)
+				fmt.Printf("Holder Alive:   %v\n", alive)
+				if alive {
+					// Find child CLI process
+					childPIDs, _ := findChildPIDs(holderPID)
+					for _, cpid := range childPIDs {
+						fmt.Printf("Child PID:      %d\n", cpid)
+					}
+				}
+			}
+
+			// Socket info
+			sockPath := session.SocketPath(s.ID)
+			fmt.Printf("Socket Path:    %s\n", sockPath)
+			if _, err := os.Stat(sockPath); err == nil {
+				fmt.Printf("Socket Exists:  true\n")
+			} else {
+				fmt.Printf("Socket Exists:  false\n")
+			}
+
+			// Stream file info
+			streamsDir, _ := db.StreamsDir()
+			streamPath := filepath.Join(streamsDir, s.ID+".jsonl")
+			fmt.Printf("Stream File:    %s\n", streamPath)
+			if fi, err := os.Stat(streamPath); err == nil {
+				fmt.Printf("Stream Size:    %s\n", formatBytes(fi.Size()))
+			} else {
+				fmt.Printf("Stream Size:    (not found)\n")
+			}
+
+			return nil
+		},
+	}
+}
+
+func findChildPIDs(parentPID int) ([]int, error) {
+	out, err := exec.Command("pgrep", "-P", fmt.Sprintf("%d", parentPID)).Output()
+	if err != nil {
+		return nil, err
+	}
+	var pids []int
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		var pid int
+		if _, err := fmt.Sscanf(line, "%d", &pid); err == nil {
+			pids = append(pids, pid)
+		}
+	}
+	return pids, nil
+}
+
+func formatBytes(b int64) string {
+	switch {
+	case b >= 1024*1024:
+		return fmt.Sprintf("%.1f MB", float64(b)/(1024*1024))
+	case b >= 1024:
+		return fmt.Sprintf("%.1f KB", float64(b)/1024)
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
 }
 
 // readSessionLines reads JSONL lines from a stream file, respecting clearOffset.
