@@ -416,7 +416,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   }
                 }}
               />
-              {session.status !== "stopped" && session.type !== "controller" && (
+              {session.status !== "paused" && session.status !== "exited" && session.type !== "controller" && (
                 <ActionMenuItem
                   icon={<Square className="w-4 h-4" />}
                   label="Stop session"
@@ -714,7 +714,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         />
       )}
 
-      {session && session.status === "stopped" && session.lastError && (
+      {session && session.status === "exited" && session.lastError && (
         <div className="mb-2 shrink-0">
           <AlertBanner variant="error">
             {session.lastError}

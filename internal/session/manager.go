@@ -300,7 +300,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		ProjectPath:   projectPath,
 		InitialPrompt: prompt,
 		SystemPrompt:  customSystemPrompt,
-		Status:        StatusWorking,
+		Status:        StatusIdle,
 		Type:          TypeWorker,
 		Provider:      pn,
 		Model:         model,
@@ -507,7 +507,7 @@ func (m *Manager) Fork(id string) (*Session, error) {
 		Name:            newName,
 		ProjectPath:     src.ProjectPath,
 		SystemPrompt:    src.SystemPrompt,
-		Status:          StatusWorking,
+		Status:          StatusIdle,
 		Type:            TypeWorker,
 		Provider:        src.Provider,
 		Model:           src.Model,
@@ -559,7 +559,7 @@ func (m *Manager) Stop(id string) error {
 	// Stop stream process if exists
 	m.stopStreamProcess(id)
 
-	_, err = m.db.Exec("UPDATE sessions SET status = ?, holder_pid = 0, updated_at = ? WHERE id = ?", string(StatusStopped), time.Now(), id)
+	_, err = m.db.Exec("UPDATE sessions SET status = ?, holder_pid = 0, updated_at = ? WHERE id = ?", string(StatusPaused), time.Now(), id)
 	return err
 }
 
@@ -638,11 +638,11 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp StreamProcessInterf
 		if exitErr != nil {
 			errMsg = exitErr.Error()
 		}
-		m.logger.Warn("claude process exited unexpectedly, updating status to stopped",
+		m.logger.Warn("claude process exited unexpectedly, updating status to exited",
 			"sessionId", sid,
 			"exitError", errMsg,
 		)
-		if err := m.UpdateStatusWithError(sid, StatusStopped, errMsg); err != nil {
+		if err := m.UpdateStatusWithError(sid, StatusExited, errMsg); err != nil {
 			m.logger.Error("failed to update status after process exit", "sessionId", sid, "error", err)
 		}
 		// Clean up the stream process from the map
@@ -978,7 +978,7 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil && (existing.Status == StatusWorking || existing.Status == StatusIdle || existing.Status == StatusQuestionWaiting) {
+	if existing != nil && (existing.Status == StatusWorking || existing.Status == StatusIdle || existing.Status == StatusWaitingInput) {
 		// Already running, return existing
 		return existing, nil
 	}
@@ -1022,7 +1022,7 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 		ID:          id,
 		Name:        name,
 		ProjectPath: projectPath,
-		Status:      StatusWorking,
+		Status:      StatusIdle,
 		Type:        TypeController,
 		Provider:    ProviderClaude,
 		CreatedAt:   now,

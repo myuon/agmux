@@ -348,7 +348,7 @@ func (s *Server) stopSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordSessionAction(id, "session_stop", "")
-	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "paused"})
 }
 
 func (s *Server) sendToSession(w http.ResponseWriter, r *http.Request) {
@@ -409,10 +409,9 @@ func (s *Server) broadcastToSessions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		activeStatuses := map[session.Status]bool{
-			session.StatusWorking:         true,
-			session.StatusIdle:            true,
-			session.StatusQuestionWaiting: true,
-			session.StatusAlignmentNeeded: true,
+			session.StatusWorking:      true,
+			session.StatusIdle:         true,
+			session.StatusWaitingInput: true,
 		}
 		for _, sess := range sessions {
 			// Skip external sessions
@@ -578,6 +577,11 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 	// Create escalation and get response channel
 	ch := s.escalations.Create(req.ID, sessionID, req.Message, timeoutSeconds)
 
+	// Update session status to waiting_input
+	if err := s.sessions.UpdateStatus(sessionID, session.StatusWaitingInput); err != nil {
+		slog.Error("failed to update session status to waiting_input", "error", err)
+	}
+
 	// Broadcast WebSocket notification (after timeout is determined)
 	s.hub.Broadcast(Message{
 		Type: "escalation",
@@ -595,6 +599,9 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 	select {
 	case response := <-ch:
 		s.escalations.Cleanup(req.ID)
+		if err := s.sessions.UpdateStatus(sessionID, session.StatusWorking); err != nil {
+			slog.Error("failed to update session status to working after escalation response", "error", err)
+		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status":    "responded",
 			"response":  response,
@@ -603,6 +610,9 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 	case <-time.After(timeout):
 		autoResponse := "ユーザーが未応答のため、あなたの判断で進めてください。判断が却下される可能性があるので、リバート可能な形（コミットを細かく打つなど）で作業を進めてください。"
 		s.escalations.MarkTimedOut(req.ID, autoResponse)
+		if err := s.sessions.UpdateStatus(sessionID, session.StatusWorking); err != nil {
+			slog.Error("failed to update session status to working after escalation timeout", "error", err)
+		}
 		// Broadcast timeout notification
 		s.hub.Broadcast(Message{
 			Type: "escalation_timeout",
@@ -729,6 +739,11 @@ func (s *Server) createPermission(w http.ResponseWriter, r *http.Request) {
 
 	ch := s.permissions.Create(req.ID, sessionID, req.ToolName, req.Input, timeoutSeconds)
 
+	// Update session status to waiting_input
+	if err := s.sessions.UpdateStatus(sessionID, session.StatusWaitingInput); err != nil {
+		slog.Error("failed to update session status to waiting_input", "error", err)
+	}
+
 	s.hub.Broadcast(Message{
 		Type: "permission_prompt",
 		Data: map[string]interface{}{
@@ -745,6 +760,9 @@ func (s *Server) createPermission(w http.ResponseWriter, r *http.Request) {
 	select {
 	case response := <-ch:
 		s.permissions.Cleanup(req.ID)
+		if err := s.sessions.UpdateStatus(sessionID, session.StatusWorking); err != nil {
+			slog.Error("failed to update session status to working after permission response", "error", err)
+		}
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"status":    "responded",
 			"response":  response,
@@ -753,6 +771,9 @@ func (s *Server) createPermission(w http.ResponseWriter, r *http.Request) {
 	case <-time.After(timeout):
 		autoResponse := "allow"
 		s.permissions.MarkTimedOut(req.ID, autoResponse)
+		if err := s.sessions.UpdateStatus(sessionID, session.StatusWorking); err != nil {
+			slog.Error("failed to update session status to working after permission timeout", "error", err)
+		}
 		s.hub.Broadcast(Message{
 			Type: "permission_timeout",
 			Data: map[string]interface{}{

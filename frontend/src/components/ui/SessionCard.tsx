@@ -52,7 +52,7 @@ export function SessionCard({
       {currentTask && (
         <p className="text-xs text-indigo-600 truncate mb-0.5">{currentTask}</p>
       )}
-      {status === "stopped" && lastError && (
+      {status === "exited" && lastError && (
         <p className="text-xs text-red-600 truncate mb-0.5" title={lastError}>
           Error: {lastError}
         </p>

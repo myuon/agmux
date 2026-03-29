@@ -99,7 +99,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
                   timeAgo={timeAgo(s.createdAt)}
                   onClick={() => navigate(`/sessions/${s.id}`)}
                   actions={
-                    s.type === "controller" && s.status === "stopped" ? (
+                    s.type === "controller" && (s.status === "paused" || s.status === "exited") ? (
                       <SecondaryButton
                         onClick={(e) => { e.stopPropagation(); onRestartController(); }}
                       >

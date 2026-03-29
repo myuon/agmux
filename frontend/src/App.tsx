@@ -75,8 +75,8 @@ function useGlobalNotifications() {
       if (!notify) return;
       const data = msg.data as { sessionId: string; sessionName: string; status: string; summary: string };
       const defaultStatuses: Record<string, boolean> = {
-        working: false, idle: true, question_waiting: true,
-        alignment_needed: true, paused: false, stopped: false,
+        working: false, idle: true, waiting_input: true,
+        paused: false, exited: false,
       };
       const saved = localStorage.getItem("agmux-notify-statuses");
       const statusFilters = saved ? JSON.parse(saved) as Record<string, boolean> : defaultStatuses;
