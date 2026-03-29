@@ -53,6 +53,9 @@ type SessionService interface {
 	// SetOnNewLines sets a callback for real-time stream updates.
 	SetOnNewLines(fn func(sessionID string, newLines []string, total int))
 
+	// SetOnStatusChange sets a callback for real-time session status changes.
+	SetOnStatusChange(fn func(sessionID string, status Status, lastError string))
+
 	// IsStreamProcessAlive returns true if a stream process exists and has not exited.
 	IsStreamProcessAlive(id string) bool
 

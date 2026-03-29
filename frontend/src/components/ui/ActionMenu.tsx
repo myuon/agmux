@@ -5,7 +5,7 @@ interface ActionMenuProps {
 
 export function ActionMenu({ children, className = "" }: ActionMenuProps) {
   return (
-    <div className={`bg-white border border-gray-200 rounded-lg shadow-lg min-w-[160px] ${className}`}>
+    <div className={`bg-white border border-gray-200 rounded-lg shadow-lg w-max ${className}`}>
       {children}
     </div>
   );
@@ -28,14 +28,14 @@ export function ActionMenuItem({ icon, label, onClick, variant = "default", disa
   return (
     <button
       type="button"
-      className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 ${variantClasses} ${disabled ? "opacity-40 pointer-events-none" : ""}`}
+      className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 whitespace-nowrap ${variantClasses} ${disabled ? "opacity-40 pointer-events-none" : ""}`}
       onMouseDown={(e) => {
         e.preventDefault();
         onClick?.();
       }}
       disabled={disabled}
     >
-      {icon} {label}
+      <span className="w-4 h-4 shrink-0 flex items-center justify-center">{icon}</span> {label}
     </button>
   );
 }

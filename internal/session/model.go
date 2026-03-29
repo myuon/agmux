@@ -42,6 +42,7 @@ type Session struct {
 	CliSessionID    string       `json:"cliSessionId,omitempty"`
 	Model           string       `json:"model,omitempty"`
 	ParentSessionID string       `json:"parentSessionId,omitempty"`
+	RoleTemplate    string       `json:"roleTemplate,omitempty"`
 	CurrentTask     string       `json:"currentTask,omitempty"`
 	Goal            string       `json:"goal,omitempty"`
 	Goals           GoalStack    `json:"goals,omitempty"`
