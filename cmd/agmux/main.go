@@ -14,8 +14,11 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
+	"sync"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -38,12 +41,65 @@ func main() {
 		Short: "AI Agent Multiplexer",
 	}
 
-	rootCmd.AddCommand(sessionCmd())
+	sesCmd := sessionCmd()
+	rootCmd.AddCommand(sesCmd)
 	rootCmd.AddCommand(serveCmd())
 	rootCmd.AddCommand(mcpCmd())
 	rootCmd.AddCommand(logsCmd())
 	rootCmd.AddCommand(daemonCmd())
 	rootCmd.AddCommand(holderCmd())
+
+	// Subcommand help template: shows .Use (with args) instead of just .Name
+	subCmdHelpTpl := `{{.Short}}
+
+Usage:
+  {{.UseLine}}{{if .HasAvailableSubCommands}}
+  {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
+
+Aliases:
+  {{.NameAndAliases}}{{end}}{{if .HasAvailableSubCommands}}
+
+Available Commands:{{range .Commands}}{{if .IsAvailableCommand}}
+  {{rpad .Use 30}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+
+Flags:
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableSubCommands}}
+
+Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
+`
+	// Apply to all subcommands that have children
+	for _, c := range rootCmd.Commands() {
+		if c.HasSubCommands() {
+			c.SetHelpTemplate(subCmdHelpTpl)
+		}
+	}
+
+	// Root help template: inlines session subcommands
+	rootCmd.SetHelpTemplate(`AI Agent Multiplexer
+
+Usage:
+  agmux [command]
+
+Session Commands:
+{{range .Commands}}{{if eq .Name "session"}}{{range .Commands}}{{if not .Hidden}}  agmux session {{rpad .Use 30}} {{.Short}}
+{{end}}{{end}}{{end}}{{end}}
+Other Commands:{{range .Commands}}{{if and (ne .Name "session") (not .Hidden) .IsAvailableCommand}}
+  {{rpad .Name .NamePadding}} {{.Short}}{{end}}{{end}}
+
+Flags:
+{{.LocalFlags.FlagUsages}}
+Examples:
+  agmux session create my-task -m "Fix the login bug" -p ./my-project   # Create a Claude session with default model
+  agmux session create codex-task --provider codex --model gpt-5.4 -m "Add tests"  # Create a Codex session with specific model
+  agmux session list                                          # List all sessions with status, provider, and model
+  agmux session send 5LEsz "Please also update the README"    # Send a message to a running session
+  agmux session history 5LEsz -n 20                           # Show last 20 conversation entries
+  agmux session history 5LEsz --offset 10 -n 20               # Show 20 entries starting from the 11th
+  agmux session history 5LEsz -f                              # Follow conversation in realtime
+  agmux session info 5LEsz                                    # Show detailed session info (process, socket, stream)
+
+Use "agmux [command] --help" for more information about a command.
+`)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -253,6 +309,8 @@ func sessionCmd() *cobra.Command {
 	cmd.AddCommand(sessionForkCmd())
 	cmd.AddCommand(sessionSendCmd())
 	cmd.AddCommand(sessionBroadcastCmd())
+	cmd.AddCommand(sessionHistoryCmd())
+	cmd.AddCommand(sessionInfoCmd())
 
 	return cmd
 }
@@ -393,14 +451,14 @@ func sessionListCmd() *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ID\tNAME\tSTATUS\tPROJECT\tCREATED")
+			fmt.Fprintln(w, "ID\tNAME\tSTATUS\tPROVIDER\tMODEL\tPROJECT\tCREATED")
 			for _, s := range sessions {
 				id := s.ID
 				if len(id) > 8 {
 					id = id[:8]
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
-					id, s.Name, s.Status, s.ProjectPath, s.CreatedAt.Format("2006-01-02 15:04:05"))
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+					id, s.Name, s.Status, s.Provider, s.Model, s.ProjectPath, s.CreatedAt.Format("2006-01-02 15:04:05"))
 			}
 			w.Flush()
 			return nil
@@ -573,6 +631,468 @@ func broadcastViaAPI(text string, sessionIDs []string, filter string, port int) 
 	}
 	fmt.Printf("Broadcast complete: %d session(s)\n", len(result.Results))
 	return nil
+}
+
+func sessionHistoryCmd() *cobra.Command {
+	var lines int
+	var offset int
+	var follow bool
+	var jsonOutput bool
+
+	cmd := &cobra.Command{
+		Use:   "history <id>",
+		Short: "Show conversation history of a session",
+		Long: `Display the conversation history from a session's JSONL stream log.
+
+The session ID can be a short prefix (e.g. first 8 characters from "session list").`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			prefix := args[0]
+
+			cfg, _ := config.Load()
+			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
+			if err != nil {
+				return err
+			}
+			defer database.Close()
+
+			// Find session by prefix match
+			sessions, err := mgr.List()
+			if err != nil {
+				return err
+			}
+			var matched *session.Session
+			for _, s := range sessions {
+				if strings.HasPrefix(s.ID, prefix) {
+					if matched != nil {
+						return fmt.Errorf("ambiguous session prefix %q: matches %s and %s", prefix, matched.ID, s.ID)
+					}
+					sCopy := s
+					matched = &sCopy
+				}
+			}
+			if matched == nil {
+				return fmt.Errorf("no session found matching prefix: %s", prefix)
+			}
+
+			// Get stream file path
+			streamsDir, err := db.StreamsDir()
+			if err != nil {
+				return fmt.Errorf("get streams dir: %w", err)
+			}
+			logPath := filepath.Join(streamsDir, matched.ID+".jsonl")
+
+			if jsonOutput {
+				return tailSessionLogRaw(logPath, lines, offset, follow, matched.ClearOffset)
+			}
+			return tailSessionLogFormatted(logPath, lines, offset, follow, matched.ClearOffset)
+		},
+	}
+
+	cmd.Flags().IntVarP(&lines, "limit", "n", 50, "Max number of entries to show (0 = all)")
+	cmd.Flags().IntVar(&offset, "offset", 0, "Skip first N lines before showing results")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output in realtime")
+	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output raw JSONL lines")
+
+	return cmd
+}
+
+func sessionInfoCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "info <id>",
+		Short: "Show detailed session information (for debugging)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			prefix := args[0]
+
+			cfg, _ := config.Load()
+			_, database, err := initManager(cfg, cfg.Server.Port, nil)
+			if err != nil {
+				return err
+			}
+			defer database.Close()
+
+			// Find session by prefix match
+			var s session.Session
+			var status, sessionType, providerStr string
+			var prompt, systemPrompt, parentSessionID, currentTask, goal, lastError sql.NullString
+			var holderPID int
+			err = database.QueryRow(
+				`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, current_task, goal, last_error, holder_pid, clear_offset, created_at, updated_at
+				 FROM sessions WHERE id LIKE ?`,
+				prefix+"%",
+			).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &currentTask, &goal, &lastError, &holderPID, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt)
+			if err != nil {
+				return fmt.Errorf("session not found: %s", prefix)
+			}
+			s.Status = session.Status(status)
+			s.Type = session.SessionType(sessionType)
+			s.Provider = session.ProviderName(providerStr)
+
+			// Session metadata
+			fmt.Printf("Session:        %s\n", s.ID)
+			fmt.Printf("Name:           %s\n", s.Name)
+			fmt.Printf("Status:         %s\n", s.Status)
+			fmt.Printf("Type:           %s\n", s.Type)
+			fmt.Printf("Provider:       %s\n", s.Provider)
+			fmt.Printf("Model:          %s\n", s.Model)
+			fmt.Printf("Project:        %s\n", s.ProjectPath)
+			fmt.Printf("CLI Session ID: %s\n", s.CliSessionID)
+			if parentSessionID.Valid && parentSessionID.String != "" {
+				fmt.Printf("Parent:         %s\n", parentSessionID.String)
+			}
+			if currentTask.Valid && currentTask.String != "" {
+				fmt.Printf("Current Task:   %s\n", currentTask.String)
+			}
+			if goal.Valid && goal.String != "" {
+				fmt.Printf("Goal:           %s\n", goal.String)
+			}
+			if lastError.Valid && lastError.String != "" {
+				fmt.Printf("Last Error:     %s\n", lastError.String)
+			}
+			fmt.Printf("Clear Offset:   %d\n", s.ClearOffset)
+			fmt.Printf("Created:        %s\n", s.CreatedAt.Format("2006-01-02 15:04:05"))
+			fmt.Printf("Updated:        %s\n", s.UpdatedAt.Format("2006-01-02 15:04:05"))
+
+			// Process info
+			fmt.Println()
+			fmt.Printf("Holder PID:     %d\n", holderPID)
+			if holderPID > 0 {
+				alive := session.IsHolderAlive(holderPID)
+				fmt.Printf("Holder Alive:   %v\n", alive)
+				if alive {
+					// Find child CLI process
+					childPIDs, _ := findChildPIDs(holderPID)
+					for _, cpid := range childPIDs {
+						fmt.Printf("Child PID:      %d\n", cpid)
+					}
+				}
+			}
+
+			// Socket info
+			sockPath := session.SocketPath(s.ID)
+			fmt.Printf("Socket Path:    %s\n", sockPath)
+			if _, err := os.Stat(sockPath); err == nil {
+				fmt.Printf("Socket Exists:  true\n")
+			} else {
+				fmt.Printf("Socket Exists:  false\n")
+			}
+
+			// Stream file info
+			streamsDir, _ := db.StreamsDir()
+			streamPath := filepath.Join(streamsDir, s.ID+".jsonl")
+			fmt.Printf("Stream File:    %s\n", streamPath)
+			if fi, err := os.Stat(streamPath); err == nil {
+				fmt.Printf("Stream Size:    %s\n", formatBytes(fi.Size()))
+			} else {
+				fmt.Printf("Stream Size:    (not found)\n")
+			}
+
+			return nil
+		},
+	}
+}
+
+func findChildPIDs(parentPID int) ([]int, error) {
+	out, err := exec.Command("pgrep", "-P", fmt.Sprintf("%d", parentPID)).Output()
+	if err != nil {
+		return nil, err
+	}
+	var pids []int
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		var pid int
+		if _, err := fmt.Sscanf(line, "%d", &pid); err == nil {
+			pids = append(pids, pid)
+		}
+	}
+	return pids, nil
+}
+
+func formatBytes(b int64) string {
+	switch {
+	case b >= 1024*1024:
+		return fmt.Sprintf("%.1f MB", float64(b)/(1024*1024))
+	case b >= 1024:
+		return fmt.Sprintf("%.1f KB", float64(b)/1024)
+	default:
+		return fmt.Sprintf("%d B", b)
+	}
+}
+
+// readSessionLines reads JSONL lines from a stream file, respecting clearOffset.
+func readSessionLines(logPath string, clearOffset int64) ([]string, error) {
+	f, err := os.Open(logPath)
+	if err != nil {
+		return nil, fmt.Errorf("open stream file: %w", err)
+	}
+	defer f.Close()
+
+	if clearOffset > 0 {
+		if _, err := f.Seek(clearOffset, io.SeekStart); err != nil {
+			return nil, fmt.Errorf("seek to clear offset: %w", err)
+		}
+	}
+
+	var allLines []string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	for scanner.Scan() {
+		allLines = append(allLines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return allLines, nil
+}
+
+func tailSessionLogRaw(logPath string, n int, offset int, follow bool, clearOffset int64) error {
+	allLines, err := readSessionLines(logPath, clearOffset)
+	if err != nil {
+		return err
+	}
+
+	if offset > 0 && offset < len(allLines) {
+		allLines = allLines[offset:]
+	} else if offset >= len(allLines) {
+		allLines = nil
+	}
+	if n > 0 && len(allLines) > n {
+		allLines = allLines[:n]
+	}
+	for _, line := range allLines {
+		fmt.Println(line)
+	}
+
+	if !follow {
+		return nil
+	}
+
+	// For follow mode, open the file and seek to the end
+	f, err := os.Open(logPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.Seek(0, io.SeekEnd); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() { <-sigCh; cancel() }()
+
+	reader := bufio.NewReader(f)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				return err
+			}
+			fmt.Print(line)
+		}
+	}
+}
+
+func tailSessionLogFormatted(logPath string, n int, offset int, follow bool, clearOffset int64) error {
+	allLines, err := readSessionLines(logPath, clearOffset)
+	if err != nil {
+		return err
+	}
+
+	// Filter to displayable lines before applying offset/limit
+	var displayable []string
+	for _, line := range allLines {
+		if isDisplayableLine(line) {
+			displayable = append(displayable, line)
+		}
+	}
+	if offset > 0 && offset < len(displayable) {
+		displayable = displayable[offset:]
+	} else if offset >= len(displayable) {
+		displayable = nil
+	}
+	if n > 0 && len(displayable) > n {
+		displayable = displayable[:n]
+	}
+	for _, line := range displayable {
+		formatSessionLine(line)
+	}
+
+	if !follow {
+		return nil
+	}
+
+	f, err := os.Open(logPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.Seek(0, io.SeekEnd); err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() { <-sigCh; cancel() }()
+
+	reader := bufio.NewReader(f)
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		default:
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				return err
+			}
+			formatSessionLine(strings.TrimRight(line, "\n"))
+		}
+	}
+}
+
+func isDisplayableLine(line string) bool {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "//") {
+		return false
+	}
+	var entry struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		return false
+	}
+	switch entry.Type {
+	case "stream_event", "rate_limit_event":
+		return false
+	}
+	return true
+}
+
+// isTTY reports whether stdout is a terminal.
+var isTTY = sync.OnceValue(func() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+})
+
+// color returns the ANSI escape sequence if stdout is a terminal, otherwise empty string.
+func color(code string) string {
+	if isTTY() {
+		return code
+	}
+	return ""
+}
+
+func formatSessionLine(line string) {
+	line = strings.TrimSpace(line)
+	if line == "" || strings.HasPrefix(line, "//") {
+		return
+	}
+
+	var entry struct {
+		Type    string `json:"type"`
+		Subtype string `json:"subtype"`
+		Message struct {
+			Role    string `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"message"`
+		Result   string `json:"result"`
+		StopReason string `json:"stop_reason"`
+	}
+	if err := json.Unmarshal([]byte(line), &entry); err != nil {
+		return
+	}
+
+	switch entry.Type {
+	case "user":
+		// User message: content can be a string
+		var text string
+		if err := json.Unmarshal(entry.Message.Content, &text); err == nil {
+			fmt.Printf("%s[user]%s %s\n", color("\033[1;34m"), color("\033[0m"), text)
+			return
+		}
+		fmt.Printf("%s[user]%s %s\n", color("\033[1;34m"), color("\033[0m"), string(entry.Message.Content))
+
+	case "assistant":
+		// Assistant message: content is an array of blocks
+		var blocks []struct {
+			Type  string `json:"type"`
+			Text  string `json:"text"`
+			Name  string `json:"name"`
+			Input json.RawMessage `json:"input"`
+		}
+		if err := json.Unmarshal(entry.Message.Content, &blocks); err != nil {
+			fmt.Printf("%s[assistant]%s %s\n", color("\033[1;32m"), color("\033[0m"), string(entry.Message.Content))
+			return
+		}
+		for _, b := range blocks {
+			switch b.Type {
+			case "text":
+				fmt.Printf("%s[assistant]%s %s\n", color("\033[1;32m"), color("\033[0m"), b.Text)
+			case "tool_use":
+				inputStr := string(b.Input)
+				if len(inputStr) > 200 {
+					inputStr = inputStr[:200] + "..."
+				}
+				fmt.Printf("%s[tool: %s]%s %s\n", color("\033[1;33m"), b.Name, color("\033[0m"), inputStr)
+			case "tool_result":
+				fmt.Printf("%s[tool_result]%s %s\n", color("\033[0;36m"), color("\033[0m"), b.Text)
+			}
+		}
+
+	case "result":
+		if entry.Result != "" {
+			summary := entry.Result
+			if len(summary) > 200 {
+				summary = summary[:200] + "..."
+			}
+			fmt.Printf("%s[result:%s]%s %s\n", color("\033[1;35m"), entry.Subtype, color("\033[0m"), summary)
+		} else {
+			fmt.Printf("%s[result:%s]%s (stop_reason: %s)\n", color("\033[1;35m"), entry.Subtype, color("\033[0m"), entry.StopReason)
+		}
+
+	case "system":
+		switch entry.Subtype {
+		case "init":
+			fmt.Printf("%s[system:init]%s session started\n", color("\033[0;90m"), color("\033[0m"))
+		case "task_started":
+			// skip verbose task events
+		case "task_progress":
+			// skip
+		case "task_notification":
+			// skip
+		default:
+			if entry.Subtype != "" {
+				fmt.Printf("%s[system:%s]%s\n", color("\033[0;90m"), entry.Subtype, color("\033[0m"))
+			}
+		}
+
+	case "stream_event":
+		// Skip transient stream events in formatted output
+
+	case "rate_limit_event":
+		// Skip rate limit events
+	}
 }
 
 func mcpCmd() *cobra.Command {
