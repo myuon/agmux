@@ -587,18 +587,26 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   {versionMatch && ` ${versionMatch}`}
                 </Chip>
               );
-              if (session.provider === "claude" && versionMatch) {
-                const fragment = versionMatch.replace(/\./g, "-");
-                return (
-                  <a
-                    href={`https://code.claude.com/docs/en/changelog#${fragment}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="hover:opacity-80"
-                  >
-                    {chip}
-                  </a>
-                );
+              if (versionMatch) {
+                let href: string | undefined;
+                if (session.provider === "claude") {
+                  const fragment = versionMatch.replace(/\./g, "-");
+                  href = `https://code.claude.com/docs/en/changelog#${fragment}`;
+                } else if (session.provider === "codex") {
+                  href = `https://github.com/openai/codex/releases/tag/${versionMatch}`;
+                }
+                if (href) {
+                  return (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:opacity-80"
+                    >
+                      {chip}
+                    </a>
+                  );
+                }
               }
               return chip;
             })()}
