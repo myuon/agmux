@@ -634,11 +634,11 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp StreamProcessInterf
 			return
 		}
 
-		errMsg := "<nil>"
+		var errMsg string
 		if exitErr != nil {
 			errMsg = exitErr.Error()
 		}
-		m.logger.Warn("claude process exited unexpectedly, updating status to exited",
+		m.logger.Warn("process exited unexpectedly, updating status to exited",
 			"sessionId", sid,
 			"exitError", errMsg,
 		)

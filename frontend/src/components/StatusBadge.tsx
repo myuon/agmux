@@ -4,7 +4,7 @@ export const statusDots: Record<Session["status"], string> = {
   working: "bg-green-500",
   idle: "bg-blue-500",
   paused: "bg-yellow-500",
-  exited: "bg-gray-400",
+  exited: "bg-red-500",
   waiting_input: "bg-orange-500",
 };
 

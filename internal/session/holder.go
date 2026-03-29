@@ -120,16 +120,32 @@ func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []str
 	// Wait for CLI process to exit
 	<-h.done
 	exitCode := 0
+	var exitContent string
 	if err := cmd.Wait(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			exitCode = exitErr.ExitCode()
+			exitContent = fmt.Sprintf("process exited with code %d", exitCode)
+		} else {
+			exitContent = err.Error()
 		}
 	}
-	slog.Info("holder: CLI process exited", "code", exitCode, "sessionId", sessionID)
+	// If there was a reader error, include it in the exit message
+	h.readerErrMu.Lock()
+	readerErr := h.readerErr
+	h.readerErrMu.Unlock()
+	if readerErr != "" {
+		if exitContent != "" {
+			exitContent = exitContent + "; " + readerErr
+		} else {
+			exitContent = readerErr
+		}
+	}
+	slog.Info("holder: CLI process exited", "code", exitCode, "content", exitContent, "sessionId", sessionID)
 	h.broadcastControl(HolderControlMessage{
-		Type:  "control",
-		Event: "exited",
-		Code:  exitCode,
+		Type:    "control",
+		Event:   "exited",
+		Code:    exitCode,
+		Content: exitContent,
 	})
 
 	// Give clients a moment to receive the exit notification
@@ -148,6 +164,10 @@ type holder struct {
 
 	clientsMu sync.Mutex
 	clients   map[net.Conn]struct{}
+
+	// readerErr stores any error from readStdout so it can be included in the exit message
+	readerErrMu sync.Mutex
+	readerErr   string
 
 	// restartInfo holds info needed for Codex restart
 	restartMu   sync.Mutex
@@ -178,7 +198,18 @@ func (h *holder) readStdout(stdout io.Reader) {
 	}
 
 	if err := scanner.Err(); err != nil {
-		slog.Error("holder: stdout reader error", "error", err, "sessionId", h.sessionID)
+		errMsg := fmt.Sprintf("stdout reader error: %v", err)
+		slog.Error("holder: "+errMsg, "sessionId", h.sessionID)
+		// Store error for inclusion in exit message
+		h.readerErrMu.Lock()
+		h.readerErr = errMsg
+		h.readerErrMu.Unlock()
+		// Broadcast error to connected clients so the server can update session status
+		h.broadcastControl(HolderControlMessage{
+			Type:    "control",
+			Event:   "error",
+			Content: errMsg,
+		})
 	}
 }
 
