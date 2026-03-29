@@ -45,16 +45,14 @@ export function CreateSession({ onClose, onCreate }: Props) {
       api.getCodexModels()
         .then((models) => {
           setCodexModels(models);
-          const defaultModel = models.find((m) => m.isDefault);
-          setModel(defaultModel ? defaultModel.id : "");
+          setModel("");
         })
         .catch(() => setCodexModels([]))
         .finally(() => setLoadingModels(false));
     } else if (provider === "claude") {
       api.getClaudeModels().then((models) => {
         setClaudeModels(models);
-        const defaultModel = models.find((m) => m.default);
-        setModel(defaultModel ? defaultModel.id : "");
+        setModel("");
       }).catch(() => {
         // Fallback if API is not available
       });
@@ -213,6 +211,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
                 onChange={(e) => setModel(e.target.value)}
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
               >
+                <option value="">Default</option>
                 {claudeModels.map((m) => (
                   <option key={m.id} value={m.id}>
                     {m.name}
