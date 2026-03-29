@@ -109,6 +109,10 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [showForkModal, setShowForkModal] = useState(false);
   const [forkMessage, setForkMessage] = useState("");
   const [forkLoading, setForkLoading] = useState(false);
+  const [showSubSessionModal, setShowSubSessionModal] = useState(false);
+  const [subSessionName, setSubSessionName] = useState("");
+  const [subSessionPrompt, setSubSessionPrompt] = useState("");
+  const [subSessionLoading, setSubSessionLoading] = useState(false);
 
   const providerVersion = deferred.providerVersion;
   const streamCursorRef = useRef<number | null>(null);
@@ -380,6 +384,16 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   }}
                 />
               )}
+              {session.type !== "controller" && (
+                <ActionMenuItem
+                  icon={<Plus className="w-4 h-4" />}
+                  label="Create sub-session"
+                  onClick={() => {
+                    setShowActionMenu(false);
+                    setShowSubSessionModal(true);
+                  }}
+                />
+              )}
               <ActionMenuItem
                 icon={<RotateCcw className="w-4 h-4" />}
                 label="Clear context"
@@ -632,6 +646,18 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           </>
         )}
       </div>
+      {session?.parentSessionId && (
+        <div className="flex items-center gap-1 mb-1 text-xs text-blue-500">
+          <GitBranch className="w-3 h-3" />
+          <span>Sub-session of </span>
+          <button
+            className="underline hover:text-blue-700"
+            onClick={() => navigate(`/sessions/${session.parentSessionId}`)}
+          >
+            {session.parentSessionId.slice(0, 8)}...
+          </button>
+        </div>
+      )}
       {session ? (
         <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm text-gray-500">
           <IconText icon={<FolderOpen className="w-3.5 h-3.5" />} className="text-xs sm:text-sm">
@@ -884,6 +910,78 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               className="px-3 py-1.5 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
             >
               {forkLoading ? "フォーク中..." : "フォーク"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Sub-session Modal */}
+      <Modal open={showSubSessionModal} onClose={() => setShowSubSessionModal(false)} title="サブセッションを作成">
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (subSessionLoading || !session) return;
+            setSubSessionLoading(true);
+            try {
+              const newSession = await api.createSession({
+                name: subSessionName || `${session.name} (sub)`,
+                projectPath: session.projectPath,
+                prompt: subSessionPrompt || undefined,
+                provider: session.provider,
+                model: session.model || undefined,
+                parentSessionId: session.id,
+              });
+              setShowSubSessionModal(false);
+              setSubSessionName("");
+              setSubSessionPrompt("");
+              navigate(`/sessions/${newSession.id}`);
+            } catch {
+              alert("サブセッションの作成に失敗しました");
+            } finally {
+              setSubSessionLoading(false);
+            }
+          }}
+          className="space-y-3"
+        >
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              セッ���ョン名
+            </label>
+            <input
+              type="text"
+              value={subSessionName}
+              onChange={(e) => setSubSessionName(e.target.value)}
+              placeholder={session ? `${session.name} (sub)` : ""}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              初期プロンプト（省略可）
+            </label>
+            <textarea
+              value={subSessionPrompt}
+              onChange={(e) => setSubSessionPrompt(e.target.value)}
+              placeholder="サブセッションに送信するメッセージ"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+              rows={3}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowSubSessionModal(false)}
+              className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+            >
+              キャンセル
+            </button>
+            <button
+              type="submit"
+              disabled={subSessionLoading}
+              className="px-3 py-1.5 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
+            >
+              {subSessionLoading ? "作成中..." : "作成"}
             </button>
           </div>
         </form>

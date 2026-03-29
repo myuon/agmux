@@ -11,6 +11,7 @@ interface SessionCardProps {
   lastError?: string;
   projectPath: string;
   timeAgo: string;
+  isSubSession?: boolean;
   onClick?: () => void;
   actions?: React.ReactNode;
 }
@@ -24,13 +25,14 @@ export function SessionCard({
   lastError,
   projectPath,
   timeAgo,
+  isSubSession,
   onClick,
   actions,
 }: SessionCardProps) {
   return (
     <div
       onClick={onClick}
-      className="border border-gray-200 rounded-lg p-3 transition-shadow bg-white hover:shadow-sm cursor-pointer"
+      className={`border rounded-lg p-3 transition-shadow bg-white hover:shadow-sm cursor-pointer ${isSubSession ? "border-blue-200 border-l-blue-400 border-l-2" : "border-gray-200"}`}
     >
       <div className="flex items-center gap-2 mb-1">
         <StatusDot status={status} />

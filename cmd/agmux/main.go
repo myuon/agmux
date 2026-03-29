@@ -322,6 +322,7 @@ func sessionCreateCmd() *cobra.Command {
 	var provider string
 	var model string
 	var autoApprove bool
+	var parentSessionID string
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -330,7 +331,7 @@ func sessionCreateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Always delegate to the running agmux server so the
 			// child process outlives this CLI invocation.
-			return createSessionViaAPI(args[0], projectPath, prompt, worktree, provider, model, autoApprove)
+			return createSessionViaAPI(args[0], projectPath, prompt, worktree, provider, model, autoApprove, parentSessionID)
 		},
 	}
 
@@ -340,13 +341,14 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&provider, "provider", "claude", "Provider: claude or codex")
 	cmd.Flags().StringVar(&model, "model", "", "Model to use (e.g. claude-sonnet-4-5, o4-mini)")
 	cmd.Flags().BoolVar(&autoApprove, "auto-approve", true, "Enable full-auto mode (bypass permission prompts for Codex)")
+	cmd.Flags().StringVar(&parentSessionID, "parent", "", "Parent session ID to create a sub-session")
 
 	return cmd
 }
 
 // createSessionViaAPI sends a POST /api/sessions request to the running agmux server
 // so that the stream process is owned by the server, not this short-lived CLI process.
-func createSessionViaAPI(name, projectPath, prompt string, worktree bool, provider, model string, autoApprove bool) error {
+func createSessionViaAPI(name, projectPath, prompt string, worktree bool, provider, model string, autoApprove bool, parentSessionID string) error {
 	cfg, _ := config.Load()
 	port := cfg.Server.Port
 
@@ -367,6 +369,9 @@ func createSessionViaAPI(name, projectPath, prompt string, worktree bool, provid
 	}
 	if autoApprove {
 		payload["autoApprove"] = true
+	}
+	if parentSessionID != "" {
+		payload["parentSessionId"] = parentSessionID
 	}
 	body, _ := json.Marshal(payload)
 

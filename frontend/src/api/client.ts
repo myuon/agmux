@@ -31,6 +31,7 @@ export const api = {
     model?: string;
     autoApprove?: boolean;
     systemPrompt?: string;
+    parentSessionId?: string;
   }) =>
     request<Session>("/sessions", {
       method: "POST",

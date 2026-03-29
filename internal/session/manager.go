@@ -207,10 +207,11 @@ func (m *Manager) updateHolderPID(id string, pid int) {
 
 // CreateOpts contains optional parameters for creating a session.
 type CreateOpts struct {
-	Provider     ProviderName
-	Model        string
-	FullAuto     bool   // enable full-auto mode (bypasses permission prompts for Codex)
-	SystemPrompt string // per-session custom system prompt (appended to defaultSystemPrompt)
+	Provider        ProviderName
+	Model           string
+	FullAuto        bool   // enable full-auto mode (bypasses permission prompts for Codex)
+	SystemPrompt    string // per-session custom system prompt (appended to defaultSystemPrompt)
+	ParentSessionID string // parent session ID for sub-session creation
 }
 
 func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts ...CreateOpts) (*Session, error) {
@@ -218,6 +219,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	model := ""
 	fullAuto := false
 	customSystemPrompt := ""
+	parentSessionID := ""
 	if len(opts) > 0 {
 		if opts[0].Provider != "" {
 			pn = opts[0].Provider
@@ -225,6 +227,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		model = opts[0].Model
 		fullAuto = opts[0].FullAuto
 		customSystemPrompt = opts[0].SystemPrompt
+		parentSessionID = opts[0].ParentSessionID
 	}
 
 	// For Codex, resolve default model from config if not explicitly specified
@@ -295,23 +298,24 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 
 	now := time.Now()
 	s := &Session{
-		ID:            id,
-		Name:          name,
-		ProjectPath:   projectPath,
-		InitialPrompt: prompt,
-		SystemPrompt:  customSystemPrompt,
-		Status:        StatusIdle,
-		Type:          TypeWorker,
-		Provider:      pn,
-		Model:         model,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:              id,
+		Name:            name,
+		ProjectPath:     projectPath,
+		InitialPrompt:   prompt,
+		SystemPrompt:    customSystemPrompt,
+		Status:          StatusIdle,
+		Type:            TypeWorker,
+		Provider:        pn,
+		Model:           model,
+		ParentSessionID: parentSessionID,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 
 	if _, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
