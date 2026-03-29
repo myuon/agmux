@@ -88,13 +88,13 @@ Other Commands:{{range .Commands}}{{if and (ne .Name "session") (not .Hidden) .I
 Flags:
 {{.LocalFlags.FlagUsages}}
 Examples:
-  agmux session create my-task -m "Fix the login bug" -p ./my-project
-  agmux session create codex-task --provider codex --model o4-mini -m "Add tests"
-  agmux session list
-  agmux session send 5LEsz "Please also update the README"
-  agmux session history 5LEsz -n 20
-  agmux session history 5LEsz --offset 10 -n 20
-  agmux session history 5LEsz -f
+  agmux session create my-task -m "Fix the login bug" -p ./my-project   # Create a Claude session with default model
+  agmux session create codex-task --provider codex --model o4-mini -m "Add tests"  # Create a Codex session with specific model
+  agmux session list                                          # List all sessions with status, provider, and model
+  agmux session send 5LEsz "Please also update the README"    # Send a message to a running session
+  agmux session history 5LEsz -n 20                           # Show last 20 conversation entries
+  agmux session history 5LEsz --offset 10 -n 20               # Show 20 entries starting from the 11th
+  agmux session history 5LEsz -f                              # Follow conversation in realtime
 
 Use "agmux [command] --help" for more information about a command.
 `)
