@@ -5,7 +5,7 @@ interface ActionMenuProps {
 
 export function ActionMenu({ children, className = "" }: ActionMenuProps) {
   return (
-    <div className={`bg-white border border-gray-200 rounded-lg shadow-lg min-w-[160px] ${className}`}>
+    <div className={`bg-white border border-gray-200 rounded-lg shadow-lg w-max ${className}`}>
       {children}
     </div>
   );
