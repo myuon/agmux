@@ -40,12 +40,35 @@ func main() {
 		Short: "AI Agent Multiplexer",
 	}
 
-	rootCmd.AddCommand(sessionCmd())
+	sesCmd := sessionCmd()
+	rootCmd.AddCommand(sesCmd)
 	rootCmd.AddCommand(serveCmd())
 	rootCmd.AddCommand(mcpCmd())
 	rootCmd.AddCommand(logsCmd())
 	rootCmd.AddCommand(daemonCmd())
 	rootCmd.AddCommand(holderCmd())
+
+	// Custom help template that inlines session subcommands
+	defaultHelp := rootCmd.HelpTemplate()
+	_ = defaultHelp
+	// Reset session command to use cobra's default help template
+	sesCmd.SetHelpTemplate(sesCmd.UsageTemplate())
+
+	rootCmd.SetHelpTemplate(`AI Agent Multiplexer
+
+Usage:
+  agmux [command]
+
+Session Commands:
+{{range .Commands}}{{if eq .Name "session"}}{{range .Commands}}{{if not .Hidden}}  agmux session {{rpad .Name .NamePadding}} {{.Short}}
+{{end}}{{end}}{{end}}{{end}}
+Other Commands:{{range .Commands}}{{if and (ne .Name "session") (not .Hidden) .IsAvailableCommand}}
+  {{rpad .Name .NamePadding}} {{.Short}}{{end}}{{end}}
+
+Flags:
+{{.LocalFlags.FlagUsages}}
+Use "agmux [command] --help" for more information about a command.
+`)
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
