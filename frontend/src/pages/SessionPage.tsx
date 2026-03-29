@@ -612,7 +612,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                       href={href}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="hover:opacity-80"
+                      className="hover:opacity-80 inline-flex"
                     >
                       {chip}
                     </a>
