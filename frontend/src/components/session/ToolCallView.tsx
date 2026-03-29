@@ -162,9 +162,27 @@ function PermissionPromptCallView({ item, sessionId, pendingPermission, onRespon
   onResponded?: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const [sending, setSending] = useState(false);
   const inp = item.input as { tool_name?: string; input?: unknown } | undefined;
+  const toolInput = inp?.input as Record<string, unknown> | undefined;
   const isResolved = item.result !== undefined;
+
+  // Build tool-specific title suffix and content
+  const toolName = inp?.tool_name ?? "";
+  const titleSuffix = (() => {
+    if (toolName === "Bash" && toolInput?.description) {
+      return String(toolInput.description);
+    }
+    if ((toolName === "Edit" || toolName === "Write") && toolInput?.file_path) {
+      return String(toolInput.file_path);
+    }
+    if (toolInput?.description) {
+      return String(toolInput.description);
+    }
+    return "";
+  })();
+  const bashCommand = toolName === "Bash" && toolInput?.command ? String(toolInput.command) : null;
 
   const handleRespond = async (response: "allow" | "deny") => {
     if (!sessionId || sending) return;
@@ -189,7 +207,7 @@ function PermissionPromptCallView({ item, sessionId, pendingPermission, onRespon
         <div className="flex items-center gap-2">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
           <span className="font-medium text-xs text-amber-800">Permission Request</span>
-          <span className="text-xs text-gray-600">{inp?.tool_name}</span>
+          <span className="text-xs text-gray-600">{toolName}{titleSuffix ? `: ${titleSuffix}` : ""}</span>
           {pendingPermission?.timedOut && !isResolved && (
             <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
               タイムアウト - 自動承認しました
@@ -201,12 +219,20 @@ function PermissionPromptCallView({ item, sessionId, pendingPermission, onRespon
       {expanded && (
         <div className="px-3 pb-3 space-y-2">
           <div className="text-sm text-gray-800">
-            <span className="font-medium">Tool:</span> {inp?.tool_name}
+            <span className="font-medium">Tool:</span> {toolName}{titleSuffix ? ` — ${titleSuffix}` : ""}
           </div>
-          {inp?.input != null && (
-            <pre className="text-xs text-gray-600 bg-white border border-gray-200 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap">
-              {JSON.stringify(inp.input, null, 2)}
+          {bashCommand && (
+            <pre className="text-xs text-gray-600 bg-gray-900 text-gray-100 border border-gray-700 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap">
+              {bashCommand}
             </pre>
+          )}
+          {inp?.input != null && (
+            <details open={detailsExpanded} onToggle={(e) => setDetailsExpanded((e.target as HTMLDetailsElement).open)}>
+              <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700">詳細 (JSON)</summary>
+              <pre className="text-xs text-gray-600 bg-white border border-gray-200 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap mt-1">
+                {JSON.stringify(inp.input, null, 2)}
+              </pre>
+            </details>
           )}
           {isResolved ? (
             <div className="text-xs text-gray-500 bg-white border border-gray-200 rounded px-2 py-1.5">
