@@ -9,6 +9,8 @@ import { scenarioPresets } from "../fixtures/scenarios";
 import type { ScenarioPreset } from "../fixtures/scenarios";
 import type { StreamEntry } from "../models/stream";
 import { extractActiveTasks } from "../models/stream";
+import { SessionList } from "../components/SessionList";
+import { mockSessions } from "../fixtures/scenarios/sessionListScenarios";
 
 function countEventTypes(lines: unknown[]): Record<string, number> {
   const counts: Record<string, number> = {};
@@ -20,7 +22,10 @@ function countEventTypes(lines: unknown[]): Record<string, number> {
   return counts;
 }
 
+type TabId = "stream" | "session-list";
+
 export function ScenarioTestPage() {
+  const [activeTab, setActiveTab] = useState<TabId>("stream");
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null);
   const [customJsonl, setCustomJsonl] = useState("");
   const [customLines, setCustomLines] = useState<unknown[] | null>(null);
@@ -133,93 +138,130 @@ export function ScenarioTestPage() {
         <h1 className="text-lg md:text-xl font-bold text-gray-900">
           Scenario Test
         </h1>
+
+        {/* Tab switcher */}
+        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5 ml-2">
+          {([
+            { id: "stream" as TabId, label: "Stream Output" },
+            { id: "session-list" as TabId, label: "Session List" },
+          ]).map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                activeTab === tab.id
+                  ? "bg-white text-gray-900 shadow-sm font-medium"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         {/* Mobile: toggle sidebar / show active scenario */}
-        <SecondaryButton
-          onClick={() => setShowSidebar(!showSidebar)}
-          color="purple"
-          className="md:hidden"
-        >
-          {showSidebar ? "Hide scenarios" : activeLabel || "Select scenario"}
-        </SecondaryButton>
+        {activeTab === "stream" && (
+          <SecondaryButton
+            onClick={() => setShowSidebar(!showSidebar)}
+            color="purple"
+            className="md:hidden ml-auto"
+          >
+            {showSidebar ? "Hide scenarios" : activeLabel || "Select scenario"}
+          </SecondaryButton>
+        )}
       </header>
 
       {/* Main content */}
-      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-        {/* Sidebar: always visible on md+, toggleable on mobile */}
-        <div
-          className={`${
-            showSidebar ? "flex" : "hidden"
-          } md:flex w-full md:w-72 border-b md:border-b-0 md:border-r border-gray-200 bg-white flex-col shrink-0 ${
-            showSidebar ? "max-h-[50vh] md:max-h-none" : ""
-          } min-h-0`}
-        >
-          {sidebar}
-        </div>
-
-        {/* Right pane: StreamOutputView + simulated banners */}
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="flex-1 min-h-0 p-4">
-            <StreamOutputView
-              lines={activeLines as StreamEntry[]}
-              className="h-full"
-            />
+      {activeTab === "stream" ? (
+        <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+          {/* Sidebar: always visible on md+, toggleable on mobile */}
+          <div
+            className={`${
+              showSidebar ? "flex" : "hidden"
+            } md:flex w-full md:w-72 border-b md:border-b-0 md:border-r border-gray-200 bg-white flex-col shrink-0 ${
+              showSidebar ? "max-h-[50vh] md:max-h-none" : ""
+            } min-h-0`}
+          >
+            {sidebar}
           </div>
 
-          {/* Active tasks panel */}
-          {activeTasks.length > 0 && (
-            <div className="px-4 sm:px-8 pb-2">
-              <ActiveTasksPanel tasks={activeTasks} />
-            </div>
-          )}
-
-          {/* Simulated escalation banner */}
-          {activePreset?.simulatedEscalation && !customLines && (
-            <div className="px-4 sm:px-8">
-              <EscalationBanner
-                escalationId={activePreset.simulatedEscalation.id}
-                message={activePreset.simulatedEscalation.message}
-                timedOut={activePreset.simulatedEscalation.timedOut ?? false}
-                timeoutSeconds={activePreset.simulatedEscalation.timeoutSeconds ?? 300}
-                sessionId="scenario-test"
-                onResponded={() => {}}
+          {/* Right pane: StreamOutputView + simulated banners */}
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="flex-1 min-h-0 p-4">
+              <StreamOutputView
+                lines={activeLines as StreamEntry[]}
+                className="h-full"
               />
             </div>
-          )}
 
-          {/* Simulated permission banner */}
-          {activePreset?.simulatedPermission && !customLines && (
-            <div className="px-4 sm:px-8">
-              <PermissionPromptBanner
-                permission={activePreset.simulatedPermission}
-                sessionId="scenario-test"
-                onResponded={() => {}}
-              />
-            </div>
-          )}
-
-          {/* Footer stats */}
-          {activeLines.length > 0 && (
-            <div className="border-t border-gray-200 bg-white px-4 py-2 shrink-0">
-              <div className="flex flex-wrap items-center gap-2 md:gap-4 text-xs text-gray-500">
-                <span>
-                  <span className="font-medium text-gray-700">
-                    {activeLines.length}
-                  </span>{" "}
-                  lines
-                </span>
-                <span className="text-gray-300">|</span>
-                {Object.entries(stats).map(([type, count]) => (
-                  <span key={type}>
-                    <span className="font-medium text-gray-600">{type}</span>
-                    {": "}
-                    {count}
-                  </span>
-                ))}
+            {/* Active tasks panel */}
+            {activeTasks.length > 0 && (
+              <div className="px-4 sm:px-8 pb-2">
+                <ActiveTasksPanel tasks={activeTasks} />
               </div>
-            </div>
-          )}
+            )}
+
+            {/* Simulated escalation banner */}
+            {activePreset?.simulatedEscalation && !customLines && (
+              <div className="px-4 sm:px-8">
+                <EscalationBanner
+                  escalationId={activePreset.simulatedEscalation.id}
+                  message={activePreset.simulatedEscalation.message}
+                  timedOut={activePreset.simulatedEscalation.timedOut ?? false}
+                  timeoutSeconds={activePreset.simulatedEscalation.timeoutSeconds ?? 300}
+                  sessionId="scenario-test"
+                  onResponded={() => {}}
+                />
+              </div>
+            )}
+
+            {/* Simulated permission banner */}
+            {activePreset?.simulatedPermission && !customLines && (
+              <div className="px-4 sm:px-8">
+                <PermissionPromptBanner
+                  permission={activePreset.simulatedPermission}
+                  sessionId="scenario-test"
+                  onResponded={() => {}}
+                />
+              </div>
+            )}
+
+            {/* Footer stats */}
+            {activeLines.length > 0 && (
+              <div className="border-t border-gray-200 bg-white px-4 py-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2 md:gap-4 text-xs text-gray-500">
+                  <span>
+                    <span className="font-medium text-gray-700">
+                      {activeLines.length}
+                    </span>{" "}
+                    lines
+                  </span>
+                  <span className="text-gray-300">|</span>
+                  {Object.entries(stats).map(([type, count]) => (
+                    <span key={type}>
+                      <span className="font-medium text-gray-600">{type}</span>
+                      {": "}
+                      {count}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-8">
+          <div className="max-w-3xl mx-auto">
+            <p className="text-sm text-gray-500 mb-4">
+              Mock session cards displaying various states: working, idle, waiting_input, exited (clean/error), role templates, sub-sessions, and different providers.
+            </p>
+            <SessionList
+              sessions={mockSessions}
+              onRestartController={() => {}}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
