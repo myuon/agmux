@@ -93,6 +93,7 @@ Examples:
   agmux session list
   agmux session send 5LEsz "Please also update the README"
   agmux session history 5LEsz -n 20
+  agmux session history 5LEsz --offset 10 -n 20
   agmux session history 5LEsz -f
 
 Use "agmux [command] --help" for more information about a command.
@@ -631,6 +632,7 @@ func broadcastViaAPI(text string, sessionIDs []string, filter string, port int) 
 
 func sessionHistoryCmd() *cobra.Command {
 	var lines int
+	var offset int
 	var follow bool
 	var jsonOutput bool
 
@@ -678,13 +680,14 @@ The session ID can be a short prefix (e.g. first 8 characters from "session list
 			logPath := filepath.Join(streamsDir, matched.ID+".jsonl")
 
 			if jsonOutput {
-				return tailSessionLogRaw(logPath, lines, follow, matched.ClearOffset)
+				return tailSessionLogRaw(logPath, lines, offset, follow, matched.ClearOffset)
 			}
-			return tailSessionLogFormatted(logPath, lines, follow, matched.ClearOffset)
+			return tailSessionLogFormatted(logPath, lines, offset, follow, matched.ClearOffset)
 		},
 	}
 
-	cmd.Flags().IntVarP(&lines, "lines", "n", 50, "Number of recent lines to show (0 = all)")
+	cmd.Flags().IntVarP(&lines, "limit", "n", 50, "Max number of entries to show (0 = all)")
+	cmd.Flags().IntVar(&offset, "offset", 0, "Skip first N lines before showing results")
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output in realtime")
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output raw JSONL lines")
 
@@ -717,14 +720,19 @@ func readSessionLines(logPath string, clearOffset int64) ([]string, error) {
 	return allLines, nil
 }
 
-func tailSessionLogRaw(logPath string, n int, follow bool, clearOffset int64) error {
+func tailSessionLogRaw(logPath string, n int, offset int, follow bool, clearOffset int64) error {
 	allLines, err := readSessionLines(logPath, clearOffset)
 	if err != nil {
 		return err
 	}
 
+	if offset > 0 && offset < len(allLines) {
+		allLines = allLines[offset:]
+	} else if offset >= len(allLines) {
+		allLines = nil
+	}
 	if n > 0 && len(allLines) > n {
-		allLines = allLines[len(allLines)-n:]
+		allLines = allLines[:n]
 	}
 	for _, line := range allLines {
 		fmt.Println(line)
@@ -769,21 +777,26 @@ func tailSessionLogRaw(logPath string, n int, follow bool, clearOffset int64) er
 	}
 }
 
-func tailSessionLogFormatted(logPath string, n int, follow bool, clearOffset int64) error {
+func tailSessionLogFormatted(logPath string, n int, offset int, follow bool, clearOffset int64) error {
 	allLines, err := readSessionLines(logPath, clearOffset)
 	if err != nil {
 		return err
 	}
 
-	// Filter to displayable lines before applying -n
+	// Filter to displayable lines before applying offset/limit
 	var displayable []string
 	for _, line := range allLines {
 		if isDisplayableLine(line) {
 			displayable = append(displayable, line)
 		}
 	}
+	if offset > 0 && offset < len(displayable) {
+		displayable = displayable[offset:]
+	} else if offset >= len(displayable) {
+		displayable = nil
+	}
 	if n > 0 && len(displayable) > n {
-		displayable = displayable[len(displayable)-n:]
+		displayable = displayable[:n]
 	}
 	for _, line := range displayable {
 		formatSessionLine(line)
