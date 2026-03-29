@@ -89,7 +89,7 @@ Flags:
 {{.LocalFlags.FlagUsages}}
 Examples:
   agmux session create my-task -m "Fix the login bug" -p ./my-project   # Create a Claude session with default model
-  agmux session create codex-task --provider codex --model o4-mini -m "Add tests"  # Create a Codex session with specific model
+  agmux session create codex-task --provider codex --model gpt-5.4 -m "Add tests"  # Create a Codex session with specific model
   agmux session list                                          # List all sessions with status, provider, and model
   agmux session send 5LEsz "Please also update the README"    # Send a message to a running session
   agmux session history 5LEsz -n 20                           # Show last 20 conversation entries
