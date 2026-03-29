@@ -32,6 +32,7 @@ export const api = {
     autoApprove?: boolean;
     systemPrompt?: string;
     parentSessionId?: string;
+    roleTemplate?: string;
   }) =>
     request<Session>("/sessions", {
       method: "POST",
@@ -163,6 +164,7 @@ export const api = {
 
   getNotifications: (limit = 50) =>
     request<NotificationEntry[]>(`/notifications?limit=${limit}`),
+
 };
 
 export interface RecentProject {
@@ -195,11 +197,19 @@ export interface LogEntry {
   [key: string]: unknown;
 }
 
+export interface RoleTemplate {
+  name: string;
+  provider: string;
+  model?: string;
+  systemPrompt: string;
+}
+
 export interface AppConfig {
   server: { port: number };
   daemon: { interval: string };
   session: { claudeCommand: string };
   prompts?: { systemPrompt: string };
+  templates: RoleTemplate[];
 }
 
 export interface MetricRow {
