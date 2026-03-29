@@ -60,7 +60,7 @@ Usage:
   agmux [command]
 
 Session Commands:
-{{range .Commands}}{{if eq .Name "session"}}{{range .Commands}}{{if not .Hidden}}  agmux session {{rpad .Name .NamePadding}} {{.Short}}
+{{range .Commands}}{{if eq .Name "session"}}{{range .Commands}}{{if not .Hidden}}  agmux session {{rpad .Use 30}} {{.Short}}
 {{end}}{{end}}{{end}}{{end}}
 Other Commands:{{range .Commands}}{{if and (ne .Name "session") (not .Hidden) .IsAvailableCommand}}
   {{rpad .Name .NamePadding}} {{.Short}}{{end}}{{end}}
