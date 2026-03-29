@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { api, type CodexModel, type RecentProject } from "../api/client";
+import { api, type CodexModel, type RecentProject, type RoleTemplate } from "../api/client";
 
 interface Props {
   onClose: () => void;
@@ -11,6 +11,7 @@ interface Props {
     model?: string;
     autoApprove?: boolean;
     systemPrompt?: string;
+    roleTemplate?: string;
   }) => void;
 }
 
@@ -32,12 +33,28 @@ export function CreateSession({ onClose, onCreate }: Props) {
   const [autoApprove, setAutoApprove] = useState(true);
   const [loadingModels, setLoadingModels] = useState(false);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [templates, setTemplates] = useState<RoleTemplate[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState("");
 
   useEffect(() => {
     api.getRecentProjects()
       .then(setRecentProjects)
       .catch(() => setRecentProjects([]));
+    api.getConfig()
+      .then((cfg) => setTemplates(cfg.templates || []))
+      .catch(() => setTemplates([]));
   }, []);
+
+  const handleTemplateChange = (templateName: string) => {
+    setSelectedTemplate(templateName);
+    if (!templateName) return;
+    const tmpl = templates.find((t) => t.name === templateName);
+    if (tmpl) {
+      if (tmpl.provider) setProvider(tmpl.provider);
+      if (tmpl.model) setModel(tmpl.model);
+      if (tmpl.systemPrompt) setSystemPrompt(tmpl.systemPrompt);
+    }
+  };
 
   useEffect(() => {
     if (provider === "codex") {
@@ -71,6 +88,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
       model: (provider === "codex" || provider === "claude") && model ? model : undefined,
       autoApprove: provider === "codex" && autoApprove ? true : undefined,
       systemPrompt: systemPrompt || undefined,
+      roleTemplate: selectedTemplate || undefined,
     });
   };
 
@@ -79,6 +97,25 @@ export function CreateSession({ onClose, onCreate }: Props) {
       <div className="bg-white rounded-lg p-6 w-full max-w-md">
         <h2 className="text-xl font-semibold mb-4">New Session</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {templates.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Template
+              </label>
+              <select
+                value={selectedTemplate}
+                onChange={(e) => handleTemplateChange(e.target.value)}
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+              >
+                <option value="">None</option>
+                {templates.map((t) => (
+                  <option key={t.name} value={t.name}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Session Name
