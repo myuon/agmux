@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
@@ -173,6 +174,14 @@ func (m *Manager) RecoverStreamProcesses() {
 			sp, err := ReconnectHolderStreamProcess(opts, provider, holderPID)
 			if err != nil {
 				m.logger.Warn("reconnect to holder failed, will start new holder", "sessionId", id, "error", err)
+				// Kill the old holder process to prevent orphans
+				if proc, err := os.FindProcess(holderPID); err == nil {
+					if err := proc.Signal(syscall.SIGKILL); err != nil {
+						m.logger.Warn("failed to kill old holder process", "sessionId", id, "holderPid", holderPID, "error", err)
+					} else {
+						m.logger.Info("killed old holder process before starting new one", "sessionId", id, "holderPid", holderPID)
+					}
+				}
 			} else {
 				m.wireSessionIDCallback(id, sp)
 				m.streamMu.Lock()
