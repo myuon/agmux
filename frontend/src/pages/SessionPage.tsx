@@ -321,10 +321,14 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     const images = pendingImages.length > 0
       ? pendingImages.map(({ data, mediaType }) => ({ data, mediaType }))
       : undefined;
-    await api.sendToSession(sessionId, message, images);
-    setMessage("");
-    setPendingImages([]);
-    // Stream mode updates arrive via WebSocket automatically
+    try {
+      await api.sendToSession(sessionId, message, images);
+      setMessage("");
+      setPendingImages([]);
+      // Stream mode updates arrive via WebSocket automatically
+    } catch (err) {
+      console.error("Failed to send message:", err);
+    }
   };
 
   const sendForm = session ? (
