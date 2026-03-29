@@ -88,7 +88,7 @@ func Install() error {
 		Label:      plistLabel,
 		BinaryPath: binPath,
 		Path:       os.Getenv("PATH"),
-		StdoutLog:  filepath.Join(logd, "server.log"),
+		StdoutLog:  filepath.Join(logd, "agmux.log"),
 		StderrLog:  filepath.Join(logd, "agmux.log"),
 	}
 
@@ -123,7 +123,7 @@ func Install() error {
 
 	fmt.Printf("Installed and loaded %s\n", ppath)
 	fmt.Printf("Binary: %s\n", binPath)
-	fmt.Printf("Logs:   %s/server.log, %s/agmux.log\n", logd, logd)
+	fmt.Printf("Logs:   %s/agmux.log\n", logd)
 	return nil
 }
 

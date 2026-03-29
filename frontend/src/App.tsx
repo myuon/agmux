@@ -2,10 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Outlet, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
-import { LogPanel } from "./components/LogPanel";
 import { NotificationPanel } from "./components/NotificationPanel";
 import { SessionList } from "./components/SessionList";
-import { Tabs } from "./components/ui/Tabs";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { getActiveSessionName } from "./activeSession";
 import { IconButton } from "./components/ui/IconButton";
@@ -40,8 +38,7 @@ async function sendNotification(title: string, body: string, sessionId?: string)
   }
 }
 
-type MobileTab = "sessions" | "logs" | "notifications";
-type SidebarTab = "logs" | "notifications";
+type MobileTab = "sessions" | "notifications";
 
 // Global notification hook — runs regardless of which page is active
 function useGlobalNotifications() {
@@ -95,7 +92,6 @@ function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("logs");
   const [searchParams, setSearchParams] = useSearchParams();
   const mobileTab: MobileTab = (searchParams.get("tab") as MobileTab) || "sessions";
   const navigate = useNavigate();
@@ -216,22 +212,27 @@ function Dashboard() {
       )}
 
       {/* Mobile tab switcher */}
-      <div className="md:hidden">
-        <Tabs
-          items={[
-            { key: "sessions", label: `Sessions (${sessions.length})` },
-            { key: "logs", label: "Logs" },
-            { key: "notifications", label: "Notifications" },
-          ]}
-          activeKey={mobileTab}
-          onChange={(key) => {
-            if (key === "sessions") {
-              setSearchParams({});
-            } else {
-              setSearchParams({ tab: key });
-            }
-          }}
-        />
+      <div className="md:hidden flex border-b border-gray-200">
+        <button
+          className={`flex-1 py-2 text-sm font-medium ${
+            mobileTab === "sessions"
+              ? "text-blue-600 border-b-2 border-blue-600"
+              : "text-gray-500"
+          }`}
+          onClick={() => setSearchParams({})}
+        >
+          Sessions ({sessions.length})
+        </button>
+        <button
+          className={`flex-1 py-2 text-sm font-medium ${
+            mobileTab === "notifications"
+              ? "text-blue-600 border-b-2 border-blue-600"
+              : "text-gray-500"
+          }`}
+          onClick={() => setSearchParams({ tab: "notifications" })}
+        >
+          Notifications
+        </button>
       </div>
 
       {/* Main content */}
@@ -251,31 +252,17 @@ function Dashboard() {
           />
         </div>
 
-        {/* Sidebar - desktop: always visible, mobile: only when tab active */}
+        {/* Sidebar - desktop: always visible, mobile: only when notifications tab active */}
         <div
           className={`md:w-[480px] md:border-l border-gray-200 bg-white min-h-0 p-3 md:p-4 ${
-            mobileTab === "logs" || mobileTab === "notifications" ? "flex-1 flex flex-col" : "hidden md:flex md:flex-col"
+            mobileTab === "notifications" ? "flex-1 flex flex-col" : "hidden md:flex md:flex-col"
           }`}
         >
-          {/* Desktop sidebar tab switcher */}
-          <div className="hidden md:block mb-2">
-            <Tabs
-              items={[
-                { key: "logs", label: "Logs" },
-                { key: "notifications", label: "Notifications" },
-              ]}
-              activeKey={sidebarTab}
-              onChange={(key) => setSidebarTab(key as SidebarTab)}
-            />
-          </div>
-          {/* Mobile: show based on mobileTab, Desktop: show based on sidebarTab */}
-          <div className="flex-1 min-h-0 flex flex-col md:hidden">
-            {mobileTab === "logs" && <LogPanel />}
-            {mobileTab === "notifications" && <NotificationPanel />}
-          </div>
-          <div className="flex-1 min-h-0 hidden md:flex md:flex-col">
-            {sidebarTab === "logs" && <LogPanel />}
-            {sidebarTab === "notifications" && <NotificationPanel />}
+          <h2 className="text-sm font-semibold text-gray-700 mb-2 hidden md:block">
+            Notifications
+          </h2>
+          <div className="flex-1 min-h-0 flex flex-col">
+            <NotificationPanel />
           </div>
         </div>
       </div>

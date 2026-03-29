@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -162,32 +161,20 @@ func serveCmd() *cobra.Command {
 			}
 			defer logFile.Close()
 
-			// Server logger (log.Logger → stdout + ~/.agmux/server.log)
-			serverLogFile, srvLogger, err := logging.SetupServerLog()
-			if err != nil {
-				return fmt.Errorf("setup server log: %w", err)
-			}
-			defer serverLogFile.Close()
-
 			// Set slog default so stream_process etc. use daemon logger
 			slog.SetDefault(logger)
-			// Redirect standard log (used by chi middleware.Logger) to server log
-			log.SetOutput(srvLogger.Writer())
-			// Set server logger for WS hub
-			server.SetServerLog(srvLogger)
 
 			mgr, database, err := initManager(cfg, port, logger)
 			if err != nil {
 				return err
 			}
 
-			hub := server.NewHub()
+			hub := server.NewHub(logger)
 			go hub.Run()
 
 			var srv *server.Server
 
-			logPath, _ := logging.LogPath()
-			srv = server.New(mgr, hub, devMode, logPath, logger, database)
+			srv = server.New(mgr, hub, devMode, logger, database)
 
 			// Wire managed holder PIDs into external detector so holder
 			// processes and their children are not detected as external.
@@ -242,7 +229,7 @@ func serveCmd() *cobra.Command {
 			}
 
 			addr := fmt.Sprintf(":%d", port)
-			srvLogger.Printf("Starting agmux on http://localhost:%d", port)
+			logger.Info(fmt.Sprintf("Starting agmux on http://localhost:%d", port))
 
 
 			httpSrv := srv.NewHTTPServer(addr)
@@ -268,14 +255,14 @@ func serveCmd() *cobra.Command {
 				hub.Broadcast(server.Message{
 					Type: "server_started",
 				})
-				srvLogger.Println("Server started, notification sent")
+				logger.Info("Server started, notification sent")
 			}()
 
 			select {
 			case err := <-errCh:
 				return err
 			case sig := <-shutdownCh:
-				srvLogger.Printf("Received %s, shutting down gracefully...", sig)
+				logger.Info(fmt.Sprintf("Received %s, shutting down gracefully...", sig))
 				mgr.StopAllStreamProcesses()
 				if extDet := srv.ExternalDetector(); extDet != nil {
 					extDet.Stop()
@@ -1165,45 +1152,17 @@ func mcpCmd() *cobra.Command {
 func logsCmd() *cobra.Command {
 	var follow bool
 	var lines int
-	var serverFlag bool
-	var daemonFlag bool
 
 	cmd := &cobra.Command{
-		Use:   "logs [session-id]",
-		Short: "Show logs (session, server, or daemon)",
-		Long: `Show logs for a session, the server, or the daemon.
-
-Usage:
-  agmux logs <session-id>   Show session stream log
-  agmux logs --server       Show server log
-  agmux logs --daemon       Show daemon log`,
+		Use:   "logs <session-id>",
+		Short: "Show session stream log",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var logPath string
-
-			switch {
-			case serverFlag && daemonFlag:
-				return fmt.Errorf("cannot specify both --server and --daemon")
-			case serverFlag:
-				home, err := os.UserHomeDir()
-				if err != nil {
-					return err
-				}
-				logPath = filepath.Join(home, ".agmux", "server.log")
-			case daemonFlag:
-				p, err := logging.LogPath()
-				if err != nil {
-					return fmt.Errorf("get log path: %w", err)
-				}
-				logPath = p
-			case len(args) == 1:
-				streamsDir, err := db.StreamsDir()
-				if err != nil {
-					return fmt.Errorf("get streams dir: %w", err)
-				}
-				logPath = filepath.Join(streamsDir, args[0]+".jsonl")
-			default:
-				return cmd.Help()
+			streamsDir, err := db.StreamsDir()
+			if err != nil {
+				return fmt.Errorf("get streams dir: %w", err)
 			}
+			logPath := filepath.Join(streamsDir, args[0]+".jsonl")
 
 			return tailLogFile(logPath, lines, follow)
 		},
@@ -1211,8 +1170,6 @@ Usage:
 
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "Follow log output in realtime")
 	cmd.Flags().IntVarP(&lines, "lines", "n", 20, "Number of lines to show")
-	cmd.Flags().BoolVar(&serverFlag, "server", false, "Show server log")
-	cmd.Flags().BoolVar(&daemonFlag, "daemon", false, "Show daemon log")
 
 	return cmd
 }

@@ -2,23 +2,12 @@ package server
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 
 	"github.com/gorilla/websocket"
 )
-
-var (
-	// serverLog is the server-specific logger for HTTP/WS related logs.
-	// Set via SetServerLog during initialization.
-	serverLog = log.Default()
-)
-
-// SetServerLog sets the server-specific logger for HTTP/WS related logs.
-func SetServerLog(l *log.Logger) {
-	serverLog = l
-}
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
@@ -40,14 +29,16 @@ type Hub struct {
 	broadcast  chan Message
 	register   chan *wsClient
 	unregister chan *wsClient
+	logger     *slog.Logger
 }
 
-func NewHub() *Hub {
+func NewHub(logger *slog.Logger) *Hub {
 	return &Hub{
 		clients:    make(map[*wsClient]bool),
 		broadcast:  make(chan Message, 256),
 		register:   make(chan *wsClient),
 		unregister: make(chan *wsClient),
+		logger:     logger.With("component", "ws"),
 	}
 }
 
@@ -70,7 +61,7 @@ func (h *Hub) Run() {
 		case msg := <-h.broadcast:
 			data, err := json.Marshal(msg)
 			if err != nil {
-				serverLog.Printf("ws marshal error: %v", err)
+				h.logger.Error("ws marshal error", "error", err)
 				continue
 			}
 			h.mu.RLock()
@@ -91,14 +82,14 @@ func (h *Hub) Broadcast(msg Message) {
 	select {
 	case h.broadcast <- msg:
 	default:
-		serverLog.Println("ws broadcast channel full, dropping message")
+		h.logger.Warn("ws broadcast channel full, dropping message")
 	}
 }
 
 func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		serverLog.Printf("ws upgrade error: %v", err)
+		h.logger.Error("ws upgrade error", "error", err)
 		return
 	}
 
