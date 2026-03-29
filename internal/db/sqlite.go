@@ -291,6 +291,12 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add role_template column if missing (for tracking which template was used)
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN role_template TEXT`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: create notifications table
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS notifications (

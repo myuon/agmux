@@ -6,6 +6,8 @@ import { normalConversationLines } from "./normalConversation";
 import { compactionLines } from "./compaction";
 import { multipleRunningTasksLines } from "./multipleRunningTasks";
 import { apiRetryLines, apiRetryResolvedLines } from "./apiRetry";
+import { mockSessions } from "./sessionListScenarios";
+import type { Session } from "../../types/session";
 
 export interface SimulatedPermission {
   id: string;
@@ -22,11 +24,15 @@ export interface SimulatedEscalation {
   timeoutSeconds?: number;
 }
 
+export type ScenarioPresetType = "stream" | "session-list";
+
 export interface ScenarioPreset {
   id: string;
+  type: ScenarioPresetType;
   label: string;
   description: string;
-  lines: unknown[];
+  lines?: unknown[];
+  mockSessions?: Session[];
   simulatedPermission?: SimulatedPermission;
   simulatedEscalation?: SimulatedEscalation;
 }
@@ -34,18 +40,21 @@ export interface ScenarioPreset {
 export const scenarioPresets: ScenarioPreset[] = [
   {
     id: "rate-limit-allowed",
+    type: "stream",
     label: "Rate Limit (Allowed Warning)",
     description: "seven_day utilization 90% の allowed_warning",
     lines: rateLimitAllowedLines,
   },
   {
     id: "rate-limit-rejected",
+    type: "stream",
     label: "Rate Limit (Rejected)",
     description: "five_hour の rejected + allowed_warning",
     lines: rateLimitRejectedLines,
   },
   {
     id: "escalation",
+    type: "stream",
     label: "Escalation",
     description: "escalateツールでユーザーに質問（バナー付き）",
     lines: escalationLines,
@@ -57,6 +66,7 @@ export const scenarioPresets: ScenarioPreset[] = [
   },
   {
     id: "escalation-timed-out",
+    type: "stream",
     label: "Escalation: Timed Out",
     description: "エスカレーションがタイムアウトした状態",
     lines: escalationLines,
@@ -69,24 +79,28 @@ export const scenarioPresets: ScenarioPreset[] = [
   },
   {
     id: "agent-subtask",
+    type: "stream",
     label: "Agent Subtask",
     description: "Agentツール呼び出しとtask_progress進行",
     lines: agentSubtaskLines,
   },
   {
     id: "compaction",
+    type: "stream",
     label: "Compaction",
     description: "コンテキストウィンドウ圧縮(compact_boundary)前後の会話",
     lines: compactionLines,
   },
   {
     id: "normal-conversation",
+    type: "stream",
     label: "Normal Conversation",
     description: "ツール呼び出しを含む通常の調査会話",
     lines: normalConversationLines,
   },
   {
     id: "permission-exit-plan",
+    type: "stream",
     label: "Permission: Exit Plan Mode",
     description: "プランモード終了時のpermission_promptバナー",
     lines: normalConversationLines,
@@ -101,6 +115,7 @@ export const scenarioPresets: ScenarioPreset[] = [
   },
   {
     id: "permission-timed-out",
+    type: "stream",
     label: "Permission: Timed Out",
     description: "permission_promptがタイムアウトした状態",
     lines: normalConversationLines,
@@ -114,20 +129,30 @@ export const scenarioPresets: ScenarioPreset[] = [
   },
   {
     id: "api-retry",
+    type: "stream",
     label: "API Retry (リトライ中)",
     description: "最後のイベントがリトライ — 末尾にインジケーター表示",
     lines: apiRetryLines,
   },
   {
     id: "api-retry-resolved",
+    type: "stream",
     label: "API Retry (解消済み)",
     description: "リトライ後にassistantが再開 — インジケーター非表示",
     lines: apiRetryResolvedLines,
   },
   {
     id: "multiple-running-tasks",
+    type: "stream",
     label: "Multiple Running Tasks",
     description: "7つの並列タスクが同時実行（ActiveTasksPanel collapse検証用）",
     lines: multipleRunningTasksLines,
+  },
+  {
+    id: "session-list-all-states",
+    type: "session-list",
+    label: "Session List: All States",
+    description: "各種ステータス・サブセッション・ロール等を含む一覧表示",
+    mockSessions: mockSessions,
   },
 ];

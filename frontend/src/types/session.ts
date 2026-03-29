@@ -8,6 +8,7 @@ export interface Session {
   provider: string;
   model?: string;
   parentSessionId?: string;
+  roleTemplate?: string;
   currentTask?: string;
   goal?: string;
   goals?: { currentTask: string; goal: string }[];
