@@ -452,22 +452,26 @@ func resolveTemplate(name string) (*struct {
 }
 
 func sessionForkCmd() *cobra.Command {
-	return &cobra.Command{
+	var noContext bool
+	cmd := &cobra.Command{
 		Use:   "fork <id>",
 		Short: "Fork an existing session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return forkSessionViaAPI(args[0])
+			return forkSessionViaAPI(args[0], !noContext)
 		},
 	}
+	cmd.Flags().BoolVar(&noContext, "no-context", false, "Fork without preserving conversation context")
+	return cmd
 }
 
-func forkSessionViaAPI(id string) error {
+func forkSessionViaAPI(id string, preserveContext bool) error {
 	cfg, _ := config.Load()
 	port := cfg.Server.Port
 
 	url := fmt.Sprintf("http://localhost:%d/api/sessions/%s/fork", port, id)
-	resp, err := http.Post(url, "application/json", nil)
+	body, _ := json.Marshal(map[string]bool{"preserveContext": preserveContext})
+	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("failed to connect to agmux server on port %d (is it running?): %w", port, err)
 	}
