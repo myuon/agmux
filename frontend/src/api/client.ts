@@ -31,6 +31,7 @@ export const api = {
     model?: string;
     autoApprove?: boolean;
     systemPrompt?: string;
+    parentSessionId?: string;
     roleTemplate?: string;
   }) =>
     request<Session>("/sessions", {

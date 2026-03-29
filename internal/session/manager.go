@@ -207,11 +207,12 @@ func (m *Manager) updateHolderPID(id string, pid int) {
 
 // CreateOpts contains optional parameters for creating a session.
 type CreateOpts struct {
-	Provider     ProviderName
-	Model        string
-	FullAuto     bool   // enable full-auto mode (bypasses permission prompts for Codex)
-	SystemPrompt string // per-session custom system prompt (appended to defaultSystemPrompt)
-	RoleTemplate string // name of the role template used to create this session
+	Provider        ProviderName
+	Model           string
+	FullAuto        bool   // enable full-auto mode (bypasses permission prompts for Codex)
+	SystemPrompt    string // per-session custom system prompt (appended to defaultSystemPrompt)
+	ParentSessionID string // parent session ID for sub-session creation
+	RoleTemplate    string // name of the role template used to create this session
 }
 
 func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts ...CreateOpts) (*Session, error) {
@@ -219,6 +220,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	model := ""
 	fullAuto := false
 	customSystemPrompt := ""
+	parentSessionID := ""
 	roleTemplate := ""
 	if len(opts) > 0 {
 		if opts[0].Provider != "" {
@@ -227,7 +229,15 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		model = opts[0].Model
 		fullAuto = opts[0].FullAuto
 		customSystemPrompt = opts[0].SystemPrompt
+		parentSessionID = opts[0].ParentSessionID
 		roleTemplate = opts[0].RoleTemplate
+	}
+
+	// Validate parent session exists when creating a sub-session
+	if parentSessionID != "" {
+		if _, err := m.Get(parentSessionID); err != nil {
+			return nil, fmt.Errorf("parent session %s not found", parentSessionID)
+		}
 	}
 
 	// For Codex, resolve default model from config if not explicitly specified
@@ -298,24 +308,25 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 
 	now := time.Now()
 	s := &Session{
-		ID:            id,
-		Name:          name,
-		ProjectPath:   projectPath,
-		InitialPrompt: prompt,
-		SystemPrompt:  customSystemPrompt,
-		Status:        StatusIdle,
-		Type:          TypeWorker,
-		Provider:      pn,
-		Model:         model,
-		RoleTemplate:  roleTemplate,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ID:              id,
+		Name:            name,
+		ProjectPath:     projectPath,
+		InitialPrompt:   prompt,
+		SystemPrompt:    customSystemPrompt,
+		Status:          StatusIdle,
+		Type:            TypeWorker,
+		Provider:        pn,
+		Model:           model,
+		ParentSessionID: parentSessionID,
+		RoleTemplate:    roleTemplate,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 
 	if _, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, role_template, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.RoleTemplate, s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, role_template, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
@@ -593,6 +604,11 @@ func (m *Manager) Delete(id string) error {
 				m.logger.Info("killed orphan holder process via DB pid", "sessionId", id, "holderPid", holderPID)
 			}
 		}
+	}
+
+	// Detach child sessions so they become top-level instead of orphaned
+	if _, err := m.db.Exec("UPDATE sessions SET parent_session_id = NULL WHERE parent_session_id = ?", id); err != nil {
+		return fmt.Errorf("detach child sessions: %w", err)
 	}
 
 	_, err = m.db.Exec("DELETE FROM sessions WHERE id = ?", id)

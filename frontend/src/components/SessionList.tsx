@@ -37,6 +37,22 @@ function groupSessionsByProject(sessions: Session[]): Map<string, Session[]> {
   return groups;
 }
 
+/** Build a map from parent session ID to its child sessions */
+function buildChildrenMap(sessions: Session[]): Map<string, Session[]> {
+  const map = new Map<string, Session[]>();
+  for (const s of sessions) {
+    if (s.parentSessionId) {
+      const children = map.get(s.parentSessionId);
+      if (children) {
+        children.push(s);
+      } else {
+        map.set(s.parentSessionId, [s]);
+      }
+    }
+  }
+  return map;
+}
+
 interface Props {
   sessions: Session[];
   onRestartController: () => void;
@@ -44,6 +60,8 @@ interface Props {
 
 export function SessionList({ sessions, onRestartController }: Props) {
   const navigate = useNavigate();
+  const childrenMap = useMemo(() => buildChildrenMap(sessions), [sessions]);
+
   const groupedSessions = useMemo(() => {
     const groups = groupSessionsByProject(sessions);
     // Sort: controller group first
@@ -65,10 +83,54 @@ export function SessionList({ sessions, onRestartController }: Props) {
     );
   }
 
+  const renderSession = (s: Session, depth: number) => {
+    const children = childrenMap.get(s.id) || [];
+    return (
+      <div key={s.id}>
+        <div style={{ marginLeft: depth * 24 }}>
+          {s.type === "external" ? (
+            <ExternalProcessRow
+              provider={s.provider}
+              name={s.name}
+              pid={s.id.replace("ext-", "")}
+              timeAgo={timeAgo(s.createdAt)}
+            />
+          ) : (
+            <SessionCard
+              name={s.name}
+              status={s.status}
+              type={s.type}
+              provider={s.provider}
+              roleTemplate={s.roleTemplate}
+              currentTask={s.currentTask}
+              lastError={s.lastError}
+              projectPath={s.projectPath}
+              timeAgo={timeAgo(s.createdAt)}
+              isSubSession={depth > 0}
+              onClick={() => navigate(`/sessions/${s.id}`)}
+              actions={
+                s.type === "controller" && (s.status === "paused" || s.status === "exited") ? (
+                  <SecondaryButton
+                    onClick={(e) => { e.stopPropagation(); onRestartController(); }}
+                  >
+                    Restart
+                  </SecondaryButton>
+                ) : undefined
+              }
+            />
+          )}
+        </div>
+        {children.map((child) => renderSession(child, depth + 1))}
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col gap-4">
       {groupedSessions.map(([projectPath, groupSessions]) => {
         const isController = groupSessions.some(s => s.type === "controller");
+        // Only show top-level sessions (those without a parent, or whose parent is not in this group)
+        const topLevelSessions = groupSessions.filter(s => !s.parentSessionId);
         return (
         <div key={projectPath}>
           <GroupSectionHeader
@@ -77,40 +139,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
             count={groupSessions.length}
           />
           <div className="flex flex-col gap-2">
-            {groupSessions.map((s) =>
-              s.type === "external" ? (
-                <ExternalProcessRow
-                  key={s.id}
-                  provider={s.provider}
-                  name={s.name}
-                  pid={s.id.replace("ext-", "")}
-                  timeAgo={timeAgo(s.createdAt)}
-                />
-              ) : (
-                <SessionCard
-                  key={s.id}
-                  name={s.name}
-                  status={s.status}
-                  type={s.type}
-                  provider={s.provider}
-                  roleTemplate={s.roleTemplate}
-                  currentTask={s.currentTask}
-                  lastError={s.lastError}
-                  projectPath={s.projectPath}
-                  timeAgo={timeAgo(s.createdAt)}
-                  onClick={() => navigate(`/sessions/${s.id}`)}
-                  actions={
-                    s.type === "controller" && (s.status === "paused" || s.status === "exited") ? (
-                      <SecondaryButton
-                        onClick={(e) => { e.stopPropagation(); onRestartController(); }}
-                      >
-                        Restart
-                      </SecondaryButton>
-                    ) : undefined
-                  }
-                />
-              )
-            )}
+            {topLevelSessions.map((s) => renderSession(s, 0))}
           </div>
         </div>
         );

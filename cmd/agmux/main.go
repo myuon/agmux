@@ -322,6 +322,7 @@ func sessionCreateCmd() *cobra.Command {
 	var provider string
 	var model string
 	var autoApprove bool
+	var parentSessionID string
 	var templateName string
 
 	cmd := &cobra.Command{
@@ -330,6 +331,7 @@ func sessionCreateCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// If --template is specified, resolve it first
+			systemPrompt := ""
 			if templateName != "" {
 				tmpl, err := resolveTemplate(templateName)
 				if err != nil {
@@ -342,10 +344,9 @@ func sessionCreateCmd() *cobra.Command {
 				if !cmd.Flags().Changed("model") && tmpl.Model != "" {
 					model = tmpl.Model
 				}
-				// System prompt from template is sent as part of the API call
-				return createSessionViaAPIWithOpts(args[0], projectPath, prompt, worktree, provider, model, autoApprove, tmpl.SystemPrompt, templateName)
+				systemPrompt = tmpl.SystemPrompt
 			}
-			return createSessionViaAPI(args[0], projectPath, prompt, worktree, provider, model, autoApprove)
+			return createSessionViaAPIWithOpts(args[0], projectPath, prompt, worktree, provider, model, autoApprove, systemPrompt, templateName, parentSessionID)
 		},
 	}
 
@@ -355,6 +356,7 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&provider, "provider", "claude", "Provider: claude or codex")
 	cmd.Flags().StringVar(&model, "model", "", "Model to use (e.g. claude-sonnet-4-5, o4-mini)")
 	cmd.Flags().BoolVar(&autoApprove, "auto-approve", true, "Enable full-auto mode (bypass permission prompts for Codex)")
+	cmd.Flags().StringVar(&parentSessionID, "parent", "", "Parent session ID to create a sub-session")
 	cmd.Flags().StringVarP(&templateName, "template", "t", "", "Role template name to apply")
 
 	return cmd
@@ -362,11 +364,7 @@ func sessionCreateCmd() *cobra.Command {
 
 // createSessionViaAPI sends a POST /api/sessions request to the running agmux server
 // so that the stream process is owned by the server, not this short-lived CLI process.
-func createSessionViaAPI(name, projectPath, prompt string, worktree bool, provider, model string, autoApprove bool) error {
-	return createSessionViaAPIWithOpts(name, projectPath, prompt, worktree, provider, model, autoApprove, "", "")
-}
-
-func createSessionViaAPIWithOpts(name, projectPath, prompt string, worktree bool, provider, model string, autoApprove bool, systemPrompt string, roleTemplate string) error {
+func createSessionViaAPIWithOpts(name, projectPath, prompt string, worktree bool, provider, model string, autoApprove bool, systemPrompt string, roleTemplate string, parentSessionID string) error {
 	cfg, _ := config.Load()
 	port := cfg.Server.Port
 
@@ -387,6 +385,9 @@ func createSessionViaAPIWithOpts(name, projectPath, prompt string, worktree bool
 	}
 	if autoApprove {
 		payload["autoApprove"] = true
+	}
+	if parentSessionID != "" {
+		payload["parentSessionId"] = parentSessionID
 	}
 	if systemPrompt != "" {
 		payload["systemPrompt"] = systemPrompt
