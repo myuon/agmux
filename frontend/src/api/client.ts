@@ -31,6 +31,7 @@ export const api = {
     model?: string;
     autoApprove?: boolean;
     systemPrompt?: string;
+    roleTemplate?: string;
   }) =>
     request<Session>("/sessions", {
       method: "POST",

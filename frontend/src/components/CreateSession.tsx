@@ -11,6 +11,7 @@ interface Props {
     model?: string;
     autoApprove?: boolean;
     systemPrompt?: string;
+    roleTemplate?: string;
   }) => void;
 }
 
@@ -87,6 +88,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
       model: (provider === "codex" || provider === "claude") && model ? model : undefined,
       autoApprove: provider === "codex" && autoApprove ? true : undefined,
       systemPrompt: systemPrompt || undefined,
+      roleTemplate: selectedTemplate || undefined,
     });
   };
 

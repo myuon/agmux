@@ -343,7 +343,7 @@ func sessionCreateCmd() *cobra.Command {
 					model = tmpl.Model
 				}
 				// System prompt from template is sent as part of the API call
-				return createSessionViaAPIWithSystemPrompt(args[0], projectPath, prompt, worktree, provider, model, autoApprove, tmpl.SystemPrompt)
+				return createSessionViaAPIWithOpts(args[0], projectPath, prompt, worktree, provider, model, autoApprove, tmpl.SystemPrompt, templateName)
 			}
 			return createSessionViaAPI(args[0], projectPath, prompt, worktree, provider, model, autoApprove)
 		},
@@ -363,10 +363,10 @@ func sessionCreateCmd() *cobra.Command {
 // createSessionViaAPI sends a POST /api/sessions request to the running agmux server
 // so that the stream process is owned by the server, not this short-lived CLI process.
 func createSessionViaAPI(name, projectPath, prompt string, worktree bool, provider, model string, autoApprove bool) error {
-	return createSessionViaAPIWithSystemPrompt(name, projectPath, prompt, worktree, provider, model, autoApprove, "")
+	return createSessionViaAPIWithOpts(name, projectPath, prompt, worktree, provider, model, autoApprove, "", "")
 }
 
-func createSessionViaAPIWithSystemPrompt(name, projectPath, prompt string, worktree bool, provider, model string, autoApprove bool, systemPrompt string) error {
+func createSessionViaAPIWithOpts(name, projectPath, prompt string, worktree bool, provider, model string, autoApprove bool, systemPrompt string, roleTemplate string) error {
 	cfg, _ := config.Load()
 	port := cfg.Server.Port
 
@@ -390,6 +390,9 @@ func createSessionViaAPIWithSystemPrompt(name, projectPath, prompt string, workt
 	}
 	if systemPrompt != "" {
 		payload["systemPrompt"] = systemPrompt
+	}
+	if roleTemplate != "" {
+		payload["roleTemplate"] = roleTemplate
 	}
 	body, _ := json.Marshal(payload)
 
