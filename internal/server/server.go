@@ -964,7 +964,7 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 	// Read all lines, keep last N
 	var lines []string
 	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
 	}
