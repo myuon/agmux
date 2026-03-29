@@ -768,13 +768,13 @@ func sessionInfoCmd() *cobra.Command {
 			// Find session by prefix match
 			var s session.Session
 			var status, sessionType, providerStr string
-			var prompt, systemPrompt, parentSessionID, currentTask, goal, lastError sql.NullString
+			var prompt, systemPrompt, parentSessionID, currentTask, goal, lastError, roleTemplate sql.NullString
 			var holderPID int
 			err = database.QueryRow(
-				`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, current_task, goal, last_error, holder_pid, clear_offset, created_at, updated_at
+				`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, current_task, goal, last_error, holder_pid, clear_offset, role_template, created_at, updated_at
 				 FROM sessions WHERE id LIKE ?`,
 				prefix+"%",
-			).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &currentTask, &goal, &lastError, &holderPID, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt)
+			).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &currentTask, &goal, &lastError, &holderPID, &s.ClearOffset, &roleTemplate, &s.CreatedAt, &s.UpdatedAt)
 			if err != nil {
 				return fmt.Errorf("session not found: %s", prefix)
 			}
@@ -789,6 +789,9 @@ func sessionInfoCmd() *cobra.Command {
 			fmt.Printf("Type:           %s\n", s.Type)
 			fmt.Printf("Provider:       %s\n", s.Provider)
 			fmt.Printf("Model:          %s\n", s.Model)
+			if roleTemplate.Valid && roleTemplate.String != "" {
+				fmt.Printf("Role:           %s\n", roleTemplate.String)
+			}
 			fmt.Printf("Project:        %s\n", s.ProjectPath)
 			fmt.Printf("CLI Session ID: %s\n", s.CliSessionID)
 			if parentSessionID.Valid && parentSessionID.String != "" {
