@@ -37,18 +37,20 @@
 # macOS (Apple Silicon)
 curl -L -o agmux https://github.com/myuon/agmux/releases/latest/download/agmux-darwin-arm64
 chmod +x agmux
-sudo mv agmux /usr/local/bin/
+mv agmux ~/.local/bin/
 
 # macOS (Intel)
 curl -L -o agmux https://github.com/myuon/agmux/releases/latest/download/agmux-darwin-amd64
 chmod +x agmux
-sudo mv agmux /usr/local/bin/
+mv agmux ~/.local/bin/
 
 # Linux (amd64)
 curl -L -o agmux https://github.com/myuon/agmux/releases/latest/download/agmux-linux-amd64
 chmod +x agmux
-sudo mv agmux /usr/local/bin/
+mv agmux ~/.local/bin/
 ```
+
+> `~/.local/bin/` が PATH に含まれていない場合は、シェルの設定ファイルに `export PATH="$HOME/.local/bin:$PATH"` を追加してください。システムワイドにインストールする場合は `sudo mv agmux /usr/local/bin/` を使用してください。
 
 ### ソースからビルド
 
