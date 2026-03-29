@@ -230,6 +230,13 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		parentSessionID = opts[0].ParentSessionID
 	}
 
+	// Validate parent session exists when creating a sub-session
+	if parentSessionID != "" {
+		if _, err := m.Get(parentSessionID); err != nil {
+			return nil, fmt.Errorf("parent session %s not found", parentSessionID)
+		}
+	}
+
 	// For Codex, resolve default model from config if not explicitly specified
 	if pn == ProviderCodex && model == "" {
 		model = ReadCodexDefaultModel()
@@ -586,6 +593,11 @@ func (m *Manager) Delete(id string) error {
 				m.logger.Info("killed orphan holder process via DB pid", "sessionId", id, "holderPid", holderPID)
 			}
 		}
+	}
+
+	// Detach child sessions so they become top-level instead of orphaned
+	if _, err := m.db.Exec("UPDATE sessions SET parent_session_id = NULL WHERE parent_session_id = ?", id); err != nil {
+		return fmt.Errorf("detach child sessions: %w", err)
 	}
 
 	_, err = m.db.Exec("DELETE FROM sessions WHERE id = ?", id)
