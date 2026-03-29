@@ -17,6 +17,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -793,6 +794,23 @@ func isDisplayableLine(line string) bool {
 	return true
 }
 
+// isTTY reports whether stdout is a terminal.
+var isTTY = sync.OnceValue(func() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
+})
+
+// color returns the ANSI escape sequence if stdout is a terminal, otherwise empty string.
+func color(code string) string {
+	if isTTY() {
+		return code
+	}
+	return ""
+}
+
 func formatSessionLine(line string) {
 	line = strings.TrimSpace(line)
 	if line == "" || strings.HasPrefix(line, "//") {
@@ -818,10 +836,10 @@ func formatSessionLine(line string) {
 		// User message: content can be a string
 		var text string
 		if err := json.Unmarshal(entry.Message.Content, &text); err == nil {
-			fmt.Printf("\033[1;34m[user]\033[0m %s\n", text)
+			fmt.Printf("%s[user]%s %s\n", color("\033[1;34m"), color("\033[0m"), text)
 			return
 		}
-		fmt.Printf("\033[1;34m[user]\033[0m %s\n", string(entry.Message.Content))
+		fmt.Printf("%s[user]%s %s\n", color("\033[1;34m"), color("\033[0m"), string(entry.Message.Content))
 
 	case "assistant":
 		// Assistant message: content is an array of blocks
@@ -832,21 +850,21 @@ func formatSessionLine(line string) {
 			Input json.RawMessage `json:"input"`
 		}
 		if err := json.Unmarshal(entry.Message.Content, &blocks); err != nil {
-			fmt.Printf("\033[1;32m[assistant]\033[0m %s\n", string(entry.Message.Content))
+			fmt.Printf("%s[assistant]%s %s\n", color("\033[1;32m"), color("\033[0m"), string(entry.Message.Content))
 			return
 		}
 		for _, b := range blocks {
 			switch b.Type {
 			case "text":
-				fmt.Printf("\033[1;32m[assistant]\033[0m %s\n", b.Text)
+				fmt.Printf("%s[assistant]%s %s\n", color("\033[1;32m"), color("\033[0m"), b.Text)
 			case "tool_use":
 				inputStr := string(b.Input)
 				if len(inputStr) > 200 {
 					inputStr = inputStr[:200] + "..."
 				}
-				fmt.Printf("\033[1;33m[tool: %s]\033[0m %s\n", b.Name, inputStr)
+				fmt.Printf("%s[tool: %s]%s %s\n", color("\033[1;33m"), b.Name, color("\033[0m"), inputStr)
 			case "tool_result":
-				fmt.Printf("\033[0;36m[tool_result]\033[0m %s\n", b.Text)
+				fmt.Printf("%s[tool_result]%s %s\n", color("\033[0;36m"), color("\033[0m"), b.Text)
 			}
 		}
 
@@ -856,15 +874,15 @@ func formatSessionLine(line string) {
 			if len(summary) > 200 {
 				summary = summary[:200] + "..."
 			}
-			fmt.Printf("\033[1;35m[result:%s]\033[0m %s\n", entry.Subtype, summary)
+			fmt.Printf("%s[result:%s]%s %s\n", color("\033[1;35m"), entry.Subtype, color("\033[0m"), summary)
 		} else {
-			fmt.Printf("\033[1;35m[result:%s]\033[0m (stop_reason: %s)\n", entry.Subtype, entry.StopReason)
+			fmt.Printf("%s[result:%s]%s (stop_reason: %s)\n", color("\033[1;35m"), entry.Subtype, color("\033[0m"), entry.StopReason)
 		}
 
 	case "system":
 		switch entry.Subtype {
 		case "init":
-			fmt.Printf("\033[0;90m[system:init]\033[0m session started\n")
+			fmt.Printf("%s[system:init]%s session started\n", color("\033[0;90m"), color("\033[0m"))
 		case "task_started":
 			// skip verbose task events
 		case "task_progress":
@@ -873,7 +891,7 @@ func formatSessionLine(line string) {
 			// skip
 		default:
 			if entry.Subtype != "" {
-				fmt.Printf("\033[0;90m[system:%s]\033[0m\n", entry.Subtype)
+				fmt.Printf("%s[system:%s]%s\n", color("\033[0;90m"), entry.Subtype, color("\033[0m"))
 			}
 		}
 
