@@ -35,6 +35,7 @@ export interface ScenarioPreset {
   mockSessions?: Session[];
   simulatedPermission?: SimulatedPermission;
   simulatedEscalation?: SimulatedEscalation;
+  simulateSendError?: boolean;
 }
 
 export const scenarioPresets: ScenarioPreset[] = [
@@ -147,6 +148,14 @@ export const scenarioPresets: ScenarioPreset[] = [
     label: "Multiple Running Tasks",
     description: "7つの並列タスクが同時実行（ActiveTasksPanel collapse検証用）",
     lines: multipleRunningTasksLines,
+  },
+  {
+    id: "send-error",
+    type: "stream",
+    label: "Send Error Simulation",
+    description: "送信エラー時にメッセージが保持されることを確認",
+    lines: normalConversationLines,
+    simulateSendError: true,
   },
   {
     id: "session-list-all-states",
