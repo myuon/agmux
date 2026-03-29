@@ -23,6 +23,8 @@ type SessionService interface {
 	SendKeys(id string, text string) error
 	// SendKeysWithImages sends text and images to a session.
 	SendKeysWithImages(id string, text string, images []ImageData) error
+	// SendBtw sends an off-topic (btw) message to a session.
+	SendBtw(id string, text string) error
 
 	// Reconnect restarts the CLI process for an existing session.
 	Reconnect(id string) error

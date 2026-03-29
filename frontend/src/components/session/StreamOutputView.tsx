@@ -11,6 +11,7 @@ import { RefreshCw } from "lucide-react";
 
 const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
   user: { bg: "bg-blue-50", label: "User", text: "text-blue-700" },
+  user_btw: { bg: "bg-purple-50 border border-dashed border-purple-200", label: "BTW", text: "text-purple-700" },
   assistant: { bg: "bg-gray-50", label: "Assistant", text: "text-green-700" },
 };
 
@@ -31,7 +32,7 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
 
   const entries = lines
     .map((line) => line as StreamEntry)
-    .filter((e) => e.type === "user" || e.type === "assistant" || e.type === "system" || e.type === "rate_limit_event");
+    .filter((e) => e.type === "user" || e.type === "user_btw" || e.type === "assistant" || e.type === "system" || e.type === "rate_limit_event");
 
   const groups = mergeStreamEntries(entries, partialText || undefined, provider);
 

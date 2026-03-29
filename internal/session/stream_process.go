@@ -547,6 +547,47 @@ func (sp *StreamProcess) sendClaude(message string, images []ImageData) error {
 	return err
 }
 
+// SendBtw writes an off-topic (btw) message to the process stdin.
+func (sp *StreamProcess) SendBtw(message string) error {
+	if sp.provider.Name() == ProviderCodex {
+		return fmt.Errorf("btw messages are not supported for Codex provider")
+	}
+
+	msg := struct {
+		Type    string `json:"type"`
+		Message struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"message"`
+	}{
+		Type: "user_btw",
+	}
+	msg.Message.Role = "user"
+	msg.Message.Content = message
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("marshal btw message: %w", err)
+	}
+
+	// Record btw message to memory buffer and JSONL file
+	line := string(data)
+	sp.mu.Lock()
+	sp.lines = append(sp.lines, line)
+	total := len(sp.lines)
+	sp.file.WriteString(line + "\n")
+	sp.file.Sync()
+	cb := sp.onNewLines
+	sp.mu.Unlock()
+
+	if cb != nil {
+		cb(sp.streamOpts.SessionID, []string{line}, total)
+	}
+
+	_, err = fmt.Fprintf(sp.stdin, "%s\n", data)
+	return err
+}
+
 // sendCodex handles message sending for Codex provider.
 // Codex exec exits after each prompt, so followup messages require
 // spawning a new "codex exec resume <session_id> <message>" process.

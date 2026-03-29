@@ -47,7 +47,7 @@ export function ScenarioTestPage() {
   const activeTasks = useMemo(() => {
     const entries = activeLines
       .map((line) => line as StreamEntry)
-      .filter((e) => e.type === "user" || e.type === "assistant" || e.type === "system");
+      .filter((e) => e.type === "user" || e.type === "user_btw" || e.type === "assistant" || e.type === "system");
     return extractActiveTasks(entries);
   }, [activeLines]);
 

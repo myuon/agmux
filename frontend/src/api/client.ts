@@ -71,6 +71,12 @@ export const api = {
       body: JSON.stringify({ text, ...(images && images.length > 0 ? { images } : {}) }),
     }),
 
+  sendBtwToSession: (id: string, text: string) =>
+    request<{ status: string }>(`/sessions/${id}/btw`, {
+      method: "POST",
+      body: JSON.stringify({ text }),
+    }),
+
   getLogs: (limit = 100) =>
     request<LogEntry[]>(`/logs?limit=${limit}`),
 
