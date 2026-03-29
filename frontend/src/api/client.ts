@@ -208,8 +208,10 @@ export interface AppConfig {
   server: { port: number };
   daemon: { interval: string };
   session: { claudeCommand: string };
+  devMode: boolean;
   prompts?: { systemPrompt: string };
   templates: RoleTemplate[];
+  configPath?: string;
 }
 
 export interface MetricRow {
