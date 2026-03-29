@@ -354,6 +354,54 @@ func (sp *HolderStreamProcess) SendWithImages(message string, images []ImageData
 	return sp.sendClaude(message, images)
 }
 
+// SendBtw writes an off-topic (btw) message via the socket.
+// Uses type "user_btw" so the CLI treats it as a side conversation.
+func (sp *HolderStreamProcess) SendBtw(message string) error {
+	if sp.provider.Name() == ProviderCodex {
+		return fmt.Errorf("btw messages are not supported for Codex provider")
+	}
+
+	return sp.sendClaudeBtw(message)
+}
+
+func (sp *HolderStreamProcess) sendClaudeBtw(message string) error {
+	msg := struct {
+		Type    string `json:"type"`
+		Message struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"message"`
+	}{
+		Type: "user_btw",
+	}
+	msg.Message.Role = "user"
+	msg.Message.Content = message
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("marshal btw message: %w", err)
+	}
+
+	// Record btw message in memory
+	line := string(data)
+	sp.mu.Lock()
+	sp.lines = append(sp.lines, line)
+	total := len(sp.lines)
+
+	sp.writeToStreamFile(line)
+
+	cb := sp.onNewLines
+	sp.mu.Unlock()
+
+	if cb != nil {
+		cb(sp.streamOpts.SessionID, []string{line}, total)
+	}
+
+	// Send to holder via socket
+	_, err = fmt.Fprintf(sp.conn, "%s\n", data)
+	return err
+}
+
 func (sp *HolderStreamProcess) sendClaude(message string, images []ImageData) error {
 	var data []byte
 	var err error

@@ -111,6 +111,7 @@ func (s *Server) setupRoutes() {
 		r.Delete("/sessions/{id}", s.deleteSession)
 		r.Post("/sessions/{id}/stop", s.stopSession)
 		r.Post("/sessions/{id}/send", s.sendToSession)
+		r.Post("/sessions/{id}/btw", s.sendBtwToSession)
 		r.Put("/sessions/{id}/context", s.updateSessionContext)
 		r.Get("/sessions/{id}/goals", s.getGoals)
 		r.Post("/sessions/{id}/goals", s.createGoal)
@@ -372,6 +373,27 @@ func (s *Server) sendToSession(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = s.sessions.UpdateStatus(id, session.StatusWorking)
 	s.recordSessionAction(id, "session_send_keys", req.Text)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+}
+
+func (s *Server) sendBtwToSession(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req struct {
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Text == "" {
+		writeError(w, http.StatusBadRequest, "text is required")
+		return
+	}
+	if err := s.sessions.SendBtw(id, req.Text); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordSessionAction(id, "session_send_btw", req.Text)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
 }
 

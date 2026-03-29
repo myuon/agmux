@@ -734,6 +734,16 @@ func (m *Manager) SendKeys(id string, text string) error {
 	return m.SendKeysWithImages(id, text, nil)
 }
 
+func (m *Manager) SendBtw(id string, text string) error {
+	m.streamMu.Lock()
+	sp, ok := m.streamProcesses[id]
+	m.streamMu.Unlock()
+	if !ok {
+		return fmt.Errorf("no stream process for session %s (btw requires an active session)", id)
+	}
+	return sp.SendBtw(text)
+}
+
 func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData) error {
 	s, err := m.Get(id)
 	if err != nil {
