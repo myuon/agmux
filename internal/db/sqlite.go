@@ -281,6 +281,16 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: convert deprecated status values to new ones
+	_, err = db.Exec(`UPDATE sessions SET status = 'paused' WHERE status = 'stopped'`)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(`UPDATE sessions SET status = 'waiting_input' WHERE status IN ('question_waiting', 'alignment_needed')`)
+	if err != nil {
+		return err
+	}
+
 	// Migration: create notifications table
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS notifications (

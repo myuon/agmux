@@ -3,7 +3,7 @@ export interface Session {
   name: string;
   projectPath: string;
   initialPrompt?: string;
-  status: "working" | "idle" | "paused" | "question_waiting" | "alignment_needed" | "stopped";
+  status: "working" | "idle" | "paused" | "exited" | "waiting_input";
   type: "worker" | "controller" | "external";
   provider: string;
   model?: string;

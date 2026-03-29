@@ -15,12 +15,11 @@ type RecentProject struct {
 type Status string
 
 const (
-	StatusWorking         Status = "working"
-	StatusIdle            Status = "idle"
-	StatusQuestionWaiting Status = "question_waiting"
-	StatusAlignmentNeeded Status = "alignment_needed"
-	StatusPaused          Status = "paused"
-	StatusStopped         Status = "stopped"
+	StatusIdle         Status = "idle"           // Initial state / turn complete, waiting for user
+	StatusWorking      Status = "working"        // AI is working
+	StatusPaused       Status = "paused"         // User explicitly stopped the session
+	StatusExited       Status = "exited"         // Process died unexpectedly
+	StatusWaitingInput Status = "waiting_input"  // Waiting for user input (escalation/permission)
 )
 
 type SessionType string

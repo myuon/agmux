@@ -681,10 +681,10 @@ function SessionCardPreview() {
           onClick={() => {}}
         />
 
-        <p className="text-xs text-gray-500 font-medium mt-4">Controller (stopped, with Restart action)</p>
+        <p className="text-xs text-gray-500 font-medium mt-4">Controller (paused, with Restart action)</p>
         <SessionCard
           name="project-orchestrator"
-          status="stopped"
+          status="paused"
           type="controller"
           provider="claude"
           projectPath="/Users/dev/projects/my-app"
@@ -697,10 +697,10 @@ function SessionCardPreview() {
           }
         />
 
-        <p className="text-xs text-gray-500 font-medium mt-4">Stopped with error</p>
+        <p className="text-xs text-gray-500 font-medium mt-4">Exited with error</p>
         <SessionCard
           name="failing-worker"
-          status="stopped"
+          status="exited"
           type="worker"
           provider="claude"
           lastError="exit status 1"
@@ -756,7 +756,7 @@ function SessionListPreview() {
       id: "sess-002",
       name: "fix-css-layout",
       projectPath: "/Users/ioijoi/ghq/github.com/myuon/agmux",
-      status: "stopped",
+      status: "exited",
       type: "worker",
       provider: "claude",
       model: "claude-opus-4-6[1m]",
@@ -779,7 +779,7 @@ function SessionListPreview() {
     <PreviewSection title="SessionList">
       <div className="space-y-4">
         <div>
-          <p className="text-xs text-gray-500 mb-2">通常セッション + external + stopped + idle (プロジェクト別グループ)</p>
+          <p className="text-xs text-gray-500 mb-2">通常セッション + external + exited + idle (プロジェクト別グループ)</p>
           <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
             <SessionList sessions={mockSessions} onRestartController={() => {}} />
           </div>

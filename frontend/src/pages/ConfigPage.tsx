@@ -120,19 +120,17 @@ export function ConfigPage() {
 const NOTIFY_STATUSES = [
   { key: "working", label: "Working" },
   { key: "idle", label: "Idle" },
-  { key: "question_waiting", label: "Question Waiting" },
-  { key: "alignment_needed", label: "Alignment Needed" },
+  { key: "waiting_input", label: "Waiting Input" },
   { key: "paused", label: "Paused" },
-  { key: "stopped", label: "Stopped" },
+  { key: "exited", label: "Exited" },
 ] as const;
 
 const DEFAULT_NOTIFY_STATUSES: Record<string, boolean> = {
   working: false,
   idle: true,
-  question_waiting: true,
-  alignment_needed: true,
+  waiting_input: true,
   paused: false,
-  stopped: false,
+  exited: false,
 };
 
 function GoalCompletionNotifySettings() {

@@ -3,7 +3,7 @@ import { Modal } from "./ui/Modal";
 import { api } from "../api/client";
 import type { Session } from "../types/session";
 
-const ACTIVE_STATUSES = new Set(["working", "idle", "question_waiting", "alignment_needed"]);
+const ACTIVE_STATUSES = new Set(["working", "idle", "waiting_input"]);
 
 interface Props {
   open: boolean;

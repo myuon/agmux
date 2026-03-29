@@ -111,7 +111,7 @@ func (d *ExternalDetector) detect() {
 			ID:          id,
 			Name:        fmt.Sprintf("%s (pid:%d)", p.Provider, p.PID),
 			ProjectPath: p.CWD,
-			Status:      StatusWorking,
+			Status:      StatusIdle,
 			Type:        TypeExternal,
 			Provider:    p.Provider,
 			CreatedAt:   createdAt,
