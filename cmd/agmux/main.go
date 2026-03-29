@@ -48,12 +48,32 @@ func main() {
 	rootCmd.AddCommand(daemonCmd())
 	rootCmd.AddCommand(holderCmd())
 
-	// Custom help template that inlines session subcommands
-	defaultHelp := rootCmd.HelpTemplate()
-	_ = defaultHelp
-	// Reset session command to use cobra's default help template
-	sesCmd.SetHelpTemplate(sesCmd.UsageTemplate())
+	// Subcommand help template: shows .Use (with args) instead of just .Name
+	subCmdHelpTpl := `{{.Short}}
 
+Usage:
+  {{.UseLine}}{{if .HasAvailableSubCommands}}
+  {{.CommandPath}} [command]{{end}}{{if gt (len .Aliases) 0}}
+
+Aliases:
+  {{.NameAndAliases}}{{end}}{{if .HasAvailableSubCommands}}
+
+Available Commands:{{range .Commands}}{{if .IsAvailableCommand}}
+  {{rpad .Use 30}} {{.Short}}{{end}}{{end}}{{end}}{{if .HasAvailableLocalFlags}}
+
+Flags:
+{{.LocalFlags.FlagUsages | trimTrailingWhitespaces}}{{end}}{{if .HasAvailableSubCommands}}
+
+Use "{{.CommandPath}} [command] --help" for more information about a command.{{end}}
+`
+	// Apply to all subcommands that have children
+	for _, c := range rootCmd.Commands() {
+		if c.HasSubCommands() {
+			c.SetHelpTemplate(subCmdHelpTpl)
+		}
+	}
+
+	// Root help template: inlines session subcommands
 	rootCmd.SetHelpTemplate(`AI Agent Multiplexer
 
 Usage:
