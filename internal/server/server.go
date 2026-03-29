@@ -3,6 +3,7 @@ package server
 import (
 	"bufio"
 	"database/sql"
+	"errors"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -1353,6 +1354,21 @@ type templateRequest struct {
 }
 
 func (s *Server) listTemplates(w http.ResponseWriter, r *http.Request) {
+	nameFilter := r.URL.Query().Get("name")
+	if nameFilter != "" {
+		tmpl, err := s.templates.GetByName(nameFilter)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				writeJSON(w, http.StatusOK, []session.RoleTemplate{})
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, []session.RoleTemplate{*tmpl})
+		return
+	}
+
 	templates, err := s.templates.List()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -425,8 +426,8 @@ func resolveTemplate(name string) (*struct {
 	cfg, _ := config.Load()
 	port := cfg.Server.Port
 
-	url := fmt.Sprintf("http://localhost:%d/api/templates?name=%s", port, name)
-	resp, err := http.Get(url)
+	reqURL := fmt.Sprintf("http://localhost:%d/api/templates?name=%s", port, url.QueryEscape(name))
+	resp, err := http.Get(reqURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to agmux server on port %d (is it running?): %w", port, err)
 	}

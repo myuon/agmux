@@ -311,7 +311,7 @@ func migrate(db *sql.DB) error {
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS role_templates (
 			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
+			name TEXT NOT NULL UNIQUE,
 			system_prompt TEXT NOT NULL DEFAULT '',
 			provider TEXT NOT NULL DEFAULT 'claude',
 			model TEXT NOT NULL DEFAULT '',
