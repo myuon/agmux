@@ -11,9 +11,6 @@ frontend/dist/
 # Dependencies
 frontend/node_modules/
 
-# Preview worktrees
-.worktrees/
-
 # Claude Code worktrees
 .claude/worktrees/
 
