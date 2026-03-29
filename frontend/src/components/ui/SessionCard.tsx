@@ -34,7 +34,9 @@ export function SessionCard({
     >
       <div className="flex items-center gap-2 mb-1">
         <StatusDot status={status} />
-        <span className="font-medium text-sm truncate">{name}</span>
+        <span className="font-medium text-sm truncate">
+          {name}
+        </span>
         {type === "controller" && (
           <Chip color="purple">Controller</Chip>
         )}

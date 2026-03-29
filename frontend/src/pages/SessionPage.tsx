@@ -94,6 +94,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [reconnectToast, setReconnectToast] = useState(false);
   const [disconnectToast, setDisconnectToast] = useState(false);
   const [clearToast, setClearToast] = useState<"success" | "error" | null>(null);
+  const [copiedToast, setCopiedToast] = useState(false);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [slashFilter, setSlashFilter] = useState("");
@@ -570,6 +571,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       {reconnectToast && <Toast message="再接続に成功しました" />}
       {clearToast === "success" && <Toast message="セッションをクリアしました" />}
       {clearToast === "error" && <Toast message="クリアに失敗しました" variant="error" />}
+      {copiedToast && <Toast message="セッション名をコピーしました" />}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 shrink-0">
         <IconButton onClick={() => navigate("/")} title="Back">
           <ArrowLeft className="w-4 h-4" />
@@ -577,7 +579,16 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         {session ? (
           <>
             <StatusDot status={session.status} />
-            <h2 className="text-xl sm:text-2xl font-bold">{session.name}</h2>
+            <h2
+              className="text-xl sm:text-2xl font-bold hover:text-indigo-600 transition-colors cursor-pointer"
+              onClick={() => {
+                navigator.clipboard.writeText(session.name).then(() => {
+                  setCopiedToast(true);
+                  setTimeout(() => setCopiedToast(false), 1500);
+                }).catch(() => {});
+              }}
+              title="クリックでセッション名をコピー"
+            >{session.name}</h2>
             <span className="text-xs text-gray-400">{session.status}</span>
             {session.provider && (
               <Chip color={session.provider === "codex" ? "green" : session.provider === "claude" ? "blue" : "gray"}>
