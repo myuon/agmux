@@ -1,6 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Send } from "lucide-react";
 import { StreamOutputView, ActiveTasksPanel } from "../components/session/StreamOutputView";
 import { PermissionPromptBanner, EscalationBanner } from "./SessionPage";
 import { IconButton } from "../components/ui/IconButton";
@@ -74,11 +74,38 @@ export function ScenarioTestPage() {
     setShowSidebar(false);
   };
 
+  // Send error simulation state
+  const [sendMessage, setSendMessage] = useState("");
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
+  const sendInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const handleSimulatedSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sendMessage.trim()) return;
+    setIsSending(true);
+    setSendError(null);
+    try {
+      // Simulate API call that always fails with 500 error
+      await new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("500 Internal Server Error: simulated send failure")), 500)
+      );
+      // This line should never execute
+      setSendMessage("");
+    } catch (err) {
+      console.error("Failed to send message:", err);
+      setSendError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const activeLabel = customLines
     ? "Custom JSONL"
     : activePreset?.label ?? null;
 
   const isSessionList = activePreset?.type === "session-list";
+  const isSendError = activePreset?.simulateSendError === true && !customLines;
 
   const sidebar = (
     <div className="p-4 flex-1 min-h-0 overflow-y-auto">
@@ -230,6 +257,44 @@ export function ScenarioTestPage() {
                   sessionId="scenario-test"
                   onResponded={() => {}}
                 />
+              </div>
+            )}
+
+            {/* Simulated send error form */}
+            {isSendError && (
+              <div className="px-4 sm:px-8 pb-2">
+                {sendError && (
+                  <div className="mb-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                    送信エラー: {sendError}
+                    <span className="block text-xs text-red-500 mt-1">
+                      メッセージ入力欄にテキストが保持されていることを確認してください
+                    </span>
+                  </div>
+                )}
+                <form onSubmit={handleSimulatedSend} className="flex gap-2 items-end">
+                  <textarea
+                    ref={sendInputRef}
+                    value={sendMessage}
+                    onChange={(e) => setSendMessage(e.target.value)}
+                    placeholder="メッセージを入力して送信ボタンを押してください（必ずエラーになります）"
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                    rows={2}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSimulatedSend(e);
+                      }
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!sendMessage.trim() || isSending}
+                    className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span className="text-sm">{isSending ? "送信中..." : "送信"}</span>
+                  </button>
+                </form>
               </div>
             )}
 
