@@ -42,10 +42,12 @@ type Session struct {
 	CliSessionID    string       `json:"cliSessionId,omitempty"`
 	Model           string       `json:"model,omitempty"`
 	ParentSessionID string       `json:"parentSessionId,omitempty"`
+	RoleTemplate    string       `json:"roleTemplate,omitempty"`
 	CurrentTask     string       `json:"currentTask,omitempty"`
 	Goal            string       `json:"goal,omitempty"`
 	Goals           GoalStack    `json:"goals,omitempty"`
 	LastError       string       `json:"lastError,omitempty"`
+	HolderPID       int          `json:"holderPid,omitempty"`
 	ClearOffset     int64        `json:"clearOffset"`
 	CreatedAt       time.Time    `json:"createdAt"`
 	UpdatedAt       time.Time    `json:"updatedAt"`

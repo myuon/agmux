@@ -1,5 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate, useLoaderData, Await } from "react-router-dom";
+import { useParams, useNavigate, useLoaderData, Await, Link } from "react-router-dom";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -35,6 +35,22 @@ type DeferredData = {
   providerVersion: string | null;
 };
 
+function ParentSessionLink({ parentId }: { parentId: string }) {
+  const [parentName, setParentName] = useState<string | null>(null);
+  useEffect(() => {
+    api.getSession(parentId).then((s) => setParentName(s.name)).catch(() => {});
+  }, [parentId]);
+  return (
+    <div className="flex items-center gap-1 mb-1 text-xs sm:text-sm text-blue-500">
+      <GitBranch className="w-3.5 h-3.5 shrink-0" />
+      <span>Sub-session of</span>
+      <Link to={`/sessions/${parentId}`} className="underline hover:text-blue-700">
+        {parentName ?? parentId}
+      </Link>
+    </div>
+  );
+}
+
 function SessionPageSkeleton() {
   return (
     <div className="h-dvh flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 max-w-4xl mx-auto">
@@ -49,6 +65,7 @@ function SessionPageSkeleton() {
 }
 
 export function SessionPage() {
+  const { id: sessionId } = useParams<{ id: string }>();
   const loaderData = useLoaderData<{
     session: Session;
     streamOutput: Promise<DeferredData["streamOutput"]>;
@@ -65,7 +82,7 @@ export function SessionPage() {
   );
 
   return (
-    <Suspense fallback={<SessionPageSkeleton />}>
+    <Suspense key={sessionId} fallback={<SessionPageSkeleton />}>
       <Await resolve={deferredPromise}>
         {(deferred: DeferredData) => (
           <SessionPageInner session={loaderData.session} deferred={deferred} />
@@ -84,6 +101,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [streamLines, setStreamLines] = useState<unknown[]>(deferred.streamOutput.lines);
   const [partialText, setPartialText] = useState("");
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>(deferred.diff.files);
+
+
   const [pendingImages, setPendingImages] = useState<{ data: string; mediaType: string; preview: string }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingEscalationId, setPendingEscalationId] = useState<string | null>(null);
@@ -109,6 +128,10 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [showForkModal, setShowForkModal] = useState(false);
   const [forkMessage, setForkMessage] = useState("");
   const [forkLoading, setForkLoading] = useState(false);
+  const [showSubSessionModal, setShowSubSessionModal] = useState(false);
+  const [subSessionName, setSubSessionName] = useState("");
+  const [subSessionPrompt, setSubSessionPrompt] = useState("");
+  const [subSessionLoading, setSubSessionLoading] = useState(false);
 
   const providerVersion = deferred.providerVersion;
   const streamCursorRef = useRef<number | null>(null);
@@ -167,6 +190,12 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       const data = msg.data as { id: string; sessionId: string };
       if (data.sessionId === sessionId) {
         setPendingPermission((prev) => prev && prev.id === data.id ? { ...prev, timedOut: true } : prev);
+      }
+    }
+    if (msg.type === "status_change") {
+      const data = msg.data as { sessionId: string; status: Session["status"]; lastError?: string };
+      if (data.sessionId === sessionId) {
+        setSession(prev => prev ? { ...prev, status: data.status, ...(data.lastError !== undefined ? { lastError: data.lastError } : {}) } : prev);
       }
     }
     if (msg.type === "stream_update") {
@@ -383,6 +412,16 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                     setShowActionMenu(false);
                     setForkMessage("");
                     setShowForkModal(true);
+                  }}
+                />
+              )}
+              {session.type !== "controller" && (
+                <ActionMenuItem
+                  icon={<Plus className="w-4 h-4" />}
+                  label="Create sub-session"
+                  onClick={() => {
+                    setShowActionMenu(false);
+                    setShowSubSessionModal(true);
                   }}
                 />
               )}
@@ -640,6 +679,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             {session.model && (
               <Chip color="purple">{session.model}</Chip>
             )}
+            {session.roleTemplate && (
+              <Chip color="orange">{session.roleTemplate}</Chip>
+            )}
           </>
         ) : (
           <>
@@ -648,6 +690,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           </>
         )}
       </div>
+      {session?.parentSessionId && (
+        <ParentSessionLink parentId={session.parentSessionId} />
+      )}
       {session ? (
         <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm text-gray-500">
           <IconText icon={<FolderOpen className="w-3.5 h-3.5" />} className="text-xs sm:text-sm">
@@ -900,6 +945,78 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               className="px-3 py-1.5 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
             >
               {forkLoading ? "フォーク中..." : "フォーク"}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Sub-session Modal */}
+      <Modal open={showSubSessionModal} onClose={() => setShowSubSessionModal(false)} title="サブセッションを作成">
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            if (subSessionLoading || !session) return;
+            setSubSessionLoading(true);
+            try {
+              const newSession = await api.createSession({
+                name: subSessionName || `${session.name} (sub)`,
+                projectPath: session.projectPath,
+                prompt: subSessionPrompt || undefined,
+                provider: session.provider,
+                model: session.model || undefined,
+                parentSessionId: session.id,
+              });
+              setShowSubSessionModal(false);
+              setSubSessionName("");
+              setSubSessionPrompt("");
+              navigate(`/sessions/${newSession.id}`);
+            } catch {
+              alert("サブセッションの作成に失敗しました");
+            } finally {
+              setSubSessionLoading(false);
+            }
+          }}
+          className="space-y-3"
+        >
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              セッション名
+            </label>
+            <input
+              type="text"
+              value={subSessionName}
+              onChange={(e) => setSubSessionName(e.target.value)}
+              placeholder={session ? `${session.name} (sub)` : ""}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              初期プロンプト（省略可）
+            </label>
+            <textarea
+              value={subSessionPrompt}
+              onChange={(e) => setSubSessionPrompt(e.target.value)}
+              placeholder="サブセッションに送信するメッセージ"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
+              rows={3}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowSubSessionModal(false)}
+              className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
+            >
+              キャンセル
+            </button>
+            <button
+              type="submit"
+              disabled={subSessionLoading}
+              className="px-3 py-1.5 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
+            >
+              {subSessionLoading ? "作成中..." : "作成"}
             </button>
           </div>
         </form>

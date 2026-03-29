@@ -8,11 +8,19 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+type RoleTemplate struct {
+	Name         string `toml:"name" json:"name"`
+	Provider     string `toml:"provider" json:"provider"`
+	Model        string `toml:"model,omitempty" json:"model,omitempty"`
+	SystemPrompt string `toml:"systemPrompt" json:"systemPrompt"`
+}
+
 type Config struct {
-	Server  ServerConfig  `toml:"server"`
-	Daemon  DaemonConfig  `toml:"daemon"`
-	Session SessionConfig `toml:"session"`
-	Claude  ClaudeConfig  `toml:"claude"`
+	Server    ServerConfig   `toml:"server"`
+	Daemon    DaemonConfig   `toml:"daemon"`
+	Session   SessionConfig  `toml:"session"`
+	Claude    ClaudeConfig   `toml:"claude"`
+	Templates []RoleTemplate `toml:"templates" json:"templates"`
 }
 
 type ServerConfig struct {

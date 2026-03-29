@@ -33,6 +33,9 @@ type HolderStreamProcess struct {
 	// stopped is true when Stop() was called explicitly
 	stopped bool
 
+	// holderError stores the last error reported by the holder via "error" control message
+	holderError string
+
 	// modelCaptured is true once the model has been captured
 	modelCaptured bool
 
@@ -180,17 +183,37 @@ func (sp *HolderStreamProcess) readLoop() {
 		// Check if this is a control message from the holder
 		var ctrlMsg HolderControlMessage
 		if json.Unmarshal([]byte(line), &ctrlMsg) == nil && ctrlMsg.Type == "control" {
+			if ctrlMsg.Event == "error" {
+				slog.Warn("holder stream: holder reported error", "content", ctrlMsg.Content, "sessionId", sp.streamOpts.SessionID)
+				// Store the error so it can be included when the process exits
+				sp.mu.Lock()
+				sp.holderError = ctrlMsg.Content
+				sp.mu.Unlock()
+				continue
+			}
 			if ctrlMsg.Event == "exited" {
-				slog.Info("holder stream: CLI process exited", "code", ctrlMsg.Code, "sessionId", sp.streamOpts.SessionID)
+				slog.Info("holder stream: CLI process exited", "code", ctrlMsg.Code, "content", ctrlMsg.Content, "sessionId", sp.streamOpts.SessionID)
 				sp.mu.RLock()
 				stopped := sp.stopped
 				cb := sp.onProcessExit
+				holderErr := sp.holderError
 				sp.mu.RUnlock()
 
 				if !stopped && cb != nil {
 					var exitErr error
+					// Build error from exit code, content, and any previously reported holder error
+					errMsg := ctrlMsg.Content
+					if errMsg == "" && holderErr != "" {
+						errMsg = holderErr
+					}
 					if ctrlMsg.Code != 0 {
-						exitErr = fmt.Errorf("exit code %d", ctrlMsg.Code)
+						if errMsg != "" {
+							exitErr = fmt.Errorf("exit code %d: %s", ctrlMsg.Code, errMsg)
+						} else {
+							exitErr = fmt.Errorf("exit code %d", ctrlMsg.Code)
+						}
+					} else if errMsg != "" {
+						exitErr = fmt.Errorf("%s", errMsg)
 					}
 					cb(sp.streamOpts.SessionID, exitErr)
 				}
