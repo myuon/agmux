@@ -162,6 +162,23 @@ export const api = {
 
   getNotifications: (limit = 50) =>
     request<NotificationEntry[]>(`/notifications?limit=${limit}`),
+
+  listTemplates: () => request<RoleTemplate[]>("/templates"),
+
+  createTemplate: (data: { name: string; systemPrompt: string; provider: string; model?: string }) =>
+    request<RoleTemplate>("/templates", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateTemplate: (id: string, data: { name: string; systemPrompt: string; provider: string; model?: string }) =>
+    request<RoleTemplate>(`/templates/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteTemplate: (id: string) =>
+    request<{ status: string }>(`/templates/${id}`, { method: "DELETE" }),
 };
 
 export interface RecentProject {
@@ -230,6 +247,16 @@ export interface NotificationEntry {
   kind: string;
   message: string;
   createdAt: string;
+}
+
+export interface RoleTemplate {
+  id: string;
+  name: string;
+  systemPrompt: string;
+  provider: string;
+  model?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MetricEvent {

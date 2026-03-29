@@ -40,6 +40,7 @@ type Server struct {
 	otelReceiver     *otel.Receiver
 	sqlDB            *sql.DB
 	externalDetector *session.ExternalDetector
+	templates        *session.TemplateStore
 }
 
 func New(sessions session.SessionService, hub *Hub, devMode bool, logPath string, logger *slog.Logger, sqlDB *sql.DB) *Server {
@@ -56,6 +57,7 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logPath string
 		otelReceiver:     otel.NewReceiver(sqlDB, logger),
 		sqlDB:            sqlDB,
 		externalDetector: extDetector,
+		templates:        session.NewTemplateStore(sqlDB),
 	}
 
 	// Wire real-time stream updates via WebSocket
@@ -144,6 +146,12 @@ func (s *Server) setupRoutes() {
 		r.Get("/metrics", s.getMetrics)
 		r.Get("/metrics/summary", s.getMetricsSummary)
 		r.Get("/metrics/events", s.getMetricsEvents)
+
+		r.Get("/templates", s.listTemplates)
+		r.Post("/templates", s.createTemplate)
+		r.Get("/templates/{id}", s.getTemplate)
+		r.Put("/templates/{id}", s.updateTemplate)
+		r.Delete("/templates/{id}", s.deleteTemplate)
 	})
 
 	s.router = r
@@ -1333,6 +1341,83 @@ func (s *Server) getCodexVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	version := strings.TrimSpace(string(out))
 	writeJSON(w, http.StatusOK, map[string]string{"version": version})
+}
+
+// Template handlers
+
+type templateRequest struct {
+	Name         string `json:"name"`
+	SystemPrompt string `json:"systemPrompt"`
+	Provider     string `json:"provider"`
+	Model        string `json:"model"`
+}
+
+func (s *Server) listTemplates(w http.ResponseWriter, r *http.Request) {
+	templates, err := s.templates.List()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if templates == nil {
+		templates = []session.RoleTemplate{}
+	}
+	writeJSON(w, http.StatusOK, templates)
+}
+
+func (s *Server) createTemplate(w http.ResponseWriter, r *http.Request) {
+	var req templateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	t, err := s.templates.Create(req.Name, req.SystemPrompt, session.ProviderName(req.Provider), req.Model)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, t)
+}
+
+func (s *Server) getTemplate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	t, err := s.templates.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
+func (s *Server) updateTemplate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req templateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	t, err := s.templates.Update(id, req.Name, req.SystemPrompt, session.ProviderName(req.Provider), req.Model)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, t)
+}
+
+func (s *Server) deleteTemplate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := s.templates.Delete(id); err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 // helpers

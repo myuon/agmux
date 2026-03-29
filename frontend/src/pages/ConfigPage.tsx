@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLoaderData } from "react-router-dom";
 import { api } from "../api/client";
-import type { AppConfig } from "../api/client";
+import type { AppConfig, RoleTemplate } from "../api/client";
 import { Section, Field } from "../components/ui/Section";
 import { ToggleButton } from "../components/ui/ToggleButton";
 import { AlertBanner } from "../components/ui/AlertBanner";
@@ -102,6 +102,8 @@ export function ConfigPage() {
             )}
           </Section>
         )}
+
+        <TemplateManager />
 
         <div className="pt-4">
           <button
@@ -270,6 +272,158 @@ function NotificationStatus() {
           </SecondaryButton>
         )}
       </div>
+    </Section>
+  );
+}
+
+function TemplateManager() {
+  const [templates, setTemplates] = useState<RoleTemplate[]>([]);
+  const [editing, setEditing] = useState<RoleTemplate | null>(null);
+  const [isNew, setIsNew] = useState(false);
+  const [form, setForm] = useState({ name: "", systemPrompt: "", provider: "claude", model: "" });
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => {
+    api.listTemplates().then(setTemplates).catch(() => setTemplates([]));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const startNew = () => {
+    setIsNew(true);
+    setEditing(null);
+    setForm({ name: "", systemPrompt: "", provider: "claude", model: "" });
+    setError(null);
+  };
+
+  const startEdit = (t: RoleTemplate) => {
+    setIsNew(false);
+    setEditing(t);
+    setForm({ name: t.name, systemPrompt: t.systemPrompt, provider: t.provider, model: t.model || "" });
+    setError(null);
+  };
+
+  const cancel = () => {
+    setEditing(null);
+    setIsNew(false);
+    setError(null);
+  };
+
+  const save = async () => {
+    setError(null);
+    try {
+      if (isNew) {
+        await api.createTemplate(form);
+      } else if (editing) {
+        await api.updateTemplate(editing.id, form);
+      }
+      cancel();
+      load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save template");
+    }
+  };
+
+  const remove = async (id: string) => {
+    try {
+      await api.deleteTemplate(id);
+      load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to delete template");
+    }
+  };
+
+  const showForm = isNew || editing !== null;
+
+  return (
+    <Section title="Role Templates">
+      {error && (
+        <AlertBanner variant="error">{error}</AlertBanner>
+      )}
+      {templates.length === 0 && !showForm && (
+        <p className="text-sm text-gray-500">No templates yet.</p>
+      )}
+      {templates.map((t) => (
+        <div key={t.id} className="flex items-start justify-between border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+          <div className="min-w-0 flex-1">
+            <div className="font-medium text-sm">{t.name}</div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              {t.provider}{t.model ? ` / ${t.model}` : ""}
+            </div>
+            {t.systemPrompt && (
+              <pre className="text-xs text-gray-500 mt-1 whitespace-pre-wrap line-clamp-2">{t.systemPrompt}</pre>
+            )}
+          </div>
+          <div className="flex gap-1 ml-2 shrink-0">
+            <SecondaryButton onClick={() => startEdit(t)} color="blue" className="px-2 py-1 text-xs">
+              Edit
+            </SecondaryButton>
+            <SecondaryButton onClick={() => remove(t.id)} color="gray" className="px-2 py-1 text-xs">
+              Delete
+            </SecondaryButton>
+          </div>
+        </div>
+      ))}
+      {showForm && (
+        <div className="space-y-3 border border-gray-200 rounded p-3 bg-gray-50">
+          <div>
+            <label className="text-xs text-gray-600 block mb-1">Name</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full bg-white border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+              placeholder="Template name"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-600 block mb-1">System Prompt</label>
+            <textarea
+              value={form.systemPrompt}
+              onChange={(e) => setForm({ ...form, systemPrompt: e.target.value })}
+              rows={3}
+              className="w-full bg-white border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+              placeholder="You are a specialist in..."
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-600 block mb-1">Provider</label>
+            <select
+              value={form.provider}
+              onChange={(e) => setForm({ ...form, provider: e.target.value })}
+              className="w-full bg-white border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+            >
+              <option value="claude">Claude</option>
+              <option value="codex">Codex</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-600 block mb-1">Model (optional)</label>
+            <input
+              type="text"
+              value={form.model}
+              onChange={(e) => setForm({ ...form, model: e.target.value })}
+              className="w-full bg-white border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+              placeholder="e.g. claude-sonnet-4-5"
+            />
+          </div>
+          <div className="flex gap-2">
+            <SecondaryButton onClick={save} color="blue" className="px-3 py-1.5 text-sm">
+              {isNew ? "Create" : "Update"}
+            </SecondaryButton>
+            <SecondaryButton onClick={cancel} color="gray" className="px-3 py-1.5 text-sm">
+              Cancel
+            </SecondaryButton>
+          </div>
+        </div>
+      )}
+      {!showForm && (
+        <div className="pt-2">
+          <SecondaryButton onClick={startNew} color="blue" className="px-3 py-1.5 text-sm">
+            + New Template
+          </SecondaryButton>
+        </div>
+      )}
     </Section>
   );
 }

@@ -322,14 +322,29 @@ func sessionCreateCmd() *cobra.Command {
 	var provider string
 	var model string
 	var autoApprove bool
+	var templateName string
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Create a new agent session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Always delegate to the running agmux server so the
-			// child process outlives this CLI invocation.
+			// If --template is specified, resolve it first
+			if templateName != "" {
+				tmpl, err := resolveTemplate(templateName)
+				if err != nil {
+					return err
+				}
+				// Template values are used as defaults; explicit flags override them
+				if !cmd.Flags().Changed("provider") && tmpl.Provider != "" {
+					provider = tmpl.Provider
+				}
+				if !cmd.Flags().Changed("model") && tmpl.Model != "" {
+					model = tmpl.Model
+				}
+				// System prompt from template is sent as part of the API call
+				return createSessionViaAPIWithSystemPrompt(args[0], projectPath, prompt, worktree, provider, model, autoApprove, tmpl.SystemPrompt)
+			}
 			return createSessionViaAPI(args[0], projectPath, prompt, worktree, provider, model, autoApprove)
 		},
 	}
@@ -340,6 +355,7 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&provider, "provider", "claude", "Provider: claude or codex")
 	cmd.Flags().StringVar(&model, "model", "", "Model to use (e.g. claude-sonnet-4-5, o4-mini)")
 	cmd.Flags().BoolVar(&autoApprove, "auto-approve", true, "Enable full-auto mode (bypass permission prompts for Codex)")
+	cmd.Flags().StringVarP(&templateName, "template", "t", "", "Role template name to apply")
 
 	return cmd
 }
@@ -347,6 +363,10 @@ func sessionCreateCmd() *cobra.Command {
 // createSessionViaAPI sends a POST /api/sessions request to the running agmux server
 // so that the stream process is owned by the server, not this short-lived CLI process.
 func createSessionViaAPI(name, projectPath, prompt string, worktree bool, provider, model string, autoApprove bool) error {
+	return createSessionViaAPIWithSystemPrompt(name, projectPath, prompt, worktree, provider, model, autoApprove, "")
+}
+
+func createSessionViaAPIWithSystemPrompt(name, projectPath, prompt string, worktree bool, provider, model string, autoApprove bool, systemPrompt string) error {
 	cfg, _ := config.Load()
 	port := cfg.Server.Port
 
@@ -367,6 +387,9 @@ func createSessionViaAPI(name, projectPath, prompt string, worktree bool, provid
 	}
 	if autoApprove {
 		payload["autoApprove"] = true
+	}
+	if systemPrompt != "" {
+		payload["systemPrompt"] = systemPrompt
 	}
 	body, _ := json.Marshal(payload)
 
@@ -391,6 +414,50 @@ func createSessionViaAPI(name, projectPath, prompt string, worktree bool, provid
 
 	fmt.Printf("Created session: %s (id: %s)\n", result.Name, result.ID)
 	return nil
+}
+
+// resolveTemplate fetches a template by name from the running agmux server.
+func resolveTemplate(name string) (*struct {
+	Provider     string
+	Model        string
+	SystemPrompt string
+}, error) {
+	cfg, _ := config.Load()
+	port := cfg.Server.Port
+
+	url := fmt.Sprintf("http://localhost:%d/api/templates?name=%s", port, name)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to agmux server on port %d (is it running?): %w", port, err)
+	}
+	defer resp.Body.Close()
+
+	var templates []struct {
+		ID           string `json:"id"`
+		Name         string `json:"name"`
+		SystemPrompt string `json:"systemPrompt"`
+		Provider     string `json:"provider"`
+		Model        string `json:"model"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&templates); err != nil {
+		return nil, fmt.Errorf("decode templates response: %w", err)
+	}
+
+	// Find exact match by name
+	for _, t := range templates {
+		if t.Name == name {
+			return &struct {
+				Provider     string
+				Model        string
+				SystemPrompt string
+			}{
+				Provider:     t.Provider,
+				Model:        t.Model,
+				SystemPrompt: t.SystemPrompt,
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("template %q not found", name)
 }
 
 func sessionForkCmd() *cobra.Command {

@@ -307,6 +307,22 @@ func migrate(db *sql.DB) error {
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_notifications_session ON notifications(session_id)`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at)`)
 
+	// Migration: create role_templates table
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS role_templates (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			system_prompt TEXT NOT NULL DEFAULT '',
+			provider TEXT NOT NULL DEFAULT 'claude',
+			model TEXT NOT NULL DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
