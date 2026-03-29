@@ -75,6 +75,21 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logPath string
 		})
 	})
 
+	// Wire real-time status change updates via WebSocket
+	sessions.SetOnStatusChange(func(sessionID string, status session.Status, lastError string) {
+		data := map[string]interface{}{
+			"sessionId": sessionID,
+			"status":    string(status),
+		}
+		if lastError != "" {
+			data["lastError"] = lastError
+		}
+		hub.Broadcast(Message{
+			Type: "status_change",
+			Data: data,
+		})
+	})
+
 	s.setupRoutes()
 	return s
 }

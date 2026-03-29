@@ -169,6 +169,12 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         setPendingPermission((prev) => prev && prev.id === data.id ? { ...prev, timedOut: true } : prev);
       }
     }
+    if (msg.type === "status_change") {
+      const data = msg.data as { sessionId: string; status: Session["status"]; lastError?: string };
+      if (data.sessionId === sessionId) {
+        setSession(prev => prev ? { ...prev, status: data.status, ...(data.lastError !== undefined ? { lastError: data.lastError } : {}) } : prev);
+      }
+    }
     if (msg.type === "stream_update") {
       const data = msg.data as { sessionId: string; lines: unknown[]; total: number };
       if (data.sessionId === sessionId && data.lines.length > 0) {

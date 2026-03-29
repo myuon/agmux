@@ -114,6 +114,14 @@ function Dashboard() {
       const newSessions = msg.data as Session[];
       setSessions(newSessions);
     }
+    if (msg.type === "status_change") {
+      const data = msg.data as { sessionId: string; status: Session["status"]; lastError?: string };
+      setSessions(prev => prev.map(s =>
+        s.id === data.sessionId
+          ? { ...s, status: data.status, lastError: data.lastError ?? s.lastError }
+          : s
+      ));
+    }
   }, []);
 
   useWebSocket(handleWsMessage);
