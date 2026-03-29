@@ -93,6 +93,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
                   status={s.status}
                   type={s.type}
                   provider={s.provider}
+                  roleTemplate={s.roleTemplate}
                   currentTask={s.currentTask}
                   lastError={s.lastError}
                   projectPath={s.projectPath}
