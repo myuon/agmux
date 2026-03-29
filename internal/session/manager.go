@@ -634,11 +634,25 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp StreamProcessInterf
 			return
 		}
 
-		errMsg := "<nil>"
-		if exitErr != nil {
-			errMsg = exitErr.Error()
+		// Exit code 0 means the CLI process exited normally (e.g. turn complete).
+		// Transition to idle so the session remains usable; SendKeys will
+		// auto-recover by spawning a new holder when the next message arrives.
+		if exitErr == nil {
+			m.logger.Info("CLI process exited normally (exit code 0), setting status to idle",
+				"sessionId", sid,
+			)
+			if err := m.UpdateStatus(sid, StatusIdle); err != nil {
+				m.logger.Error("failed to update status after normal exit", "sessionId", sid, "error", err)
+			}
+			// Clean up the stream process from the map (holder has exited)
+			m.streamMu.Lock()
+			delete(m.streamProcesses, sid)
+			m.streamMu.Unlock()
+			return
 		}
-		m.logger.Warn("claude process exited unexpectedly, updating status to exited",
+
+		errMsg := exitErr.Error()
+		m.logger.Warn("CLI process exited unexpectedly, updating status to exited",
 			"sessionId", sid,
 			"exitError", errMsg,
 		)
