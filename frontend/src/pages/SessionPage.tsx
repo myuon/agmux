@@ -1115,6 +1115,22 @@ export function PermissionPromptBanner({ permission, sessionId, onResponded }: {
   const planText = typeof inp?.plan === "string" ? inp.plan : null;
   const planIsLong = planText != null && planText.split("\n").length > 6;
 
+  // Build tool-specific title suffix and content (matching PermissionPromptCallView)
+  const toolName = permission.toolName;
+  const titleSuffix = (() => {
+    if (toolName === "Bash" && inp?.description) {
+      return String(inp.description);
+    }
+    if ((toolName === "Edit" || toolName === "Write") && inp?.file_path) {
+      return String(inp.file_path);
+    }
+    if (inp?.description) {
+      return String(inp.description);
+    }
+    return "";
+  })();
+  const bashCommand = toolName === "Bash" && inp?.command ? String(inp.command) : null;
+
   const handleRespond = async (response: "allow" | "deny") => {
     if (sending) return;
     setSending(true);
@@ -1134,8 +1150,13 @@ export function PermissionPromptBanner({ permission, sessionId, onResponded }: {
         <div className="flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
           <span className="font-medium text-sm text-amber-800">Permission Request</span>
-          <span className="text-xs text-gray-500 font-mono">{permission.toolName}</span>
+          <span className="text-xs text-gray-500 font-mono">{permission.toolName}{titleSuffix ? `: ${titleSuffix}` : ""}</span>
         </div>
+        {bashCommand && (
+          <pre className="text-xs bg-gray-900 text-gray-100 border border-gray-700 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap">
+            {bashCommand}
+          </pre>
+        )}
         {planText && (
           <div>
             <div className="relative">
