@@ -28,6 +28,7 @@ type Manager struct {
 	streamMu        sync.Mutex
 	logger          *slog.Logger
 	onNewLines      func(sessionID string, newLines []string, total int)
+	onStatusChange  func(sessionID string, status Status, lastError string)
 }
 
 const nanoidAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
@@ -84,6 +85,11 @@ func (m *Manager) SetCodexCommand(cmd string) {
 // SetOnNewLines sets a callback that fires when new stream lines arrive for any session.
 func (m *Manager) SetOnNewLines(fn func(sessionID string, newLines []string, total int)) {
 	m.onNewLines = fn
+}
+
+// SetOnStatusChange sets a callback that fires when a session status changes.
+func (m *Manager) SetOnStatusChange(fn func(sessionID string, status Status, lastError string)) {
+	m.onStatusChange = fn
 }
 
 // getProvider returns a Provider for the given provider name.
@@ -1079,12 +1085,18 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 
 func (m *Manager) UpdateStatus(id string, status Status) error {
 	_, err := m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(status), time.Now(), id)
+	if err == nil && m.onStatusChange != nil {
+		m.onStatusChange(id, status, "")
+	}
 	return err
 }
 
 // UpdateStatusWithError updates the session status and records the last error message.
 func (m *Manager) UpdateStatusWithError(id string, status Status, lastError string) error {
 	_, err := m.db.Exec("UPDATE sessions SET status = ?, last_error = ?, holder_pid = 0, updated_at = ? WHERE id = ?", string(status), lastError, time.Now(), id)
+	if err == nil && m.onStatusChange != nil {
+		m.onStatusChange(id, status, lastError)
+	}
 	return err
 }
 
