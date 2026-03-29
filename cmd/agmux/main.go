@@ -48,6 +48,7 @@ func main() {
 	rootCmd.AddCommand(logsCmd())
 	rootCmd.AddCommand(daemonCmd())
 	rootCmd.AddCommand(holderCmd())
+	rootCmd.AddCommand(templateCmd())
 
 	// Subcommand help template: shows .Use (with args) instead of just .Name
 	subCmdHelpTpl := `{{.Short}}
@@ -88,15 +89,20 @@ Other Commands:{{range .Commands}}{{if and (ne .Name "session") (not .Hidden) .I
 
 Flags:
 {{.LocalFlags.FlagUsages}}
+Template Commands:
+  agmux template list                                         # List available templates
+
 Examples:
   agmux session create my-task -m "Fix the login bug" -p ./my-project   # Create a Claude session with default model
   agmux session create codex-task --provider codex --model gpt-5.4 -m "Add tests"  # Create a Codex session with specific model
+  agmux session create my-task -t reviewer -m "Review PR" -p ./project  # Create a session using a template
   agmux session list                                          # List all sessions with status, provider, and model
   agmux session send 5LEsz "Please also update the README"    # Send a message to a running session
   agmux session history 5LEsz -n 20                           # Show last 20 conversation entries
   agmux session history 5LEsz --offset 10 -n 20               # Show 20 entries starting from the 11th
   agmux session history 5LEsz -f                              # Follow conversation in realtime
   agmux session info 5LEsz                                    # Show detailed session info (process, socket, stream)
+  agmux template list                                         # List available templates from config
 
 Use "agmux [command] --help" for more information about a command.
 `)
@@ -1343,4 +1349,52 @@ func readTailLines(file *os.File, n int) ([]string, error) {
 		return allLines, nil
 	}
 	return allLines[len(allLines)-n:], nil
+}
+
+func templateCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "template",
+		Short: "Manage templates",
+	}
+
+	cmd.AddCommand(templateListCmd())
+
+	return cmd
+}
+
+func templateListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List available templates",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+
+			if len(cfg.Templates) == 0 {
+				fmt.Println("No templates configured.")
+				fmt.Println("Add templates to ~/.agmux/config.toml:")
+				fmt.Println("")
+				fmt.Println("  [[templates]]")
+				fmt.Println("  name = \"my-template\"")
+				fmt.Println("  provider = \"claude\"")
+				fmt.Println("  systemPrompt = \"You are a helpful assistant.\"")
+				return nil
+			}
+
+			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+			fmt.Fprintln(w, "NAME\tPROVIDER\tMODEL")
+			for _, t := range cfg.Templates {
+				model := t.Model
+				if model == "" {
+					model = "(default)"
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\n", t.Name, t.Provider, model)
+			}
+			w.Flush()
+
+			return nil
+		},
+	}
 }
