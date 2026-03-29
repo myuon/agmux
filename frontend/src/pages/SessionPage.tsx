@@ -590,12 +590,37 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               title="クリックでセッション名をコピー"
             >{session.name}</h2>
             <span className="text-xs text-gray-400">{session.status}</span>
-            {session.provider && (
-              <Chip color={session.provider === "codex" ? "green" : session.provider === "claude" ? "blue" : "gray"}>
-                {session.provider.charAt(0).toUpperCase() + session.provider.slice(1)}
-                {providerVersion && ` ${providerVersion.match(/\d+\.\d+\.\d+/)?.[0] ?? ""}`}
-              </Chip>
-            )}
+            {session.provider && (() => {
+              const versionMatch = providerVersion?.match(/\d+\.\d+\.\d+/)?.[0];
+              const chip = (
+                <Chip color={session.provider === "codex" ? "green" : session.provider === "claude" ? "blue" : "gray"}>
+                  {session.provider.charAt(0).toUpperCase() + session.provider.slice(1)}
+                  {versionMatch && ` ${versionMatch}`}
+                </Chip>
+              );
+              if (versionMatch) {
+                let href: string | undefined;
+                if (session.provider === "claude") {
+                  const fragment = versionMatch.replace(/\./g, "-");
+                  href = `https://code.claude.com/docs/en/changelog#${fragment}`;
+                } else if (session.provider === "codex") {
+                  href = `https://github.com/openai/codex/releases/tag/rust-v${versionMatch}`;
+                }
+                if (href) {
+                  return (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="hover:opacity-80"
+                    >
+                      {chip}
+                    </a>
+                  );
+                }
+              }
+              return chip;
+            })()}
             {session.model && (
               <Chip color="purple">{session.model}</Chip>
             )}
