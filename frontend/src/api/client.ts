@@ -62,8 +62,12 @@ export const api = {
   duplicateSession: (id: string) =>
     request<Session>(`/sessions/${id}/duplicate`, { method: "POST" }),
 
-  forkSession: (id: string) =>
-    request<Session>(`/sessions/${id}/fork`, { method: "POST" }),
+  forkSession: (id: string, preserveContext: boolean = true) =>
+    request<Session>(`/sessions/${id}/fork`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preserveContext }),
+    }),
 
   sendToSession: (id: string, text: string, images?: { data: string; mediaType: string }[]) =>
     request<{ status: string }>(`/sessions/${id}/send`, {
@@ -195,8 +199,10 @@ export interface AppConfig {
   server: { port: number };
   daemon: { interval: string };
   session: { claudeCommand: string };
+  devMode: boolean;
   prompts?: { systemPrompt: string };
   templates: RoleTemplate[];
+  configPath?: string;
 }
 
 export interface MetricRow {

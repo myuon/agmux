@@ -128,10 +128,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [showForkModal, setShowForkModal] = useState(false);
   const [forkMessage, setForkMessage] = useState("");
   const [forkLoading, setForkLoading] = useState(false);
-  const [showSubSessionModal, setShowSubSessionModal] = useState(false);
-  const [subSessionName, setSubSessionName] = useState("");
-  const [subSessionPrompt, setSubSessionPrompt] = useState("");
-  const [subSessionLoading, setSubSessionLoading] = useState(false);
+  const [forkPreserveContext, setForkPreserveContext] = useState(true);
 
   const providerVersion = deferred.providerVersion;
   const streamCursorRef = useRef<number | null>(null);
@@ -321,10 +318,14 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     const images = pendingImages.length > 0
       ? pendingImages.map(({ data, mediaType }) => ({ data, mediaType }))
       : undefined;
-    await api.sendToSession(sessionId, message, images);
-    setMessage("");
-    setPendingImages([]);
-    // Stream mode updates arrive via WebSocket automatically
+    try {
+      await api.sendToSession(sessionId, message, images);
+      setMessage("");
+      setPendingImages([]);
+      // Stream mode updates arrive via WebSocket automatically
+    } catch (err) {
+      console.error("Failed to send message:", err);
+    }
   };
 
   const sendForm = session ? (
@@ -405,17 +406,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   onClick={() => {
                     setShowActionMenu(false);
                     setForkMessage("");
+                    setForkPreserveContext(true);
                     setShowForkModal(true);
-                  }}
-                />
-              )}
-              {session.type !== "controller" && (
-                <ActionMenuItem
-                  icon={<Plus className="w-4 h-4" />}
-                  label="Create sub-session"
-                  onClick={() => {
-                    setShowActionMenu(false);
-                    setShowSubSessionModal(true);
                   }}
                 />
               )}
@@ -893,7 +885,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             if (forkLoading || !session) return;
             setForkLoading(true);
             try {
-              const newSession = await api.forkSession(session.id);
+              const newSession = await api.forkSession(session.id, forkPreserveContext);
               if (forkMessage.trim()) {
                 await api.sendToSession(newSession.id, forkMessage.trim());
               }
@@ -907,6 +899,15 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           }}
           className="space-y-3"
         >
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={forkPreserveContext}
+              onChange={(e) => setForkPreserveContext(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            コンテキストを維持する
+          </label>
           <textarea
             value={forkMessage}
             onChange={(e) => setForkMessage(e.target.value)}
@@ -934,77 +935,6 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         </form>
       </Modal>
 
-      {/* Sub-session Modal */}
-      <Modal open={showSubSessionModal} onClose={() => setShowSubSessionModal(false)} title="サブセッションを作成">
-        <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (subSessionLoading || !session) return;
-            setSubSessionLoading(true);
-            try {
-              const newSession = await api.createSession({
-                name: subSessionName || `${session.name} (sub)`,
-                projectPath: session.projectPath,
-                prompt: subSessionPrompt || undefined,
-                provider: session.provider,
-                model: session.model || undefined,
-                parentSessionId: session.id,
-              });
-              setShowSubSessionModal(false);
-              setSubSessionName("");
-              setSubSessionPrompt("");
-              navigate(`/sessions/${newSession.id}`);
-            } catch {
-              alert("サブセッションの作成に失敗しました");
-            } finally {
-              setSubSessionLoading(false);
-            }
-          }}
-          className="space-y-3"
-        >
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              セッション名
-            </label>
-            <input
-              type="text"
-              value={subSessionName}
-              onChange={(e) => setSubSessionName(e.target.value)}
-              placeholder={session ? `${session.name} (sub)` : ""}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              初期プロンプト（省略可）
-            </label>
-            <textarea
-              value={subSessionPrompt}
-              onChange={(e) => setSubSessionPrompt(e.target.value)}
-              placeholder="サブセッションに送信するメッセージ"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
-              rows={3}
-            />
-          </div>
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setShowSubSessionModal(false)}
-              className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg"
-            >
-              キャンセル
-            </button>
-            <button
-              type="submit"
-              disabled={subSessionLoading}
-              className="px-3 py-1.5 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
-            >
-              {subSessionLoading ? "作成中..." : "作成"}
-            </button>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 }
@@ -1115,6 +1045,22 @@ export function PermissionPromptBanner({ permission, sessionId, onResponded }: {
   const planText = typeof inp?.plan === "string" ? inp.plan : null;
   const planIsLong = planText != null && planText.split("\n").length > 6;
 
+  // Build tool-specific title suffix and content (matching PermissionPromptCallView)
+  const toolName = permission.toolName;
+  const titleSuffix = (() => {
+    if (toolName === "Bash" && inp?.description) {
+      return String(inp.description);
+    }
+    if ((toolName === "Edit" || toolName === "Write") && inp?.file_path) {
+      return String(inp.file_path);
+    }
+    if (inp?.description) {
+      return String(inp.description);
+    }
+    return "";
+  })();
+  const bashCommand = toolName === "Bash" && inp?.command ? String(inp.command) : null;
+
   const handleRespond = async (response: "allow" | "deny") => {
     if (sending) return;
     setSending(true);
@@ -1134,8 +1080,13 @@ export function PermissionPromptBanner({ permission, sessionId, onResponded }: {
         <div className="flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
           <span className="font-medium text-sm text-amber-800">Permission Request</span>
-          <span className="text-xs text-gray-500 font-mono">{permission.toolName}</span>
+          <span className="text-xs text-gray-500 font-mono">{permission.toolName}{titleSuffix ? `: ${titleSuffix}` : ""}</span>
         </div>
+        {bashCommand && (
+          <pre className="text-xs bg-gray-900 text-gray-100 border border-gray-700 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap">
+            {bashCommand}
+          </pre>
+        )}
         {planText && (
           <div>
             <div className="relative">

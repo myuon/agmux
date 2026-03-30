@@ -345,7 +345,19 @@ func (s *Server) forkSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "controller session cannot be forked")
 		return
 	}
-	sess, err := s.sessions.Fork(id)
+
+	// Parse optional request body for preserveContext (default: true)
+	preserveContext := true
+	if r.Body != nil {
+		var body struct {
+			PreserveContext *bool `json:"preserveContext"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.PreserveContext != nil {
+			preserveContext = *body.PreserveContext
+		}
+	}
+
+	sess, err := s.sessions.Fork(id, preserveContext)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -983,12 +995,14 @@ type configTemplateJSON struct {
 }
 
 type configJSON struct {
-	Server    configServerJSON     `json:"server"`
-	Daemon    configDaemonJSON     `json:"daemon"`
-	Session   configSessionJSON    `json:"session"`
-	Claude    configClaudeJSON     `json:"claude"`
-	Prompts   *configPromptsJSON   `json:"prompts,omitempty"`
-	Templates []configTemplateJSON `json:"templates"`
+	Server     configServerJSON     `json:"server"`
+	Daemon     configDaemonJSON     `json:"daemon"`
+	Session    configSessionJSON    `json:"session"`
+	Claude     configClaudeJSON     `json:"claude"`
+	DevMode    bool                 `json:"devMode"`
+	Prompts    *configPromptsJSON   `json:"prompts,omitempty"`
+	Templates  []configTemplateJSON `json:"templates"`
+	ConfigPath string               `json:"configPath,omitempty"`
 }
 
 type configPromptsJSON struct {
@@ -1018,12 +1032,15 @@ func configToJSON(cfg *config.Config) configJSON {
 			SystemPrompt: t.SystemPrompt,
 		}
 	}
+	cfgPath, _ := config.ConfigPath()
 	return configJSON{
-		Server:    configServerJSON{Port: cfg.Server.Port},
-		Daemon:    configDaemonJSON{Interval: cfg.Daemon.Interval},
-		Session:   configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
-		Claude:    configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
-		Templates: templates,
+		Server:     configServerJSON{Port: cfg.Server.Port},
+		Daemon:     configDaemonJSON{Interval: cfg.Daemon.Interval},
+		Session:    configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
+		Claude:     configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
+		DevMode:    cfg.DevMode,
+		Templates:  templates,
+		ConfigPath: cfgPath,
 	}
 }
 
@@ -1042,6 +1059,7 @@ func jsonToConfig(j configJSON) *config.Config {
 		Daemon:    config.DaemonConfig{Interval: j.Daemon.Interval},
 		Session:   config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand},
 		Claude:    config.ClaudeConfig{PermissionMode: j.Claude.PermissionMode},
+		DevMode:   j.DevMode,
 		Templates: templates,
 	}
 }
