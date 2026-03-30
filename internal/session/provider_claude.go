@@ -92,6 +92,8 @@ func (p *ClaudeProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 			cmd.Env = append(cmd.Env, env)
 		}
 	}
+	// Prevent git from hanging on interactive auth prompts (e.g. HTTPS push)
+	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0")
 	return cmd
 }
 
