@@ -20,6 +20,7 @@ type Config struct {
 	Daemon    DaemonConfig   `toml:"daemon"`
 	Session   SessionConfig  `toml:"session"`
 	Claude    ClaudeConfig   `toml:"claude"`
+	DevMode   bool           `toml:"dev_mode"`
 	Templates []RoleTemplate `toml:"templates" json:"templates"`
 }
 
@@ -96,6 +97,11 @@ func configPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".agmux", "config.toml"), nil
+}
+
+// ConfigPath returns the path to the config file.
+func ConfigPath() (string, error) {
+	return configPath()
 }
 
 func Save(cfg *Config) error {

@@ -105,7 +105,27 @@ export function ConfigPage() {
           </Section>
         )}
 
+        <Section title="Developer">
+          <Field label="開発者モード">
+            <ToggleButton
+              enabled={config.devMode}
+              onClick={() => setConfig({ ...config, devMode: !config.devMode })}
+            >
+              {config.devMode ? "ON" : "OFF"}
+            </ToggleButton>
+          </Field>
+          <p className="text-xs text-gray-500">
+            有効にするとプレビュー・シナリオテストなどの開発者向け機能が表示されます
+          </p>
+        </Section>
+
         <TemplateManager templates={config.templates || []} onUpdate={(updater) => setConfig(updater)} />
+
+        {config.configPath && (
+          <div className="text-xs text-gray-400">
+            Config: {config.configPath}
+          </div>
+        )}
 
         <div className="pt-4">
           <button
