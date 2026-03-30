@@ -128,6 +128,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [showForkModal, setShowForkModal] = useState(false);
   const [forkMessage, setForkMessage] = useState("");
   const [forkLoading, setForkLoading] = useState(false);
+  const [forkPreserveContext, setForkPreserveContext] = useState(true);
 
   const providerVersion = deferred.providerVersion;
   const streamCursorRef = useRef<number | null>(null);
@@ -405,6 +406,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   onClick={() => {
                     setShowActionMenu(false);
                     setForkMessage("");
+                    setForkPreserveContext(true);
                     setShowForkModal(true);
                   }}
                 />
@@ -883,7 +885,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             if (forkLoading || !session) return;
             setForkLoading(true);
             try {
-              const newSession = await api.forkSession(session.id);
+              const newSession = await api.forkSession(session.id, forkPreserveContext);
               if (forkMessage.trim()) {
                 await api.sendToSession(newSession.id, forkMessage.trim());
               }
@@ -897,6 +899,15 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           }}
           className="space-y-3"
         >
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={forkPreserveContext}
+              onChange={(e) => setForkPreserveContext(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            コンテキストを維持する
+          </label>
           <textarea
             value={forkMessage}
             onChange={(e) => setForkMessage(e.target.value)}

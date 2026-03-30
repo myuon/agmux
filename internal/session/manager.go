@@ -475,7 +475,7 @@ func (m *Manager) Duplicate(id string) (*Session, error) {
 
 // Fork creates a new session by forking an existing session's conversation history.
 // It copies the stream JSONL file and starts a new CLI process with --resume --fork-session.
-func (m *Manager) Fork(id string) (*Session, error) {
+func (m *Manager) Fork(id string, preserveContext bool) (*Session, error) {
 	src, err := m.Get(id)
 	if err != nil {
 		return nil, err
@@ -483,29 +483,32 @@ func (m *Manager) Fork(id string) (*Session, error) {
 
 	provider := m.getProvider(src.Provider)
 
-	// Read the CLI session ID from the source session's stream file
-	cliSessionID := src.CliSessionID
-	if cliSessionID == "" {
-		cliSessionID = ReadCLISessionID(id, provider)
-	}
-	if cliSessionID == "" {
-		return nil, fmt.Errorf("cannot fork: source session has no CLI session ID")
-	}
-
 	newID, err := newSessionID()
 	if err != nil {
 		return nil, fmt.Errorf("generate session id: %w", err)
 	}
 
-	// Copy stream JSONL file from source to new session
-	streamsDir, err := db.StreamsDir()
-	if err != nil {
-		return nil, fmt.Errorf("get streams dir: %w", err)
-	}
-	srcPath := filepath.Join(streamsDir, id+".jsonl")
-	dstPath := filepath.Join(streamsDir, newID+".jsonl")
-	if err := copyFile(srcPath, dstPath); err != nil {
-		return nil, fmt.Errorf("copy stream file: %w", err)
+	var cliSessionID string
+	if preserveContext {
+		// Read the CLI session ID from the source session's stream file
+		cliSessionID = src.CliSessionID
+		if cliSessionID == "" {
+			cliSessionID = ReadCLISessionID(id, provider)
+		}
+		if cliSessionID == "" {
+			return nil, fmt.Errorf("cannot fork: source session has no CLI session ID")
+		}
+
+		// Copy stream JSONL file from source to new session
+		streamsDir, err := db.StreamsDir()
+		if err != nil {
+			return nil, fmt.Errorf("get streams dir: %w", err)
+		}
+		srcPath := filepath.Join(streamsDir, id+".jsonl")
+		dstPath := filepath.Join(streamsDir, newID+".jsonl")
+		if err := copyFile(srcPath, dstPath); err != nil {
+			return nil, fmt.Errorf("copy stream file: %w", err)
+		}
 	}
 
 	// Generate MCP config for new session
@@ -516,14 +519,14 @@ func (m *Manager) Fork(id string) (*Session, error) {
 
 	effectiveSystemPrompt := m.buildEffectiveSystemPrompt(src.SystemPrompt)
 
-	// Start new CLI process with --resume --fork-session via holder
+	// Start new CLI process via holder
 	sp, err := StartHolderStreamProcess(StreamOpts{
 		SessionID:     newID,
 		ProjectPath:   src.ProjectPath,
 		MCPConfigPath: mcpConfigPath,
 		SystemPrompt:  effectiveSystemPrompt,
-		Resume:        true,
-		ForkSession:   true,
+		Resume:        preserveContext,
+		ForkSession:   preserveContext,
 		CLISessionID:  cliSessionID,
 		Model:         src.Model,
 		APIPort:       m.apiPort,

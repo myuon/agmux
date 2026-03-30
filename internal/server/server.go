@@ -350,7 +350,19 @@ func (s *Server) forkSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "controller session cannot be forked")
 		return
 	}
-	sess, err := s.sessions.Fork(id)
+
+	// Parse optional request body for preserveContext (default: true)
+	preserveContext := true
+	if r.Body != nil {
+		var body struct {
+			PreserveContext *bool `json:"preserveContext"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.PreserveContext != nil {
+			preserveContext = *body.PreserveContext
+		}
+	}
+
+	sess, err := s.sessions.Fork(id, preserveContext)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
