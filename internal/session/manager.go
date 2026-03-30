@@ -185,8 +185,8 @@ func (m *Manager) RecoverStreamProcesses() {
 					if err := proc.Signal(syscall.SIGKILL); err != nil {
 						m.logger.Warn("failed to kill old holder process", "sessionId", id, "holderPid", holderPID, "error", err)
 					} else {
-						// Wait for the process to actually terminate to avoid zombies
-						proc.Wait()
+						// Poll until the process actually terminates (proc.Wait() doesn't work for non-child processes)
+						waitForProcessExit(holderPID, 3*time.Second, 100*time.Millisecond)
 						m.logger.Info("killed old holder process before starting new one", "sessionId", id, "holderPid", holderPID)
 					}
 				}
@@ -621,8 +621,8 @@ func (m *Manager) Delete(id string) error {
 		if holderPID > 0 && IsHolderAlive(holderPID) {
 			if proc, err := os.FindProcess(holderPID); err == nil {
 				proc.Kill()
-				// Wait for the process to actually terminate before deleting from DB
-				proc.Wait()
+				// Poll until the process actually terminates (proc.Wait() doesn't work for non-child processes)
+				waitForProcessExit(holderPID, 3*time.Second, 100*time.Millisecond)
 				m.logger.Info("killed orphan holder process via DB pid", "sessionId", id, "holderPid", holderPID)
 			}
 		}
@@ -1276,4 +1276,17 @@ func (m *Manager) Reconnect(id string) error {
 
 	_, err = m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
 	return err
+}
+
+// waitForProcessExit polls until the given PID no longer exists or the timeout expires.
+// This is needed because os.Process.Wait() only works for child processes on Unix,
+// not for processes found via os.FindProcess() after a server restart.
+func waitForProcessExit(pid int, timeout, interval time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if !IsHolderAlive(pid) {
+			return
+		}
+		time.Sleep(interval)
+	}
 }
