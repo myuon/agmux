@@ -75,9 +75,6 @@ export const api = {
       body: JSON.stringify({ text, ...(images && images.length > 0 ? { images } : {}) }),
     }),
 
-  getLogs: (limit = 100) =>
-    request<LogEntry[]>(`/logs?limit=${limit}`),
-
   getStreamOutput: (id: string, limit = 200) =>
     request<{ lines: unknown[]; total: number }>(`/sessions/${id}/stream?limit=${limit}`),
 
@@ -189,16 +186,6 @@ export interface DiffFile {
   path: string;
   status: string;
   diff: string;
-}
-
-export interface LogEntry {
-  time: string;
-  level: string;
-  msg: string;
-  component?: string;
-  session?: string;
-  sessionId?: string;
-  [key: string]: unknown;
 }
 
 export interface RoleTemplate {

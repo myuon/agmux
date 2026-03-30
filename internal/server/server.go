@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bufio"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -23,7 +22,6 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
-	"github.com/myuon/agmux/internal/logging"
 	"github.com/myuon/agmux/internal/otel"
 	"github.com/myuon/agmux/internal/session"
 )
@@ -33,7 +31,6 @@ type Server struct {
 	hub              *Hub
 	router           chi.Router
 	devMode          bool
-	logPath          string
 	logger           *slog.Logger
 	escalations      *EscalationStore
 	permissions      *PermissionStore
@@ -42,14 +39,13 @@ type Server struct {
 	externalDetector *session.ExternalDetector
 }
 
-func New(sessions session.SessionService, hub *Hub, devMode bool, logPath string, logger *slog.Logger, sqlDB *sql.DB) *Server {
+func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.Logger, sqlDB *sql.DB) *Server {
 	extDetector := session.NewExternalDetector(logger, 10*time.Second)
 
 	s := &Server{
 		sessions:         sessions,
 		hub:              hub,
 		devMode:          devMode,
-		logPath:          logPath,
 		logger:           logger.With("component", "server"),
 		escalations:      NewEscalationStore(),
 		permissions:      NewPermissionStore(),
@@ -101,7 +97,7 @@ func (s *Server) ExternalDetector() *session.ExternalDetector {
 
 func (s *Server) setupRoutes() {
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
+	r.Use(slogRequestLogger(s.logger))
 	r.Use(middleware.Recoverer)
 
 	if s.devMode {
@@ -151,7 +147,6 @@ func (s *Server) setupRoutes() {
 		r.Get("/claude/models", s.getClaudeModels)
 		r.Get("/claude/version", s.getClaudeVersion)
 		r.Get("/notifications", s.listNotifications)
-		r.Get("/logs", s.getLogs)
 		r.Get("/config", s.getConfig)
 		r.Put("/config", s.updateConfig)
 		r.Get("/codex/models", s.getCodexModels)
@@ -992,53 +987,6 @@ func (s *Server) listNotifications(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, notifications)
 }
 
-func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
-	limit := 100
-	if q := r.URL.Query().Get("limit"); q != "" {
-		if n, err := strconv.Atoi(q); err == nil && n > 0 {
-			limit = n
-		}
-	}
-
-	if s.logPath == "" {
-		writeJSON(w, http.StatusOK, []string{})
-		return
-	}
-
-	file, err := os.Open(s.logPath)
-	if err != nil {
-		writeJSON(w, http.StatusOK, []string{})
-		return
-	}
-	defer file.Close()
-
-	// Read all lines, keep last N
-	var lines []string
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
-	}
-
-	if len(lines) > limit {
-		lines = lines[len(lines)-limit:]
-	}
-
-	// Parse JSON lines into raw objects, skipping invalid JSON
-	var logs []json.RawMessage
-	for _, line := range lines {
-		raw := json.RawMessage(line)
-		if json.Valid(raw) {
-			logs = append(logs, raw)
-		}
-	}
-	if logs == nil {
-		logs = []json.RawMessage{}
-	}
-
-	writeJSON(w, http.StatusOK, logs)
-}
-
 type configTemplateJSON struct {
 	Name         string `json:"name"`
 	Provider     string `json:"provider"`
@@ -1401,6 +1349,24 @@ func (s *Server) getCodexVersion(w http.ResponseWriter, r *http.Request) {
 
 // helpers
 
+// slogRequestLogger returns a chi middleware that logs HTTP requests via slog.
+func slogRequestLogger(logger *slog.Logger) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			start := time.Now()
+			next.ServeHTTP(ww, r)
+			logger.Info("http request",
+				"method", r.Method,
+				"path", r.URL.Path,
+				"status", ww.Status(),
+				"bytes", ww.BytesWritten(),
+				"duration", time.Since(start).String(),
+			)
+		})
+	}
+}
+
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -1756,7 +1722,11 @@ func generateNewFileDiff(projectPath, filePath string) (string, error) {
 }
 
 func (s *Server) recordSessionAction(sessionID, actionType, detail string) {
-	logging.LogAction(s.logger, sessionID, actionType, detail, "user")
+	s.logger.Info("[action] "+actionType,
+		"category", "action",
+		"sessionId", sessionID,
+		"detail", detail,
+	)
 
 	s.hub.Broadcast(Message{
 		Type: "action_log",
