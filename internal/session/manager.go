@@ -185,6 +185,8 @@ func (m *Manager) RecoverStreamProcesses() {
 					if err := proc.Signal(syscall.SIGKILL); err != nil {
 						m.logger.Warn("failed to kill old holder process", "sessionId", id, "holderPid", holderPID, "error", err)
 					} else {
+						// Wait for the process to actually terminate to avoid zombies
+						proc.Wait()
 						m.logger.Info("killed old holder process before starting new one", "sessionId", id, "holderPid", holderPID)
 					}
 				}
@@ -619,6 +621,8 @@ func (m *Manager) Delete(id string) error {
 		if holderPID > 0 && IsHolderAlive(holderPID) {
 			if proc, err := os.FindProcess(holderPID); err == nil {
 				proc.Kill()
+				// Wait for the process to actually terminate before deleting from DB
+				proc.Wait()
 				m.logger.Info("killed orphan holder process via DB pid", "sessionId", id, "holderPid", holderPID)
 			}
 		}
