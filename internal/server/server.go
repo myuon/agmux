@@ -1035,12 +1035,14 @@ type configTemplateJSON struct {
 }
 
 type configJSON struct {
-	Server    configServerJSON     `json:"server"`
-	Daemon    configDaemonJSON     `json:"daemon"`
-	Session   configSessionJSON    `json:"session"`
-	Claude    configClaudeJSON     `json:"claude"`
-	Prompts   *configPromptsJSON   `json:"prompts,omitempty"`
-	Templates []configTemplateJSON `json:"templates"`
+	Server     configServerJSON     `json:"server"`
+	Daemon     configDaemonJSON     `json:"daemon"`
+	Session    configSessionJSON    `json:"session"`
+	Claude     configClaudeJSON     `json:"claude"`
+	DevMode    bool                 `json:"devMode"`
+	Prompts    *configPromptsJSON   `json:"prompts,omitempty"`
+	Templates  []configTemplateJSON `json:"templates"`
+	ConfigPath string               `json:"configPath,omitempty"`
 }
 
 type configPromptsJSON struct {
@@ -1070,12 +1072,15 @@ func configToJSON(cfg *config.Config) configJSON {
 			SystemPrompt: t.SystemPrompt,
 		}
 	}
+	cfgPath, _ := config.ConfigPath()
 	return configJSON{
-		Server:    configServerJSON{Port: cfg.Server.Port},
-		Daemon:    configDaemonJSON{Interval: cfg.Daemon.Interval},
-		Session:   configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
-		Claude:    configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
-		Templates: templates,
+		Server:     configServerJSON{Port: cfg.Server.Port},
+		Daemon:     configDaemonJSON{Interval: cfg.Daemon.Interval},
+		Session:    configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
+		Claude:     configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
+		DevMode:    cfg.DevMode,
+		Templates:  templates,
+		ConfigPath: cfgPath,
 	}
 }
 
@@ -1094,6 +1099,7 @@ func jsonToConfig(j configJSON) *config.Config {
 		Daemon:    config.DaemonConfig{Interval: j.Daemon.Interval},
 		Session:   config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand},
 		Claude:    config.ClaudeConfig{PermissionMode: j.Claude.PermissionMode},
+		DevMode:   j.DevMode,
 		Templates: templates,
 	}
 }
