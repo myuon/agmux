@@ -264,9 +264,6 @@ function Dashboard() {
             mobileTab === "notifications" ? "flex-1 flex flex-col" : "hidden md:flex md:flex-col"
           }`}
         >
-          <h2 className="text-sm font-semibold text-gray-700 mb-2 hidden md:block">
-            Notifications
-          </h2>
           <div className="flex-1 min-h-0 flex flex-col">
             <NotificationPanel />
           </div>
