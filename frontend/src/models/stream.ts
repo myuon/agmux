@@ -55,7 +55,8 @@ export type StreamDisplayItem =
   | { kind: "thinking"; text: string }
   | { kind: "system_event"; eventType: string; label: string; detail?: string }
   | { kind: "rate_limit"; rateLimitType: string; status: string; resetsAt: number; utilization?: number; isUsingOverage?: boolean; overageStatus?: string }
-  | { kind: "api_retry"; attempt: number; maxRetries: number; retryDelayMs: number; errorStatus?: number; error?: string };
+  | { kind: "api_retry"; attempt: number; maxRetries: number; retryDelayMs: number; errorStatus?: number; error?: string }
+  | { kind: "result"; isError: boolean; result: string; subtype: string; numTurns?: number; durationMs?: number; costUsd?: number };
 
 // Tool call history entry for tracking sub-agent activity
 export interface ToolCallHistoryEntry {
@@ -382,6 +383,22 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
         };
         groups.push({ role: "system", items: [item] });
       }
+      continue;
+    }
+
+    // Handle result event
+    if (entry.type === "result") {
+      const raw = entry as unknown as Record<string, unknown>;
+      const item: StreamDisplayItem = {
+        kind: "result",
+        isError: (raw.is_error as boolean) === true,
+        result: typeof raw.result === "string" ? raw.result : "",
+        subtype: (raw.subtype as string) || "",
+        numTurns: raw.num_turns as number | undefined,
+        durationMs: raw.duration_ms as number | undefined,
+        costUsd: raw.total_cost_usd as number | undefined,
+      };
+      groups.push({ role: "system", items: [item] });
       continue;
     }
 

@@ -31,7 +31,7 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
 
   const entries = lines
     .map((line) => line as StreamEntry)
-    .filter((e) => e.type === "user" || e.type === "assistant" || e.type === "system" || e.type === "rate_limit_event");
+    .filter((e) => e.type === "user" || e.type === "assistant" || e.type === "system" || e.type === "rate_limit_event" || e.type === "result");
 
   const groups = mergeStreamEntries(entries, partialText || undefined, provider);
 

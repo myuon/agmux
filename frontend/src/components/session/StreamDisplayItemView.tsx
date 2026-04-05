@@ -4,6 +4,7 @@ import { RateLimitEventRow } from "../ui/RateLimitEventRow";
 import { ApiRetryEventRow } from "../ui/ApiRetryEventRow";
 import type { StreamDisplayItem } from "../../models/stream";
 import { ToolCallView } from "./ToolCallView";
+import { AlertTriangle, CheckCircle } from "lucide-react";
 
 function SystemEventView({ item }: { item: Extract<StreamDisplayItem, { kind: "system_event" }> }) {
   return <SystemEventRow label={item.label} detail={item.detail} />;
@@ -47,6 +48,45 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermis
   }
   if (item.kind === "api_retry") {
     return <ApiRetryEventRow item={item} />;
+  }
+  if (item.kind === "result") {
+    if (item.isError) {
+      return (
+        <div className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 text-xs text-red-800">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
+          <div className="min-w-0 flex-1">
+            <div className="font-semibold">エラーが発生しました</div>
+            {item.result && (
+              <pre className="mt-1 whitespace-pre-wrap break-words font-sans">{item.result}</pre>
+            )}
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2.5 text-xs text-green-800">
+        <CheckCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500" />
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold">
+            完了
+            {item.numTurns != null && <span className="ml-1.5 font-normal text-green-600">({item.numTurns}ターン)</span>}
+            {item.durationMs != null && (
+              <span className="ml-1.5 font-normal text-green-600">
+                {item.durationMs >= 60000
+                  ? `${(item.durationMs / 60000).toFixed(1)}分`
+                  : `${(item.durationMs / 1000).toFixed(1)}秒`}
+              </span>
+            )}
+            {item.costUsd != null && (
+              <span className="ml-1.5 font-normal text-green-600">${item.costUsd.toFixed(4)}</span>
+            )}
+          </div>
+          {item.result && (
+            <div className="mt-1 whitespace-pre-wrap break-words">{item.result}</div>
+          )}
+        </div>
+      </div>
+    );
   }
   return null;
 }
