@@ -8,6 +8,10 @@ import (
 	"text/template"
 )
 
+func launchctlDomain() string {
+	return fmt.Sprintf("gui/%d", os.Getuid())
+}
+
 const plistLabel = "com.myuon.agmux"
 
 const plistTemplate = `<?xml version="1.0" encoding="UTF-8"?>
@@ -116,9 +120,15 @@ func Install() error {
 		return fmt.Errorf("execute template: %w", err)
 	}
 
-	// Load the agent
-	if out, err := exec.Command("launchctl", "load", ppath).CombinedOutput(); err != nil {
-		return fmt.Errorf("launchctl load failed: %s: %w", string(out), err)
+	// Load the agent: try bootstrap (macOS 26+) then fall back to load
+	domain := launchctlDomain()
+	// Attempt bootout first to avoid "already loaded" errors from bootstrap
+	_ = exec.Command("launchctl", "bootout", domain, ppath).Run()
+	if out, err := exec.Command("launchctl", "bootstrap", domain, ppath).CombinedOutput(); err != nil {
+		// Fallback for older macOS versions
+		if out2, err2 := exec.Command("launchctl", "load", ppath).CombinedOutput(); err2 != nil {
+			return fmt.Errorf("launchctl bootstrap failed (%s: %w); launchctl load also failed: %s: %w", string(out), err, string(out2), err2)
+		}
 	}
 
 	fmt.Printf("Installed and loaded %s\n", ppath)
@@ -138,7 +148,10 @@ func Uninstall() error {
 		return fmt.Errorf("plist not found at %s; nothing to uninstall", ppath)
 	}
 
-	// Unload the agent (ignore errors if not loaded)
+	// Unload the agent: try bootout (macOS 26+) then fall back to unload
+	domain := launchctlDomain()
+	_ = exec.Command("launchctl", "bootout", domain, ppath).Run()
+	// Fallback for older macOS versions (ignore errors if not loaded)
 	_ = exec.Command("launchctl", "unload", ppath).Run()
 
 	if err := os.Remove(ppath); err != nil {
