@@ -64,27 +64,18 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermis
       );
     }
     return (
-      <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2.5 text-xs text-green-800">
-        <CheckCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-500" />
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold">
-            完了
-            {item.numTurns != null && <span className="ml-1.5 font-normal text-green-600">({item.numTurns}ターン)</span>}
-            {item.durationMs != null && (
-              <span className="ml-1.5 font-normal text-green-600">
-                {item.durationMs >= 60000
-                  ? `${(item.durationMs / 60000).toFixed(1)}分`
-                  : `${(item.durationMs / 1000).toFixed(1)}秒`}
-              </span>
-            )}
-            {item.costUsd != null && (
-              <span className="ml-1.5 font-normal text-green-600">${item.costUsd.toFixed(4)}</span>
-            )}
-          </div>
-          {item.result && (
-            <div className="mt-1 whitespace-pre-wrap break-words">{item.result}</div>
-          )}
-        </div>
+      <div className="flex items-center gap-1.5 text-xs text-gray-400">
+        <CheckCircle className="h-3 w-3 text-green-400" />
+        <span>完了</span>
+        {item.numTurns != null && <span>({item.numTurns}ターン)</span>}
+        {item.durationMs != null && (
+          <span>
+            {item.durationMs >= 60000
+              ? `${(item.durationMs / 60000).toFixed(1)}分`
+              : `${(item.durationMs / 1000).toFixed(1)}秒`}
+          </span>
+        )}
+        {item.costUsd != null && <span>${item.costUsd.toFixed(4)}</span>}
       </div>
     );
   }

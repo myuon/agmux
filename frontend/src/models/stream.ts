@@ -389,15 +389,31 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
     // Handle result event
     if (entry.type === "result") {
       const raw = entry as unknown as Record<string, unknown>;
+      const isError = (raw.is_error as boolean) === true;
+      const resultText = typeof raw.result === "string" ? raw.result : "";
       const item: StreamDisplayItem = {
         kind: "result",
-        isError: (raw.is_error as boolean) === true,
-        result: typeof raw.result === "string" ? raw.result : "",
+        isError,
+        result: resultText,
         subtype: (raw.subtype as string) || "",
         numTurns: raw.num_turns as number | undefined,
         durationMs: raw.duration_ms as number | undefined,
         costUsd: raw.total_cost_usd as number | undefined,
       };
+      // For error results: suppress the immediately preceding assistant group if its
+      // text content matches the error message (Claude echoes the error as an assistant message)
+      if (isError && resultText) {
+        const last = groups[groups.length - 1];
+        if (last && last.role === "assistant") {
+          const lastTexts = last.items
+            .filter((i): i is Extract<StreamDisplayItem, { kind: "text" }> => i.kind === "text")
+            .map(i => i.text)
+            .join("");
+          if (lastTexts === resultText) {
+            groups.pop();
+          }
+        }
+      }
       groups.push({ role: "system", items: [item] });
       continue;
     }
