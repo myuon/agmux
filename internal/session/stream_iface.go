@@ -1,7 +1,6 @@
 package session
 
-// StreamProcessInterface abstracts the common interface between
-// StreamProcess (direct pipe) and HolderStreamProcess (Unix socket).
+// StreamProcessInterface defines the interface for managing a CLI stream process.
 type StreamProcessInterface interface {
 	// SessionID returns the CLI session ID.
 	SessionID() string
@@ -46,6 +45,5 @@ type StreamProcessInterface interface {
 	ProviderName() ProviderName
 }
 
-// Verify both implementations satisfy the interface at compile time.
-var _ StreamProcessInterface = (*StreamProcess)(nil)
+// Verify HolderStreamProcess satisfies the interface at compile time.
 var _ StreamProcessInterface = (*HolderStreamProcess)(nil)

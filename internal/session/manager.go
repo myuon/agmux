@@ -753,10 +753,6 @@ func (m *Manager) StopAllStreamProcesses() {
 			// Just close the socket connection; don't kill the holder
 			m.logger.Info("disconnecting from holder (holder stays alive)", "sessionId", id, "holderPid", hsp.HolderPID())
 			hsp.conn.Close()
-		} else {
-			// Legacy StreamProcess: stop as before
-			m.logger.Info("stopping stream process", "sessionId", id)
-			sp.Stop()
 		}
 	}
 }
