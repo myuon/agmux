@@ -344,10 +344,11 @@ func sessionCreateCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("resolve project path: %w", err)
 			}
-			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
+			defer database.Close()
 			sess, err := mgr.Create(args[0], absPath, prompt, worktree, session.CreateOpts{
 				Provider:        session.ProviderName(provider),
 				Model:           model,
@@ -410,11 +411,15 @@ func sessionForkCmd() *cobra.Command {
 		Short: "Fork an existing session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
+			defer database.Close()
 			sess, err := mgr.Fork(args[0], !noContext)
 			if err != nil {
 				return err
@@ -517,14 +522,19 @@ func sessionSendCmd() *cobra.Command {
 		Short: "Send text to a session",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
+			defer database.Close()
 			if err := mgr.SendKeysWithImages(args[0], args[1], nil); err != nil {
 				return err
 			}
+			_ = mgr.UpdateStatus(args[0], session.StatusWorking)
 			fmt.Println("Text sent.")
 			return nil
 		},
@@ -541,7 +551,10 @@ func sessionBroadcastCmd() *cobra.Command {
 		Long:  "Send the same message to all active sessions or specify a filter.\nExamples:\n  agmux session broadcast \"Report your progress\"\n  agmux session broadcast --filter all \"Stop work\"",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, _ := config.Load()
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
 			text := args[0]
 
 			if all {
@@ -551,10 +564,11 @@ func sessionBroadcastCmd() *cobra.Command {
 				filter = "active"
 			}
 
-			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
+			defer database.Close()
 
 			sessions, err := mgr.List()
 			if err != nil {
@@ -592,9 +606,13 @@ func sessionBroadcastCmd() *cobra.Command {
 				wg.Add(1)
 				go func(idx int, sessionID string) {
 					defer wg.Done()
+					err := mgr.SendKeysWithImages(sessionID, text, nil)
+					if err == nil {
+						_ = mgr.UpdateStatus(sessionID, session.StatusWorking)
+					}
 					results[idx] = broadcastResult{
 						sessionID: sessionID,
-						err:       mgr.SendKeysWithImages(sessionID, text, nil),
+						err:       err,
 					}
 				}(i, id)
 			}
