@@ -17,3 +17,8 @@ frontend/node_modules/
 # Installed skills (build artifacts from skill-lock)
 .agents/
 .claude/skills/
+
+# Terraform
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
