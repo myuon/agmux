@@ -320,6 +320,14 @@ func (sp *StreamProcess) readLoop(stdout io.Reader) {
 					tcb(sp.streamOpts.SessionID)
 				}
 			}
+		case "turn.completed":
+			// Codex emits turn.completed when a turn finishes.
+			sp.mu.RLock()
+			tcb := sp.onTurnComplete
+			sp.mu.RUnlock()
+			if tcb != nil {
+				tcb(sp.streamOpts.SessionID)
+			}
 		}
 
 		// Normalize the line into Claude-compatible format.

@@ -269,6 +269,14 @@ func (sp *HolderStreamProcess) readLoop() {
 					tcb(sp.streamOpts.SessionID)
 				}
 			}
+		case "turn.completed":
+			// Codex emits turn.completed when a turn finishes.
+			sp.mu.RLock()
+			tcb := sp.onTurnComplete
+			sp.mu.RUnlock()
+			if tcb != nil {
+				tcb(sp.streamOpts.SessionID)
+			}
 		}
 
 		// Normalize the line
