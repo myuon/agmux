@@ -24,7 +24,7 @@ type Manager struct {
 	permissionMode  string
 	apiPort         int
 	systemPrompt    string
-	streamProcesses map[string]StreamProcessInterface
+	streamProcesses map[string]*HolderStreamProcess
 	streamMu        sync.Mutex
 	logger          *slog.Logger
 	onNewLines      func(sessionID string, newLines []string, total int)
@@ -54,7 +54,7 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 		permissionMode:  permissionMode,
 		apiPort:         apiPort,
 		systemPrompt:    systemPrompt,
-		streamProcesses: make(map[string]StreamProcessInterface),
+		streamProcesses: make(map[string]*HolderStreamProcess),
 		logger:          logger.With("component", "session_manager"),
 	}
 }
@@ -66,10 +66,8 @@ func (m *Manager) ManagedHolderPIDs() []int {
 
 	var pids []int
 	for _, sp := range m.streamProcesses {
-		if hsp, ok := sp.(*HolderStreamProcess); ok {
-			if pid := hsp.HolderPID(); pid > 0 {
-				pids = append(pids, pid)
-			}
+		if pid := sp.HolderPID(); pid > 0 {
+			pids = append(pids, pid)
 		}
 	}
 	return pids
@@ -289,7 +287,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		FullAuto:      fullAuto,
 	}
 	streamOpts.APIPort = m.apiPort
-	var sp StreamProcessInterface
+	var sp *HolderStreamProcess
 	if pn == ProviderCodex && prompt != "" {
 		// Codex: pass initial prompt as command-line argument (not stdin)
 		streamOpts.InitialPrompt = prompt
@@ -319,9 +317,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	m.streamMu.Unlock()
 
 	// Persist holder PID
-	if hsp, ok := sp.(*HolderStreamProcess); ok {
-		m.updateHolderPID(id, hsp.HolderPID())
-	}
+	m.updateHolderPID(id, sp.HolderPID())
 
 	now := time.Now()
 	s := &Session{
@@ -639,7 +635,7 @@ func (m *Manager) Delete(id string) error {
 
 // wireSessionIDCallback sets up the onSessionID callback on a stream process
 // so that when the CLI session ID is captured, it gets persisted to the DB.
-func (m *Manager) wireSessionIDCallback(sessionID string, sp StreamProcessInterface) {
+func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProcess) {
 	sp.SetOnSessionID(func(cliSessionID string) {
 		if err := m.UpdateCliSessionID(sessionID, cliSessionID); err != nil {
 			m.logger.Error("failed to persist cli session id", "sessionId", sessionID, "cliSessionId", cliSessionID, "error", err)
@@ -666,12 +662,10 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp StreamProcessInterf
 			m.logger.Error("failed to update status after turn complete", "sessionId", sid, "error", err)
 		}
 	})
-	if hsp, ok := sp.(*HolderStreamProcess); ok {
-		hsp.SetOnHolderRestart(func(sid string, newPID int) {
-			m.logger.Info("holder restarted (codex resume), updating holder_pid", "sessionId", sid, "newPid", newPID)
-			m.updateHolderPID(sid, newPID)
-		})
-	}
+	sp.SetOnHolderRestart(func(sid string, newPID int) {
+		m.logger.Info("holder restarted (codex resume), updating holder_pid", "sessionId", sid, "newPid", newPID)
+		m.updateHolderPID(sid, newPID)
+	})
 	sp.SetOnProcessExit(func(sid string, exitErr error) {
 		// For Codex provider, exit code 0 is normal (exec finishes after each prompt).
 		// Keep the session running and the stream process in the map so that
@@ -743,21 +737,15 @@ func (m *Manager) stopStreamProcess(id string) {
 // Only the server's socket connections are closed.
 func (m *Manager) StopAllStreamProcesses() {
 	m.streamMu.Lock()
-	processes := make(map[string]StreamProcessInterface, len(m.streamProcesses))
+	processes := make(map[string]*HolderStreamProcess, len(m.streamProcesses))
 	maps.Copy(processes, m.streamProcesses)
-	m.streamProcesses = make(map[string]StreamProcessInterface)
+	m.streamProcesses = make(map[string]*HolderStreamProcess)
 	m.streamMu.Unlock()
 
 	for id, sp := range processes {
-		if hsp, ok := sp.(*HolderStreamProcess); ok {
-			// Just close the socket connection; don't kill the holder
-			m.logger.Info("disconnecting from holder (holder stays alive)", "sessionId", id, "holderPid", hsp.HolderPID())
-			hsp.conn.Close()
-		} else {
-			// Legacy StreamProcess: stop as before
-			m.logger.Info("stopping stream process", "sessionId", id)
-			sp.Stop()
-		}
+		// Just close the socket connection; don't kill the holder
+		m.logger.Info("disconnecting from holder (holder stays alive)", "sessionId", id, "holderPid", sp.HolderPID())
+		sp.conn.Close()
 	}
 }
 

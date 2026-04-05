@@ -15,6 +15,87 @@ import (
 	"github.com/myuon/agmux/internal/db"
 )
 
+// ImageData represents a base64-encoded image to be sent with a message.
+type ImageData struct {
+	Data      string `json:"data"`
+	MediaType string `json:"mediaType"`
+}
+
+// streamEvent is a minimal struct for parsing event type and subtype from JSONL lines.
+type streamEvent struct {
+	Type    string `json:"type"`
+	Subtype string `json:"subtype"`
+}
+
+// parseStreamEvent parses the type and subtype from a JSONL line.
+// Returns zero value if the line is not valid JSON.
+func parseStreamEvent(line []byte) streamEvent {
+	if len(line) == 0 || line[0] != '{' {
+		return streamEvent{}
+	}
+	var ev streamEvent
+	if json.Unmarshal(line, &ev) != nil {
+		return streamEvent{}
+	}
+	return ev
+}
+
+// ReadCLISessionID reads the CLI-assigned session ID from a stream JSONL file.
+// It delegates parsing to the given provider.
+// Returns empty string if no successful session was found.
+func ReadCLISessionID(agmuxSessionID string, provider Provider) string {
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		return ""
+	}
+	path := filepath.Join(streamsDir, agmuxSessionID+".jsonl")
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	var lastSessionID string
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	for scanner.Scan() {
+		if sid, ok := provider.ParseSessionID([]byte(scanner.Text())); ok {
+			lastSessionID = sid
+		}
+	}
+	return lastSessionID
+}
+
+// ReadModelFromStream reads the model name from a stream JSONL file.
+// It delegates parsing to the given provider.
+// Returns empty string if no model was found.
+func ReadModelFromStream(agmuxSessionID string, provider Provider) string {
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		slog.Default().Debug("ReadModelFromStream: failed to get streams dir", "sessionId", agmuxSessionID, "error", err)
+		return ""
+	}
+	path := filepath.Join(streamsDir, agmuxSessionID+".jsonl")
+	f, err := os.Open(path)
+	if err != nil {
+		slog.Default().Debug("ReadModelFromStream: failed to open stream file", "sessionId", agmuxSessionID, "path", path, "error", err)
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	for scanner.Scan() {
+		if model, ok := provider.ParseModel([]byte(scanner.Text())); ok {
+			return model
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		slog.Default().Debug("ReadModelFromStream: scanner error", "sessionId", agmuxSessionID, "error", err)
+	}
+	return ""
+}
+
 // HolderStreamProcess manages a CLI process through a holder subprocess.
 // Instead of directly holding pipes to the CLI process, it communicates
 // through a Unix socket to the holder.
