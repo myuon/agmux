@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -11,7 +10,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -337,7 +335,32 @@ func sessionCreateCmd() *cobra.Command {
 				}
 				systemPrompt = tmpl.SystemPrompt
 			}
-			return createSessionViaAPIWithOpts(args[0], projectPath, prompt, worktree, provider, model, autoApprove, systemPrompt, templateName, parentSessionID)
+
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			absPath, err := filepath.Abs(projectPath)
+			if err != nil {
+				return fmt.Errorf("resolve project path: %w", err)
+			}
+			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			if err != nil {
+				return err
+			}
+			sess, err := mgr.Create(args[0], absPath, prompt, worktree, session.CreateOpts{
+				Provider:        session.ProviderName(provider),
+				Model:           model,
+				FullAuto:        autoApprove,
+				SystemPrompt:    systemPrompt,
+				ParentSessionID: parentSessionID,
+				RoleTemplate:    templateName,
+			})
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Created session: %s (id: %s)\n", sess.Name, sess.ID)
+			return nil
 		},
 	}
 
@@ -351,64 +374,6 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&templateName, "template", "t", "", "Role template name to apply")
 
 	return cmd
-}
-
-// createSessionViaAPI sends a POST /api/sessions request to the running agmux server
-// so that the stream process is owned by the server, not this short-lived CLI process.
-func createSessionViaAPIWithOpts(name, projectPath, prompt string, worktree bool, provider, model string, autoApprove bool, systemPrompt string, roleTemplate string, parentSessionID string) error {
-	cfg, _ := config.Load()
-	port := cfg.Server.Port
-
-	absPath, err := filepath.Abs(projectPath)
-	if err != nil {
-		return fmt.Errorf("resolve project path: %w", err)
-	}
-
-	payload := map[string]interface{}{
-		"name":        name,
-		"projectPath": absPath,
-		"prompt":      prompt,
-		"worktree":    worktree,
-		"provider":    provider,
-	}
-	if model != "" {
-		payload["model"] = model
-	}
-	if autoApprove {
-		payload["autoApprove"] = true
-	}
-	if parentSessionID != "" {
-		payload["parentSessionId"] = parentSessionID
-	}
-	if systemPrompt != "" {
-		payload["systemPrompt"] = systemPrompt
-	}
-	if roleTemplate != "" {
-		payload["roleTemplate"] = roleTemplate
-	}
-	body, _ := json.Marshal(payload)
-
-	url := fmt.Sprintf("http://localhost:%d/api/sessions", port)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to connect to agmux server on port %d (is it running?): %w", port, err)
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		ID    string `json:"id"`
-		Name  string `json:"name"`
-		Error string `json:"error"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("decode server response: %w", err)
-	}
-	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("server error: %s", result.Error)
-	}
-
-	fmt.Printf("Created session: %s (id: %s)\n", result.Name, result.ID)
-	return nil
 }
 
 // resolveTemplate looks up a template by name from config.toml.
@@ -445,39 +410,21 @@ func sessionForkCmd() *cobra.Command {
 		Short: "Fork an existing session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return forkSessionViaAPI(args[0], !noContext)
+			cfg, _ := config.Load()
+			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			if err != nil {
+				return err
+			}
+			sess, err := mgr.Fork(args[0], !noContext)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Forked session: %s (id: %s)\n", sess.Name, sess.ID)
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&noContext, "no-context", false, "Fork without preserving conversation context")
 	return cmd
-}
-
-func forkSessionViaAPI(id string, preserveContext bool) error {
-	cfg, _ := config.Load()
-	port := cfg.Server.Port
-
-	url := fmt.Sprintf("http://localhost:%d/api/sessions/%s/fork", port, id)
-	body, _ := json.Marshal(map[string]bool{"preserveContext": preserveContext})
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to connect to agmux server on port %d (is it running?): %w", port, err)
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		ID    string `json:"id"`
-		Name  string `json:"name"`
-		Error string `json:"error"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("decode server response: %w", err)
-	}
-	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("server error: %s", result.Error)
-	}
-
-	fmt.Printf("Forked session: %s (id: %s)\n", result.Name, result.ID)
-	return nil
 }
 
 func sessionListCmd() *cobra.Command {
@@ -571,43 +518,17 @@ func sessionSendCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
-			port := cfg.Server.Port
-			id := args[0]
-
-			// Always delegate to the server API so the spawned process
-			// is owned by the long-lived server.
-			return sendSessionViaAPI(id, args[1], port)
+			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			if err != nil {
+				return err
+			}
+			if err := mgr.SendKeysWithImages(args[0], args[1], nil); err != nil {
+				return err
+			}
+			fmt.Println("Text sent.")
+			return nil
 		},
 	}
-}
-
-// sendSessionViaAPI sends a message to a stream session via the server API
-// so that the process is owned by the server, not this short-lived CLI process.
-func sendSessionViaAPI(id, text string, port int) error {
-	body, _ := json.Marshal(map[string]string{
-		"text": text,
-	})
-
-	url := fmt.Sprintf("http://localhost:%d/api/sessions/%s/send", port, id)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to connect to agmux server on port %d (is it running?): %w", port, err)
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Status string `json:"status"`
-		Error  string `json:"error"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("decode server response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("server error: %s", result.Error)
-	}
-
-	fmt.Println("Text sent.")
-	return nil
 }
 
 func sessionBroadcastCmd() *cobra.Command {
@@ -621,7 +542,6 @@ func sessionBroadcastCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, _ := config.Load()
-			port := cfg.Server.Port
 			text := args[0]
 
 			if all {
@@ -631,7 +551,64 @@ func sessionBroadcastCmd() *cobra.Command {
 				filter = "active"
 			}
 
-			return broadcastViaAPI(text, nil, filter, port)
+			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			if err != nil {
+				return err
+			}
+
+			sessions, err := mgr.List()
+			if err != nil {
+				return err
+			}
+
+			activeStatuses := map[session.Status]bool{
+				session.StatusWorking:      true,
+				session.StatusIdle:         true,
+				session.StatusWaitingInput: true,
+			}
+
+			var targetIDs []string
+			for _, sess := range sessions {
+				if sess.Type == session.TypeExternal {
+					continue
+				}
+				if filter == "all" || activeStatuses[sess.Status] {
+					targetIDs = append(targetIDs, sess.ID)
+				}
+			}
+
+			if len(targetIDs) == 0 {
+				fmt.Println("No target sessions found.")
+				return nil
+			}
+
+			type broadcastResult struct {
+				sessionID string
+				err       error
+			}
+			results := make([]broadcastResult, len(targetIDs))
+			var wg sync.WaitGroup
+			for i, id := range targetIDs {
+				wg.Add(1)
+				go func(idx int, sessionID string) {
+					defer wg.Done()
+					results[idx] = broadcastResult{
+						sessionID: sessionID,
+						err:       mgr.SendKeysWithImages(sessionID, text, nil),
+					}
+				}(i, id)
+			}
+			wg.Wait()
+
+			for _, r := range results {
+				if r.err != nil {
+					fmt.Printf("  %s: error - %s\n", r.sessionID, r.err)
+				} else {
+					fmt.Printf("  %s: sent\n", r.sessionID)
+				}
+			}
+			fmt.Printf("Broadcast complete: %d session(s)\n", len(results))
+			return nil
 		},
 	}
 
@@ -639,54 +616,6 @@ func sessionBroadcastCmd() *cobra.Command {
 	cmd.Flags().StringVar(&filter, "filter", "", "Filter target sessions: \"active\" (default) or \"all\"")
 
 	return cmd
-}
-
-func broadcastViaAPI(text string, sessionIDs []string, filter string, port int) error {
-	payload := map[string]interface{}{
-		"text":   text,
-		"filter": filter,
-	}
-	if len(sessionIDs) > 0 {
-		payload["sessionIds"] = sessionIDs
-	}
-	body, _ := json.Marshal(payload)
-
-	url := fmt.Sprintf("http://localhost:%d/api/sessions/broadcast", port)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return fmt.Errorf("failed to connect to agmux server on port %d (is it running?): %w", port, err)
-	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Results []struct {
-			SessionID string `json:"sessionId"`
-			Status    string `json:"status"`
-			Error     string `json:"error,omitempty"`
-		} `json:"results"`
-		Error string `json:"error"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("decode server response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("server error: %s", result.Error)
-	}
-
-	if len(result.Results) == 0 {
-		fmt.Println("No target sessions found.")
-		return nil
-	}
-
-	for _, r := range result.Results {
-		if r.Status == "sent" {
-			fmt.Printf("  %s: sent\n", r.SessionID)
-		} else {
-			fmt.Printf("  %s: error - %s\n", r.SessionID, r.Error)
-		}
-	}
-	fmt.Printf("Broadcast complete: %d session(s)\n", len(result.Results))
-	return nil
 }
 
 func sessionHistoryCmd() *cobra.Command {
