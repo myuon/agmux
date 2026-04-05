@@ -55,7 +55,8 @@ export type StreamDisplayItem =
   | { kind: "thinking"; text: string }
   | { kind: "system_event"; eventType: string; label: string; detail?: string }
   | { kind: "rate_limit"; rateLimitType: string; status: string; resetsAt: number; utilization?: number; isUsingOverage?: boolean; overageStatus?: string }
-  | { kind: "api_retry"; attempt: number; maxRetries: number; retryDelayMs: number; errorStatus?: number; error?: string };
+  | { kind: "api_retry"; attempt: number; maxRetries: number; retryDelayMs: number; errorStatus?: number; error?: string }
+  | { kind: "result"; isError: boolean; result: string; subtype: string; numTurns?: number; durationMs?: number; costUsd?: number };
 
 // Tool call history entry for tracking sub-agent activity
 export interface ToolCallHistoryEntry {
@@ -382,6 +383,38 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
         };
         groups.push({ role: "system", items: [item] });
       }
+      continue;
+    }
+
+    // Handle result event
+    if (entry.type === "result") {
+      const raw = entry as unknown as Record<string, unknown>;
+      const isError = (raw.is_error as boolean) === true;
+      const resultText = typeof raw.result === "string" ? raw.result : "";
+      const item: StreamDisplayItem = {
+        kind: "result",
+        isError,
+        result: resultText,
+        subtype: (raw.subtype as string) || "",
+        numTurns: raw.num_turns as number | undefined,
+        durationMs: raw.duration_ms as number | undefined,
+        costUsd: raw.total_cost_usd as number | undefined,
+      };
+      // For error results: suppress the immediately preceding assistant group if its
+      // text content matches the error message (Claude echoes the error as an assistant message)
+      if (isError && resultText) {
+        const last = groups[groups.length - 1];
+        if (last && last.role === "assistant") {
+          const lastTexts = last.items
+            .filter((i): i is Extract<StreamDisplayItem, { kind: "text" }> => i.kind === "text")
+            .map(i => i.text)
+            .join("");
+          if (lastTexts === resultText) {
+            groups.pop();
+          }
+        }
+      }
+      groups.push({ role: "system", items: [item] });
       continue;
     }
 

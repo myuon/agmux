@@ -6,6 +6,7 @@ import { normalConversationLines } from "./normalConversation";
 import { compactionLines } from "./compaction";
 import { multipleRunningTasksLines } from "./multipleRunningTasks";
 import { apiRetryLines, apiRetryResolvedLines } from "./apiRetry";
+import { resultEventSuccessLines, resultEventErrorLines } from "./resultEvent";
 import { mockSessions } from "./sessionListScenarios";
 import type { Session } from "../../types/session";
 
@@ -148,6 +149,20 @@ export const scenarioPresets: ScenarioPreset[] = [
     label: "Multiple Running Tasks",
     description: "7つの並列タスクが同時実行（ActiveTasksPanel collapse検証用）",
     lines: multipleRunningTasksLines,
+  },
+  {
+    id: "result-event-success",
+    type: "stream",
+    label: "Result Event: Success",
+    description: "assistantメッセージの後にresult（成功）が来るシナリオ",
+    lines: resultEventSuccessLines,
+  },
+  {
+    id: "result-event-error",
+    type: "stream",
+    label: "Result Event: Error",
+    description: "assistantメッセージの後にresult（エラー）が来るシナリオ",
+    lines: resultEventErrorLines,
   },
   {
     id: "send-error",
