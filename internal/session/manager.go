@@ -846,6 +846,16 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 	m.spawnMu.Lock()
 	defer m.spawnMu.Unlock()
 
+	// Re-check deletingSet after acquiring spawnMu to close the TOCTOU window:
+	// Delete() may have set the session as deleting between the first check above
+	// and the acquisition of spawnMu.
+	m.deletingMu.Lock()
+	_, isDeleting = m.deletingSet[id]
+	m.deletingMu.Unlock()
+	if isDeleting {
+		return fmt.Errorf("session %s is being deleted", id)
+	}
+
 	m.streamMu.Lock()
 	sp, ok := m.streamProcesses[id]
 	m.streamMu.Unlock()

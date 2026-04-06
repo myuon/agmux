@@ -90,14 +90,7 @@ func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []str
 		cmd.Process.Kill()
 		return fmt.Errorf("listen unix socket: %w", err)
 	}
-	defer func() {
-		listener.Close()
-		// Remove the socket file so that no stale socket is left behind
-		// after this holder exits. If a new holder is already listening on
-		// the same path it will have replaced this socket file before we
-		// reach here, so the Remove is a no-op in that case.
-		os.Remove(sockPath)
-	}()
+	defer listener.Close()
 
 	slog.Info("holder: listening on socket", "path", sockPath)
 
@@ -124,9 +117,14 @@ func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []str
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM)
 	go func() {
-		if _, ok := <-sigCh; ok {
-			slog.Info("holder: received SIGTERM, closing stdin for graceful shutdown", "sessionId", sessionID)
-			h.stdin.Close()
+		select {
+		case _, ok := <-sigCh:
+			if ok {
+				slog.Info("holder: received SIGTERM, closing stdin for graceful shutdown", "sessionId", sessionID)
+				h.stdin.Close()
+			}
+		case <-h.done:
+			// CLI process already exited; goroutine can exit cleanly.
 		}
 	}()
 	defer signal.Stop(sigCh)
