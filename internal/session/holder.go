@@ -92,11 +92,11 @@ func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []str
 	}
 	defer func() {
 		listener.Close()
-		// NOTE: We intentionally do NOT remove the socket file here.
-		// If a new holder has already been spawned for the same session,
-		// removing the file would delete the new holder's socket, causing
-		// the new holder's connections to break. The new holder cleans up
-		// the stale socket file itself before creating its listener.
+		// Remove the socket file so that no stale socket is left behind
+		// after this holder exits. If a new holder is already listening on
+		// the same path it will have replaced this socket file before we
+		// reach here, so the Remove is a no-op in that case.
+		os.Remove(sockPath)
 	}()
 
 	slog.Info("holder: listening on socket", "path", sockPath)
@@ -117,9 +117,19 @@ func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []str
 	// Accept socket connections in a goroutine
 	go h.acceptLoop()
 
-	// Ignore SIGTERM so that holder survives server restarts (launchctl kickstart -k).
-	// Holder shutdown is controlled via socket "stop" command, not OS signals.
-	signal.Ignore(syscall.SIGTERM)
+	// Handle SIGTERM gracefully: close stdin so the CLI process exits cleanly,
+	// then wait for the done channel.  We no longer ignore SIGTERM because
+	// Delete() now sends SIGKILL directly to the holder PID, and graceful
+	// termination (e.g. from the OS or launchd) should propagate to the child.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGTERM)
+	go func() {
+		if _, ok := <-sigCh; ok {
+			slog.Info("holder: received SIGTERM, closing stdin for graceful shutdown", "sessionId", sessionID)
+			h.stdin.Close()
+		}
+	}()
+	defer signal.Stop(sigCh)
 
 	// Wait for CLI process to exit
 	<-h.done

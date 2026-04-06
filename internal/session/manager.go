@@ -26,9 +26,16 @@ type Manager struct {
 	systemPrompt    string
 	streamProcesses map[string]StreamProcessInterface
 	streamMu        sync.Mutex
-	logger          *slog.Logger
-	onNewLines      func(sessionID string, newLines []string, total int)
-	onStatusChange  func(sessionID string, status Status, lastError string)
+	// deletingSet tracks sessions currently being deleted so that auto-recovery
+	// (RecoverStreamProcesses, SendKeysWithImages) does not spawn a new holder
+	// while Delete() is in progress.
+	deletingSet map[string]struct{}
+	deletingMu  sync.Mutex
+	// spawnMu prevents concurrent holder spawns for the same session in SendKeysWithImages.
+	spawnMu sync.Mutex
+	logger  *slog.Logger
+	onNewLines     func(sessionID string, newLines []string, total int)
+	onStatusChange func(sessionID string, status Status, lastError string)
 }
 
 const nanoidAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
@@ -55,6 +62,7 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 		apiPort:         apiPort,
 		systemPrompt:    systemPrompt,
 		streamProcesses: make(map[string]StreamProcessInterface),
+		deletingSet:     make(map[string]struct{}),
 		logger:          logger.With("component", "session_manager"),
 	}
 }
@@ -136,6 +144,16 @@ func (m *Manager) RecoverStreamProcesses() {
 		var clearOffset int64
 		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt, &holderPID, &clearOffset); err != nil {
 			m.logger.Error("recover stream processes: scan failed", "error", err)
+			continue
+		}
+
+		// Skip sessions currently being deleted to avoid spawning a new holder
+		// in the window between Delete() killing the old holder and removing the DB record.
+		m.deletingMu.Lock()
+		_, isDeleting := m.deletingSet[id]
+		m.deletingMu.Unlock()
+		if isDeleting {
+			m.logger.Info("recover: skipping session currently being deleted", "sessionId", id)
 			continue
 		}
 
@@ -611,6 +629,18 @@ func (m *Manager) Delete(id string) error {
 		return err
 	}
 
+	// Mark the session as being deleted BEFORE killing processes.
+	// This prevents RecoverStreamProcesses and SendKeysWithImages from spawning
+	// a new holder in the window between killing the old holder and removing the DB record.
+	m.deletingMu.Lock()
+	m.deletingSet[id] = struct{}{}
+	m.deletingMu.Unlock()
+	defer func() {
+		m.deletingMu.Lock()
+		delete(m.deletingSet, id)
+		m.deletingMu.Unlock()
+	}()
+
 	// Stop stream process if exists
 	m.stopStreamProcess(id)
 
@@ -802,6 +832,20 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 	if err != nil {
 		return err
 	}
+
+	// Reject if Delete() is in progress for this session.
+	m.deletingMu.Lock()
+	_, isDeleting := m.deletingSet[id]
+	m.deletingMu.Unlock()
+	if isDeleting {
+		return fmt.Errorf("session %s is being deleted", id)
+	}
+
+	// Hold spawnMu for the entire check-and-spawn block to prevent duplicate holders
+	// when concurrent goroutines both see no active stream process and both try to spawn.
+	m.spawnMu.Lock()
+	defer m.spawnMu.Unlock()
+
 	m.streamMu.Lock()
 	sp, ok := m.streamProcesses[id]
 	m.streamMu.Unlock()
