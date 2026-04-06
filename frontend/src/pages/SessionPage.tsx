@@ -16,7 +16,7 @@ import { IconButton } from "../components/ui/IconButton";
 import { IconText } from "../components/ui/IconText";
 import { ActionMenu, ActionMenuItem } from "../components/ui/ActionMenu";
 import type { Session } from "../types/session";
-import { api, type DiffFile } from "../api/client";
+import { api, type DiffFile, type PromptTemplate } from "../api/client";
 import { StatusDot } from "../components/StatusBadge";
 import { setActiveSessionName } from "../activeSession";
 import { useWebSocket } from "../hooks/useWebSocket";
@@ -33,6 +33,7 @@ type DeferredData = {
   streamOutput: { lines: unknown[]; total: number };
   diff: { files: DiffFile[] };
   providerVersion: string | null;
+  promptTemplates: PromptTemplate[];
 };
 
 function ParentSessionLink({ parentId }: { parentId: string }) {
@@ -71,14 +72,15 @@ export function SessionPage() {
     streamOutput: Promise<DeferredData["streamOutput"]>;
     diff: Promise<DeferredData["diff"]>;
     providerVersion: Promise<string | null>;
+    promptTemplates: Promise<PromptTemplate[]>;
   }>();
 
   const deferredPromise = useMemo(
     () =>
-      Promise.all([loaderData.streamOutput, loaderData.diff, loaderData.providerVersion]).then(
-        ([streamOutput, diff, providerVersion]) => ({ streamOutput, diff, providerVersion })
+      Promise.all([loaderData.streamOutput, loaderData.diff, loaderData.providerVersion, loaderData.promptTemplates]).then(
+        ([streamOutput, diff, providerVersion, promptTemplates]) => ({ streamOutput, diff, providerVersion, promptTemplates })
       ),
-    [loaderData.streamOutput, loaderData.diff, loaderData.providerVersion]
+    [loaderData.streamOutput, loaderData.diff, loaderData.providerVersion, loaderData.promptTemplates]
   );
 
   return (
@@ -328,8 +330,33 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     }
   };
 
+  const promptTemplates = deferred.promptTemplates;
+
   const sendForm = session ? (
-    <form onSubmit={handleSend} className="shrink-0 sticky bottom-0 bg-white pt-2 pb-4 px-4 sm:px-8 -mx-4 sm:-mx-8">
+    <div className="shrink-0 sticky bottom-0 bg-white -mx-4 sm:-mx-8">
+      {promptTemplates.length > 0 && (
+        <div className="flex gap-1.5 flex-wrap px-4 sm:px-8 pt-2 pb-1">
+          {promptTemplates.map((t) => (
+            <button
+              key={t.name}
+              type="button"
+              onClick={async () => {
+                if (!sessionId) return;
+                try {
+                  await api.sendToSession(sessionId, t.prompt);
+                } catch (err) {
+                  console.error("Failed to send prompt template:", err);
+                }
+              }}
+              className="px-2.5 py-1 text-xs bg-gray-100 hover:bg-blue-50 hover:text-blue-700 border border-gray-200 hover:border-blue-300 rounded-full text-gray-600 transition-colors"
+              title={t.prompt}
+            >
+              {t.name}
+            </button>
+          ))}
+        </div>
+      )}
+    <form onSubmit={handleSend} className="pt-2 pb-4 px-4 sm:px-8">
       {pendingImages.length > 0 && (
         <div className="flex gap-2 mb-2 flex-wrap">
           {pendingImages.map((img, i) => (
@@ -594,6 +621,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         </IconButton>
       </div>
     </form>
+    </div>
   ) : null;
 
   return (

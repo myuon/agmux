@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useLoaderData } from "react-router-dom";
 import { api } from "../api/client";
-import type { AppConfig, RoleTemplate } from "../api/client";
+import type { AppConfig, RoleTemplate, PromptTemplate } from "../api/client";
 
 type ConfigUpdater = (updater: (prev: AppConfig) => AppConfig) => void;
 import { Section, Field } from "../components/ui/Section";
@@ -120,6 +120,8 @@ export function ConfigPage() {
         </Section>
 
         <TemplateManager templates={config.templates || []} onUpdate={(updater) => setConfig(updater)} />
+
+        <PromptTemplateManager promptTemplates={config.promptTemplates || []} onUpdate={(updater) => setConfig(updater)} />
 
         {config.configPath && (
           <div className="text-xs text-gray-400">
@@ -294,6 +296,124 @@ function NotificationStatus() {
           </SecondaryButton>
         )}
       </div>
+    </Section>
+  );
+}
+
+function PromptTemplateManager({ promptTemplates, onUpdate }: { promptTemplates: PromptTemplate[]; onUpdate: ConfigUpdater }) {
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [isNew, setIsNew] = useState(false);
+  const [form, setForm] = useState({ name: "", prompt: "" });
+
+  const startNew = () => {
+    setIsNew(true);
+    setEditingIndex(null);
+    setForm({ name: "", prompt: "" });
+  };
+
+  const startEdit = (index: number) => {
+    const t = promptTemplates[index];
+    setIsNew(false);
+    setEditingIndex(index);
+    setForm({ name: t.name, prompt: t.prompt });
+  };
+
+  const cancel = () => {
+    setEditingIndex(null);
+    setIsNew(false);
+  };
+
+  const save = () => {
+    const newTemplate: PromptTemplate = {
+      name: form.name,
+      prompt: form.prompt,
+    };
+    if (isNew) {
+      onUpdate((prev) => ({ ...prev, promptTemplates: [...(prev.promptTemplates || []), newTemplate] }));
+    } else if (editingIndex !== null) {
+      onUpdate((prev) => {
+        const updated = [...(prev.promptTemplates || [])];
+        updated[editingIndex] = newTemplate;
+        return { ...prev, promptTemplates: updated };
+      });
+    }
+    cancel();
+  };
+
+  const remove = (index: number) => {
+    onUpdate((prev) => ({
+      ...prev,
+      promptTemplates: (prev.promptTemplates || []).filter((_, i) => i !== index),
+    }));
+  };
+
+  const showForm = isNew || editingIndex !== null;
+
+  return (
+    <Section title="Prompt Templates">
+      <p className="text-xs text-gray-500 mb-3">
+        セッションにワンタップで送信できるプロンプトのテンプレートを登録します。config.toml の <code className="font-mono bg-gray-100 px-1 rounded">[[prompt_templates]]</code> で定義することもできます。
+      </p>
+      {promptTemplates.length === 0 && !showForm && (
+        <p className="text-sm text-gray-500">No prompt templates yet.</p>
+      )}
+      {promptTemplates.map((t, index) => (
+        <div key={`${t.name}-${index}`} className="flex items-start justify-between border-b border-gray-100 pb-3 last:border-0 last:pb-0">
+          <div className="min-w-0 flex-1">
+            <div className="font-medium text-sm">{t.name}</div>
+            {t.prompt && (
+              <pre className="text-xs text-gray-500 mt-1 whitespace-pre-wrap line-clamp-2">{t.prompt}</pre>
+            )}
+          </div>
+          <div className="flex gap-1 ml-2 shrink-0">
+            <SecondaryButton onClick={() => startEdit(index)} color="blue" className="px-2 py-1 text-xs">
+              Edit
+            </SecondaryButton>
+            <SecondaryButton onClick={() => remove(index)} color="gray" className="px-2 py-1 text-xs">
+              Delete
+            </SecondaryButton>
+          </div>
+        </div>
+      ))}
+      {showForm && (
+        <div className="space-y-3 border border-gray-200 rounded p-3 bg-gray-50">
+          <div>
+            <label className="text-xs text-gray-600 block mb-1">Name</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="w-full bg-white border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+              placeholder="Template name"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-gray-600 block mb-1">Prompt</label>
+            <textarea
+              value={form.prompt}
+              onChange={(e) => setForm({ ...form, prompt: e.target.value })}
+              rows={4}
+              className="w-full bg-white border border-gray-300 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-blue-500"
+              placeholder="プロジェクトを初期化してください..."
+            />
+          </div>
+          <div className="flex gap-2">
+            <SecondaryButton onClick={save} color="blue" className="px-3 py-1.5 text-sm">
+              {isNew ? "Create" : "Update"}
+            </SecondaryButton>
+            <SecondaryButton onClick={cancel} color="gray" className="px-3 py-1.5 text-sm">
+              Cancel
+            </SecondaryButton>
+          </div>
+        </div>
+      )}
+      {!showForm && (
+        <div className="pt-2">
+          <SecondaryButton onClick={startNew} color="blue" className="px-3 py-1.5 text-sm">
+            + New Prompt Template
+          </SecondaryButton>
+        </div>
+      )}
     </Section>
   );
 }

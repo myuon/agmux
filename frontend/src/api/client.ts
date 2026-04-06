@@ -166,6 +166,9 @@ export const api = {
   getNotifications: (limit = 50) =>
     request<NotificationEntry[]>(`/notifications?limit=${limit}`),
 
+  getPromptTemplates: () =>
+    request<PromptTemplate[]>("/prompt-templates"),
+
 };
 
 export interface RecentProject {
@@ -195,6 +198,11 @@ export interface RoleTemplate {
   systemPrompt: string;
 }
 
+export interface PromptTemplate {
+  name: string;
+  prompt: string;
+}
+
 export interface AppConfig {
   server: { port: number };
   daemon: { interval: string };
@@ -202,6 +210,7 @@ export interface AppConfig {
   devMode: boolean;
   prompts?: { systemPrompt: string };
   templates: RoleTemplate[];
+  promptTemplates?: PromptTemplate[];
   configPath?: string;
 }
 

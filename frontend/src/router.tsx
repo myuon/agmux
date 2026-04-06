@@ -41,7 +41,8 @@ export const router = createBrowserRouter([
           const providerVersion = (session.provider === "codex" ? api.getCodexVersion : api.getClaudeVersion)()
             .then((r) => r.version)
             .catch(() => null);
-          return { session, streamOutput, diff, providerVersion };
+          const promptTemplates = api.getPromptTemplates().catch(() => []);
+          return { session, streamOutput, diff, providerVersion, promptTemplates };
         },
       },
       {
