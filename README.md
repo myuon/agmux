@@ -100,56 +100,15 @@ permission_mode = "auto"  # default, acceptEdits, plan, dontAsk, bypassPermissio
 
 ## macOS launchd による自動起動設定
 
-macOSでagmuxをログイン時に自動起動させるには、組み込みの `daemon` コマンドを使います。
-
-### インストール（登録・起動）
+macOS の launchd を使い、ログイン時に agmux サーバーを自動起動できます。
 
 ```bash
+# 登録・起動
 agmux daemon install
-```
 
-このコマンドは以下を自動的に行います。
-
-- `~/Library/LaunchAgents/com.myuon.agmux.plist` を生成
-- launchd にエージェントを登録してすぐに起動
-- ログイン時の自動起動を有効化（`RunAtLoad`・`KeepAlive` が有効）
-
-ログは `~/.agmux/agmux.log` に出力されます。
-
-### アンインストール（登録解除・停止）
-
-```bash
+# 登録解除・停止
 agmux daemon uninstall
 ```
-
-launchd からエージェントを解除し、plist ファイルを削除します。
-
-### 手動での起動・停止・再起動
-
-```bash
-# 起動
-launchctl kickstart gui/$(id -u)/com.myuon.agmux
-
-# 停止
-launchctl stop com.myuon.agmux
-
-# 再起動（make restart と同等）
-launchctl kickstart -k gui/$(id -u)/com.myuon.agmux
-```
-
-または `make restart` を使うと、ビルド・インストール・再起動をまとめて実行できます。
-
-```bash
-make restart   # build-frontend → go install → launchctl kickstart -k
-```
-
-### ログの確認
-
-```bash
-tail -f ~/.agmux/agmux.log
-```
-
-> **前提条件**: `agmux daemon install` を実行する前に、`agmux` バイナリが PATH の通った場所にインストールされている必要があります（`make install` または `go install ./cmd/agmux` でインストール済みであること）。
 
 ## Codexセッションのセットアップ
 
