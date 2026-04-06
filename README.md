@@ -131,7 +131,7 @@ launchd からエージェントを解除し、plist ファイルを削除しま
 launchctl kickstart gui/$(id -u)/com.myuon.agmux
 
 # 停止
-launchctl bootout gui/$(id -u)/com.myuon.agmux
+launchctl stop com.myuon.agmux
 
 # 再起動（make restart と同等）
 launchctl kickstart -k gui/$(id -u)/com.myuon.agmux
@@ -140,7 +140,7 @@ launchctl kickstart -k gui/$(id -u)/com.myuon.agmux
 または `make restart` を使うと、ビルド・インストール・再起動をまとめて実行できます。
 
 ```bash
-make restart   # go install → launchctl kickstart -k
+make restart   # build-frontend → go install → launchctl kickstart -k
 ```
 
 ### ログの確認
