@@ -98,6 +98,18 @@ interval = "30s"
 permission_mode = "auto"  # default, acceptEdits, plan, dontAsk, bypassPermissions, auto
 ```
 
+## macOS launchd による自動起動設定
+
+macOS の launchd を使い、ログイン時に agmux サーバーを自動起動できます。
+
+```bash
+# 登録・起動
+agmux daemon install
+
+# 登録解除・停止
+agmux daemon uninstall
+```
+
 ## Codexセッションのセットアップ
 
 agmuxはOpenAI Codex CLIのセッションもサポートしています。CodexセッションでagmuxのMCPツール（ゴール管理、escalate等）を利用するには、事前にグローバルMCP登録が必要です。
