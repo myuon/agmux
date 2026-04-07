@@ -1087,7 +1087,14 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	// Load current config to preserve fields not exposed in the UI (e.g. frontend_dir)
+	current, err := config.Load()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	cfg := jsonToConfig(req)
+	cfg.Server.FrontendDir = current.Server.FrontendDir
 	if err := config.Save(cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1101,7 +1108,11 @@ func (s *Server) getPromptTemplates(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, configToJSON(cfg).PromptTemplates)
+	templates := configToJSON(cfg).PromptTemplates
+	if templates == nil {
+		templates = []config.PromptTemplate{}
+	}
+	writeJSON(w, http.StatusOK, templates)
 }
 
 func (s *Server) getCodexModels(w http.ResponseWriter, r *http.Request) {
