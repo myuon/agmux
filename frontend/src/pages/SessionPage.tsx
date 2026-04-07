@@ -336,9 +336,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     <div className="shrink-0 sticky bottom-0 bg-white -mx-4 sm:-mx-8">
       {promptTemplates.length > 0 && (
         <div className="flex gap-1.5 flex-wrap px-4 sm:px-8 pt-2 pb-1">
-          {promptTemplates.map((t) => (
+          {promptTemplates.map((t, i) => (
             <button
-              key={t.name}
+              key={i}
               type="button"
               onClick={async () => {
                 if (!sessionId) return;
