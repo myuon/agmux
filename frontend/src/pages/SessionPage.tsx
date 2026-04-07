@@ -371,7 +371,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             <ActionMenu className="absolute bottom-full left-0 mb-1 z-50">
               <ActionMenuItem
                 icon={<ImagePlus className="w-4 h-4" />}
-                label="Add image"
+                label="画像を追加"
                 onClick={() => {
                   fileInputRef.current?.click();
                   setShowActionMenu(false);
@@ -380,7 +380,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               {slashCommands.length > 0 && (
                 <ActionMenuItem
                   icon={<Slash className="w-4 h-4" />}
-                  label="Slash commands"
+                  label="スラッシュコマンド"
                   onClick={() => {
                     setMessage("/");
                     setSlashFilter("");
@@ -400,7 +400,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                 />
               )}
               {showTemplateMenu && promptTemplates.length > 0 && (
-                <div className="border-t border-gray-100">
+                <div className="border-t border-gray-100 max-h-64 overflow-y-auto">
                   {(() => {
                     const grouped = promptTemplates.reduce<Record<string, typeof promptTemplates>>((acc, t) => {
                       const key = t.category ?? "";
@@ -444,7 +444,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               {session.type !== "controller" && (
                 <ActionMenuItem
                   icon={<Copy className="w-4 h-4" />}
-                  label="Duplicate"
+                  label="複製"
                   onClick={async () => {
                     setShowActionMenu(false);
                     try {
@@ -459,7 +459,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               {session.type !== "controller" && (
                 <ActionMenuItem
                   icon={<GitBranch className="w-4 h-4" />}
-                  label="Fork"
+                  label="フォーク"
                   onClick={() => {
                     setShowActionMenu(false);
                     setForkMessage("");
@@ -470,7 +470,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               )}
               <ActionMenuItem
                 icon={<RotateCcw className="w-4 h-4" />}
-                label="Clear context"
+                label="コンテキストをクリア"
                 onClick={async () => {
                   setShowActionMenu(false);
                   if (!confirm("Clear session context? This will start a fresh conversation.")) return;
@@ -490,7 +490,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               />
               <ActionMenuItem
                 icon={<RefreshCw className="w-4 h-4" />}
-                label="Reconnect"
+                  label="再接続"
                 onClick={async () => {
                   setShowActionMenu(false);
                   if (!confirm("セッションを再接続しますか？")) return;
@@ -507,7 +507,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               {session.status !== "paused" && session.status !== "exited" && session.type !== "controller" && (
                 <ActionMenuItem
                   icon={<Square className="w-4 h-4" />}
-                  label="Stop session"
+                  label="セッションを停止"
                   variant="danger"
                   onClick={async () => {
                     setShowActionMenu(false);
@@ -519,7 +519,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               {session.type !== "controller" && (
                 <ActionMenuItem
                   icon={<Trash2 className="w-4 h-4" />}
-                  label="Delete session"
+                  label="セッションを削除"
                   variant="danger"
                   onClick={async () => {
                     setShowActionMenu(false);
