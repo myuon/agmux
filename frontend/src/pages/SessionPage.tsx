@@ -371,7 +371,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             <ActionMenu className="absolute bottom-full left-0 mb-1 z-50">
               <ActionMenuItem
                 icon={<ImagePlus className="w-4 h-4" />}
-                label="画像を追加"
+                label="Add image"
                 onClick={() => {
                   fileInputRef.current?.click();
                   setShowActionMenu(false);
@@ -380,7 +380,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               {slashCommands.length > 0 && (
                 <ActionMenuItem
                   icon={<Slash className="w-4 h-4" />}
-                  label="スラッシュコマンド"
+                  label="Slash commands"
                   onClick={() => {
                     setMessage("/");
                     setSlashFilter("");
@@ -393,58 +393,17 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               {promptTemplates.length > 0 && (
                 <ActionMenuItem
                   icon={<LayoutTemplate className="w-4 h-4" />}
-                  label="テンプレート"
+                  label="Templates"
                   onClick={() => {
-                    setShowTemplateMenu((v) => !v);
+                    setShowActionMenu(false);
+                    setShowTemplateMenu(true);
                   }}
                 />
-              )}
-              {showTemplateMenu && promptTemplates.length > 0 && (
-                <div className="border-t border-gray-100 max-h-64 overflow-y-auto">
-                  {(() => {
-                    const grouped = promptTemplates.reduce<Record<string, typeof promptTemplates>>((acc, t) => {
-                      const key = t.category ?? "";
-                      if (!acc[key]) acc[key] = [];
-                      acc[key].push(t);
-                      return acc;
-                    }, {});
-                    const categories = Object.keys(grouped).sort((a, b) => {
-                      if (a === "") return 1;
-                      if (b === "") return -1;
-                      return a.localeCompare(b);
-                    });
-                    return categories.map((cat) => (
-                      <div key={cat}>
-                        {cat !== "" && (
-                          <div className="px-3 pt-2 pb-0.5 text-xs font-medium text-gray-400 uppercase tracking-wide">
-                            {cat}
-                          </div>
-                        )}
-                        {grouped[cat].map((t, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            className="w-full text-left px-6 py-1.5 text-sm text-gray-700 hover:bg-gray-50 whitespace-nowrap"
-                            title={t.prompt}
-                            onMouseDown={(e) => {
-                              e.preventDefault();
-                              setMessage(t.prompt);
-                              setShowTemplateMenu(false);
-                              setShowActionMenu(false);
-                            }}
-                          >
-                            {t.name}
-                          </button>
-                        ))}
-                      </div>
-                    ));
-                  })()}
-                </div>
               )}
               {session.type !== "controller" && (
                 <ActionMenuItem
                   icon={<Copy className="w-4 h-4" />}
-                  label="複製"
+                  label="Duplicate"
                   onClick={async () => {
                     setShowActionMenu(false);
                     try {
@@ -459,7 +418,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               {session.type !== "controller" && (
                 <ActionMenuItem
                   icon={<GitBranch className="w-4 h-4" />}
-                  label="フォーク"
+                  label="Fork"
                   onClick={() => {
                     setShowActionMenu(false);
                     setForkMessage("");
@@ -470,7 +429,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               )}
               <ActionMenuItem
                 icon={<RotateCcw className="w-4 h-4" />}
-                label="コンテキストをクリア"
+                label="Clear context"
                 onClick={async () => {
                   setShowActionMenu(false);
                   if (!confirm("Clear session context? This will start a fresh conversation.")) return;
@@ -490,7 +449,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               />
               <ActionMenuItem
                 icon={<RefreshCw className="w-4 h-4" />}
-                  label="再接続"
+                label="Reconnect"
                 onClick={async () => {
                   setShowActionMenu(false);
                   if (!confirm("セッションを再接続しますか？")) return;
@@ -507,7 +466,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               {session.status !== "paused" && session.status !== "exited" && session.type !== "controller" && (
                 <ActionMenuItem
                   icon={<Square className="w-4 h-4" />}
-                  label="セッションを停止"
+                  label="Stop session"
                   variant="danger"
                   onClick={async () => {
                     setShowActionMenu(false);
@@ -519,7 +478,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               {session.type !== "controller" && (
                 <ActionMenuItem
                   icon={<Trash2 className="w-4 h-4" />}
-                  label="セッションを削除"
+                  label="Delete session"
                   variant="danger"
                   onClick={async () => {
                     setShowActionMenu(false);
@@ -933,6 +892,50 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             emptyMessage="No settings files found"
           />
         )}
+      </Modal>
+
+      {/* Template Modal */}
+      <Modal open={showTemplateMenu} onClose={() => setShowTemplateMenu(false)} title="Templates">
+        {(() => {
+          const grouped = promptTemplates.reduce<Record<string, typeof promptTemplates>>((acc, t) => {
+            const key = t.category ?? "";
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(t);
+            return acc;
+          }, {});
+          const categories = Object.keys(grouped).sort((a, b) => {
+            if (a === "") return 1;
+            if (b === "") return -1;
+            return a.localeCompare(b);
+          });
+          return (
+            <div className="flex flex-col gap-1">
+              {categories.map((cat) => (
+                <div key={cat}>
+                  {cat !== "" && (
+                    <div className="px-1 pt-3 pb-1 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                      {cat}
+                    </div>
+                  )}
+                  {grouped[cat].map((t, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+                      title={t.prompt}
+                      onClick={() => {
+                        setMessage(t.prompt);
+                        setShowTemplateMenu(false);
+                      }}
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </Modal>
 
       {/* Fork Modal */}
