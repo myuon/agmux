@@ -6,7 +6,7 @@ import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, FolderOpen,
   Sparkles, Settings, Copy,
   RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
-  Code, Eye, X, AlertTriangle,
+  Code, Eye, X, AlertTriangle, LayoutTemplate,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
@@ -118,6 +118,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [copiedToast, setCopiedToast] = useState(false);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [slashFilter, setSlashFilter] = useState("");
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
   const [claudeMDOpen, setClaudeMDOpen] = useState(false);
@@ -334,28 +335,6 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
 
   const sendForm = session ? (
     <div className="shrink-0 sticky bottom-0 bg-white -mx-4 sm:-mx-8">
-      {promptTemplates.length > 0 && (
-        <div className="flex gap-1.5 flex-wrap px-4 sm:px-8 pt-2 pb-1">
-          {promptTemplates.map((t, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={async () => {
-                if (!sessionId) return;
-                try {
-                  await api.sendToSession(sessionId, t.prompt);
-                } catch (err) {
-                  console.error("Failed to send prompt template:", err);
-                }
-              }}
-              className="px-2.5 py-1 text-xs bg-gray-100 hover:bg-blue-50 hover:text-blue-700 border border-gray-200 hover:border-blue-300 rounded-full text-gray-600 transition-colors"
-              title={t.prompt}
-            >
-              {t.name}
-            </button>
-          ))}
-        </div>
-      )}
     <form onSubmit={handleSend} className="pt-2 pb-4 px-4 sm:px-8">
       {pendingImages.length > 0 && (
         <div className="flex gap-2 mb-2 flex-wrap">
@@ -383,7 +362,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           <IconButton
             shape="circle"
             variant="secondary"
-            onClick={() => setShowActionMenu((v) => !v)}
+            onClick={() => { setShowActionMenu((v) => !v); setShowTemplateMenu(false); }}
             title="Actions"
           >
             <Plus className="w-4 h-4" />
@@ -410,6 +389,57 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                     setShowActionMenu(false);
                   }}
                 />
+              )}
+              {promptTemplates.length > 0 && (
+                <ActionMenuItem
+                  icon={<LayoutTemplate className="w-4 h-4" />}
+                  label="テンプレート"
+                  onClick={() => {
+                    setShowTemplateMenu((v) => !v);
+                  }}
+                />
+              )}
+              {showTemplateMenu && promptTemplates.length > 0 && (
+                <div className="border-t border-gray-100">
+                  {(() => {
+                    const grouped = promptTemplates.reduce<Record<string, typeof promptTemplates>>((acc, t) => {
+                      const key = t.category ?? "";
+                      if (!acc[key]) acc[key] = [];
+                      acc[key].push(t);
+                      return acc;
+                    }, {});
+                    const categories = Object.keys(grouped).sort((a, b) => {
+                      if (a === "") return 1;
+                      if (b === "") return -1;
+                      return a.localeCompare(b);
+                    });
+                    return categories.map((cat) => (
+                      <div key={cat}>
+                        {cat !== "" && (
+                          <div className="px-3 pt-2 pb-0.5 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                            {cat}
+                          </div>
+                        )}
+                        {grouped[cat].map((t, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            className="w-full text-left px-6 py-1.5 text-sm text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+                            title={t.prompt}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              setMessage(t.prompt);
+                              setShowTemplateMenu(false);
+                              setShowActionMenu(false);
+                            }}
+                          >
+                            {t.name}
+                          </button>
+                        ))}
+                      </div>
+                    ));
+                  })()}
+                </div>
               )}
               {session.type !== "controller" && (
                 <ActionMenuItem
@@ -595,7 +625,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                 setShowSlashMenu(false);
               }
             }}
-            onBlur={() => { setShowSlashMenu(false); setShowActionMenu(false); }}
+            onBlur={() => { setShowSlashMenu(false); setShowActionMenu(false); setShowTemplateMenu(false); }}
             onPaste={(e) => {
               const items = e.clipboardData?.items;
               if (!items) return;

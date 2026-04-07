@@ -201,6 +201,7 @@ export interface RoleTemplate {
 export interface PromptTemplate {
   name: string;
   prompt: string;
+  category?: string;
 }
 
 export interface AppConfig {

@@ -16,8 +16,9 @@ type RoleTemplate struct {
 }
 
 type PromptTemplate struct {
-	Name   string `toml:"name" json:"name"`
-	Prompt string `toml:"prompt" json:"prompt"`
+	Name     string `toml:"name" json:"name"`
+	Prompt   string `toml:"prompt" json:"prompt"`
+	Category string `toml:"category" json:"category"`
 }
 
 type Config struct {
