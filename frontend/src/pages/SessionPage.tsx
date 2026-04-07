@@ -6,7 +6,7 @@ import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, FolderOpen,
   Sparkles, Settings, Copy,
   RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
-  Code, Eye, X, AlertTriangle,
+  Code, Eye, X, AlertTriangle, LayoutTemplate,
 } from "lucide-react";
 import { Modal } from "../components/ui/Modal";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
@@ -16,7 +16,7 @@ import { IconButton } from "../components/ui/IconButton";
 import { IconText } from "../components/ui/IconText";
 import { ActionMenu, ActionMenuItem } from "../components/ui/ActionMenu";
 import type { Session } from "../types/session";
-import { api, type DiffFile } from "../api/client";
+import { api, type DiffFile, type PromptTemplate } from "../api/client";
 import { StatusDot } from "../components/StatusBadge";
 import { setActiveSessionName } from "../activeSession";
 import { useWebSocket } from "../hooks/useWebSocket";
@@ -33,6 +33,7 @@ type DeferredData = {
   streamOutput: { lines: unknown[]; total: number };
   diff: { files: DiffFile[] };
   providerVersion: string | null;
+  promptTemplates: PromptTemplate[];
 };
 
 function ParentSessionLink({ parentId }: { parentId: string }) {
@@ -71,14 +72,15 @@ export function SessionPage() {
     streamOutput: Promise<DeferredData["streamOutput"]>;
     diff: Promise<DeferredData["diff"]>;
     providerVersion: Promise<string | null>;
+    promptTemplates: Promise<PromptTemplate[]>;
   }>();
 
   const deferredPromise = useMemo(
     () =>
-      Promise.all([loaderData.streamOutput, loaderData.diff, loaderData.providerVersion]).then(
-        ([streamOutput, diff, providerVersion]) => ({ streamOutput, diff, providerVersion })
+      Promise.all([loaderData.streamOutput, loaderData.diff, loaderData.providerVersion, loaderData.promptTemplates]).then(
+        ([streamOutput, diff, providerVersion, promptTemplates]) => ({ streamOutput, diff, providerVersion, promptTemplates })
       ),
-    [loaderData.streamOutput, loaderData.diff, loaderData.providerVersion]
+    [loaderData.streamOutput, loaderData.diff, loaderData.providerVersion, loaderData.promptTemplates]
   );
 
   return (
@@ -116,6 +118,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [copiedToast, setCopiedToast] = useState(false);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [slashFilter, setSlashFilter] = useState("");
   const [slashSelectedIndex, setSlashSelectedIndex] = useState(0);
   const [claudeMDOpen, setClaudeMDOpen] = useState(false);
@@ -328,8 +331,11 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     }
   };
 
+  const promptTemplates = deferred.promptTemplates;
+
   const sendForm = session ? (
-    <form onSubmit={handleSend} className="shrink-0 sticky bottom-0 bg-white pt-2 pb-4 px-4 sm:px-8 -mx-4 sm:-mx-8">
+    <div className="shrink-0 sticky bottom-0 bg-white -mx-4 sm:-mx-8">
+    <form onSubmit={handleSend} className="pt-2 pb-4 px-4 sm:px-8">
       {pendingImages.length > 0 && (
         <div className="flex gap-2 mb-2 flex-wrap">
           {pendingImages.map((img, i) => (
@@ -356,7 +362,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           <IconButton
             shape="circle"
             variant="secondary"
-            onClick={() => setShowActionMenu((v) => !v)}
+            onClick={() => { setShowActionMenu((v) => !v); setShowTemplateMenu(false); }}
             title="Actions"
           >
             <Plus className="w-4 h-4" />
@@ -381,6 +387,16 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                     setSlashSelectedIndex(0);
                     setShowSlashMenu(true);
                     setShowActionMenu(false);
+                  }}
+                />
+              )}
+              {promptTemplates.length > 0 && (
+                <ActionMenuItem
+                  icon={<LayoutTemplate className="w-4 h-4" />}
+                  label="Templates"
+                  onClick={() => {
+                    setShowActionMenu(false);
+                    setShowTemplateMenu(true);
                   }}
                 />
               )}
@@ -568,7 +584,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                 setShowSlashMenu(false);
               }
             }}
-            onBlur={() => { setShowSlashMenu(false); setShowActionMenu(false); }}
+            onBlur={() => { setShowSlashMenu(false); setShowActionMenu(false); setShowTemplateMenu(false); }}
             onPaste={(e) => {
               const items = e.clipboardData?.items;
               if (!items) return;
@@ -594,6 +610,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         </IconButton>
       </div>
     </form>
+    </div>
   ) : null;
 
   return (
@@ -875,6 +892,50 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             emptyMessage="No settings files found"
           />
         )}
+      </Modal>
+
+      {/* Template Modal */}
+      <Modal open={showTemplateMenu} onClose={() => setShowTemplateMenu(false)} title="Templates">
+        {(() => {
+          const grouped = promptTemplates.reduce<Record<string, typeof promptTemplates>>((acc, t) => {
+            const key = t.category ?? "";
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(t);
+            return acc;
+          }, {});
+          const categories = Object.keys(grouped).sort((a, b) => {
+            if (a === "") return 1;
+            if (b === "") return -1;
+            return a.localeCompare(b);
+          });
+          return (
+            <div className="flex flex-col gap-1">
+              {categories.map((cat) => (
+                <div key={cat}>
+                  {cat !== "" && (
+                    <div className="px-1 pt-3 pb-1 text-xs font-medium text-gray-400 uppercase tracking-wide">
+                      {cat}
+                    </div>
+                  )}
+                  {grouped[cat].map((t, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      className="w-full text-left px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+                      title={t.prompt}
+                      onClick={() => {
+                        setMessage(t.prompt);
+                        setShowTemplateMenu(false);
+                      }}
+                    >
+                      {t.name}
+                    </button>
+                  ))}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </Modal>
 
       {/* Fork Modal */}

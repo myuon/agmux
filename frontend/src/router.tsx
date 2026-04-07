@@ -41,7 +41,11 @@ export const router = createBrowserRouter([
           const providerVersion = (session.provider === "codex" ? api.getCodexVersion : api.getClaudeVersion)()
             .then((r) => r.version)
             .catch(() => null);
-          return { session, streamOutput, diff, providerVersion };
+          const promptTemplates = api.getPromptTemplates().then((r) => r ?? []).catch((err) => {
+            console.error("Failed to fetch prompt templates:", err);
+            return [];
+          });
+          return { session, streamOutput, diff, providerVersion, promptTemplates };
         },
       },
       {

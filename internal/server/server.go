@@ -149,6 +149,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/notifications", s.listNotifications)
 		r.Get("/config", s.getConfig)
 		r.Put("/config", s.updateConfig)
+		r.Get("/prompt-templates", s.getPromptTemplates)
 		r.Get("/codex/models", s.getCodexModels)
 		r.Get("/codex/version", s.getCodexVersion)
 		r.Get("/metrics", s.getMetrics)
@@ -995,14 +996,15 @@ type configTemplateJSON struct {
 }
 
 type configJSON struct {
-	Server     configServerJSON     `json:"server"`
-	Daemon     configDaemonJSON     `json:"daemon"`
-	Session    configSessionJSON    `json:"session"`
-	Claude     configClaudeJSON     `json:"claude"`
-	DevMode    bool                 `json:"devMode"`
-	Prompts    *configPromptsJSON   `json:"prompts,omitempty"`
-	Templates  []configTemplateJSON `json:"templates"`
-	ConfigPath string               `json:"configPath,omitempty"`
+	Server          configServerJSON           `json:"server"`
+	Daemon          configDaemonJSON           `json:"daemon"`
+	Session         configSessionJSON          `json:"session"`
+	Claude          configClaudeJSON           `json:"claude"`
+	DevMode         bool                       `json:"devMode"`
+	Prompts         *configPromptsJSON         `json:"prompts,omitempty"`
+	Templates       []configTemplateJSON       `json:"templates"`
+	PromptTemplates []config.PromptTemplate `json:"promptTemplates"`
+	ConfigPath      string                     `json:"configPath,omitempty"`
 }
 
 type configPromptsJSON struct {
@@ -1034,13 +1036,14 @@ func configToJSON(cfg *config.Config) configJSON {
 	}
 	cfgPath, _ := config.ConfigPath()
 	return configJSON{
-		Server:     configServerJSON{Port: cfg.Server.Port},
-		Daemon:     configDaemonJSON{Interval: cfg.Daemon.Interval},
-		Session:    configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
-		Claude:     configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
-		DevMode:    cfg.DevMode,
-		Templates:  templates,
-		ConfigPath: cfgPath,
+		Server:          configServerJSON{Port: cfg.Server.Port},
+		Daemon:          configDaemonJSON{Interval: cfg.Daemon.Interval},
+		Session:         configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
+		Claude:          configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
+		DevMode:         cfg.DevMode,
+		Templates:       templates,
+		PromptTemplates: cfg.PromptTemplates,
+		ConfigPath:      cfgPath,
 	}
 }
 
@@ -1055,12 +1058,13 @@ func jsonToConfig(j configJSON) *config.Config {
 		}
 	}
 	return &config.Config{
-		Server:    config.ServerConfig{Port: j.Server.Port},
-		Daemon:    config.DaemonConfig{Interval: j.Daemon.Interval},
-		Session:   config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand},
-		Claude:    config.ClaudeConfig{PermissionMode: j.Claude.PermissionMode},
-		DevMode:   j.DevMode,
-		Templates: templates,
+		Server:          config.ServerConfig{Port: j.Server.Port},
+		Daemon:          config.DaemonConfig{Interval: j.Daemon.Interval},
+		Session:         config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand},
+		Claude:          config.ClaudeConfig{PermissionMode: j.Claude.PermissionMode},
+		DevMode:         j.DevMode,
+		Templates:       templates,
+		PromptTemplates: j.PromptTemplates,
 	}
 }
 
@@ -1083,12 +1087,32 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	// Load current config to preserve fields not exposed in the UI (e.g. frontend_dir)
+	current, err := config.Load()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	cfg := jsonToConfig(req)
+	cfg.Server.FrontendDir = current.Server.FrontendDir
 	if err := config.Save(cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) getPromptTemplates(w http.ResponseWriter, r *http.Request) {
+	cfg, err := config.Load()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	templates := configToJSON(cfg).PromptTemplates
+	if templates == nil {
+		templates = []config.PromptTemplate{}
+	}
+	writeJSON(w, http.StatusOK, templates)
 }
 
 func (s *Server) getCodexModels(w http.ResponseWriter, r *http.Request) {

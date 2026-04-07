@@ -15,13 +15,20 @@ type RoleTemplate struct {
 	SystemPrompt string `toml:"systemPrompt" json:"systemPrompt"`
 }
 
+type PromptTemplate struct {
+	Name     string `toml:"name" json:"name"`
+	Prompt   string `toml:"prompt" json:"prompt"`
+	Category string `toml:"category" json:"category"`
+}
+
 type Config struct {
-	Server    ServerConfig   `toml:"server"`
-	Daemon    DaemonConfig   `toml:"daemon"`
-	Session   SessionConfig  `toml:"session"`
-	Claude    ClaudeConfig   `toml:"claude"`
-	DevMode   bool           `toml:"dev_mode"`
-	Templates []RoleTemplate `toml:"templates" json:"templates"`
+	Server          ServerConfig     `toml:"server"`
+	Daemon          DaemonConfig     `toml:"daemon"`
+	Session         SessionConfig    `toml:"session"`
+	Claude          ClaudeConfig     `toml:"claude"`
+	DevMode         bool             `toml:"dev_mode"`
+	Templates       []RoleTemplate   `toml:"templates" json:"templates"`
+	PromptTemplates []PromptTemplate `toml:"prompt_templates" json:"prompt_templates"`
 }
 
 type ServerConfig struct {
@@ -71,7 +78,6 @@ func (c ClaudeConfig) ClaudePermissionMode() string {
 	}
 	return c.PermissionMode
 }
-
 
 func Default() *Config {
 	return &Config{
