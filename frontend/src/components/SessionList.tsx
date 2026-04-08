@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { TerminalSquare } from "lucide-react";
+import { motion } from "motion/react";
 import type { Session } from "../types/session";
 import { GroupSectionHeader } from "./ui/GroupSectionHeader";
 import { SecondaryButton } from "./ui/SecondaryButton";
@@ -83,10 +84,17 @@ export function SessionList({ sessions, onRestartController }: Props) {
     );
   }
 
+  let sessionIndex = 0;
   const renderSession = (s: Session, depth: number) => {
     const children = childrenMap.get(s.id) || [];
+    const idx = sessionIndex++;
     return (
-      <div key={s.id}>
+      <motion.div
+        key={s.id}
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: "spring", damping: 25, stiffness: 300, delay: idx * 0.04 }}
+      >
         <div style={{ marginLeft: depth * 24 }}>
           {s.type === "external" ? (
             <ExternalProcessRow
@@ -97,6 +105,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
             />
           ) : (
             <SessionCard
+              id={s.id}
               name={s.name}
               status={s.status}
               type={s.type}
@@ -107,7 +116,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
               projectPath={s.projectPath}
               timeAgo={timeAgo(s.createdAt)}
               isSubSession={depth > 0}
-              onClick={() => navigate(`/sessions/${s.id}`)}
+              onClick={() => navigate(`/sessions/${s.id}`, { viewTransition: true } as never)}
               actions={
                 s.type === "controller" && (s.status === "paused" || s.status === "exited") ? (
                   <SecondaryButton
@@ -121,7 +130,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
           )}
         </div>
         {children.map((child) => renderSession(child, depth + 1))}
-      </div>
+      </motion.div>
     );
   };
 

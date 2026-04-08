@@ -1,4 +1,5 @@
 import { type ReactNode, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
 
 interface FileCodeViewerProps {
   files: { name: string; content: string }[];
@@ -124,8 +125,16 @@ export function FileCodeViewer({
               <span className="font-mono text-gray-700 truncate min-w-0">{file.name}</span>
               <span className="ml-auto text-gray-400 shrink-0">{isExpanded ? "\u25BC" : "\u25B6"}</span>
             </button>
+            <AnimatePresence initial={false}>
             {isExpanded && (
-              renderContent ? (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                style={{ overflow: "hidden" }}
+              >
+              {renderContent ? (
                 <div className="border-t border-gray-200 p-3">
                   {renderContent(file.content)}
                 </div>
@@ -139,8 +148,10 @@ export function FileCodeViewer({
                   onLineClick={handleLineClick}
                   renderLine={renderLine}
                 />
-              )
+              )}
+              </motion.div>
             )}
+            </AnimatePresence>
           </div>
         );
       })}

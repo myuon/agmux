@@ -8,6 +8,7 @@ import { toolIcon, toolDescription } from "../../models/tool";
 import { Modal } from "../ui/Modal";
 import { ToolInputView } from "./ToolInputView";
 import { RefreshCw } from "lucide-react";
+import { motion } from "motion/react";
 
 const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
   user: { bg: "bg-blue-50", label: "User", text: "text-blue-700" },
@@ -82,16 +83,27 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
           groups.map((group, i) => {
             if (group.role === "system") {
               return (
-                <div key={i}>
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                >
                   {group.items.map((item, j) => (
                     <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} />
                   ))}
-                </div>
+                </motion.div>
               );
             }
             const style = roleStyles[group.role] || roleStyles.assistant;
             return (
-              <div key={i} className={`rounded-lg p-3 ${style.bg}`}>
+              <motion.div
+                key={i}
+                className={`rounded-lg p-3 ${style.bg}`}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ type: "spring", damping: 25, stiffness: 300 }}
+              >
                 <div className="flex items-center gap-2 mb-1">
                   <span className={`font-semibold text-xs ${style.text}`}>
                     {style.label}
@@ -102,7 +114,7 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
                     <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} />
                   ))}
                 </div>
-              </div>
+              </motion.div>
             );
           })
         )}
