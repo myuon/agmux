@@ -52,13 +52,15 @@ function ParentSessionLink({ parentId }: { parentId: string }) {
   );
 }
 
-function SessionPageSkeleton() {
+function SessionPageSkeleton({ sessionId }: { sessionId?: string }) {
   return (
     <div className="h-dvh flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 max-w-4xl mx-auto">
       <div className="flex items-center gap-3 mb-3">
         <div className="w-4 h-4 bg-gray-200 rounded animate-pulse" />
-        <div className="w-3 h-3 rounded-full bg-gray-200 animate-pulse" />
-        <div className="h-7 w-40 bg-gray-200 rounded animate-pulse" />
+        <span className="inline-flex shrink-0" style={sessionId ? { viewTransitionName: `session-dot-${sessionId}` } : undefined}>
+          <div className="w-3 h-3 rounded-full bg-gray-200 animate-pulse" />
+        </span>
+        <div className="h-7 w-40 bg-gray-200 rounded animate-pulse" style={sessionId ? { viewTransitionName: `session-name-${sessionId}` } : undefined} />
       </div>
       <div className="flex-1 bg-gray-50 rounded-lg animate-pulse" />
     </div>
@@ -84,7 +86,7 @@ export function SessionPage() {
   );
 
   return (
-    <Suspense key={sessionId} fallback={<SessionPageSkeleton />}>
+    <Suspense key={sessionId} fallback={<SessionPageSkeleton sessionId={sessionId} />}>
       <Await resolve={deferredPromise}>
         {(deferred: DeferredData) => (
           <SessionPageInner session={loaderData.session} deferred={deferred} />
@@ -621,14 +623,15 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       {clearToast === "error" && <Toast message="クリアに失敗しました" variant="error" />}
       {copiedToast && <Toast message="セッション名をコピーしました" />}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 shrink-0">
-        <IconButton onClick={() => navigate("/")} title="Back">
+        <IconButton onClick={() => navigate("/", { viewTransition: true } as never)} title="Back">
           <ArrowLeft className="w-4 h-4" />
         </IconButton>
         {session ? (
           <>
-            <StatusDot status={session.status} />
+            <span className="inline-flex shrink-0" style={{ viewTransitionName: `session-dot-${session.id}` }}><StatusDot status={session.status} /></span>
             <h2
               className="text-xl sm:text-2xl font-bold hover:text-indigo-600 transition-colors cursor-pointer"
+              style={{ viewTransitionName: `session-name-${session.id}` }}
               onClick={() => {
                 navigator.clipboard.writeText(session.name).then(() => {
                   setCopiedToast(true);
@@ -637,7 +640,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               }}
               title="クリックでセッション名をコピー"
             >{session.name}</h2>
-            <span className="text-xs text-gray-400">{session.status}</span>
+            <span className="text-xs text-gray-400" style={{ viewTransitionName: `session-status-${session.id}` }}>{session.status}</span>
             {session.provider && (() => {
               const versionMatch = providerVersion?.match(/\d+\.\d+\.\d+/)?.[0];
               const chip = (
@@ -673,13 +676,15 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               <Chip color="purple">{session.model}</Chip>
             )}
             {session.roleTemplate && (
-              <Chip color="orange">{session.roleTemplate}</Chip>
+              <span style={{ viewTransitionName: `session-role-${session.id}` }}><Chip color="orange">{session.roleTemplate}</Chip></span>
             )}
           </>
         ) : (
           <>
-            <div className="w-3 h-3 rounded-full bg-gray-200 animate-pulse" />
-            <div className="h-7 w-40 bg-gray-200 rounded animate-pulse" />
+            <span className="inline-flex shrink-0" style={{ viewTransitionName: `session-dot-${sessionId}` }}>
+              <div className="w-3 h-3 rounded-full bg-gray-200 animate-pulse" />
+            </span>
+            <div className="h-7 w-40 bg-gray-200 rounded animate-pulse" style={{ viewTransitionName: `session-name-${sessionId}` }} />
           </>
         )}
       </div>

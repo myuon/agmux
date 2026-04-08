@@ -4,12 +4,15 @@ import remarkGfm from "remark-gfm";
 import {
   CheckCircle2, ListTodo, Circle, AlertTriangle,
 } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { Modal } from "../ui/Modal";
 import { CollapsibleText } from "../ui/CollapsibleText";
 import type { StreamDisplayItem, AskUserQuestionItem } from "../../models/stream";
 import { toolIcon, toolDescription, toolSubDetail, parseTodoInput } from "../../models/tool";
 import { api } from "../../api/client";
 import { ToolInputView } from "./ToolInputView";
+
+const expandTransition = { type: "spring" as const, damping: 25, stiffness: 300 };
 
 
 function TodoCallView({ item }: { item: Extract<StreamDisplayItem, { kind: "tool_call" }> }) {
@@ -86,8 +89,16 @@ function AskUserQuestionCallView({ item, onAnswer }: { item: Extract<StreamDispl
           )}
         </div>
       </button>
+      <AnimatePresence initial={false}>
       {expanded && Array.isArray(inp?.questions) && (
-        <div className="px-3 pb-3 space-y-3">
+        <motion.div
+          className="px-3 pb-3 space-y-3"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={expandTransition}
+          style={{ overflow: "hidden" }}
+        >
           {inp.questions.map((q, qi) => (
             <div key={qi}>
               {q.header && (
@@ -110,8 +121,9 @@ function AskUserQuestionCallView({ item, onAnswer }: { item: Extract<StreamDispl
               </div>
             </div>
           ))}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -138,8 +150,16 @@ function EscalateCallView({ item }: {
           )}
         </div>
       </button>
+      <AnimatePresence initial={false}>
       {expanded && (
-        <div className="px-3 pb-3 space-y-2">
+        <motion.div
+          className="px-3 pb-3 space-y-2"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={expandTransition}
+          style={{ overflow: "hidden" }}
+        >
           <div className="text-sm text-gray-800 prose prose-sm max-w-none">
             <Markdown remarkPlugins={[remarkGfm]}>{inp?.message ?? ""}</Markdown>
           </div>
@@ -149,8 +169,9 @@ function EscalateCallView({ item }: {
               {item.result}
             </div>
           )}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -216,8 +237,16 @@ function PermissionPromptCallView({ item, sessionId, pendingPermission, onRespon
           {isResolved && <CheckCircle2 className="w-3 h-3 text-green-500 ml-auto shrink-0" />}
         </div>
       </button>
+      <AnimatePresence initial={false}>
       {expanded && (
-        <div className="px-3 pb-3 space-y-2">
+        <motion.div
+          className="px-3 pb-3 space-y-2"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: "auto", opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={expandTransition}
+          style={{ overflow: "hidden" }}
+        >
           <div className="text-sm text-gray-800">
             <span className="font-medium">Tool:</span> {toolName}{titleSuffix ? ` — ${titleSuffix}` : ""}
           </div>
@@ -261,8 +290,9 @@ function PermissionPromptCallView({ item, sessionId, pendingPermission, onRespon
               </button>
             </div>
           )}
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }
