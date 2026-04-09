@@ -32,6 +32,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Build metadata injected via -ldflags at build time.
+var (
+	version   = "dev"
+	commit    = "none"
+	buildDate = "unknown"
+)
+
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "agmux",
