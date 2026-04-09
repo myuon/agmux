@@ -23,8 +23,7 @@ test:
 	go test ./...
 
 install: build-frontend
-	go clean -cache
-	go install ./cmd/agmux
+	go install -ldflags "-X main.version=$$(git describe --tags --always 2>/dev/null || echo dev) -X main.commit=$$(git rev-parse --short HEAD 2>/dev/null || echo none) -X main.buildDate=$$(date -u +%Y-%m-%dT%H:%M:%SZ)" ./cmd/agmux
 
 restart: install
 	@launchctl kickstart -k "gui/$$(id -u)/com.myuon.agmux"
