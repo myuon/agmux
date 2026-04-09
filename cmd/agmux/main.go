@@ -34,8 +34,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// version is set via -ldflags at build time; defaults to "dev".
-var version = "dev"
+var (
+	version   = "dev"
+	commit    = "none"
+	buildDate = "unknown"
+)
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -52,6 +55,7 @@ func main() {
 	rootCmd.AddCommand(holderCmd())
 	rootCmd.AddCommand(templateCmd())
 	rootCmd.AddCommand(updateCmd())
+	rootCmd.AddCommand(versionCmd())
 
 	// Subcommand help template: shows .Use (with args) instead of just .Name
 	subCmdHelpTpl := `{{.Short}}
@@ -1483,4 +1487,16 @@ func updateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&checkOnly, "check", false, "Only check for updates, do not download")
 
 	return cmd
+}
+
+func versionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("agmux %s\n", version)
+			fmt.Printf("  commit:     %s\n", commit)
+			fmt.Printf("  build date: %s\n", buildDate)
+		},
+	}
 }
