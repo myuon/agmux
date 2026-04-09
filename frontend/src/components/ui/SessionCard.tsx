@@ -35,9 +35,10 @@ export function SessionCard({
 }: SessionCardProps) {
   const vtn = (suffix: string) => id ? { viewTransitionName: `session-${suffix}-${id}` } : undefined;
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      className={`border rounded-lg p-3 transition-shadow bg-white hover:shadow-sm cursor-pointer ${isSubSession ? "border-blue-200 border-l-blue-400 border-l-2" : "border-gray-200"}`}
+      className={`appearance-none text-left w-full border rounded-lg p-3 transition-shadow bg-white hover:shadow-sm cursor-pointer ${isSubSession ? "border-blue-200 border-l-blue-400 border-l-2" : "border-gray-200"}`}
     >
       <div className="flex items-center gap-2 mb-1">
         <span className="inline-flex shrink-0" style={vtn("dot")}><StatusDot status={status} /></span>
@@ -80,6 +81,6 @@ export function SessionCard({
           </div>
         )}
       </div>
-    </div>
+    </button>
   );
 }
