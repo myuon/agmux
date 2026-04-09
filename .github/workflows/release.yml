@@ -44,7 +44,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           go build \
-            -ldflags "-X main.version=${{ github.ref_name }} -X main.commit=${{ github.sha }} -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -ldflags "-X main.version=${{ github.ref_name }} -X main.commit=$(echo '${{ github.sha }}' | cut -c1-7) -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -o agmux-${{ matrix.goos }}-${{ matrix.goarch }} \
             ./cmd/agmux
 
