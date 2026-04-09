@@ -32,7 +32,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Build metadata injected via -ldflags at build time.
 var (
 	version   = "dev"
 	commit    = "none"
@@ -53,6 +52,7 @@ func main() {
 	rootCmd.AddCommand(daemonCmd())
 	rootCmd.AddCommand(holderCmd())
 	rootCmd.AddCommand(templateCmd())
+	rootCmd.AddCommand(versionCmd())
 
 	// Subcommand help template: shows .Use (with args) instead of just .Name
 	subCmdHelpTpl := `{{.Short}}
@@ -1317,6 +1317,18 @@ func templateListCmd() *cobra.Command {
 			w.Flush()
 
 			return nil
+		},
+	}
+}
+
+func versionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Printf("agmux %s\n", version)
+			fmt.Printf("  commit:     %s\n", commit)
+			fmt.Printf("  build date: %s\n", buildDate)
 		},
 	}
 }
