@@ -2,8 +2,8 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - "v*"
 
 permissions:
   contents: write
@@ -39,10 +39,14 @@ jobs:
 
       - name: Build binary
         env:
-          CGO_ENABLED: "1"
+          CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: go build -o agmux-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/agmux
+        run: |
+          go build \
+            -ldflags "-X main.version=${{ github.ref_name }} -X main.commit=$(echo '${{ github.sha }}' | cut -c1-7) -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            -o agmux-${{ matrix.goos }}-${{ matrix.goarch }} \
+            ./cmd/agmux
 
       - uses: actions/upload-artifact@v4
         with:
@@ -58,12 +62,9 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - name: Create or update release
+      - name: Create release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: main
-          name: Latest (main)
-          body: "Built from main branch. Updated on each push."
-          prerelease: true
+          generate_release_notes: true
           make_latest: true
           files: artifacts/*
