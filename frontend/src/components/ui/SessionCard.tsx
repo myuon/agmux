@@ -48,7 +48,7 @@ export function SessionCard({
           <Chip color="purple">Controller</Chip>
         )}
         {roleTemplate && (
-          <span style={vtn("role")}><Chip color="orange">{roleTemplate}</Chip></span>
+          <span className="inline-flex items-center" style={vtn("role")}><Chip color="orange">{roleTemplate}</Chip></span>
         )}
         {provider && provider !== "claude" && (
           <Chip color={provider === "codex" ? "green" : "gray"}>
