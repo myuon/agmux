@@ -663,7 +663,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                       href={href}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="hover:opacity-80 inline-flex"
+                      className="hover:opacity-80 inline-flex items-center"
                     >
                       {chip}
                     </a>
@@ -673,10 +673,10 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               return chip;
             })()}
             {session.model && (
-              <Chip color="purple">{session.model}</Chip>
+              <span className="inline-flex items-center"><Chip color="purple">{session.model}</Chip></span>
             )}
             {session.roleTemplate && (
-              <span style={{ viewTransitionName: `session-role-${session.id}` }}><Chip color="orange">{session.roleTemplate}</Chip></span>
+              <span className="inline-flex items-center" style={{ viewTransitionName: `session-role-${session.id}` }}><Chip color="orange">{session.roleTemplate}</Chip></span>
             )}
           </>
         ) : (

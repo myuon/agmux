@@ -11,7 +11,7 @@ export type ChipColor = keyof typeof colorMap;
 
 export function Chip({ children, color = "gray" }: { children: React.ReactNode; color?: ChipColor }) {
   return (
-    <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${colorMap[color]}`}>
+    <span className={`inline-flex items-center px-1.5 py-0.5 text-[10px] leading-normal font-medium rounded ${colorMap[color]}`}>
       {children}
     </span>
   );
