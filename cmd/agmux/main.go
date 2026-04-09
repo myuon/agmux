@@ -10,10 +10,12 @@ import (
 	"io/fs"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -52,6 +54,7 @@ func main() {
 	rootCmd.AddCommand(daemonCmd())
 	rootCmd.AddCommand(holderCmd())
 	rootCmd.AddCommand(templateCmd())
+	rootCmd.AddCommand(updateCmd())
 	rootCmd.AddCommand(versionCmd())
 
 	// Subcommand help template: shows .Use (with args) instead of just .Name
@@ -1319,6 +1322,171 @@ func templateListCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+type githubRelease struct {
+	TagName string `json:"tag_name"`
+	Assets  []struct {
+		Name               string `json:"name"`
+		BrowserDownloadURL string `json:"browser_download_url"`
+	} `json:"assets"`
+}
+
+func fetchLatestRelease() (*githubRelease, error) {
+	req, err := http.NewRequest("GET", "https://api.github.com/repos/myuon/agmux/releases/latest", nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch release: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var release githubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	return &release, nil
+}
+
+func isLaunchdServiceRegistered(label string) bool {
+	out, err := exec.Command("launchctl", "list", label).Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), label)
+}
+
+func restartLaunchdService(label string) error {
+	domain := fmt.Sprintf("gui/%d", os.Getuid())
+	out, err := exec.Command("launchctl", "kickstart", "-k", domain+"/"+label).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("launchctl kickstart failed: %s: %w", strings.TrimSpace(string(out)), err)
+	}
+	return nil
+}
+
+func updateCmd() *cobra.Command {
+	var checkOnly bool
+
+	cmd := &cobra.Command{
+		Use:   "update",
+		Short: "Update agmux to the latest release",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Printf("Current version: %s\n", version)
+			fmt.Println("Checking for updates...")
+
+			release, err := fetchLatestRelease()
+			if err != nil {
+				return fmt.Errorf("check for updates: %w", err)
+			}
+
+			latest := strings.TrimPrefix(release.TagName, "v")
+			current := strings.TrimPrefix(version, "v")
+
+			fmt.Printf("Latest version:  %s\n", release.TagName)
+
+			if current != "dev" && current == latest {
+				fmt.Println("already up to date")
+				return nil
+			}
+
+			if checkOnly {
+				if current == "dev" {
+					fmt.Println("Running development build; latest release is " + release.TagName)
+				} else {
+					fmt.Printf("Update available: %s -> %s\n", version, release.TagName)
+				}
+				return nil
+			}
+
+			// Find the right asset for current OS/arch
+			assetName := fmt.Sprintf("agmux-%s-%s", runtime.GOOS, runtime.GOARCH)
+			var downloadURL string
+			for _, asset := range release.Assets {
+				if asset.Name == assetName {
+					downloadURL = asset.BrowserDownloadURL
+					break
+				}
+			}
+			if downloadURL == "" {
+				return fmt.Errorf("no binary found for %s/%s in release %s (looked for: %s)", runtime.GOOS, runtime.GOARCH, release.TagName, assetName)
+			}
+
+			// Determine path of the running executable
+			execPath, err := os.Executable()
+			if err != nil {
+				return fmt.Errorf("determine executable path: %w", err)
+			}
+			execPath, err = filepath.EvalSymlinks(execPath)
+			if err != nil {
+				return fmt.Errorf("resolve executable path: %w", err)
+			}
+
+			fmt.Printf("Downloading %s...\n", assetName)
+
+			resp, err := http.Get(downloadURL)
+			if err != nil {
+				return fmt.Errorf("download binary: %w", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("download returned status %d", resp.StatusCode)
+			}
+
+			// Write to a temp file in the same directory as the binary
+			dir := filepath.Dir(execPath)
+			tmpFile, err := os.CreateTemp(dir, "agmux-update-*")
+			if err != nil {
+				return fmt.Errorf("create temp file: %w", err)
+			}
+			tmpPath := tmpFile.Name()
+			defer os.Remove(tmpPath) // clean up on failure; no-op if rename succeeded
+
+			if _, err := io.Copy(tmpFile, resp.Body); err != nil {
+				tmpFile.Close()
+				return fmt.Errorf("write binary: %w", err)
+			}
+			tmpFile.Close()
+
+			// Make executable
+			if err := os.Chmod(tmpPath, 0o755); err != nil {
+				return fmt.Errorf("chmod binary: %w", err)
+			}
+
+			// Atomically replace the current binary
+			if err := os.Rename(tmpPath, execPath); err != nil {
+				return fmt.Errorf("replace binary: %w", err)
+			}
+
+			fmt.Printf("Updated to %s\n", release.TagName)
+
+			// Restart launchd service if registered
+			const serviceLabel = "com.myuon.agmux"
+			if isLaunchdServiceRegistered(serviceLabel) {
+				fmt.Printf("Restarting launchd service %s...\n", serviceLabel)
+				if err := restartLaunchdService(serviceLabel); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to restart service: %v\n", err)
+				} else {
+					fmt.Println("Service restarted.")
+				}
+			}
+
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&checkOnly, "check", false, "Only check for updates, do not download")
+
+	return cmd
 }
 
 func versionCmd() *cobra.Command {
