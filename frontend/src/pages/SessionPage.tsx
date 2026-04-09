@@ -56,7 +56,7 @@ function ParentSessionLink({ parentId }: { parentId: string }) {
 function SessionPageSkeleton({ sessionId }: { sessionId?: string }) {
   const isDesktopPane = useDesktopPane();
   return (
-    <div className={`${isDesktopPane ? "h-full" : "h-dvh"} flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 ${isDesktopPane ? "" : "max-w-4xl mx-auto"}`}>
+    <div className={`${isDesktopPane ? "h-full pt-2" : "h-dvh pt-4 sm:pt-8"} flex flex-col px-4 sm:px-8 ${isDesktopPane ? "" : "max-w-4xl mx-auto"}`}>
       <div className="flex items-center gap-3 mb-3">
         {!isDesktopPane && <div className="w-4 h-4 bg-gray-200 rounded animate-pulse" />}
         <span className="inline-flex shrink-0" style={sessionId ? { viewTransitionName: `session-dot-${sessionId}` } : undefined}>
@@ -619,7 +619,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   ) : null;
 
   return (
-    <div className={`${isDesktopPane ? "h-full" : "h-dvh"} flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 ${isDesktopPane ? "" : "max-w-4xl mx-auto"}`}>
+    <div className={`${isDesktopPane ? "h-full pt-2" : "h-dvh pt-4 sm:pt-8"} flex flex-col px-4 sm:px-8 ${isDesktopPane ? "" : "max-w-4xl mx-auto"}`}>
       {disconnectToast && <Toast message="WebSocket接続が切断されました。再接続を試みています..." variant="warning" />}
       {reconnectToast && <Toast message="再接続に成功しました" />}
       {clearToast === "success" && <Toast message="セッションをクリアしました" />}
