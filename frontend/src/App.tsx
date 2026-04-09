@@ -89,7 +89,7 @@ function useGlobalNotifications() {
 
 // Hook to detect desktop screen (>=1024px)
 export function useIsDesktop() {
-  const [isDesktop, setIsDesktop] = useState(() => window.innerWidth >= 1024);
+  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia("(min-width: 1024px)").matches);
 
   useLayoutEffect(() => {
     const mq = window.matchMedia("(min-width: 1024px)");
@@ -207,11 +207,14 @@ function AppHeaderButtons({
 // Hook to manage sessions state with WebSocket updates
 function useSessions() {
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   const loadSessions = useCallback(() => {
     api.listSessions().then((data) => {
       setSessions(data);
-    }).catch(() => {});
+    }).catch((e: unknown) => {
+      setError(e instanceof Error ? e.message : "Failed to load sessions");
+    });
   }, []);
 
   useEffect(() => {
@@ -235,7 +238,7 @@ function useSessions() {
 
   useWebSocket(handleWsMessage);
 
-  return { sessions, loadSessions };
+  return { sessions, loadSessions, error };
 }
 
 // Desktop 3-pane layout: left (session list) + center (outlet) + right (notifications)
