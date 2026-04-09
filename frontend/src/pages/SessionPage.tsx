@@ -8,6 +8,7 @@ import {
   RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
   Code, Eye, X, AlertTriangle, LayoutTemplate,
 } from "lucide-react";
+import { useDesktopPane } from "../App";
 import { Modal } from "../components/ui/Modal";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
 import { Toast } from "../components/ui/Toast";
@@ -53,10 +54,11 @@ function ParentSessionLink({ parentId }: { parentId: string }) {
 }
 
 function SessionPageSkeleton({ sessionId }: { sessionId?: string }) {
+  const isDesktopPane = useDesktopPane();
   return (
-    <div className="h-dvh flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 max-w-4xl mx-auto">
+    <div className={`${isDesktopPane ? "h-full" : "h-dvh"} flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 ${isDesktopPane ? "" : "max-w-4xl mx-auto"}`}>
       <div className="flex items-center gap-3 mb-3">
-        <div className="w-4 h-4 bg-gray-200 rounded animate-pulse" />
+        {!isDesktopPane && <div className="w-4 h-4 bg-gray-200 rounded animate-pulse" />}
         <span className="inline-flex shrink-0" style={sessionId ? { viewTransitionName: `session-dot-${sessionId}` } : undefined}>
           <div className="w-3 h-3 rounded-full bg-gray-200 animate-pulse" />
         </span>
@@ -99,6 +101,7 @@ export function SessionPage() {
 function SessionPageInner({ session: initialSession, deferred }: { session: Session; deferred: DeferredData }) {
   const { id: sessionId } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const isDesktopPane = useDesktopPane();
 
   const [session, setSession] = useState<Session | null>(initialSession);
   const [message, setMessage] = useState("");
@@ -616,16 +619,18 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   ) : null;
 
   return (
-    <div className="h-dvh flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 max-w-4xl mx-auto">
+    <div className={`${isDesktopPane ? "h-full" : "h-dvh"} flex flex-col px-4 sm:px-8 pt-4 sm:pt-8 ${isDesktopPane ? "" : "max-w-4xl mx-auto"}`}>
       {disconnectToast && <Toast message="WebSocket接続が切断されました。再接続を試みています..." variant="warning" />}
       {reconnectToast && <Toast message="再接続に成功しました" />}
       {clearToast === "success" && <Toast message="セッションをクリアしました" />}
       {clearToast === "error" && <Toast message="クリアに失敗しました" variant="error" />}
       {copiedToast && <Toast message="セッション名をコピーしました" />}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 shrink-0">
-        <IconButton onClick={() => navigate("/", { viewTransition: true } as never)} title="Back">
-          <ArrowLeft className="w-4 h-4" />
-        </IconButton>
+        {!isDesktopPane && (
+          <IconButton onClick={() => navigate("/", { viewTransition: true } as never)} title="Back">
+            <ArrowLeft className="w-4 h-4" />
+          </IconButton>
+        )}
         {session ? (
           <>
             <span className="inline-flex shrink-0" style={{ viewTransitionName: `session-dot-${session.id}` }}><StatusDot status={session.status} /></span>

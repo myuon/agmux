@@ -28,7 +28,7 @@ function kindConfig(kind: string) {
   return { color: "bg-blue-400", dotColor: "bg-blue-400", label: "Notification", textColor: "text-blue-600" };
 }
 
-export function NotificationPanel() {
+export function NotificationPanel({ headerExtra }: { headerExtra?: React.ReactNode } = {}) {
   const [notifications, setNotifications] = useState<NotificationEntry[]>([]);
   const navigate = useNavigate();
 
@@ -54,8 +54,11 @@ export function NotificationPanel() {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200 bg-white rounded-t-lg">
-        <h2 className="text-sm font-semibold text-gray-800">Notifications</h2>
-        <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">{notifications.length}</span>
+        <div className="flex items-center gap-2">
+          <h2 className="text-sm font-semibold text-gray-800">Notifications</h2>
+          <span className="text-xs text-gray-400 bg-gray-100 rounded-full px-2 py-0.5">{notifications.length}</span>
+        </div>
+        {headerExtra}
       </div>
       <div className="bg-white rounded-b-lg overflow-auto flex-1 min-h-0">
         {notifications.length === 0 ? (

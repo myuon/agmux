@@ -1,5 +1,5 @@
 import { createBrowserRouter, type LoaderFunctionArgs } from "react-router-dom";
-import App, { Dashboard } from "./App";
+import App, { AppShell, HomePage } from "./App";
 import { SessionPage } from "./pages/SessionPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { MetricsPage } from "./pages/MetricsPage";
@@ -25,28 +25,36 @@ export const router = createBrowserRouter([
     element: <App />,
     errorElement: <RouteErrorBoundary />,
     children: [
+      // AppShell: on desktop renders DesktopLayout (3-pane wrapper),
+      // on mobile renders Outlet (plain passthrough)
       {
-        index: true,
-        element: <Dashboard />,
-      },
-      {
-        path: "sessions/:id",
-        element: <SessionPage />,
-        loader: async ({ params }: LoaderFunctionArgs) => {
-          const id = params.id!;
-          const session = await api.getSession(id);
-          // Return promises without awaiting – React Router v7 automatically defers them
-          const streamOutput = api.getStreamOutput(id);
-          const diff = api.getDiff(id).catch(() => ({ files: [] as never[] }));
-          const providerVersion = (session.provider === "codex" ? api.getCodexVersion : api.getClaudeVersion)()
-            .then((r) => r.version)
-            .catch(() => null);
-          const promptTemplates = api.getPromptTemplates().then((r) => r ?? []).catch((err) => {
-            console.error("Failed to fetch prompt templates:", err);
-            return [];
-          });
-          return { session, streamOutput, diff, providerVersion, promptTemplates };
-        },
+        element: <AppShell />,
+        children: [
+          {
+            index: true,
+            // Desktop: empty center state; Mobile: full Dashboard
+            element: <HomePage />,
+          },
+          {
+            path: "sessions/:id",
+            element: <SessionPage />,
+            loader: async ({ params }: LoaderFunctionArgs) => {
+              const id = params.id!;
+              const session = await api.getSession(id);
+              // Return promises without awaiting – React Router v7 automatically defers them
+              const streamOutput = api.getStreamOutput(id);
+              const diff = api.getDiff(id).catch(() => ({ files: [] as never[] }));
+              const providerVersion = (session.provider === "codex" ? api.getCodexVersion : api.getClaudeVersion)()
+                .then((r) => r.version)
+                .catch(() => null);
+              const promptTemplates = api.getPromptTemplates().then((r) => r ?? []).catch((err) => {
+                console.error("Failed to fetch prompt templates:", err);
+                return [];
+              });
+              return { session, streamOutput, diff, providerVersion, promptTemplates };
+            },
+          },
+        ],
       },
       {
         path: "config",
