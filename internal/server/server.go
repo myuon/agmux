@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -22,6 +23,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
+	"github.com/myuon/agmux/internal/mcp"
 	"github.com/myuon/agmux/internal/otel"
 	"github.com/myuon/agmux/internal/session"
 )
@@ -110,6 +112,9 @@ func (s *Server) setupRoutes() {
 	}
 
 	r.Get("/ws", s.hub.HandleWS)
+
+	// MCP HTTP transport endpoint
+	r.Post("/mcp/{sessionID}", s.handleMCP)
 
 	// OTLP receiver endpoints
 	r.Post("/v1/metrics", s.otelReceiver.HandleMetrics)
@@ -1743,6 +1748,35 @@ func generateNewFileDiff(projectPath, filePath string) (string, error) {
 		return "", nil
 	}
 	return strings.TrimRight(string(out), "\n"), nil
+}
+
+func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+
+	cfg, err := config.Load()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load config")
+		return
+	}
+	apiURL := fmt.Sprintf("http://localhost:%d", cfg.Server.Port)
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+
+	mcpServer := mcp.NewServerForHTTP(sessionID, apiURL)
+	respBody := mcpServer.HandleJSONRPC(body)
+	if respBody == nil {
+		// Notification — no response needed
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respBody)
 }
 
 func (s *Server) recordSessionAction(sessionID, actionType, detail string) {
