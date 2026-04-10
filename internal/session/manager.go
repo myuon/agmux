@@ -334,9 +334,6 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	m.streamProcesses[id] = sp
 	m.streamMu.Unlock()
 
-	// Persist holder PID
-	m.updateHolderPID(id, sp.HolderPID())
-
 	now := time.Now()
 	s := &Session{
 		ID:              id,
@@ -361,6 +358,9 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
+
+	// Persist holder PID after the session row exists in the DB.
+	m.updateHolderPID(id, sp.HolderPID())
 
 	return s, nil
 }
