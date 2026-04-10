@@ -101,6 +101,7 @@ func (s *Server) setupRoutes() {
 	r := chi.NewRouter()
 	r.Use(slogRequestLogger(s.logger))
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.Compress(5))
 
 	if s.devMode {
 		r.Use(cors.Handler(cors.Options{
