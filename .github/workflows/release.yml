@@ -16,7 +16,7 @@ jobs:
           - os: macos-latest
             goos: darwin
             goarch: arm64
-          - os: macos-latest
+          - os: macos-13
             goos: darwin
             goarch: amd64
           - os: ubuntu-latest
@@ -39,7 +39,7 @@ jobs:
 
       - name: Build binary
         env:
-          CGO_ENABLED: "0"
+          CGO_ENABLED: "1"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
