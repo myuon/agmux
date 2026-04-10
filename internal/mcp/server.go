@@ -15,7 +15,7 @@ import (
 // sessionIDProperty is the shared JSON Schema property for session_id across all tools.
 var sessionIDProperty = map[string]interface{}{
 	"type":        "string",
-	"description": "agmuxのセッションID。環境変数 AGMUX_SESSION_ID が設定されていない場合に必要です。",
+	"description": "agmuxのセッションID。",
 }
 
 type Server struct {
@@ -28,6 +28,50 @@ func NewServer() *Server {
 		sessionID: os.Getenv("AGMUX_SESSION_ID"),
 		apiURL:    os.Getenv("AGMUX_API_URL"),
 	}
+}
+
+// NewServerForHTTP creates an MCP server for use via HTTP transport.
+// sessionID and apiURL are provided directly instead of via environment variables.
+func NewServerForHTTP(sessionID, apiURL string) *Server {
+	return &Server{
+		sessionID: sessionID,
+		apiURL:    apiURL,
+	}
+}
+
+// HandleJSONRPC processes a single JSON-RPC request body and returns the response body.
+// This is intended for use from an HTTP handler.
+func (s *Server) HandleJSONRPC(requestBody []byte) []byte {
+	var req jsonRPCRequest
+	if err := json.Unmarshal(requestBody, &req); err != nil {
+		resp := jsonRPCResponse{
+			JSONRPC: "2.0",
+			Error:   &jsonRPCError{Code: -32700, Message: "parse error"},
+		}
+		out, _ := json.Marshal(resp)
+		return out
+	}
+
+	// Notifications have no id — return empty
+	if req.ID == nil {
+		return nil
+	}
+
+	result, rpcErr := s.handleMethod(req.Method, req.Params)
+	resp := jsonRPCResponse{
+		JSONRPC: "2.0",
+		ID:      req.ID,
+	}
+	if rpcErr != nil {
+		resp.Error = rpcErr
+	} else {
+		raw, _ := json.Marshal(result)
+		rawMsg := json.RawMessage(raw)
+		resp.Result = &rawMsg
+	}
+
+	out, _ := json.Marshal(resp)
+	return out
 }
 
 // Run starts the MCP server on stdin/stdout (JSON-RPC 2.0).

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -22,6 +23,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
+	"github.com/myuon/agmux/internal/mcp"
 	"github.com/myuon/agmux/internal/otel"
 	"github.com/myuon/agmux/internal/session"
 )
@@ -31,6 +33,7 @@ type Server struct {
 	hub              *Hub
 	router           chi.Router
 	devMode          bool
+	port             int
 	logger           *slog.Logger
 	escalations      *EscalationStore
 	permissions      *PermissionStore
@@ -39,13 +42,14 @@ type Server struct {
 	externalDetector *session.ExternalDetector
 }
 
-func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.Logger, sqlDB *sql.DB) *Server {
+func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.Logger, sqlDB *sql.DB, port int) *Server {
 	extDetector := session.NewExternalDetector(logger, 10*time.Second)
 
 	s := &Server{
 		sessions:         sessions,
 		hub:              hub,
 		devMode:          devMode,
+		port:             port,
 		logger:           logger.With("component", "server"),
 		escalations:      NewEscalationStore(),
 		permissions:      NewPermissionStore(),
@@ -99,6 +103,7 @@ func (s *Server) setupRoutes() {
 	r := chi.NewRouter()
 	r.Use(slogRequestLogger(s.logger))
 	r.Use(middleware.Recoverer)
+	r.Use(middleware.Compress(5))
 
 	if s.devMode {
 		r.Use(cors.Handler(cors.Options{
@@ -110,6 +115,9 @@ func (s *Server) setupRoutes() {
 	}
 
 	r.Get("/ws", s.hub.HandleWS)
+
+	// MCP HTTP transport endpoint
+	r.Post("/mcp/{sessionID}", s.handleMCP)
 
 	// OTLP receiver endpoints
 	r.Post("/v1/metrics", s.otelReceiver.HandleMetrics)
@@ -1743,6 +1751,37 @@ func generateNewFileDiff(projectPath, filePath string) (string, error) {
 		return "", nil
 	}
 	return strings.TrimRight(string(out), "\n"), nil
+}
+
+func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
+	sessionID := chi.URLParam(r, "sessionID")
+
+	if _, err := s.sessions.Get(sessionID); err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+
+	apiURL := fmt.Sprintf("http://localhost:%d", s.port)
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to read request body")
+		return
+	}
+
+	mcpServer := mcp.NewServerForHTTP(sessionID, apiURL)
+	respBody := mcpServer.HandleJSONRPC(body)
+	if respBody == nil {
+		// Notification — no response needed
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(respBody); err != nil {
+		slog.Error("failed to write MCP response", "error", err)
+	}
 }
 
 func (s *Server) recordSessionAction(sessionID, actionType, detail string) {

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/myuon/agmux/internal/db"
@@ -15,9 +14,8 @@ type mcpConfig struct {
 }
 
 type mcpServerEntry struct {
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
-	Env     map[string]string `json:"env,omitempty"`
+	Type string `json:"type"`
+	URL  string `json:"url"`
 }
 
 const defaultSystemPrompt = `あなたはagmuxで管理されているセッションです。以下のルールを守ってください:
@@ -40,21 +38,11 @@ func writeMCPConfig(sessionID string, apiPort int) (string, error) {
 		return "", fmt.Errorf("create mcp-configs dir: %w", err)
 	}
 
-	agmuxPath, err := exec.LookPath("agmux")
-	if err != nil {
-		// Fallback to "agmux" if not found in PATH
-		agmuxPath = "agmux"
-	}
-
 	cfg := mcpConfig{
 		McpServers: map[string]mcpServerEntry{
 			"agmux": {
-				Command: agmuxPath,
-				Args:    []string{"mcp"},
-				Env: map[string]string{
-					"AGMUX_SESSION_ID": sessionID,
-					"AGMUX_API_URL":    fmt.Sprintf("http://localhost:%d", apiPort),
-				},
+				Type: "http",
+				URL:  fmt.Sprintf("http://localhost:%d/mcp/%s", apiPort, sessionID),
 			},
 		},
 	}
