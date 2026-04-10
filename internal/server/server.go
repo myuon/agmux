@@ -33,6 +33,7 @@ type Server struct {
 	hub              *Hub
 	router           chi.Router
 	devMode          bool
+	port             int
 	logger           *slog.Logger
 	escalations      *EscalationStore
 	permissions      *PermissionStore
@@ -41,13 +42,14 @@ type Server struct {
 	externalDetector *session.ExternalDetector
 }
 
-func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.Logger, sqlDB *sql.DB) *Server {
+func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.Logger, sqlDB *sql.DB, port int) *Server {
 	extDetector := session.NewExternalDetector(logger, 10*time.Second)
 
 	s := &Server{
 		sessions:         sessions,
 		hub:              hub,
 		devMode:          devMode,
+		port:             port,
 		logger:           logger.With("component", "server"),
 		escalations:      NewEscalationStore(),
 		permissions:      NewPermissionStore(),
@@ -1754,12 +1756,12 @@ func generateNewFileDiff(projectPath, filePath string) (string, error) {
 func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 	sessionID := chi.URLParam(r, "sessionID")
 
-	cfg, err := config.Load()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to load config")
+	if _, err := s.sessions.Get(sessionID); err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
 		return
 	}
-	apiURL := fmt.Sprintf("http://localhost:%d", cfg.Server.Port)
+
+	apiURL := fmt.Sprintf("http://localhost:%d", s.port)
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -1777,7 +1779,9 @@ func (s *Server) handleMCP(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write(respBody)
+	if _, err := w.Write(respBody); err != nil {
+		slog.Error("failed to write MCP response", "error", err)
+	}
 }
 
 func (s *Server) recordSessionAction(sessionID, actionType, detail string) {

@@ -15,7 +15,7 @@ import (
 // sessionIDProperty is the shared JSON Schema property for session_id across all tools.
 var sessionIDProperty = map[string]interface{}{
 	"type":        "string",
-	"description": "agmuxのセッションID。環境変数 AGMUX_SESSION_ID が設定されていない場合に必要です。",
+	"description": "agmuxのセッションID。",
 }
 
 type Server struct {
