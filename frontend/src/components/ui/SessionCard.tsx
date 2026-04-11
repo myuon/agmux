@@ -14,6 +14,7 @@ interface SessionCardProps {
   projectPath: string;
   timeAgo: string;
   isSubSession?: boolean;
+  isSelected?: boolean;
   onClick?: () => void;
   actions?: React.ReactNode;
 }
@@ -30,6 +31,7 @@ export function SessionCard({
   projectPath,
   timeAgo,
   isSubSession,
+  isSelected,
   onClick,
   actions,
 }: SessionCardProps) {
@@ -40,7 +42,7 @@ export function SessionCard({
       tabIndex={0}
       onClick={onClick}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick?.(); } }}
-      className={`text-left w-full border rounded-lg p-3 transition-shadow bg-white hover:shadow-sm cursor-pointer ${isSubSession ? "border-blue-200 border-l-blue-400 border-l-2" : "border-gray-200"}`}
+      className={`text-left w-full border rounded-lg p-3 transition-shadow cursor-pointer ${isSelected ? "bg-blue-50 border-blue-400 shadow-sm" : "bg-white hover:shadow-sm"} ${isSubSession && !isSelected ? "border-blue-200 border-l-blue-400 border-l-2" : ""} ${isSubSession && isSelected ? "border-l-2" : ""} ${!isSubSession && !isSelected ? "border-gray-200" : ""}`}
     >
       <div className="flex items-center gap-2 mb-1">
         <span className="inline-flex shrink-0" style={vtn("dot")}><StatusDot status={status} /></span>
