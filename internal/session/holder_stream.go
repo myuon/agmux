@@ -329,17 +329,21 @@ func (sp *HolderStreamProcess) readLoop() {
 
 		// Track background tasks and detect turn completion.
 		ev := parseStreamEvent([]byte(line))
-		switch ev.Type {
-		case "task_started":
-			sp.mu.Lock()
-			sp.runningTasks++
-			sp.mu.Unlock()
-		case "task_notification":
-			sp.mu.Lock()
-			if sp.runningTasks > 0 {
-				sp.runningTasks--
+		if ev.Type == "system" {
+			switch ev.Subtype {
+			case "task_started":
+				sp.mu.Lock()
+				sp.runningTasks++
+				sp.mu.Unlock()
+			case "task_notification":
+				sp.mu.Lock()
+				if sp.runningTasks > 0 {
+					sp.runningTasks--
+				}
+				sp.mu.Unlock()
 			}
-			sp.mu.Unlock()
+		}
+		switch ev.Type {
 		case "result":
 			if ev.Subtype == "success" {
 				sp.mu.RLock()
