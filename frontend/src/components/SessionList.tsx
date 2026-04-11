@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useMatch } from "react-router-dom";
 import { TerminalSquare } from "lucide-react";
 import { motion } from "motion/react";
 import type { Session } from "../types/session";
@@ -61,6 +61,8 @@ interface Props {
 
 export function SessionList({ sessions, onRestartController }: Props) {
   const navigate = useNavigate();
+  const sessionMatch = useMatch("/sessions/:id");
+  const selectedSessionId = sessionMatch?.params.id ?? null;
   const childrenMap = useMemo(() => buildChildrenMap(sessions), [sessions]);
 
   const groupedSessions = useMemo(() => {
@@ -116,6 +118,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
               projectPath={s.projectPath}
               timeAgo={timeAgo(s.createdAt)}
               isSubSession={depth > 0}
+              isSelected={s.id === selectedSessionId}
               onClick={() => navigate(`/sessions/${s.id}`, { viewTransition: true } as never)}
               actions={
                 s.type === "controller" && (s.status === "paused" || s.status === "exited") ? (
