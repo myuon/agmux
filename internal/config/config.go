@@ -22,13 +22,18 @@ type PromptTemplate struct {
 }
 
 type Config struct {
-	Server          ServerConfig     `toml:"server"`
-	Daemon          DaemonConfig     `toml:"daemon"`
-	Session         SessionConfig    `toml:"session"`
-	Claude          ClaudeConfig     `toml:"claude"`
-	DevMode         bool             `toml:"dev_mode"`
-	Templates       []RoleTemplate   `toml:"templates" json:"templates"`
-	PromptTemplates []PromptTemplate `toml:"prompt_templates" json:"prompt_templates"`
+	Server          ServerConfig        `toml:"server"`
+	Daemon          DaemonConfig        `toml:"daemon"`
+	Session         SessionConfig       `toml:"session"`
+	Claude          ClaudeConfig        `toml:"claude"`
+	Notification    NotificationConfig  `toml:"notification"`
+	DevMode         bool                `toml:"dev_mode"`
+	Templates       []RoleTemplate      `toml:"templates" json:"templates"`
+	PromptTemplates []PromptTemplate    `toml:"prompt_templates" json:"prompt_templates"`
+}
+
+type NotificationConfig struct {
+	SubagentElapsed bool `toml:"subagent_elapsed"`
 }
 
 type ServerConfig struct {

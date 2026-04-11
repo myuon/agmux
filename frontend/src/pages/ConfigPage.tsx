@@ -92,6 +92,28 @@ export function ConfigPage() {
           </Field>
         </Section>
 
+        <Section title="Agent Notifications">
+          <Field label="サブエージェント経過通知">
+            <ToggleButton
+              enabled={config.notification?.subagentElapsed ?? false}
+              onClick={() =>
+                setConfig({
+                  ...config,
+                  notification: {
+                    ...(config.notification ?? { subagentElapsed: false }),
+                    subagentElapsed: !(config.notification?.subagentElapsed ?? false),
+                  },
+                })
+              }
+            >
+              {(config.notification?.subagentElapsed ?? false) ? "ON" : "OFF"}
+            </ToggleButton>
+          </Field>
+          <p className="text-xs text-gray-500">
+            サブエージェント（Agent tool）が長時間実行中の場合、親セッションに経過時間を通知します（30分・1時間・2時間・3時間・5時間・12時間・24時間）。
+          </p>
+        </Section>
+
         <NotificationStatus />
 
         {config.prompts && (

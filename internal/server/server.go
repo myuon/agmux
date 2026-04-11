@@ -1008,11 +1008,16 @@ type configJSON struct {
 	Daemon          configDaemonJSON           `json:"daemon"`
 	Session         configSessionJSON          `json:"session"`
 	Claude          configClaudeJSON           `json:"claude"`
+	Notification    configNotificationJSON     `json:"notification"`
 	DevMode         bool                       `json:"devMode"`
 	Prompts         *configPromptsJSON         `json:"prompts,omitempty"`
 	Templates       []configTemplateJSON       `json:"templates"`
-	PromptTemplates []config.PromptTemplate `json:"promptTemplates"`
+	PromptTemplates []config.PromptTemplate    `json:"promptTemplates"`
 	ConfigPath      string                     `json:"configPath,omitempty"`
+}
+
+type configNotificationJSON struct {
+	SubagentElapsed bool `json:"subagentElapsed"`
 }
 
 type configPromptsJSON struct {
@@ -1048,6 +1053,7 @@ func configToJSON(cfg *config.Config) configJSON {
 		Daemon:          configDaemonJSON{Interval: cfg.Daemon.Interval},
 		Session:         configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
 		Claude:          configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
+		Notification:    configNotificationJSON{SubagentElapsed: cfg.Notification.SubagentElapsed},
 		DevMode:         cfg.DevMode,
 		Templates:       templates,
 		PromptTemplates: cfg.PromptTemplates,
@@ -1070,6 +1076,7 @@ func jsonToConfig(j configJSON) *config.Config {
 		Daemon:          config.DaemonConfig{Interval: j.Daemon.Interval},
 		Session:         config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand},
 		Claude:          config.ClaudeConfig{PermissionMode: j.Claude.PermissionMode},
+		Notification:    config.NotificationConfig{SubagentElapsed: j.Notification.SubagentElapsed},
 		DevMode:         j.DevMode,
 		Templates:       templates,
 		PromptTemplates: j.PromptTemplates,

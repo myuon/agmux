@@ -208,6 +208,7 @@ export interface AppConfig {
   server: { port: number };
   daemon: { interval: string };
   session: { claudeCommand: string };
+  notification: { subagentElapsed: boolean };
   devMode: boolean;
   prompts?: { systemPrompt: string };
   templates: RoleTemplate[];

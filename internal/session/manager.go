@@ -14,6 +14,7 @@ import (
 	"time"
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
+	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 )
 
@@ -695,6 +696,36 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProces
 	sp.SetOnHolderRestart(func(sid string, newPID int) {
 		m.logger.Info("holder restarted (codex resume), updating holder_pid", "sessionId", sid, "newPid", newPID)
 		m.updateHolderPID(sid, newPID)
+	})
+	sp.SetOnSubagentElapsed(func(sid string, toolUseID string, elapsed time.Duration) {
+		cfg, err := config.Load()
+		if err != nil || !cfg.Notification.SubagentElapsed {
+			return
+		}
+		var elapsedStr string
+		switch elapsed {
+		case 30 * time.Minute:
+			elapsedStr = "30分"
+		case 1 * time.Hour:
+			elapsedStr = "1時間"
+		case 2 * time.Hour:
+			elapsedStr = "2時間"
+		case 3 * time.Hour:
+			elapsedStr = "3時間"
+		case 5 * time.Hour:
+			elapsedStr = "5時間"
+		case 12 * time.Hour:
+			elapsedStr = "12時間"
+		case 24 * time.Hour:
+			elapsedStr = "24時間"
+		default:
+			elapsedStr = elapsed.String()
+		}
+		msg := fmt.Sprintf("[agmux] サブエージェントが起動から%s経過しています。", elapsedStr)
+		m.logger.Info("subagent elapsed notification", "sessionId", sid, "toolUseId", toolUseID, "elapsed", elapsed)
+		if err := m.SendKeys(sid, msg); err != nil {
+			m.logger.Warn("failed to send subagent elapsed notification", "sessionId", sid, "error", err)
+		}
 	})
 	sp.SetOnProcessExit(func(sid string, exitErr error) {
 		// For Codex provider, exit code 0 is normal (exec finishes after each prompt).

@@ -23,8 +23,10 @@ type ImageData struct {
 
 // streamEvent is a minimal struct for parsing event type and subtype from JSONL lines.
 type streamEvent struct {
-	Type    string `json:"type"`
-	Subtype string `json:"subtype"`
+	Type      string `json:"type"`
+	Subtype   string `json:"subtype"`
+	TaskType  string `json:"task_type"`
+	ToolUseID string `json:"tool_use_id"`
 }
 
 // parseStreamEvent parses the type and subtype from a JSONL line.
@@ -121,13 +123,28 @@ type HolderStreamProcess struct {
 	modelCaptured bool
 
 	// Callbacks
-	onSessionID      func(cliSessionID string)
-	onModel          func(model string)
-	onNewLines       func(sessionID string, newLines []string, total int)
-	onProcessExit    func(sessionID string, exitErr error)
-	onTurnComplete   func(sessionID string)
-	onHolderRestart  func(sessionID string, newPID int)
-	runningTasks     int
+	onSessionID           func(cliSessionID string)
+	onModel               func(model string)
+	onNewLines            func(sessionID string, newLines []string, total int)
+	onProcessExit         func(sessionID string, exitErr error)
+	onTurnComplete        func(sessionID string)
+	onHolderRestart       func(sessionID string, newPID int)
+	onSubagentElapsed     func(sessionID string, toolUseID string, elapsed time.Duration)
+	runningTasks          int
+
+	// subagent timer tracking: tool_use_id -> timer cancel func
+	subagentTimers        map[string]func()
+}
+
+// subagentNotifyIntervals defines the fixed elapsed times at which to notify.
+var subagentNotifyIntervals = []time.Duration{
+	30 * time.Minute,
+	1 * time.Hour,
+	2 * time.Hour,
+	3 * time.Hour,
+	5 * time.Hour,
+	12 * time.Hour,
+	24 * time.Hour,
 }
 
 // StartHolderStreamProcess starts a CLI process via a holder subprocess.
@@ -151,12 +168,13 @@ func StartHolderStreamProcess(opts StreamOpts, provider Provider) (*HolderStream
 	}
 
 	sp := &HolderStreamProcess{
-		conn:       conn,
-		done:       make(chan struct{}),
-		sessionID:  opts.CLISessionID,
-		provider:   provider,
-		holderPID:  pid,
-		streamOpts: opts,
+		conn:           conn,
+		done:           make(chan struct{}),
+		sessionID:      opts.CLISessionID,
+		provider:       provider,
+		holderPID:      pid,
+		streamOpts:     opts,
+		subagentTimers: make(map[string]func()),
 	}
 
 	// Load existing lines from JSONL file (respecting clear offset)
@@ -180,12 +198,13 @@ func ReconnectHolderStreamProcess(opts StreamOpts, provider Provider, holderPID 
 	}
 
 	sp := &HolderStreamProcess{
-		conn:       conn,
-		done:       make(chan struct{}),
-		sessionID:  opts.CLISessionID,
-		provider:   provider,
-		holderPID:  holderPID,
-		streamOpts: opts,
+		conn:           conn,
+		done:           make(chan struct{}),
+		sessionID:      opts.CLISessionID,
+		provider:       provider,
+		holderPID:      holderPID,
+		streamOpts:     opts,
+		subagentTimers: make(map[string]func()),
 	}
 
 	// Load all existing lines from JSONL file (respecting clear offset)
@@ -242,6 +261,7 @@ func (sp *HolderStreamProcess) loadExistingLines(sessionID string, clearOffset i
 }
 
 func (sp *HolderStreamProcess) readLoop() {
+	defer sp.cancelAllSubagentTimers()
 	defer close(sp.done)
 
 	reader := bufio.NewReader(sp.conn)
@@ -330,16 +350,27 @@ func (sp *HolderStreamProcess) readLoop() {
 		// Track background tasks and detect turn completion.
 		ev := parseStreamEvent([]byte(line))
 		switch ev.Type {
-		case "task_started":
-			sp.mu.Lock()
-			sp.runningTasks++
-			sp.mu.Unlock()
-		case "task_notification":
-			sp.mu.Lock()
-			if sp.runningTasks > 0 {
-				sp.runningTasks--
+		case "system":
+			switch ev.Subtype {
+			case "task_started":
+				sp.mu.Lock()
+				sp.runningTasks++
+				sp.mu.Unlock()
+				// Start subagent elapsed timer when a local_agent task is started
+				if ev.TaskType == "local_agent" && ev.ToolUseID != "" {
+					sp.startSubagentTimer(ev.ToolUseID, time.Now())
+				}
+			case "task_notification":
+				sp.mu.Lock()
+				if sp.runningTasks > 0 {
+					sp.runningTasks--
+				}
+				sp.mu.Unlock()
+				// Cancel subagent timer when the task completes
+				if ev.ToolUseID != "" {
+					sp.cancelSubagentTimer(ev.ToolUseID)
+				}
 			}
-			sp.mu.Unlock()
 		case "result":
 			if ev.Subtype == "success" {
 				sp.mu.RLock()
@@ -449,6 +480,77 @@ func (sp *HolderStreamProcess) SetOnHolderRestart(fn func(sessionID string, newP
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.onHolderRestart = fn
+}
+
+// SetOnSubagentElapsed sets a callback that fires when a local_agent subagent has been
+// running for a notable elapsed duration (30m, 1h, 2h, 3h, 5h, 12h, 24h).
+func (sp *HolderStreamProcess) SetOnSubagentElapsed(fn func(sessionID string, toolUseID string, elapsed time.Duration)) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.onSubagentElapsed = fn
+}
+
+// startSubagentTimer schedules notifications at each interval in subagentNotifyIntervals.
+// Each scheduled goroutine checks if the callback is still set before firing.
+func (sp *HolderStreamProcess) startSubagentTimer(toolUseID string, startedAt time.Time) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+
+	// Cancel any existing timer for this tool_use_id
+	if cancel, ok := sp.subagentTimers[toolUseID]; ok {
+		cancel()
+	}
+
+	done := make(chan struct{})
+	sp.subagentTimers[toolUseID] = func() {
+		select {
+		case <-done:
+		default:
+			close(done)
+		}
+	}
+
+	go func() {
+		for _, interval := range subagentNotifyIntervals {
+			delay := time.Until(startedAt.Add(interval))
+			if delay <= 0 {
+				continue
+			}
+			t := time.NewTimer(delay)
+			select {
+			case <-done:
+				t.Stop()
+				return
+			case <-t.C:
+			}
+			sp.mu.RLock()
+			cb := sp.onSubagentElapsed
+			sp.mu.RUnlock()
+			if cb != nil {
+				cb(sp.streamOpts.SessionID, toolUseID, interval)
+			}
+		}
+	}()
+}
+
+// cancelSubagentTimer cancels the timer for the given tool_use_id.
+func (sp *HolderStreamProcess) cancelSubagentTimer(toolUseID string) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	if cancel, ok := sp.subagentTimers[toolUseID]; ok {
+		cancel()
+		delete(sp.subagentTimers, toolUseID)
+	}
+}
+
+// cancelAllSubagentTimers cancels all running subagent timers.
+func (sp *HolderStreamProcess) cancelAllSubagentTimers() {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	for id, cancel := range sp.subagentTimers {
+		cancel()
+		delete(sp.subagentTimers, id)
+	}
 }
 
 // Send writes a user message to the holder's socket.
@@ -743,6 +845,8 @@ func (sp *HolderStreamProcess) ClearLines() {
 
 // Stop sends a stop command to the holder.
 func (sp *HolderStreamProcess) Stop() {
+	sp.cancelAllSubagentTimers()
+
 	sp.mu.Lock()
 	sp.stopped = true
 	sp.mu.Unlock()
