@@ -511,6 +511,11 @@ func (sp *HolderStreamProcess) startSubagentTimer(toolUseID string, startedAt ti
 	}
 
 	go func() {
+		defer func() {
+			sp.mu.Lock()
+			delete(sp.subagentTimers, toolUseID)
+			sp.mu.Unlock()
+		}()
 		for _, interval := range subagentNotifyIntervals {
 			delay := time.Until(startedAt.Add(interval))
 			if delay <= 0 {
