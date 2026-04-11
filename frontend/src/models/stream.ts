@@ -107,6 +107,11 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
   const tasks = new Map<string, ActiveTask>();
   for (const entry of entries) {
     const raw = entry as unknown as Record<string, unknown>;
+    // When a session completes (result event), clear all remaining active tasks
+    if (entry.type === "result") {
+      tasks.clear();
+      continue;
+    }
     if (entry.type !== "system") continue;
     const subtype = raw.subtype as string | undefined;
     if (subtype === "task_started") {
