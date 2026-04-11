@@ -18,7 +18,7 @@ function formatResetTime(epochSeconds: number): string {
 
 function rateLimitTypeLabel(type: string): string {
   if (type === "five_hour") return "5時間";
-  if (type === "seven_day") return "7日間";
+  if (type === "seven_day" || type === "seven_day_sonnet") return "7日間";
   return type;
 }
 
@@ -83,7 +83,7 @@ export function RateLimitEventRow({ item }: { item: RateLimitItem }) {
         </span>
       )}
       {item.overageStatus && (
-        <span className="shrink-0 text-gray-400">{item.overageStatus}</span>
+        <span className="shrink-0 text-gray-400">{item.overageStatus === "allowed" ? "許可" : item.overageStatus === "rejected" ? "拒否" : item.overageStatus}</span>
       )}
       {resetLabel && <span className="shrink-0 text-gray-400 ml-auto">{resetLabel}</span>}
     </div>
