@@ -237,6 +237,27 @@ func (s *Server) getRecentProjects(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, projects)
 }
 
+// broadcastSessionUpdate fetches the current session list (including external sessions)
+// and broadcasts it to all WebSocket clients as a "session_update" message.
+func (s *Server) broadcastSessionUpdate() {
+	sessions, err := s.sessions.List()
+	if err != nil {
+		s.logger.Error("broadcastSessionUpdate: failed to list sessions", "error", err)
+		return
+	}
+	if sessions == nil {
+		sessions = []session.Session{}
+	}
+	if s.externalDetector != nil {
+		external := s.externalDetector.Sessions()
+		sessions = append(sessions, external...)
+	}
+	s.hub.Broadcast(Message{
+		Type: "session_update",
+		Data: sessions,
+	})
+}
+
 func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	sessions, err := s.sessions.List()
 	if err != nil {
@@ -272,6 +293,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordSessionAction(sess.ID, "session_create", "name: "+req.Name+", path: "+req.ProjectPath)
+	s.broadcastSessionUpdate()
 	writeJSON(w, http.StatusCreated, sess)
 }
 
@@ -320,6 +342,7 @@ func (s *Server) deleteSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordSessionAction(id, "session_delete", "")
+	s.broadcastSessionUpdate()
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -340,6 +363,7 @@ func (s *Server) duplicateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordSessionAction(sess.ID, "session_duplicate", "duplicated from "+id)
+	s.broadcastSessionUpdate()
 	writeJSON(w, http.StatusCreated, sess)
 }
 
@@ -372,6 +396,7 @@ func (s *Server) forkSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordSessionAction(sess.ID, "session_fork", "forked from "+id)
+	s.broadcastSessionUpdate()
 	writeJSON(w, http.StatusCreated, sess)
 }
 
