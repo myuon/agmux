@@ -132,27 +132,6 @@ func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []str
 	}()
 	defer signal.Stop(sigCh)
 
-	// Watch for parent process death (e.g. holder is SIGKILLed or server crashes).
-	// When the parent dies, this process is re-parented to init (ppid == 1),
-	// so we detect that and close stdin to trigger a clean shutdown of the CLI child.
-	go func() {
-		originalPPID := os.Getppid()
-		ticker := time.NewTicker(1 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				if os.Getppid() != originalPPID {
-					slog.Info("holder: parent process died, closing stdin", "sessionId", sessionID)
-					h.stdin.Close()
-					return
-				}
-			case <-h.done:
-				return
-			}
-		}
-	}()
-
 	// Wait for CLI process to exit
 	<-h.done
 	exitCode := 0
