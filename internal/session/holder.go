@@ -111,9 +111,12 @@ func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []str
 	go h.acceptLoop()
 
 	// Handle SIGTERM gracefully: close stdin so the CLI process exits cleanly,
-	// then wait for the done channel.  We no longer ignore SIGTERM because
-	// Delete() now sends SIGKILL directly to the holder PID, and graceful
-	// termination (e.g. from the OS or launchd) should propagate to the child.
+	// then wait for the done channel.
+	//
+	// ⚠️ CRITICAL: このハンドラは SIGTERM でのみ発動する。SIGKILL では発動しない。
+	// Manager.Delete() から holder を終了させる際は必ず SIGTERM を使うこと。
+	// SIGKILL を使うと stdin.Close() が実行されず、claude CLI が孤児化する。
+	// See: https://github.com/myuon/agmux/issues/569
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM)
 	go func() {

@@ -642,6 +642,14 @@ func (m *Manager) Delete(id string) error {
 
 	// Kill holder process via DB holder_pid even if not in streamProcesses map
 	// (e.g. after server restart, the map may not have the entry)
+	//
+	// ⚠️ CRITICAL: holder の graceful shutdown は SIGTERM でのみ動作する。
+	// holder は SIGTERM を受けると stdin.Close() を実行し、子プロセスの claude CLI が
+	// stdin EOF で正常終了する。SIGKILL を使うと stdin.Close() が実行されず、
+	// claude CLI が孤児化して external process として残留する。
+	// この問題は #441, #472, #502, #529, #569 と5回再発している。
+	// 修正時は holder.go の SIGTERM ハンドラとの整合性を必ず確認すること。
+	// See: https://github.com/myuon/agmux/issues/569
 	var holderPID int
 	if err := m.db.QueryRow("SELECT holder_pid FROM sessions WHERE id = ?", id).Scan(&holderPID); err == nil {
 		if holderPID > 0 && IsHolderAlive(holderPID) {
