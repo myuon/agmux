@@ -68,15 +68,34 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 }
 
 // ManagedHolderPIDs returns the PIDs of all holder processes currently managed by this Manager.
+// It combines PIDs from the in-memory streamProcesses map and PIDs stored in the DB (holder_pid > 0),
+// so that sessions whose holder processes survived a server restart are also excluded from external detection.
 func (m *Manager) ManagedHolderPIDs() []int {
 	m.streamMu.Lock()
-	defer m.streamMu.Unlock()
-
-	var pids []int
+	inMemoryPIDs := make(map[int]bool)
 	for _, sp := range m.streamProcesses {
 		if pid := sp.HolderPID(); pid > 0 {
-			pids = append(pids, pid)
+			inMemoryPIDs[pid] = true
 		}
+	}
+	m.streamMu.Unlock()
+
+	// Also query the DB for holder PIDs not yet tracked in streamProcesses
+	// (e.g. alive holders from before a server restart, before RecoverStreamProcesses completes).
+	rows, err := m.db.Query(`SELECT holder_pid FROM sessions WHERE holder_pid > 0`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var pid int
+			if err := rows.Scan(&pid); err == nil && pid > 0 {
+				inMemoryPIDs[pid] = true
+			}
+		}
+	}
+
+	pids := make([]int, 0, len(inMemoryPIDs))
+	for pid := range inMemoryPIDs {
+		pids = append(pids, pid)
 	}
 	return pids
 }
