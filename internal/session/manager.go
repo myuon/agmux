@@ -647,25 +647,27 @@ func (m *Manager) Delete(id string) error {
 	// holder は SIGTERM を受けると stdin.Close() を実行し、子プロセスの claude CLI が
 	// stdin EOF で正常終了する。SIGKILL を使うと stdin.Close() が実行されず、
 	// claude CLI が孤児化して external process として残留する。
-	// この問題は #441, #472, #502, #529, #569 と5回再発している。
+	// この問題は #441, #472, #502, #529, #569, #574 と6回再発している。
 	// 修正時は holder.go の SIGTERM ハンドラとの整合性を必ず確認すること。
-	// See: https://github.com/myuon/agmux/issues/569
+	//
+	// プロセスグループ単位で kill することで、holder が SIGKILL されても
+	// 子プロセス (claude CLI) も確実に終了する。holder は Setsid: true で起動されるため
+	// holder の PID = PGID になっており、-PID でグループ全体を kill できる。
+	// See: https://github.com/myuon/agmux/issues/574
 	var holderPID int
 	if err := m.db.QueryRow("SELECT holder_pid FROM sessions WHERE id = ?", id).Scan(&holderPID); err == nil {
 		if holderPID > 0 && IsHolderAlive(holderPID) {
-			if proc, err := os.FindProcess(holderPID); err == nil {
-				// Send SIGTERM first so the holder can graceful-shutdown (close stdin → claude CLI exits cleanly)
-				proc.Signal(syscall.SIGTERM)
-				// Wait up to 3 seconds for graceful termination
+			// Send SIGTERM to the entire process group so claude CLI also receives the signal
+			syscall.Kill(-holderPID, syscall.SIGTERM)
+			// Wait up to 3 seconds for graceful termination
+			waitForProcessExit(holderPID, 3*time.Second, 100*time.Millisecond)
+			if !IsHolderAlive(holderPID) {
+				m.logger.Info("terminated process group via SIGTERM", "sessionId", id, "holderPid", holderPID)
+			} else {
+				// Fallback: kill the entire process group with SIGKILL
+				syscall.Kill(-holderPID, syscall.SIGKILL)
 				waitForProcessExit(holderPID, 3*time.Second, 100*time.Millisecond)
-				if !IsHolderAlive(holderPID) {
-					m.logger.Info("terminated holder process via SIGTERM", "sessionId", id, "holderPid", holderPID)
-				} else {
-					// Fallback to SIGKILL if the process didn't exit in time
-					proc.Kill()
-					waitForProcessExit(holderPID, 3*time.Second, 100*time.Millisecond)
-					m.logger.Info("killed holder process via SIGKILL (SIGTERM fallback)", "sessionId", id, "holderPid", holderPID)
-				}
+				m.logger.Info("killed process group via SIGKILL (SIGTERM fallback)", "sessionId", id, "holderPid", holderPID)
 			}
 		}
 	}
