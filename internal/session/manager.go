@@ -654,10 +654,18 @@ func (m *Manager) Delete(id string) error {
 	if err := m.db.QueryRow("SELECT holder_pid FROM sessions WHERE id = ?", id).Scan(&holderPID); err == nil {
 		if holderPID > 0 && IsHolderAlive(holderPID) {
 			if proc, err := os.FindProcess(holderPID); err == nil {
-				proc.Kill()
-				// Poll until the process actually terminates (proc.Wait() doesn't work for non-child processes)
+				// Send SIGTERM first so the holder can graceful-shutdown (close stdin → claude CLI exits cleanly)
+				proc.Signal(syscall.SIGTERM)
+				// Wait up to 3 seconds for graceful termination
 				waitForProcessExit(holderPID, 3*time.Second, 100*time.Millisecond)
-				m.logger.Info("killed orphan holder process via DB pid", "sessionId", id, "holderPid", holderPID)
+				if !IsHolderAlive(holderPID) {
+					m.logger.Info("terminated holder process via SIGTERM", "sessionId", id, "holderPid", holderPID)
+				} else {
+					// Fallback to SIGKILL if the process didn't exit in time
+					proc.Kill()
+					waitForProcessExit(holderPID, 3*time.Second, 100*time.Millisecond)
+					m.logger.Info("killed holder process via SIGKILL (SIGTERM fallback)", "sessionId", id, "holderPid", holderPID)
+				}
 			}
 		}
 	}
