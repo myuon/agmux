@@ -68,13 +68,18 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 }
 
 // ManagedHolderPIDs returns the PIDs of all holder processes currently managed by this Manager.
+// DB holder_pid is always positive for active sessions, so querying the DB is sufficient.
 func (m *Manager) ManagedHolderPIDs() []int {
-	m.streamMu.Lock()
-	defer m.streamMu.Unlock()
+	rows, err := m.db.Query("SELECT holder_pid FROM sessions WHERE holder_pid > 0")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
 
 	var pids []int
-	for _, sp := range m.streamProcesses {
-		if pid := sp.HolderPID(); pid > 0 {
+	for rows.Next() {
+		var pid int
+		if err := rows.Scan(&pid); err == nil {
 			pids = append(pids, pid)
 		}
 	}
