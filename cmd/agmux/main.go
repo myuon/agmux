@@ -130,6 +130,19 @@ func initManager(cfg *config.Config, port int, logger *slog.Logger) (session.Ses
 	}
 	mgr := session.NewManager(database, cfg.Session.ClaudeCommand, cfg.Claude.ClaudePermissionMode(), cfg.Server.Port, logger, cfg.Session.SystemPrompt)
 	mgr.SetCodexCommand(cfg.Session.CodexCommand)
+
+	// Configure background task notification interval
+	bgNotifyIntervalStr := cfg.Daemon.BackgroundTaskNotificationInterval
+	if bgNotifyIntervalStr == "" {
+		bgNotifyIntervalStr = "30m"
+	}
+	if d, err := time.ParseDuration(bgNotifyIntervalStr); err == nil {
+		mgr.SetNotifyInterval(d)
+	} else {
+		logger.Warn("invalid background_task_notification_interval, using default 30m", "value", bgNotifyIntervalStr, "error", err)
+		mgr.SetNotifyInterval(30 * time.Minute)
+	}
+
 	return mgr, database, nil
 }
 

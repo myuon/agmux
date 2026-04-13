@@ -24,6 +24,7 @@ type Manager struct {
 	permissionMode  string
 	apiPort         int
 	systemPrompt    string
+	notifyInterval  time.Duration
 	streamProcesses map[string]*HolderStreamProcess
 	streamMu        sync.Mutex
 	// deletingSet tracks sessions currently being deleted so that auto-recovery
@@ -688,7 +689,9 @@ func (m *Manager) Delete(id string) error {
 
 // wireSessionIDCallback sets up the onSessionID callback on a stream process
 // so that when the CLI session ID is captured, it gets persisted to the DB.
+// It also wires periodic notification for background task tracking.
 func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProcess) {
+	m.wireNotifyCallback(sp)
 	sp.SetOnSessionID(func(cliSessionID string) {
 		if err := m.UpdateCliSessionID(sessionID, cliSessionID); err != nil {
 			m.logger.Error("failed to persist cli session id", "sessionId", sessionID, "cliSessionId", cliSessionID, "error", err)
@@ -782,6 +785,19 @@ func (m *Manager) stopStreamProcess(id string) {
 	m.streamMu.Unlock()
 	if ok {
 		sp.Stop()
+	}
+}
+
+// SetNotifyInterval sets the periodic notification interval for background task tracking.
+func (m *Manager) SetNotifyInterval(d time.Duration) {
+	m.notifyInterval = d
+}
+
+// wireNotifyCallback configures the periodic notification on a stream process.
+func (m *Manager) wireNotifyCallback(sp *HolderStreamProcess) {
+	if m.notifyInterval > 0 {
+		sp.SetNotifyInterval(m.notifyInterval)
+		sp.SetSendKeysFunc(m.SendKeys)
 	}
 }
 
