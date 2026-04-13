@@ -37,7 +37,8 @@ type ServerConfig struct {
 }
 
 type DaemonConfig struct {
-	Interval string `toml:"interval"`
+	Interval                          string `toml:"interval"`
+	BackgroundTaskNotificationInterval string `toml:"background_task_notification_interval"`
 }
 
 type SessionConfig struct {
@@ -85,7 +86,8 @@ func Default() *Config {
 			Port: 4321,
 		},
 		Daemon: DaemonConfig{
-			Interval: "30s",
+			Interval:                          "30s",
+			BackgroundTaskNotificationInterval: "30m",
 		},
 		Session: SessionConfig{
 			ClaudeCommand: "claude",

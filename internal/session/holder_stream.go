@@ -2,6 +2,7 @@ package session
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -119,6 +120,11 @@ type HolderStreamProcess struct {
 
 	// modelCaptured is true once the model has been captured
 	modelCaptured bool
+
+	// Periodic notification fields
+	notifyInterval time.Duration              // notification interval for background tasks
+	notifyCancel   context.CancelFunc         // stops the periodic notification goroutine
+	sendKeysFunc   func(sessionID string, text string) error // injected send function
 
 	// Callbacks
 	onSessionID      func(cliSessionID string)
@@ -333,14 +339,24 @@ func (sp *HolderStreamProcess) readLoop() {
 			switch ev.Subtype {
 			case "task_started":
 				sp.mu.Lock()
+				prev := sp.runningTasks
 				sp.runningTasks++
 				sp.mu.Unlock()
+				// Start periodic notification when first background task begins
+				if prev == 0 {
+					sp.startPeriodicNotification()
+				}
 			case "task_notification":
 				sp.mu.Lock()
 				if sp.runningTasks > 0 {
 					sp.runningTasks--
 				}
+				remaining := sp.runningTasks
 				sp.mu.Unlock()
+				// Stop periodic notification when all background tasks complete
+				if remaining == 0 {
+					sp.stopPeriodicNotification()
+				}
 			}
 		}
 		switch ev.Type {
@@ -453,6 +469,20 @@ func (sp *HolderStreamProcess) SetOnHolderRestart(fn func(sessionID string, newP
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.onHolderRestart = fn
+}
+
+// SetNotifyInterval sets the interval for periodic background task notifications.
+func (sp *HolderStreamProcess) SetNotifyInterval(d time.Duration) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.notifyInterval = d
+}
+
+// SetSendKeysFunc sets the function used to send periodic notification messages.
+func (sp *HolderStreamProcess) SetSendKeysFunc(fn func(sessionID string, text string) error) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.sendKeysFunc = fn
 }
 
 // Send writes a user message to the holder's socket.
@@ -745,8 +775,67 @@ func (sp *HolderStreamProcess) ClearLines() {
 	sp.lines = nil
 }
 
+// stopPeriodicNotification cancels the periodic notification goroutine if running.
+func (sp *HolderStreamProcess) stopPeriodicNotification() {
+	sp.mu.Lock()
+	cancel := sp.notifyCancel
+	sp.notifyCancel = nil
+	sp.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+}
+
+// startPeriodicNotification starts a goroutine that periodically sends a message
+// to the parent session to trigger Claude Code to poll for background task completion.
+func (sp *HolderStreamProcess) startPeriodicNotification() {
+	if sp.notifyInterval <= 0 {
+		return
+	}
+
+	// Stop any existing notification goroutine first
+	sp.stopPeriodicNotification()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sp.mu.Lock()
+	sp.notifyCancel = cancel
+	sp.mu.Unlock()
+
+	go func() {
+		startTime := time.Now()
+		ticker := time.NewTicker(sp.notifyInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				elapsed := time.Since(startTime).Truncate(time.Minute)
+				sp.mu.RLock()
+				sid := sp.streamOpts.SessionID
+				tasks := sp.runningTasks
+				fn := sp.sendKeysFunc
+				sp.mu.RUnlock()
+
+				if tasks > 0 && fn != nil {
+					msg := fmt.Sprintf("バックグラウンドタスク実行中: %v経過", elapsed)
+					if err := fn(sid, msg); err != nil {
+						slog.Warn("periodic notification: sendKeys failed", "sessionId", sid, "error", err)
+					}
+				}
+			case <-ctx.Done():
+				return
+			case <-sp.done:
+				return
+			}
+		}
+	}()
+}
+
 // Stop sends a stop command to the holder.
 func (sp *HolderStreamProcess) Stop() {
+	sp.stopPeriodicNotification()
+
 	sp.mu.Lock()
 	sp.stopped = true
 	sp.mu.Unlock()
