@@ -135,6 +135,31 @@ func (d *ExternalDetector) detect() {
 	d.mu.Unlock()
 }
 
+// findHolderPIDsFromPS scans ps output (pid,args format) to find all agmux holder processes.
+// This catches holder processes whose PIDs are not yet (or no longer) recorded in the DB.
+// A process is considered a holder if its args contain the agmux executable path followed by "holder".
+func findHolderPIDsFromPS(psArgsOutput string, agmuxExe string) []int {
+	var pids []int
+	for _, line := range strings.Split(psArgsOutput, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		pid, err := strconv.Atoi(fields[0])
+		if err != nil {
+			continue
+		}
+		// fields[1] is the executable path (first token of args)
+		// fields[2] is the first argument - should be "holder" for holder processes
+		exe := fields[1]
+		subcommand := fields[2]
+		if exe == agmuxExe && subcommand == "holder" {
+			pids = append(pids, pid)
+		}
+	}
+	return pids
+}
+
 // findExternalProcesses finds Claude and Codex processes not managed by this agmux instance.
 // managedPIDs are additional root PIDs (e.g. holder processes) whose process trees should be excluded.
 func findExternalProcesses(managedPIDs []int) ([]ExternalProcess, error) {
@@ -150,10 +175,27 @@ func findExternalProcesses(managedPIDs []int) ([]ExternalProcess, error) {
 	psOutput := string(out)
 	agmuxPIDs := collectProcessTree(myPID, psOutput)
 
-	// Also exclude process trees rooted at managed holder PIDs
+	// Also exclude process trees rooted at managed holder PIDs (from DB)
 	for _, pid := range managedPIDs {
 		for k, v := range collectProcessTree(pid, psOutput) {
 			agmuxPIDs[k] = v
+		}
+	}
+
+	// Additionally, scan process args to find holder processes not in the DB.
+	// This handles cases where a holder was restarted and the old holder PID is no longer
+	// in the DB, but the old holder and its children are still running.
+	if agmuxExe, err := os.Executable(); err == nil {
+		argsOut, err := exec.Command("ps", "-eo", "pid,args").Output()
+		if err == nil {
+			holderPIDs := findHolderPIDsFromPS(string(argsOut), agmuxExe)
+			for _, pid := range holderPIDs {
+				if !agmuxPIDs[pid] {
+					for k, v := range collectProcessTree(pid, psOutput) {
+						agmuxPIDs[k] = v
+					}
+				}
+			}
 		}
 	}
 
