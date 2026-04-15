@@ -82,15 +82,15 @@ export function NotificationPanel({ headerExtra }: { headerExtra?: React.ReactNo
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-medium ${config.textColor}`}>{config.label}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`text-xs font-medium shrink-0 ${config.textColor}`}>{config.label}</span>
                       {n.sessionId && (
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-gray-400 truncate">
                           {n.sessionName || n.sessionId.slice(0, 8)}
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-700 leading-snug mt-0.5 break-words line-clamp-2">
+                    <p className="text-sm text-gray-700 leading-snug mt-0.5 truncate">
                       {n.message}
                     </p>
                   </div>
