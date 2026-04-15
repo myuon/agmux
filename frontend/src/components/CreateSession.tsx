@@ -41,7 +41,9 @@ export function CreateSession({ onClose, onCreate }: Props) {
       .then(setRecentProjects)
       .catch(() => setRecentProjects([]));
     api.getConfig()
-      .then((cfg) => setTemplates(cfg.templates || []))
+      .then((cfg) => {
+        setTemplates(cfg.templates || []);
+      })
       .catch(() => setTemplates([]));
   }, []);
 

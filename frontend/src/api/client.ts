@@ -51,6 +51,9 @@ export const api = {
   getCodexVersion: () =>
     request<{ version: string }>("/codex/version"),
 
+  getAgmuxVersion: () =>
+    request<{ version: string; commit: string; buildDate: string }>("/version"),
+
   getSession: (id: string) => request<Session>(`/sessions/${id}`),
 
   stopSession: (id: string) =>

@@ -202,6 +202,7 @@ func serveCmd() *cobra.Command {
 			var srv *server.Server
 
 			srv = server.New(mgr, hub, devMode, logger, database, port)
+			srv.SetVersion(version, commit, buildDate)
 
 			// Wire managed holder PIDs into external detector so holder
 			// processes and their children are not detected as external.
