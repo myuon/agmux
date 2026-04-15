@@ -40,6 +40,9 @@ type Server struct {
 	otelReceiver     *otel.Receiver
 	sqlDB            *sql.DB
 	externalDetector *session.ExternalDetector
+	version          string
+	commit           string
+	buildDate        string
 }
 
 func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.Logger, sqlDB *sql.DB, port int) *Server {
@@ -163,6 +166,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/metrics", s.getMetrics)
 		r.Get("/metrics/summary", s.getMetricsSummary)
 		r.Get("/metrics/events", s.getMetricsEvents)
+		r.Get("/version", s.getVersion)
 
 	})
 
@@ -1052,6 +1056,8 @@ type configDaemonJSON struct {
 }
 type configSessionJSON struct {
 	ClaudeCommand string `json:"claudeCommand"`
+	DefaultRole   string `json:"defaultRole,omitempty"`
+	DefaultModel  string `json:"defaultModel,omitempty"`
 }
 type configClaudeJSON struct {
 	PermissionMode string `json:"permissionMode"`
@@ -1071,7 +1077,7 @@ func configToJSON(cfg *config.Config) configJSON {
 	return configJSON{
 		Server:          configServerJSON{Port: cfg.Server.Port},
 		Daemon:          configDaemonJSON{Interval: cfg.Daemon.Interval},
-		Session:         configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
+		Session:         configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand, DefaultRole: cfg.Session.DefaultRole, DefaultModel: cfg.Session.DefaultModel},
 		Claude:          configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
 		DevMode:         cfg.DevMode,
 		Templates:       templates,
@@ -1093,7 +1099,7 @@ func jsonToConfig(j configJSON) *config.Config {
 	return &config.Config{
 		Server:          config.ServerConfig{Port: j.Server.Port},
 		Daemon:          config.DaemonConfig{Interval: j.Daemon.Interval},
-		Session:         config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand},
+		Session:         config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand, DefaultRole: j.Session.DefaultRole, DefaultModel: j.Session.DefaultModel},
 		Claude:          config.ClaudeConfig{PermissionMode: j.Claude.PermissionMode},
 		DevMode:         j.DevMode,
 		Templates:       templates,
@@ -1378,6 +1384,22 @@ func (s *Server) getClaudeModels(w http.ResponseWriter, r *http.Request) {
 		{ID: "claude-haiku-4-5", Name: "Claude Haiku 4.5"},
 	}
 	writeJSON(w, http.StatusOK, models)
+}
+
+// SetVersion stores the build-time version info so it can be served via /api/version.
+func (s *Server) SetVersion(version, commit, buildDate string) {
+	s.version = version
+	s.commit = commit
+	s.buildDate = buildDate
+}
+
+// getVersion returns the agmux build version info.
+func (s *Server) getVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{
+		"version":   s.version,
+		"commit":    s.commit,
+		"buildDate": s.buildDate,
+	})
 }
 
 // getClaudeVersion runs "claude --version" and returns the parsed version string.

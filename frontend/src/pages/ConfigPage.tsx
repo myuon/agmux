@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useLoaderData } from "react-router-dom";
 import { api } from "../api/client";
 import type { AppConfig, RoleTemplate, PromptTemplate } from "../api/client";
@@ -90,6 +90,28 @@ export function ConfigPage() {
               className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
             />
           </Field>
+          <Field label="Default Role (optional)">
+            <input
+              type="text"
+              value={config.session.defaultRole || ""}
+              onChange={(e) =>
+                setConfig({ ...config, session: { ...config.session, defaultRole: e.target.value || undefined } })
+              }
+              placeholder="Template name"
+              className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
+            />
+          </Field>
+          <Field label="Default Model (optional)">
+            <input
+              type="text"
+              value={config.session.defaultModel || ""}
+              onChange={(e) =>
+                setConfig({ ...config, session: { ...config.session, defaultModel: e.target.value || undefined } })
+              }
+              placeholder="e.g. claude-sonnet-4-5"
+              className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
+            />
+          </Field>
         </Section>
 
         <NotificationStatus />
@@ -129,6 +151,8 @@ export function ConfigPage() {
           </div>
         )}
 
+        <VersionInfo />
+
         <div className="pt-4">
           <button
             onClick={handleSave}
@@ -139,6 +163,23 @@ export function ConfigPage() {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function VersionInfo() {
+  const [info, setInfo] = useState<{ version: string; commit: string; buildDate: string } | null>(null);
+
+  useEffect(() => {
+    api.getAgmuxVersion().then(setInfo).catch(() => {});
+  }, []);
+
+  if (!info) return null;
+
+  return (
+    <div className="text-xs text-gray-400 space-y-0.5">
+      <div>Version: {info.version} ({info.commit})</div>
+      <div>Build date: {info.buildDate}</div>
     </div>
   );
 }
