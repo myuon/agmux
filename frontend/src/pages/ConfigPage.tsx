@@ -90,28 +90,6 @@ export function ConfigPage() {
               className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
             />
           </Field>
-          <Field label="Default Role (optional)">
-            <input
-              type="text"
-              value={config.session.defaultRole || ""}
-              onChange={(e) =>
-                setConfig({ ...config, session: { ...config.session, defaultRole: e.target.value || undefined } })
-              }
-              placeholder="Template name"
-              className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
-            />
-          </Field>
-          <Field label="Default Model (optional)">
-            <input
-              type="text"
-              value={config.session.defaultModel || ""}
-              onChange={(e) =>
-                setConfig({ ...config, session: { ...config.session, defaultModel: e.target.value || undefined } })
-              }
-              placeholder="e.g. claude-sonnet-4-5"
-              className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
-            />
-          </Field>
         </Section>
 
         <NotificationStatus />

@@ -45,8 +45,6 @@ type SessionConfig struct {
 	ClaudeCommand string `toml:"claude_command"`
 	CodexCommand  string `toml:"codex_command"`
 	SystemPrompt  string `toml:"system_prompt"`
-	DefaultRole   string `toml:"default_role" json:"default_role,omitempty"`
-	DefaultModel  string `toml:"default_model" json:"default_model,omitempty"`
 }
 
 // DefaultPermissionMode is the default Claude CLI permission mode.

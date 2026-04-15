@@ -43,18 +43,6 @@ export function CreateSession({ onClose, onCreate }: Props) {
     api.getConfig()
       .then((cfg) => {
         setTemplates(cfg.templates || []);
-        if (cfg.session.defaultRole) {
-          setSelectedTemplate(cfg.session.defaultRole);
-          const tmpl = (cfg.templates || []).find((t) => t.name === cfg.session.defaultRole);
-          if (tmpl) {
-            if (tmpl.provider) setProvider(tmpl.provider);
-            if (tmpl.model) setModel(tmpl.model);
-            if (tmpl.systemPrompt) setSystemPrompt(tmpl.systemPrompt);
-          }
-        }
-        if (cfg.session.defaultModel) {
-          setModel(cfg.session.defaultModel);
-        }
       })
       .catch(() => setTemplates([]));
   }, []);

@@ -1056,8 +1056,6 @@ type configDaemonJSON struct {
 }
 type configSessionJSON struct {
 	ClaudeCommand string `json:"claudeCommand"`
-	DefaultRole   string `json:"defaultRole,omitempty"`
-	DefaultModel  string `json:"defaultModel,omitempty"`
 }
 type configClaudeJSON struct {
 	PermissionMode string `json:"permissionMode"`
@@ -1077,7 +1075,7 @@ func configToJSON(cfg *config.Config) configJSON {
 	return configJSON{
 		Server:          configServerJSON{Port: cfg.Server.Port},
 		Daemon:          configDaemonJSON{Interval: cfg.Daemon.Interval},
-		Session:         configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand, DefaultRole: cfg.Session.DefaultRole, DefaultModel: cfg.Session.DefaultModel},
+		Session:         configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand},
 		Claude:          configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
 		DevMode:         cfg.DevMode,
 		Templates:       templates,
@@ -1099,7 +1097,7 @@ func jsonToConfig(j configJSON) *config.Config {
 	return &config.Config{
 		Server:          config.ServerConfig{Port: j.Server.Port},
 		Daemon:          config.DaemonConfig{Interval: j.Daemon.Interval},
-		Session:         config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand, DefaultRole: j.Session.DefaultRole, DefaultModel: j.Session.DefaultModel},
+		Session:         config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand},
 		Claude:          config.ClaudeConfig{PermissionMode: j.Claude.PermissionMode},
 		DevMode:         j.DevMode,
 		Templates:       templates,
