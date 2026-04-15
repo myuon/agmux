@@ -1,0 +1,18 @@
+{
+  "commit": {
+    "result": "already_installed",
+    "reason": "condition: always, グローバルにインストール済み"
+  },
+  "dispatch": {
+    "result": "already_installed",
+    "reason": "condition: always, グローバルにインストール済み"
+  },
+  "agmux": {
+    "result": "already_installed",
+    "reason": "condition: always, グローバルにインストール済み"
+  },
+  "agent-browser": {
+    "result": "already_installed",
+    "reason": "Webアプリケーション(port 4321)のため条件に該当、グローバルにインストール済み"
+  }
+}
