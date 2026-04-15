@@ -2,6 +2,8 @@ package session
 
 import (
 	"database/sql"
+	"log/slog"
+	"os"
 	"testing"
 	"time"
 
@@ -171,5 +173,121 @@ func TestDefaultHolderPIDIsZero(t *testing.T) {
 	}
 	if gotPID != 0 {
 		t.Errorf("default holder_pid = %d, want 0", gotPID)
+	}
+}
+
+// newTestManager creates a Manager with an in-memory SQLite DB for testing.
+func newTestManager(t *testing.T, db *sql.DB) *Manager {
+	t.Helper()
+	return &Manager{
+		db:     db,
+		logger: slog.Default(),
+	}
+}
+
+// TestKillStaleHolder_NoPID verifies that killStaleHolder is a no-op when holder_pid is 0.
+func TestKillStaleHolder_NoPID(t *testing.T) {
+	db := newTestDB(t)
+	defer db.Close()
+
+	id := "test-no-pid"
+	now := time.Now()
+	_, err := db.Exec(
+		`INSERT INTO sessions (id, name, project_path, tmux_session, status, type, output_mode, provider, model, holder_pid, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, "test", "/tmp", "", "idle", "worker", "stream", "claude", "", 0, now, now,
+	)
+	if err != nil {
+		t.Fatalf("insert session: %v", err)
+	}
+
+	m := newTestManager(t, db)
+	// Should not panic or error; no process to kill
+	m.killStaleHolder(id)
+
+	// holder_pid should remain 0
+	var gotPID int
+	if err := db.QueryRow("SELECT holder_pid FROM sessions WHERE id = ?", id).Scan(&gotPID); err != nil {
+		t.Fatalf("query holder_pid: %v", err)
+	}
+	if gotPID != 0 {
+		t.Errorf("holder_pid = %d, want 0 after killStaleHolder no-op", gotPID)
+	}
+}
+
+// TestKillStaleHolder_DeadPID verifies that killStaleHolder is a no-op for a PID that
+// is not alive (e.g., a stale value in the DB for a process that already exited).
+func TestKillStaleHolder_DeadPID(t *testing.T) {
+	db := newTestDB(t)
+	defer db.Close()
+
+	// Use a PID that is guaranteed not to be running: max int32 (very unlikely to exist)
+	deadPID := 2147483647
+
+	id := "test-dead-pid"
+	now := time.Now()
+	_, err := db.Exec(
+		`INSERT INTO sessions (id, name, project_path, tmux_session, status, type, output_mode, provider, model, holder_pid, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, "test", "/tmp", "", "idle", "worker", "stream", "claude", "", deadPID, now, now,
+	)
+	if err != nil {
+		t.Fatalf("insert session: %v", err)
+	}
+
+	m := newTestManager(t, db)
+	// Should not panic; dead PID means IsHolderAlive returns false, so we skip killing
+	m.killStaleHolder(id)
+}
+
+// TestKillStaleHolder_MissingSession verifies that killStaleHolder handles a non-existent
+// session gracefully (e.g., DB lookup fails).
+func TestKillStaleHolder_MissingSession(t *testing.T) {
+	db := newTestDB(t)
+	defer db.Close()
+
+	m := newTestManager(t, db)
+	// Should not panic when session doesn't exist
+	m.killStaleHolder("non-existent-session-id")
+}
+
+// TestKillStaleHolder_LiveProcess verifies that killStaleHolder kills an actually-running
+// process and waits for its exit.
+func TestKillStaleHolder_LiveProcess(t *testing.T) {
+	db := newTestDB(t)
+	defer db.Close()
+
+	// Start a real process we can kill: "sleep 60"
+	proc, err := os.StartProcess("/bin/sleep", []string{"sleep", "60"}, &os.ProcAttr{})
+	if err != nil {
+		t.Skip("cannot start test process:", err)
+	}
+	livePID := proc.Pid
+
+	id := "test-live-pid"
+	now := time.Now()
+	_, err = db.Exec(
+		`INSERT INTO sessions (id, name, project_path, tmux_session, status, type, output_mode, provider, model, holder_pid, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		id, "test", "/tmp", "", "idle", "worker", "stream", "claude", "", livePID, now, now,
+	)
+	if err != nil {
+		// Kill the process before failing to avoid leaking it
+		_ = proc.Kill()
+		_, _ = proc.Wait()
+		t.Fatalf("insert session: %v", err)
+	}
+
+	m := newTestManager(t, db)
+	m.killStaleHolder(id)
+
+	// Reap the zombie so signal(0) correctly reports the process as dead.
+	// (os.StartProcess creates a direct child; zombie children respond to signal(0)
+	// until reaped by Wait. Real holder processes are detached and have no zombie state.)
+	_, _ = proc.Wait()
+
+	// After killStaleHolder and Wait, the process should no longer be alive
+	if IsHolderAlive(livePID) {
+		t.Errorf("process %d should be dead after killStaleHolder, but it's still alive", livePID)
 	}
 }

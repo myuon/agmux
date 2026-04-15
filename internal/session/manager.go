@@ -202,16 +202,7 @@ func (m *Manager) RecoverStreamProcesses() {
 			sp, err := ReconnectHolderStreamProcess(opts, provider, holderPID)
 			if err != nil {
 				m.logger.Warn("reconnect to holder failed, will start new holder", "sessionId", id, "error", err)
-				// Kill the old holder process to prevent orphans
-				if proc, err := os.FindProcess(holderPID); err == nil {
-					if err := proc.Signal(syscall.SIGKILL); err != nil {
-						m.logger.Warn("failed to kill old holder process", "sessionId", id, "holderPid", holderPID, "error", err)
-					} else {
-						// Poll until the process actually terminates (proc.Wait() doesn't work for non-child processes)
-						waitForProcessExit(holderPID, 3*time.Second, 100*time.Millisecond)
-						m.logger.Info("killed old holder process before starting new one", "sessionId", id, "holderPid", holderPID)
-					}
-				}
+				m.killStaleHolder(id)
 			} else {
 				m.wireSessionIDCallback(id, sp)
 				m.streamMu.Lock()
@@ -244,6 +235,33 @@ func (m *Manager) updateHolderPID(id string, pid int) {
 	if _, err := m.db.Exec("UPDATE sessions SET holder_pid = ?, updated_at = ? WHERE id = ?", pid, time.Now(), id); err != nil {
 		m.logger.Error("failed to update holder_pid", "sessionId", id, "pid", pid, "error", err)
 	}
+}
+
+// killStaleHolder checks the DB for the session's current holder_pid and, if the process
+// is still alive, sends SIGKILL and waits for it to exit. This prevents orphan holder
+// processes when a new holder is about to be spawned.
+func (m *Manager) killStaleHolder(sessionID string) {
+	var holderPID int
+	if err := m.db.QueryRow("SELECT holder_pid FROM sessions WHERE id = ?", sessionID).Scan(&holderPID); err != nil {
+		// Session may not exist yet or query failed; nothing to kill
+		return
+	}
+	if holderPID <= 0 {
+		return
+	}
+	if !IsHolderAlive(holderPID) {
+		return
+	}
+	proc, err := os.FindProcess(holderPID)
+	if err != nil {
+		return
+	}
+	if err := proc.Signal(syscall.SIGKILL); err != nil {
+		m.logger.Warn("killStaleHolder: failed to kill holder", "sessionId", sessionID, "holderPid", holderPID, "error", err)
+		return
+	}
+	waitForProcessExit(holderPID, 3*time.Second, 100*time.Millisecond)
+	m.logger.Info("killStaleHolder: killed stale holder before spawning new one", "sessionId", sessionID, "holderPid", holderPID)
 }
 
 // CreateOpts contains optional parameters for creating a session.
@@ -897,6 +915,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 		effectiveSP := m.buildEffectiveSystemPrompt(s.SystemPrompt)
 		if s.Provider == ProviderCodex && cliSessionID != "" {
 			// For Codex, start resume directly with the prompt as a positional arg.
+			m.killStaleHolder(id)
 			hsp, err := StartHolderStreamProcess(StreamOpts{
 				SessionID:     s.ID,
 				ProjectPath:   s.ProjectPath,
@@ -922,6 +941,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			return nil
 		}
 
+		m.killStaleHolder(id)
 		hsp, err := StartHolderStreamProcess(StreamOpts{
 			SessionID:     s.ID,
 			ProjectPath:   s.ProjectPath,
@@ -1333,6 +1353,7 @@ func (m *Manager) Reconnect(id string) error {
 	if cliSessionID == "" {
 		cliSessionID = ReadCLISessionID(id, provider)
 	}
+	m.killStaleHolder(id)
 	sp, err := StartHolderStreamProcess(StreamOpts{
 		SessionID:     id,
 		ProjectPath:   s.ProjectPath,
