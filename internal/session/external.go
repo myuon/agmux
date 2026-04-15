@@ -146,21 +146,57 @@ func findExternalProcesses(managedPIDs []int) ([]ExternalProcess, error) {
 		return nil, fmt.Errorf("ps command failed: %w", err)
 	}
 
-	// Collect all PIDs in the agmux process tree
-	psOutput := string(out)
+	externalPIDs := findExternalPIDsFromPS(myPID, managedPIDs, string(out))
+
+	if len(externalPIDs) == 0 {
+		return nil, nil
+	}
+
+	// Get CWD for each external process via lsof
+	var results []ExternalProcess
+	for _, p := range externalPIDs {
+		cwd := getCWD(p.PID)
+		results = append(results, ExternalProcess{
+			PID:      p.PID,
+			CWD:      cwd,
+			Provider: p.Provider,
+		})
+	}
+
+	return results, nil
+}
+
+type pidWithProvider struct {
+	PID      int
+	Provider ProviderName
+}
+
+// findExternalPIDsFromPS finds claude/codex PIDs that are not in the agmux process tree.
+// myPID is the current process PID (agmux server), managedPIDs are holder PIDs to exclude,
+// and psOutput is the raw output of "ps -eo pid,ppid,comm".
+// This function is extracted for testability.
+func findExternalPIDsFromPS(myPID int, managedPIDs []int, psOutput string) []pidWithProvider {
+	// Collect all PIDs in the agmux process tree (server and its direct children)
 	agmuxPIDs := collectProcessTree(myPID, psOutput)
 
-	// Also exclude process trees rooted at managed holder PIDs
+	// Also exclude process trees rooted at managed holder PIDs from DB
 	for _, pid := range managedPIDs {
 		for k, v := range collectProcessTree(pid, psOutput) {
 			agmuxPIDs[k] = v
 		}
 	}
 
-	type pidWithProvider struct {
-		PID      int
-		Provider ProviderName
+	// Additionally, auto-detect all agmux holder processes in ps output.
+	// Holder processes have PPID=1 (detached via Setsid+Release) and their comm
+	// basename is "agmux". Any claude/codex spawned under ANY agmux holder
+	// should not be classified as external, even if the holder isn't in the DB
+	// (e.g., from a different agmux instance or after a server restart race).
+	for _, holderPID := range detectAgmuxHolderPIDs(psOutput) {
+		for k, v := range collectProcessTree(holderPID, psOutput) {
+			agmuxPIDs[k] = v
+		}
 	}
+
 	var externalPIDs []pidWithProvider
 	for _, line := range strings.Split(psOutput, "\n") {
 		fields := strings.Fields(line)
@@ -183,22 +219,39 @@ func findExternalProcesses(managedPIDs []int) ([]ExternalProcess, error) {
 		externalPIDs = append(externalPIDs, pidWithProvider{PID: pid, Provider: provider})
 	}
 
-	if len(externalPIDs) == 0 {
-		return nil, nil
-	}
+	return externalPIDs
+}
 
-	// Get CWD for each external process via lsof
-	var results []ExternalProcess
-	for _, p := range externalPIDs {
-		cwd := getCWD(p.PID)
-		results = append(results, ExternalProcess{
-			PID:      p.PID,
-			CWD:      cwd,
-			Provider: p.Provider,
-		})
+// detectAgmuxHolderPIDs finds all detached agmux holder processes in ps output.
+// Holder processes have PPID=1 (detached via Setsid+Release) and comm basename "agmux".
+// This handles the case where holders are from different agmux server instances
+// or where the DB holder_pid hasn't been updated yet after a server restart.
+func detectAgmuxHolderPIDs(psOutput string) []int {
+	var holders []int
+	for _, line := range strings.Split(psOutput, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		pid, err1 := strconv.Atoi(fields[0])
+		ppid, err2 := strconv.Atoi(fields[1])
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		// Holder processes are detached (PPID=1) agmux processes
+		if ppid != 1 {
+			continue
+		}
+		comm := fields[2]
+		base := comm
+		if idx := strings.LastIndex(comm, "/"); idx >= 0 {
+			base = comm[idx+1:]
+		}
+		if base == "agmux" {
+			holders = append(holders, pid)
+		}
 	}
-
-	return results, nil
+	return holders
 }
 
 // collectProcessTree collects all PIDs that are descendants of rootPID.
