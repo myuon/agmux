@@ -26,7 +26,6 @@ type Config struct {
 	Daemon          DaemonConfig     `toml:"daemon"`
 	Session         SessionConfig    `toml:"session"`
 	Claude          ClaudeConfig     `toml:"claude"`
-	GitHub          GitHubConfig     `toml:"github"`
 	DevMode         bool             `toml:"dev_mode"`
 	Templates       []RoleTemplate   `toml:"templates" json:"templates"`
 	PromptTemplates []PromptTemplate `toml:"prompt_templates" json:"prompt_templates"`
@@ -70,10 +69,6 @@ func IsValidPermissionMode(mode string) bool {
 
 type ClaudeConfig struct {
 	PermissionMode string `toml:"permission_mode"`
-}
-
-type GitHubConfig struct {
-	WebhookSecret string `toml:"webhook_secret"`
 }
 
 // ClaudePermissionMode returns the effective permission mode, defaulting to DefaultPermissionMode.

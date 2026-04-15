@@ -313,24 +313,6 @@ func migrate(db *sql.DB) error {
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_notifications_session ON notifications(session_id)`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at)`)
 
-	// Migration: create github_reminders table
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS github_reminders (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			repo TEXT NOT NULL,
-			number INTEGER NOT NULL,
-			login TEXT NOT NULL,
-			memo TEXT NOT NULL,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			UNIQUE(repo, number, login)
-		)
-	`)
-	if err != nil {
-		return err
-	}
-	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_github_reminders_repo_number ON github_reminders(repo, number)`)
-
 	return nil
 }
 

@@ -168,7 +168,6 @@ func (s *Server) setupRoutes() {
 		r.Get("/metrics/events", s.getMetricsEvents)
 		r.Get("/version", s.getVersion)
 
-		r.Post("/github/webhook", s.handleGitHubWebhook)
 	})
 
 	s.router = r
