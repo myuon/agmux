@@ -232,7 +232,9 @@ func (m *Manager) RecoverStreamProcesses() {
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
 		m.streamMu.Unlock()
-		m.updateHolderPID(id, sp.HolderPID())
+		if _, err := m.db.Exec("UPDATE sessions SET holder_pid = ?, updated_at = ? WHERE id = ?", sp.HolderPID(), time.Now(), id); err != nil {
+			m.logger.Error("failed to update holder_pid", "sessionId", id, "pid", sp.HolderPID(), "error", err)
+		}
 		m.logger.Info("recovered stream process via new holder", "sessionId", id, "holderPid", sp.HolderPID())
 	}
 }
@@ -358,15 +360,12 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	}
 
 	if _, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, role_template, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, role_template, holder_pid, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, sp.HolderPID(), s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
-
-	// Persist holder PID after the session row exists in the DB.
-	m.updateHolderPID(id, sp.HolderPID())
 
 	return s, nil
 }
@@ -560,7 +559,6 @@ func (m *Manager) Fork(id string, preserveContext bool) (*Session, error) {
 	m.streamMu.Lock()
 	m.streamProcesses[newID] = sp
 	m.streamMu.Unlock()
-	m.updateHolderPID(newID, sp.HolderPID())
 
 	now := time.Now()
 	newName := src.Name + " (fork)"
@@ -579,9 +577,9 @@ func (m *Manager) Fork(id string, preserveContext bool) (*Session, error) {
 	}
 
 	if _, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, "", "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, holder_pid, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, "", "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, sp.HolderPID(), s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
