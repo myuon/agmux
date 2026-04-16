@@ -1377,13 +1377,19 @@ func (m *Manager) Reconnect(id string) error {
 	if cliSessionID == "" {
 		cliSessionID = ReadCLISessionID(id, provider)
 	}
+
+	// Only resume if a conversation turn has been completed before.
+	// If conversation_started is false, resuming a non-existent conversation
+	// causes "No conversation found with session ID" errors.
+	canResume := s.ConversationStarted
+
 	m.killStaleHolder(id)
 	sp, err := StartHolderStreamProcess(StreamOpts{
 		SessionID:     id,
 		ProjectPath:   s.ProjectPath,
 		MCPConfigPath: mcpConfigPath,
 		SystemPrompt:  m.buildEffectiveSystemPrompt(s.SystemPrompt),
-		Resume:        true,
+		Resume:        canResume,
 		CLISessionID:  cliSessionID,
 		Model:         s.Model,
 		APIPort:       m.apiPort,
