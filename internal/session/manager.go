@@ -133,7 +133,7 @@ func (m *Manager) buildEffectiveSystemPrompt(customSystemPrompt string) string {
 // Otherwise, start a new holder process with --resume.
 func (m *Manager) RecoverStreamProcesses() {
 	rows, err := m.db.Query(
-		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid, clear_offset FROM sessions WHERE holder_pid > 0`,
+		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid, clear_offset, conversation_started FROM sessions WHERE holder_pid > 0`,
 	)
 	if err != nil {
 		m.logger.Error("recover stream processes: query failed", "error", err)
@@ -146,10 +146,12 @@ func (m *Manager) RecoverStreamProcesses() {
 		var dbSystemPrompt sql.NullString
 		var holderPID int
 		var clearOffset int64
-		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt, &holderPID, &clearOffset); err != nil {
+		var conversationStartedInt int
+		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt, &holderPID, &clearOffset, &conversationStartedInt); err != nil {
 			m.logger.Error("recover stream processes: scan failed", "error", err)
 			continue
 		}
+		conversationStarted := conversationStartedInt != 0
 
 		// Skip sessions currently being deleted to avoid spawning a new holder
 		// in the window between Delete() killing the old holder and removing the DB record.
@@ -189,7 +191,7 @@ func (m *Manager) RecoverStreamProcesses() {
 			ProjectPath:   projectPath,
 			MCPConfigPath: mcpPath,
 			SystemPrompt:  m.buildEffectiveSystemPrompt(customPrompt),
-			Resume:        true,
+			Resume:        conversationStarted,
 			CLISessionID:  cliSessionID,
 			Model:         dbModel,
 			APIPort:       m.apiPort,
@@ -390,7 +392,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, holder_pid, clear_offset, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -405,9 +407,11 @@ func (m *Manager) List() ([]Session, error) {
 		var sessionType string
 		var providerStr string
 		var prompt, systemPrompt, parentSessionID, roleTemplate, currentTask, goal, goalsJSON, lastError sql.NullString
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		var conversationStartedInt int
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
+		s.ConversationStarted = conversationStartedInt != 0
 		s.Status = Status(status)
 		s.Type = SessionType(sessionType)
 		s.Provider = ProviderName(providerStr)
@@ -451,16 +455,18 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var sessionType string
 	var providerStr string
 	var prompt, systemPrompt, parentSessionID, roleTemplate, currentTask, goal, goalsJSON, lastError sql.NullString
+	var conversationStartedInt int
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, holder_pid, clear_offset, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("query session: %w", err)
 	}
+	s.ConversationStarted = conversationStartedInt != 0
 	s.Status = Status(status)
 	s.Type = SessionType(sessionType)
 	s.Provider = ProviderName(providerStr)
@@ -733,6 +739,10 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProces
 		if err := m.UpdateStatus(sid, StatusIdle); err != nil {
 			m.logger.Error("failed to update status after turn complete", "sessionId", sid, "error", err)
 		}
+		// Mark that at least one full turn has completed so auto-recovery can safely use --resume.
+		if err := m.MarkConversationStarted(sid); err != nil {
+			m.logger.Error("failed to mark conversation started", "sessionId", sid, "error", err)
+		}
 	})
 	sp.SetOnHolderRestart(func(sid string, newPID int) {
 		m.logger.Info("holder restarted (codex resume), updating holder_pid", "sessionId", sid, "newPid", newPID)
@@ -912,8 +922,14 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			cliSessionID = ReadCLISessionID(s.ID, provider)
 		}
 
+		// Only resume if a full conversation turn has been completed before.
+		// If conversation_started is false, the session was created without an initial
+		// message and Claude has never processed a turn yet. Resuming a non-existent
+		// conversation causes "No conversation found with session ID" errors.
+		canResume := s.ConversationStarted
+
 		effectiveSP := m.buildEffectiveSystemPrompt(s.SystemPrompt)
-		if s.Provider == ProviderCodex && cliSessionID != "" {
+		if s.Provider == ProviderCodex && cliSessionID != "" && canResume {
 			// For Codex, start resume directly with the prompt as a positional arg.
 			m.killStaleHolder(id)
 			hsp, err := StartHolderStreamProcess(StreamOpts{
@@ -947,7 +963,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			ProjectPath:   s.ProjectPath,
 			MCPConfigPath: mcpPath,
 			SystemPrompt:  effectiveSP,
-			Resume:        true,
+			Resume:        canResume,
 			CLISessionID:  cliSessionID,
 			Model:         s.Model,
 			APIPort:       m.apiPort,
@@ -1223,6 +1239,14 @@ func (m *Manager) UpdateStatusWithError(id string, status Status, lastError stri
 // UpdateCliSessionID persists the CLI-assigned session ID to the database.
 func (m *Manager) UpdateCliSessionID(id string, cliSessionID string) error {
 	_, err := m.db.Exec("UPDATE sessions SET cli_session_id = ?, updated_at = ? WHERE id = ?", cliSessionID, time.Now(), id)
+	return err
+}
+
+// MarkConversationStarted sets conversation_started = 1 for the session.
+// This is called when the first successful turn completes so that subsequent
+// auto-recoveries know they can safely use --resume.
+func (m *Manager) MarkConversationStarted(id string) error {
+	_, err := m.db.Exec("UPDATE sessions SET conversation_started = 1, updated_at = ? WHERE id = ?", time.Now(), id)
 	return err
 }
 
