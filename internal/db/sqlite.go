@@ -313,6 +313,16 @@ func migrate(db *sql.DB) error {
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_notifications_session ON notifications(session_id)`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at)`)
 
+	// Migration: add conversation_started column if missing
+	// This tracks whether at least one full conversation turn has been completed.
+	// When false, auto-recovery must not use --resume (conversation doesn't exist in Claude yet).
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN conversation_started INTEGER NOT NULL DEFAULT 0`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+	// Backfill: sessions with a non-empty cli_session_id and initial_prompt are assumed to have started.
+	_, _ = db.Exec(`UPDATE sessions SET conversation_started = 1 WHERE cli_session_id != '' AND initial_prompt != '' AND initial_prompt IS NOT NULL`)
+
 	return nil
 }
 
