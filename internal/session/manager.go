@@ -3,6 +3,7 @@ package session
 import (
 	"bufio"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -1528,4 +1529,50 @@ func waitForProcessExit(pid int, timeout, interval time.Duration) {
 		}
 		time.Sleep(interval)
 	}
+}
+
+// DismissTask writes a dismissed task_notification event to the JSONL stream
+// and decrements the running task count in the stream process if available.
+func (m *Manager) DismissTask(sessionID, taskID string) error {
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		return fmt.Errorf("get streams dir: %w", err)
+	}
+
+	type dismissEvent struct {
+		Type    string `json:"type"`
+		Subtype string `json:"subtype"`
+		TaskID  string `json:"task_id"`
+		Status  string `json:"status"`
+	}
+	ev := dismissEvent{
+		Type:    "system",
+		Subtype: "task_notification",
+		TaskID:  taskID,
+		Status:  "dismissed",
+	}
+	line, err := json.Marshal(ev)
+	if err != nil {
+		return fmt.Errorf("marshal dismiss event: %w", err)
+	}
+
+	path := filepath.Join(streamsDir, sessionID+".jsonl")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return fmt.Errorf("open stream file: %w", err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString(string(line) + "\n"); err != nil {
+		return fmt.Errorf("write dismiss event: %w", err)
+	}
+
+	// Decrement running tasks in stream process if present
+	m.streamMu.Lock()
+	sp, ok := m.streamProcesses[sessionID]
+	m.streamMu.Unlock()
+	if ok {
+		sp.DecrementRunningTasks()
+	}
+
+	return nil
 }

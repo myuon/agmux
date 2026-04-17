@@ -881,3 +881,17 @@ func (sp *HolderStreamProcess) IsExited() bool {
 		return false
 	}
 }
+
+// DecrementRunningTasks decrements the running task counter and stops periodic
+// notifications if no tasks remain. Called when a task is manually dismissed.
+func (sp *HolderStreamProcess) DecrementRunningTasks() {
+	sp.mu.Lock()
+	if sp.runningTasks > 0 {
+		sp.runningTasks--
+	}
+	remaining := sp.runningTasks
+	sp.mu.Unlock()
+	if remaining == 0 {
+		sp.stopPeriodicNotification()
+	}
+}

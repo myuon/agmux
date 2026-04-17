@@ -9,6 +9,7 @@ import { Modal } from "../ui/Modal";
 import { ToolInputView } from "./ToolInputView";
 import { RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
+import { api } from "../../api/client";
 
 const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
   user: { bg: "bg-blue-50", label: "User", text: "text-blue-700" },
@@ -296,7 +297,7 @@ function ActiveTaskItem({ task, onDismiss }: { task: ActiveTask; onDismiss?: (ta
 const COLLAPSE_THRESHOLD = 4;
 const VISIBLE_WHEN_COLLAPSED = 3;
 
-export function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
+export function ActiveTasksPanel({ tasks, sessionId }: { tasks: ActiveTask[]; sessionId?: string }) {
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   // Track previous task snapshots to detect task_progress updates for hidden tasks
   const prevTasksRef = useRef<Map<string, ActiveTask>>(new Map());
@@ -335,9 +336,16 @@ export function ActiveTasksPanel({ tasks }: { tasks: ActiveTask[] }) {
     }
   }, [visibleTasks.length]);
 
-  const handleDismiss = useCallback((taskId: string) => {
+  const handleDismiss = useCallback(async (taskId: string) => {
     setHiddenIds((prev) => new Set(prev).add(taskId));
-  }, []);
+    if (sessionId) {
+      try {
+        await api.dismissTask(sessionId, taskId);
+      } catch (e) {
+        console.error("Failed to dismiss task", e);
+      }
+    }
+  }, [sessionId]);
 
   if (visibleTasks.length === 0) return null;
 

@@ -74,6 +74,9 @@ type SessionService interface {
 
 	// ManagedHolderPIDs returns the PIDs of all holder processes currently managed.
 	ManagedHolderPIDs() []int
+
+	// DismissTask writes a dismissed event to the JSONL stream for the given task.
+	DismissTask(sessionID, taskID string) error
 }
 
 // Verify Manager implements SessionService at compile time.
