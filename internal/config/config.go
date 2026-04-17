@@ -42,11 +42,13 @@ type DaemonConfig struct {
 }
 
 type SessionConfig struct {
-	ClaudeCommand string `toml:"claude_command"`
-	CodexCommand  string `toml:"codex_command"`
-	SystemPrompt  string `toml:"system_prompt"`
-	DefaultRole   string `toml:"default_role" json:"default_role,omitempty"`
-	DefaultModel  string `toml:"default_model" json:"default_model,omitempty"`
+	ClaudeCommand      string `toml:"claude_command"`
+	CodexCommand       string `toml:"codex_command"`
+	SystemPrompt       string `toml:"system_prompt"`
+	DefaultRole        string `toml:"default_role" json:"default_role,omitempty"`
+	DefaultModel       string `toml:"default_model" json:"default_model,omitempty"`       // Deprecated: use ClaudeDefaultModel
+	ClaudeDefaultModel string `toml:"claude_default_model" json:"claude_default_model,omitempty"`
+	CodexDefaultModel  string `toml:"codex_default_model" json:"codex_default_model,omitempty"`
 }
 
 // DefaultPermissionMode is the default Claude CLI permission mode.
@@ -148,6 +150,11 @@ func Load() (*Config, error) {
 
 	if _, err := toml.DecodeFile(configPath, cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	// Backward compat: if old default_model is set but claude_default_model is not, copy it over.
+	if cfg.Session.DefaultModel != "" && cfg.Session.ClaudeDefaultModel == "" {
+		cfg.Session.ClaudeDefaultModel = cfg.Session.DefaultModel
 	}
 
 	return cfg, nil

@@ -130,6 +130,7 @@ func initManager(cfg *config.Config, port int, logger *slog.Logger) (session.Ses
 	}
 	mgr := session.NewManager(database, cfg.Session.ClaudeCommand, cfg.Claude.ClaudePermissionMode(), cfg.Server.Port, logger, cfg.Session.SystemPrompt)
 	mgr.SetCodexCommand(cfg.Session.CodexCommand)
+	mgr.SetDefaultModels(cfg.Session.ClaudeDefaultModel, cfg.Session.CodexDefaultModel)
 
 	// Configure background task notification interval
 	bgNotifyIntervalStr := cfg.Daemon.BackgroundTaskNotificationInterval

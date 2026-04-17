@@ -106,14 +106,25 @@ export function ConfigPage() {
               className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
             />
           </Field>
-          <Field label="Default Model (optional)">
+          <Field label="Claude Default Model (optional)">
             <input
               type="text"
-              value={config.session.defaultModel || ""}
+              value={config.session.claudeDefaultModel || ""}
               onChange={(e) =>
-                setConfig({ ...config, session: { ...config.session, defaultModel: e.target.value || undefined } })
+                setConfig({ ...config, session: { ...config.session, claudeDefaultModel: e.target.value || undefined } })
               }
               placeholder="e.g. claude-sonnet-4-5"
+              className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
+            />
+          </Field>
+          <Field label="Codex Default Model (optional)">
+            <input
+              type="text"
+              value={config.session.codexDefaultModel || ""}
+              onChange={(e) =>
+                setConfig({ ...config, session: { ...config.session, codexDefaultModel: e.target.value || undefined } })
+              }
+              placeholder="e.g. o4-mini"
               className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
             />
           </Field>

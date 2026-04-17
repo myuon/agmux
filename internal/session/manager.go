@@ -18,15 +18,17 @@ import (
 )
 
 type Manager struct {
-	db              *sql.DB
-	claudeCommand   string
-	codexCommand    string
-	permissionMode  string
-	apiPort         int
-	systemPrompt    string
-	notifyInterval  time.Duration
-	streamProcesses map[string]*HolderStreamProcess
-	streamMu        sync.Mutex
+	db                 *sql.DB
+	claudeCommand      string
+	codexCommand       string
+	permissionMode     string
+	apiPort            int
+	systemPrompt       string
+	claudeDefaultModel string
+	codexDefaultModel  string
+	notifyInterval     time.Duration
+	streamProcesses    map[string]*HolderStreamProcess
+	streamMu           sync.Mutex
 	// deletingSet tracks sessions currently being deleted so that auto-recovery
 	// (RecoverStreamProcesses, SendKeysWithImages) does not spawn a new holder
 	// while Delete() is in progress.
@@ -92,6 +94,12 @@ func (m *Manager) SetCodexCommand(cmd string) {
 	if cmd != "" {
 		m.codexCommand = cmd
 	}
+}
+
+// SetDefaultModels configures provider-specific default models.
+func (m *Manager) SetDefaultModels(claudeDefaultModel, codexDefaultModel string) {
+	m.claudeDefaultModel = claudeDefaultModel
+	m.codexDefaultModel = codexDefaultModel
 }
 
 // SetOnNewLines sets a callback that fires when new stream lines arrive for any session.
@@ -301,9 +309,18 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		}
 	}
 
-	// For Codex, resolve default model from config if not explicitly specified
-	if pn == ProviderCodex && model == "" {
-		model = ReadCodexDefaultModel()
+	// Resolve default model from config if not explicitly specified
+	if model == "" {
+		switch pn {
+		case ProviderClaude:
+			model = m.claudeDefaultModel
+		case ProviderCodex:
+			if m.codexDefaultModel != "" {
+				model = m.codexDefaultModel
+			} else {
+				model = ReadCodexDefaultModel()
+			}
+		}
 	}
 
 	provider := m.getProvider(pn)
