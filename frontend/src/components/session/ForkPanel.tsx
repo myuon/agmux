@@ -79,8 +79,16 @@ export function ForkPanel({ sessionId }: { sessionId: string }) {
   const [forks, setForks] = useState<Session[]>([]);
   const [selectedForkId, setSelectedForkId] = useState<string | null>(null);
   const [minimized, setMinimized] = useState(false);
-  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== "undefined" && window.innerWidth < 768
+  );
   const [showMobileOverlay, setShowMobileOverlay] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   const prevForksRef = useRef<Session[]>([]);
 
   useEffect(() => {
