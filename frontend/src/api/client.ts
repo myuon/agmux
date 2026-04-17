@@ -93,6 +93,9 @@ export const api = {
   reconnectSession: (id: string) =>
     request<{ status: string }>(`/sessions/${id}/reconnect`, { method: "POST" }),
 
+  restartSession: (id: string) =>
+    request<{ status: string }>(`/sessions/${id}/restart`, { method: "POST" }),
+
   clearSession: (id: string) =>
     request<{ status: string }>(`/sessions/${id}/clear`, { method: "POST" }),
 

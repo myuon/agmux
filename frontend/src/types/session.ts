@@ -13,6 +13,7 @@ export interface Session {
   goal?: string;
   goals?: { currentTask: string; goal: string }[];
   lastError?: string;
+  conversationStarted?: boolean;
   createdAt: string;
   updatedAt: string;
   githubUrl?: string;

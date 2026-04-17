@@ -26,6 +26,9 @@ type SessionService interface {
 
 	// Reconnect restarts the CLI process for an existing session.
 	Reconnect(id string) error
+	// Restart stops the existing holder and spawns a new one with --resume,
+	// preserving the conversation history.
+	Restart(id string) error
 	// Clear resets the session context.
 	Clear(id string) error
 
