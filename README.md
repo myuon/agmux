@@ -5,13 +5,15 @@
 
 ## スクリーンショット
 
-### ダッシュボード
-
-![Dashboard](docs/screenshot-dashboard.png)
-
-### セッション詳細 (Stream Mode)
+### セッション詳細 (PC)
 
 ![Session Detail](docs/screenshot-session-detail.png)
+
+### モバイル表示
+
+| セッション一覧 | セッション詳細 |
+|---|---|
+| ![Mobile Dashboard](docs/screenshot-mobile-dashboard.png) | ![Mobile Session Detail](docs/screenshot-mobile-session-detail.png) |
 
 ## 主な機能
 
