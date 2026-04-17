@@ -478,7 +478,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                     if (!confirm("会話履歴を保持したままセッションを再起動しますか？")) return;
                     try {
                       await api.restartSession(session.id);
-                      api.getSession(session.id).then(setSession);
+                      api.getSession(session.id).then(setSession).catch(() => {});
                       setRestartToast("success");
                       setTimeout(() => setRestartToast(null), 3000);
                     } catch {

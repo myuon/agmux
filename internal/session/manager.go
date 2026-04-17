@@ -535,9 +535,17 @@ func (m *Manager) Duplicate(id string) (*Session, error) {
 	})
 }
 
+// forkSystemReminder is appended to the system prompt when forking a session to
+// signal that the conversation is a fork and Claude should focus on the new direction.
+const forkSystemReminder = "この会話は親セッションからフォークされました。親の作業内容は参考情報として利用できますが、これから指示する新しい内容に集中してください。"
+
 // Fork creates a new session by forking an existing session's conversation history.
 // It copies the stream JSONL file and starts a new CLI process with --resume --fork-session.
-func (m *Manager) Fork(id string, preserveContext bool) (*Session, error) {
+// initialPrompt is required and must be non-empty.
+func (m *Manager) Fork(id string, preserveContext bool, initialPrompt string) (*Session, error) {
+	if strings.TrimSpace(initialPrompt) == "" {
+		return nil, fmt.Errorf("initialPrompt is required for fork")
+	}
 	src, err := m.Get(id)
 	if err != nil {
 		return nil, err
@@ -1486,7 +1494,7 @@ func (m *Manager) Restart(id string) error {
 	m.streamMu.Unlock()
 	m.updateHolderPID(id, sp.HolderPID())
 
-	_, err = m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
+	_, err = m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
 	return err
 }
 
