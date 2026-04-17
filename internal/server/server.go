@@ -140,6 +140,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/duplicate", s.duplicateSession)
 		r.Post("/sessions/{id}/fork", s.forkSession)
 		r.Post("/sessions/{id}/reconnect", s.reconnectSession)
+		r.Post("/sessions/{id}/restart", s.restartSession)
 		r.Post("/sessions/{id}/clear", s.clearSession)
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
 		r.Get("/sessions/{id}/diff", s.getSessionDiff)
@@ -887,6 +888,16 @@ func (s *Server) reconnectSession(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordSessionAction(id, "session_reconnect", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "reconnected"})
+}
+
+func (s *Server) restartSession(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := s.sessions.Restart(id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordSessionAction(id, "session_restart", "")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "restarted"})
 }
 
 func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) {

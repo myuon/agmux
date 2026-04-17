@@ -118,6 +118,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [escalationTimeoutSeconds, setEscalationTimeoutSeconds] = useState(300);
   const [pendingPermission, setPendingPermission] = useState<{ id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number } | null>(null);
   const [reconnectToast, setReconnectToast] = useState(false);
+  const [restartToast, setRestartToast] = useState<"success" | "error" | null>(null);
   const [disconnectToast, setDisconnectToast] = useState(false);
   const [clearToast, setClearToast] = useState<"success" | "error" | null>(null);
   const [copiedToast, setCopiedToast] = useState(false);
@@ -468,6 +469,25 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   }
                 }}
               />
+              {session.conversationStarted && (
+                <ActionMenuItem
+                  icon={<RotateCcw className="w-4 h-4" />}
+                  label="Restart (keep history)"
+                  onClick={async () => {
+                    setShowActionMenu(false);
+                    if (!confirm("会話履歴を保持したままセッションを再起動しますか？")) return;
+                    try {
+                      await api.restartSession(session.id);
+                      api.getSession(session.id).then(setSession).catch(() => {});
+                      setRestartToast("success");
+                      setTimeout(() => setRestartToast(null), 3000);
+                    } catch {
+                      setRestartToast("error");
+                      setTimeout(() => setRestartToast(null), 3000);
+                    }
+                  }}
+                />
+              )}
               {session.status !== "paused" && session.status !== "exited" && session.type !== "controller" && (
                 <ActionMenuItem
                   icon={<Square className="w-4 h-4" />}
@@ -622,6 +642,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     <div className={`${isDesktopPane ? "h-full pt-2" : "h-dvh pt-4 sm:pt-8"} flex flex-col px-4 sm:px-8 ${isDesktopPane ? "" : "max-w-4xl mx-auto"}`}>
       {disconnectToast && <Toast message="WebSocket接続が切断されました。再接続を試みています..." variant="warning" />}
       {reconnectToast && <Toast message="再接続に成功しました" />}
+      {restartToast === "success" && <Toast message="セッションを再起動しました" />}
+      {restartToast === "error" && <Toast message="再起動に失敗しました" variant="error" />}
       {clearToast === "success" && <Toast message="セッションをクリアしました" />}
       {clearToast === "error" && <Toast message="クリアに失敗しました" variant="error" />}
       {copiedToast && <Toast message="セッション名をコピーしました" />}

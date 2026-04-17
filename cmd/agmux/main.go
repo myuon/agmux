@@ -325,6 +325,7 @@ func sessionCmd() *cobra.Command {
 	cmd.AddCommand(sessionBroadcastCmd())
 	cmd.AddCommand(sessionHistoryCmd())
 	cmd.AddCommand(sessionInfoCmd())
+	cmd.AddCommand(sessionRestartCmd())
 
 	return cmd
 }
@@ -515,6 +516,31 @@ func sessionStopCmd() *cobra.Command {
 				return err
 			}
 			fmt.Println("Session stopped.")
+			return nil
+		},
+	}
+}
+
+func sessionRestartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "restart <id>",
+		Short: "Restart a session while preserving conversation history",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
+			if err != nil {
+				return err
+			}
+			defer database.Close()
+			id := args[0]
+			if err := mgr.Restart(id); err != nil {
+				return err
+			}
+			fmt.Println("Session restarted.")
 			return nil
 		},
 	}

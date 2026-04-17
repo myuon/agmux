@@ -535,9 +535,17 @@ func (m *Manager) Duplicate(id string) (*Session, error) {
 	})
 }
 
+// forkSystemReminder is appended to the system prompt when forking a session to
+// signal that the conversation is a fork and Claude should focus on the new direction.
+const forkSystemReminder = "この会話は親セッションからフォークされました。親の作業内容は参考情報として利用できますが、これから指示する新しい内容に集中してください。"
+
 // Fork creates a new session by forking an existing session's conversation history.
 // It copies the stream JSONL file and starts a new CLI process with --resume --fork-session.
-func (m *Manager) Fork(id string, preserveContext bool) (*Session, error) {
+// initialPrompt is required and must be non-empty.
+func (m *Manager) Fork(id string, preserveContext bool, initialPrompt string) (*Session, error) {
+	if strings.TrimSpace(initialPrompt) == "" {
+		return nil, fmt.Errorf("initialPrompt is required for fork")
+	}
 	src, err := m.Get(id)
 	if err != nil {
 		return nil, err
@@ -1407,6 +1415,71 @@ func (m *Manager) Reconnect(id string) error {
 		MCPConfigPath: mcpConfigPath,
 		SystemPrompt:  m.buildEffectiveSystemPrompt(s.SystemPrompt),
 		Resume:        canResume,
+		CLISessionID:  cliSessionID,
+		Model:         s.Model,
+		APIPort:       m.apiPort,
+		ClearOffset:   s.ClearOffset,
+	}, provider)
+	if err != nil {
+		return fmt.Errorf("start stream process: %w", err)
+	}
+	m.wireSessionIDCallback(id, sp)
+	m.streamMu.Lock()
+	m.streamProcesses[id] = sp
+	m.streamMu.Unlock()
+	m.updateHolderPID(id, sp.HolderPID())
+
+	_, err = m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
+	return err
+}
+
+// Restart stops the existing holder/claude processes and spawns a new one with
+// --resume, preserving the conversation history (CLI session ID). Unlike Reconnect,
+// Restart explicitly requires conversation_started to be true and returns an error
+// if there is no CLI session ID to resume.
+func (m *Manager) Restart(id string) error {
+	s, err := m.Get(id)
+	if err != nil {
+		return err
+	}
+
+	if !s.ConversationStarted {
+		return fmt.Errorf("session %s has not started a conversation; use start instead of restart", id)
+	}
+
+	cliSessionID := s.CliSessionID
+	if cliSessionID == "" {
+		cliSessionID = ReadCLISessionID(id, m.getProvider(s.Provider))
+	}
+	if cliSessionID == "" {
+		return fmt.Errorf("session %s has no CLI session ID; cannot resume conversation", id)
+	}
+
+	provider := m.getProvider(s.Provider)
+
+	// Stop existing stream process
+	m.stopStreamProcess(id)
+
+	// Generate fresh MCP config
+	mcpConfigPath, err := provider.SetupMCP(id, m.apiPort)
+	if err != nil {
+		return fmt.Errorf("write mcp config: %w", err)
+	}
+
+	// Kill any stale holder process
+	m.killStaleHolder(id)
+
+	// Reset status to idle before spawning new holder
+	if _, err := m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, updated_at = ? WHERE id = ?", string(StatusIdle), time.Now(), id); err != nil {
+		return fmt.Errorf("reset session status: %w", err)
+	}
+
+	sp, err := StartHolderStreamProcess(StreamOpts{
+		SessionID:     id,
+		ProjectPath:   s.ProjectPath,
+		MCPConfigPath: mcpConfigPath,
+		SystemPrompt:  m.buildEffectiveSystemPrompt(s.SystemPrompt),
+		Resume:        true,
 		CLISessionID:  cliSessionID,
 		Model:         s.Model,
 		APIPort:       m.apiPort,
