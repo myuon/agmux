@@ -208,9 +208,9 @@ export interface PromptTemplate {
 }
 
 export interface AppConfig {
-  server: { port: number };
+  server: { port: number; frontendDir?: string };
   daemon: { interval: string };
-  session: { claudeCommand: string; defaultRole?: string; defaultModel?: string };
+  session: { claudeCommand: string; defaultRole?: string; defaultModel?: string; claudeDefaultModel?: string; codexDefaultModel?: string };
   devMode: boolean;
   prompts?: { systemPrompt: string };
   templates: RoleTemplate[];
