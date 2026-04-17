@@ -9,6 +9,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -588,6 +589,14 @@ func (m *Manager) Fork(id string, preserveContext bool, initialPrompt string) (*
 	}
 
 	effectiveSystemPrompt := m.buildEffectiveSystemPrompt(src.SystemPrompt)
+	effectiveSystemPrompt += "\n\n" + forkSystemReminder
+
+	// For Codex, pass initialPrompt as command-line argument via StreamOpts.
+	// For Claude, the prompt is sent via stdin after the holder starts.
+	streamOptsInitialPrompt := ""
+	if src.Provider == ProviderCodex {
+		streamOptsInitialPrompt = initialPrompt
+	}
 
 	// Start new CLI process via holder
 	sp, err := StartHolderStreamProcess(StreamOpts{
@@ -600,10 +609,19 @@ func (m *Manager) Fork(id string, preserveContext bool, initialPrompt string) (*
 		CLISessionID:  cliSessionID,
 		Model:         src.Model,
 		APIPort:       m.apiPort,
+		InitialPrompt: streamOptsInitialPrompt,
 	}, provider)
 	if err != nil {
 		return nil, fmt.Errorf("start stream process: %w", err)
 	}
+
+	// For non-Codex providers (Claude), send the initial prompt via stdin.
+	if src.Provider != ProviderCodex {
+		if err := sp.Send(initialPrompt); err != nil {
+			return nil, fmt.Errorf("send initial prompt: %w", err)
+		}
+	}
+
 	m.wireSessionIDCallback(newID, sp)
 	m.streamMu.Lock()
 	m.streamProcesses[newID] = sp
@@ -615,6 +633,7 @@ func (m *Manager) Fork(id string, preserveContext bool, initialPrompt string) (*
 		ID:              newID,
 		Name:            newName,
 		ProjectPath:     src.ProjectPath,
+		InitialPrompt:   initialPrompt,
 		SystemPrompt:    src.SystemPrompt,
 		Status:          StatusIdle,
 		Type:            TypeWorker,
@@ -628,7 +647,7 @@ func (m *Manager) Fork(id string, preserveContext bool, initialPrompt string) (*
 	if _, err := m.db.Exec(
 		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, holder_pid, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, "", "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, sp.HolderPID(), s.CreatedAt, s.UpdatedAt,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, sp.HolderPID(), s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}

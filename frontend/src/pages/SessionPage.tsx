@@ -22,6 +22,7 @@ import { StatusDot } from "../components/StatusBadge";
 import { setActiveSessionName } from "../activeSession";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { StreamOutputView, ActiveTasksPanel } from "../components/session/StreamOutputView";
+import { ForkPanel } from "../components/session/ForkPanel";
 import { DiffDropdown } from "../components/session/DiffDropdown";
 import { GoalPanel } from "../components/ui/GoalPanel";
 import { ConnectionStatusIndicator } from "../components/ui/ConnectionStatus";
@@ -834,6 +835,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               <ActiveTasksPanel tasks={activeTasks} />
             </div>
           )}
+          {sessionId && <ForkPanel sessionId={sessionId} />}
           {pendingPermission && sessionId ? (
             <PermissionPromptBanner
               permission={pendingPermission}
@@ -978,10 +980,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             if (forkLoading || !session) return;
             setForkLoading(true);
             try {
-              const newSession = await api.forkSession(session.id, forkPreserveContext);
-              if (forkMessage.trim()) {
-                await api.sendToSession(newSession.id, forkMessage.trim());
-              }
+              if (!forkMessage.trim()) return;
+              const newSession = await api.forkSession(session.id, forkMessage.trim(), forkPreserveContext);
               setShowForkModal(false);
               navigate(`/sessions/${newSession.id}`);
             } catch {
@@ -1001,13 +1001,30 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             />
             コンテキストを維持する
           </label>
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              "別のアプローチを試す",
+              "質問・相談する",
+              "レビューする",
+            ].map((template) => (
+              <button
+                key={template}
+                type="button"
+                onClick={() => setForkMessage(template)}
+                className="px-2.5 py-1 text-xs text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-full"
+              >
+                {template}
+              </button>
+            ))}
+          </div>
           <textarea
             value={forkMessage}
             onChange={(e) => setForkMessage(e.target.value)}
-            placeholder="フォーク後に送信するメッセージ（省略可）"
+            placeholder="新しい方向性を入力してください（必須）"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-blue-400"
             rows={3}
             autoFocus
+            required
           />
           <div className="flex justify-end gap-2">
             <button
@@ -1019,7 +1036,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             </button>
             <button
               type="submit"
-              disabled={forkLoading}
+              disabled={forkLoading || !forkMessage.trim()}
               className="px-3 py-1.5 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
             >
               {forkLoading ? "フォーク中..." : "フォーク"}

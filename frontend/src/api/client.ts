@@ -20,6 +20,11 @@ async function request<T>(
 export const api = {
   listSessions: () => request<Session[]>("/sessions"),
 
+  listForkSessions: (parentSessionId: string) =>
+    request<Session[]>("/sessions").then((sessions) =>
+      sessions.filter((s) => s.parentSessionId === parentSessionId)
+    ),
+
   getRecentProjects: () =>
     request<RecentProject[]>("/projects/recent"),
 
@@ -65,11 +70,11 @@ export const api = {
   duplicateSession: (id: string) =>
     request<Session>(`/sessions/${id}/duplicate`, { method: "POST" }),
 
-  forkSession: (id: string, preserveContext: boolean = true) =>
+  forkSession: (id: string, prompt: string, preserveContext: boolean = true) =>
     request<Session>(`/sessions/${id}/fork`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ preserveContext }),
+      body: JSON.stringify({ preserveContext, prompt }),
     }),
 
   sendToSession: (id: string, text: string, images?: { data: string; mediaType: string }[]) =>

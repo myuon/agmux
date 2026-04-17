@@ -446,7 +446,7 @@ func sessionForkCmd() *cobra.Command {
 				return err
 			}
 			defer database.Close()
-			sess, err := mgr.Fork(args[0], !noContext)
+			sess, err := mgr.Fork(args[0], !noContext, "")
 			if err != nil {
 				return err
 			}
