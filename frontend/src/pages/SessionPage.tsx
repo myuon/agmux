@@ -832,7 +832,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           }} />
           {activeTasks.length > 0 && (
             <div className="shrink-0 pt-2 px-4 sm:px-8 -mx-4 sm:-mx-8">
-              <ActiveTasksPanel tasks={activeTasks} />
+              <ActiveTasksPanel tasks={activeTasks} sessionId={sessionId} />
             </div>
           )}
           {sessionId && <ForkPanel sessionId={sessionId} />}

@@ -180,6 +180,11 @@ export const api = {
   getPromptTemplates: () =>
     request<PromptTemplate[]>("/prompt-templates"),
 
+  dismissTask: (sessionId: string, taskId: string): Promise<void> =>
+    request<void>(`/sessions/${sessionId}/tasks/${taskId}/dismiss`, {
+      method: "POST",
+    }),
+
 };
 
 export interface RecentProject {

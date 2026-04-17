@@ -152,6 +152,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/sessions/{id}/permission", s.getPendingPermission)
 		r.Post("/sessions/{id}/permission", s.createPermission)
 		r.Post("/sessions/{id}/permission/respond", s.respondPermission)
+		r.Post("/sessions/{id}/tasks/{taskId}/dismiss", s.dismissTask)
 		r.Post("/sessions/{id}/notify", s.sendNotification)
 		r.Post("/sessions/broadcast", s.broadcastToSessions)
 		r.Post("/sessions/controller/restart", s.restartController)
@@ -1872,4 +1873,14 @@ func (s *Server) recordSessionAction(sessionID, actionType, detail string) {
 			"timestamp":  time.Now(),
 		},
 	})
+}
+
+func (s *Server) dismissTask(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	taskID := chi.URLParam(r, "taskId")
+	if err := s.sessions.DismissTask(id, taskID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "dismissed"})
 }
