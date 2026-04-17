@@ -65,7 +65,7 @@ export function ConfigPage() {
           </Field>
           {config.server.frontendDir && (
             <Field label="Frontend Dir">
-              <span className="text-sm text-gray-700 font-mono">{config.server.frontendDir}</span>
+              <span className="text-sm text-gray-700 font-mono break-all">{config.server.frontendDir}</span>
             </Field>
           )}
         </Section>
