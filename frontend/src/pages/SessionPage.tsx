@@ -978,9 +978,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           onSubmit={async (e) => {
             e.preventDefault();
             if (forkLoading || !session) return;
+            if (!forkMessage.trim()) return;
             setForkLoading(true);
             try {
-              if (!forkMessage.trim()) return;
               const newSession = await api.forkSession(session.id, forkMessage.trim(), forkPreserveContext);
               setShowForkModal(false);
               navigate(`/sessions/${newSession.id}`);

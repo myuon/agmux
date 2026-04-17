@@ -432,11 +432,15 @@ func resolveTemplate(name string) (*struct {
 
 func sessionForkCmd() *cobra.Command {
 	var noContext bool
+	var forkPrompt string
 	cmd := &cobra.Command{
 		Use:   "fork <id>",
 		Short: "Fork an existing session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(forkPrompt) == "" {
+				return fmt.Errorf("--prompt is required")
+			}
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("load config: %w", err)
@@ -446,7 +450,7 @@ func sessionForkCmd() *cobra.Command {
 				return err
 			}
 			defer database.Close()
-			sess, err := mgr.Fork(args[0], !noContext, "")
+			sess, err := mgr.Fork(args[0], !noContext, forkPrompt)
 			if err != nil {
 				return err
 			}
@@ -455,6 +459,7 @@ func sessionForkCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&noContext, "no-context", false, "Fork without preserving conversation context")
+	cmd.Flags().StringVar(&forkPrompt, "prompt", "", "Initial prompt for the fork (required)")
 	return cmd
 }
 
