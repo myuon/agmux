@@ -63,6 +63,11 @@ export function ConfigPage() {
               className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-32 focus:outline-none focus:border-blue-500"
             />
           </Field>
+          {config.server.frontendDir && (
+            <Field label="Frontend Dir">
+              <span className="text-sm text-gray-700 font-mono">{config.server.frontendDir}</span>
+            </Field>
+          )}
         </Section>
 
         <Section title="Daemon">

@@ -1049,15 +1049,18 @@ type configPromptsJSON struct {
 }
 
 type configServerJSON struct {
-	Port int `json:"port"`
+	Port        int    `json:"port"`
+	FrontendDir string `json:"frontendDir,omitempty"`
 }
 type configDaemonJSON struct {
 	Interval string `json:"interval"`
 }
 type configSessionJSON struct {
-	ClaudeCommand string `json:"claudeCommand"`
-	DefaultRole   string `json:"defaultRole,omitempty"`
-	DefaultModel  string `json:"defaultModel,omitempty"`
+	ClaudeCommand      string `json:"claudeCommand"`
+	DefaultRole        string `json:"defaultRole,omitempty"`
+	DefaultModel       string `json:"defaultModel,omitempty"` // Deprecated: use ClaudeDefaultModel
+	ClaudeDefaultModel string `json:"claudeDefaultModel,omitempty"`
+	CodexDefaultModel  string `json:"codexDefaultModel,omitempty"`
 }
 type configClaudeJSON struct {
 	PermissionMode string `json:"permissionMode"`
@@ -1075,9 +1078,9 @@ func configToJSON(cfg *config.Config) configJSON {
 	}
 	cfgPath, _ := config.ConfigPath()
 	return configJSON{
-		Server:          configServerJSON{Port: cfg.Server.Port},
+		Server:          configServerJSON{Port: cfg.Server.Port, FrontendDir: cfg.Server.FrontendDir},
 		Daemon:          configDaemonJSON{Interval: cfg.Daemon.Interval},
-		Session:         configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand, DefaultRole: cfg.Session.DefaultRole, DefaultModel: cfg.Session.DefaultModel},
+		Session:         configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand, DefaultRole: cfg.Session.DefaultRole, DefaultModel: cfg.Session.DefaultModel, ClaudeDefaultModel: cfg.Session.ClaudeDefaultModel, CodexDefaultModel: cfg.Session.CodexDefaultModel},
 		Claude:          configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
 		DevMode:         cfg.DevMode,
 		Templates:       templates,
@@ -1099,7 +1102,7 @@ func jsonToConfig(j configJSON) *config.Config {
 	return &config.Config{
 		Server:          config.ServerConfig{Port: j.Server.Port},
 		Daemon:          config.DaemonConfig{Interval: j.Daemon.Interval},
-		Session:         config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand, DefaultRole: j.Session.DefaultRole, DefaultModel: j.Session.DefaultModel},
+		Session:         config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand, DefaultRole: j.Session.DefaultRole, DefaultModel: j.Session.DefaultModel, ClaudeDefaultModel: j.Session.ClaudeDefaultModel, CodexDefaultModel: j.Session.CodexDefaultModel},
 		Claude:          config.ClaudeConfig{PermissionMode: j.Claude.PermissionMode},
 		DevMode:         j.DevMode,
 		Templates:       templates,

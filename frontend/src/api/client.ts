@@ -208,7 +208,7 @@ export interface PromptTemplate {
 }
 
 export interface AppConfig {
-  server: { port: number };
+  server: { port: number; frontendDir?: string };
   daemon: { interval: string };
   session: { claudeCommand: string; defaultRole?: string; defaultModel?: string };
   devMode: boolean;
