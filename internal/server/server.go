@@ -384,18 +384,29 @@ func (s *Server) forkSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse optional request body for preserveContext (default: true)
+	// Parse request body for prompt (required) and preserveContext (default: true).
 	preserveContext := true
+	var prompt string
 	if r.Body != nil {
 		var body struct {
-			PreserveContext *bool `json:"preserveContext"`
+			PreserveContext *bool  `json:"preserveContext"`
+			Prompt          string `json:"prompt"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err == nil && body.PreserveContext != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		if body.PreserveContext != nil {
 			preserveContext = *body.PreserveContext
 		}
+		prompt = body.Prompt
+	}
+	if strings.TrimSpace(prompt) == "" {
+		writeError(w, http.StatusBadRequest, "prompt is required")
+		return
 	}
 
-	sess, err := s.sessions.Fork(id, preserveContext)
+	sess, err := s.sessions.Fork(id, preserveContext, prompt)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
