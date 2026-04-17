@@ -1532,7 +1532,9 @@ func waitForProcessExit(pid int, timeout, interval time.Duration) {
 }
 
 // DismissTask writes a dismissed task_notification event to the JSONL stream
-// and decrements the running task count in the stream process if available.
+// for frontend record-keeping, and directly decrements the running task count
+// in the stream process. The readLoop reads from the holder socket (claude stdout),
+// not the JSONL file, so there is no double-decrement risk.
 func (m *Manager) DismissTask(sessionID, taskID string) error {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
@@ -1557,7 +1559,7 @@ func (m *Manager) DismissTask(sessionID, taskID string) error {
 	}
 
 	path := filepath.Join(streamsDir, sessionID+".jsonl")
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("open stream file: %w", err)
 	}
