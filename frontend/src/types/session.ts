@@ -3,8 +3,8 @@ export interface Session {
   name: string;
   projectPath: string;
   initialPrompt?: string;
-  status: "working" | "idle" | "paused" | "exited" | "waiting_input";
-  type: "worker" | "controller" | "external";
+  status: "working" | "idle" | "paused" | "exited" | "waiting_input" | "archived";
+  type: "worker" | "controller" | "external" | "ephemeral";
   provider: string;
   model?: string;
   parentSessionId?: string;
@@ -14,6 +14,8 @@ export interface Session {
   goals?: { currentTask: string; goal: string }[];
   lastError?: string;
   conversationStarted?: boolean;
+  ephemeralTimeoutSeconds?: number;
+  completionReport?: string;
   createdAt: string;
   updatedAt: string;
   githubUrl?: string;

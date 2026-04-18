@@ -119,6 +119,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
               timeAgo={timeAgo(s.createdAt)}
               isSubSession={depth > 0}
               isSelected={s.id === selectedSessionId}
+              completionReport={s.completionReport}
               onClick={() => navigate(`/sessions/${s.id}`, { viewTransition: true } as never)}
               actions={
                 s.type === "controller" && (s.status === "paused" || s.status === "exited") ? (

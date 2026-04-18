@@ -339,6 +339,8 @@ func sessionCreateCmd() *cobra.Command {
 	var autoApprove bool
 	var parentSessionID string
 	var templateName string
+	var ephemeral bool
+	var ephemeralTimeout int
 
 	cmd := &cobra.Command{
 		Use:   "create <name>",
@@ -375,13 +377,22 @@ func sessionCreateCmd() *cobra.Command {
 				return err
 			}
 			defer database.Close()
+			if !ephemeral && ephemeralTimeout > 0 {
+				return fmt.Errorf("--timeout requires --ephemeral")
+			}
+			var ephemeralTimeoutPtr *int
+			if ephemeral && ephemeralTimeout > 0 {
+				ephemeralTimeoutPtr = &ephemeralTimeout
+			}
 			sess, err := mgr.Create(args[0], absPath, prompt, worktree, session.CreateOpts{
-				Provider:        session.ProviderName(provider),
-				Model:           model,
-				FullAuto:        autoApprove,
-				SystemPrompt:    systemPrompt,
-				ParentSessionID: parentSessionID,
-				RoleTemplate:    templateName,
+				Provider:                session.ProviderName(provider),
+				Model:                   model,
+				FullAuto:                autoApprove,
+				SystemPrompt:            systemPrompt,
+				ParentSessionID:         parentSessionID,
+				RoleTemplate:            templateName,
+				Ephemeral:               ephemeral,
+				EphemeralTimeoutSeconds: ephemeralTimeoutPtr,
 			})
 			if err != nil {
 				return err
@@ -399,6 +410,8 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&autoApprove, "auto-approve", true, "Enable full-auto mode (bypass permission prompts for Codex)")
 	cmd.Flags().StringVar(&parentSessionID, "parent", "", "Parent session ID to create a sub-session")
 	cmd.Flags().StringVarP(&templateName, "template", "t", "", "Role template name to apply")
+	cmd.Flags().BoolVar(&ephemeral, "ephemeral", false, "Create an ephemeral session (auto-archived after completion or timeout)")
+	cmd.Flags().IntVar(&ephemeralTimeout, "timeout", 0, "Timeout in seconds for ephemeral session (0 = no timeout)")
 
 	return cmd
 }
