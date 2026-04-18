@@ -40,7 +40,8 @@ type SessionService interface {
 	// CreateGoal creates a new goal for a session.
 	CreateGoal(id string, currentTask, goal string, subgoal bool) error
 	// CompleteGoal completes the current goal and returns the result.
-	CompleteGoal(id string) (*CompleteGoalResult, error)
+	// report is an optional completion report string.
+	CompleteGoal(id string, report string) (*CompleteGoalResult, error)
 
 	// GetStreamLines returns stream lines for a session.
 	GetStreamLines(id string, limit int) ([]string, int, error)
