@@ -572,7 +572,14 @@ func (s *Server) createGoal(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) completeGoal(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	cgResult, err := s.sessions.CompleteGoal(id)
+
+	var req struct {
+		Report string `json:"report"`
+	}
+	// Body is optional; ignore decode errors (e.g. empty body)
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	cgResult, err := s.sessions.CompleteGoal(id, req.Report)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -598,6 +605,28 @@ func (s *Server) completeGoal(w http.ResponseWriter, r *http.Request) {
 				"currentTask": cgResult.CompletedGoal.CurrentTask,
 				"goal":        cgResult.CompletedGoal.Goal,
 				"durationMs":  durationMs,
+			},
+		})
+	}
+
+	// If auto-archived ephemeral session with parent, notify parent
+	if cgResult.AutoArchived && cgResult.ParentSessionID != "" && req.Report != "" {
+		notifyMsg := fmt.Sprintf("[ephemeral session %s completed] %s", cgResult.SessionName, req.Report)
+		s.recordSessionAction(cgResult.ParentSessionID, "agent_notification", notifyMsg)
+		if err := s.saveNotification(cgResult.ParentSessionID, "notification", notifyMsg); err != nil {
+			slog.Error("failed to save completion notification", "error", err)
+		}
+		parentSess, _ := s.sessions.Get(cgResult.ParentSessionID)
+		parentName := ""
+		if parentSess != nil {
+			parentName = parentSess.Name
+		}
+		s.hub.Broadcast(Message{
+			Type: "agent_notification",
+			Data: map[string]interface{}{
+				"sessionId":   cgResult.ParentSessionID,
+				"sessionName": parentName,
+				"message":     notifyMsg,
 			},
 		})
 	}

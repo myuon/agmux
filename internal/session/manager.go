@@ -1354,11 +1354,14 @@ func (m *Manager) CreateGoal(id string, currentTask, goal string, subgoal bool) 
 
 // CompleteGoalResult contains the result of completing a goal.
 type CompleteGoalResult struct {
-	CompletedGoal *GoalEntry // the goal that was just completed
-	ParentGoal    *GoalEntry // the new top of stack (nil if empty)
+	CompletedGoal   *GoalEntry // the goal that was just completed
+	ParentGoal      *GoalEntry // the new top of stack (nil if empty)
+	AutoArchived    bool       // true if session was auto-archived (ephemeral with empty goal stack)
+	ParentSessionID string     // parent session ID for notification (set when auto-archived)
+	SessionName     string     // name of the completed session
 }
 
-func (m *Manager) CompleteGoal(id string) (*CompleteGoalResult, error) {
+func (m *Manager) CompleteGoal(id string, report string) (*CompleteGoalResult, error) {
 	s, err := m.Get(id)
 	if err != nil {
 		return nil, err
@@ -1389,6 +1392,37 @@ func (m *Manager) CompleteGoal(id string) (*CompleteGoalResult, error) {
 	if top := newGoals.Top(); top != nil {
 		result.ParentGoal = top
 	}
+
+	// When goal stack is empty and session is ephemeral, auto-archive and save report
+	if newGoals.Top() == nil && s.Type == TypeEphemeral {
+		if report != "" {
+			_, err = m.db.Exec(
+				"UPDATE sessions SET completion_report = ?, status = ?, updated_at = ? WHERE id = ?",
+				report, string(StatusArchived), time.Now(), id,
+			)
+		} else {
+			_, err = m.db.Exec(
+				"UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?",
+				string(StatusArchived), time.Now(), id,
+			)
+		}
+		if err != nil {
+			return nil, err
+		}
+		result.AutoArchived = true
+		result.ParentSessionID = s.ParentSessionID
+		result.SessionName = s.Name
+	} else if report != "" {
+		// Save completion report even if not auto-archiving
+		_, err = m.db.Exec(
+			"UPDATE sessions SET completion_report = ?, updated_at = ? WHERE id = ?",
+			report, time.Now(), id,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return result, nil
 }
 
