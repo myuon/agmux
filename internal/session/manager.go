@@ -973,11 +973,10 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			cliSessionID = ReadCLISessionID(s.ID, provider)
 		}
 
-		// Only resume if a full conversation turn has been completed before.
-		// If conversation_started is false, the session was created without an initial
-		// message and Claude has never processed a turn yet. Resuming a non-existent
-		// conversation causes "No conversation found with session ID" errors.
-		canResume := s.ConversationStarted
+		// Resume if the DB flag says a conversation was started, OR if we found
+		// a CLI session ID in the JSONL stream (which proves a conversation exists
+		// even when the DB flag wasn't updated — e.g. session created via CLI).
+		canResume := s.ConversationStarted || cliSessionID != ""
 
 		effectiveSP := m.buildEffectiveSystemPrompt(s.SystemPrompt)
 		if s.Provider == ProviderCodex && cliSessionID != "" && canResume {
