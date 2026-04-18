@@ -87,6 +87,9 @@ func (m *Manager) ManagedHolderPIDs() []int {
 			pids = append(pids, pid)
 		}
 	}
+	if rows.Err() != nil {
+		return nil
+	}
 	return pids
 }
 
@@ -238,6 +241,9 @@ func (m *Manager) RecoverStreamProcesses() {
 			m.logger.Error("failed to update holder_pid", "sessionId", id, "pid", sp.HolderPID(), "error", err)
 		}
 		m.logger.Info("recovered stream process via new holder", "sessionId", id, "holderPid", sp.HolderPID())
+	}
+	if err := rows.Err(); err != nil {
+		m.logger.Error("recover stream processes: rows iteration error", "error", err)
 	}
 }
 
@@ -409,9 +415,9 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	}
 
 	if _, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, role_template, holder_pid, ephemeral_timeout_seconds, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, sp.HolderPID(), s.EphemeralTimeoutSeconds, s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, role_template, holder_pid, ephemeral_timeout_seconds, completion_report, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, sp.HolderPID(), s.EphemeralTimeoutSeconds, s.CompletionReport, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
