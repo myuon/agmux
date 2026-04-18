@@ -250,8 +250,10 @@ func (m *Manager) updateHolderPID(id string, pid int) {
 }
 
 // killStaleHolder checks the DB for the session's current holder_pid and, if the process
-// is still alive, sends SIGKILL and waits for it to exit. This prevents orphan holder
-// processes when a new holder is about to be spawned.
+// is still alive, sends SIGTERM and waits for graceful shutdown. Falls back to SIGKILL if
+// SIGTERM does not terminate the process within the timeout. This prevents the race where
+// SIGKILL leaves claude CLI holding the session lock file, causing "Session ID is already
+// in use" when the new holder spawns immediately after.
 func (m *Manager) killStaleHolder(sessionID string) {
 	var holderPID int
 	if err := m.db.QueryRow("SELECT holder_pid FROM sessions WHERE id = ?", sessionID).Scan(&holderPID); err != nil {
@@ -264,16 +266,18 @@ func (m *Manager) killStaleHolder(sessionID string) {
 	if !IsHolderAlive(holderPID) {
 		return
 	}
-	proc, err := os.FindProcess(holderPID)
-	if err != nil {
-		return
-	}
-	if err := proc.Signal(syscall.SIGKILL); err != nil {
-		m.logger.Warn("killStaleHolder: failed to kill holder", "sessionId", sessionID, "holderPid", holderPID, "error", err)
-		return
-	}
+	// Send SIGTERM to the entire process group so claude CLI also receives the signal
+	// and releases its session lock file before the new holder spawns.
+	syscall.Kill(-holderPID, syscall.SIGTERM)
 	waitForProcessExit(holderPID, 3*time.Second, 100*time.Millisecond)
-	m.logger.Info("killStaleHolder: killed stale holder before spawning new one", "sessionId", sessionID, "holderPid", holderPID)
+	if !IsHolderAlive(holderPID) {
+		m.logger.Info("killStaleHolder: terminated stale holder via SIGTERM", "sessionId", sessionID, "holderPid", holderPID)
+		return
+	}
+	// Fallback: SIGTERM did not work; kill the entire process group
+	syscall.Kill(-holderPID, syscall.SIGKILL)
+	waitForProcessExit(holderPID, 3*time.Second, 100*time.Millisecond)
+	m.logger.Info("killStaleHolder: killed stale holder via SIGKILL (SIGTERM fallback)", "sessionId", sessionID, "holderPid", holderPID)
 }
 
 // CreateOpts contains optional parameters for creating a session.
