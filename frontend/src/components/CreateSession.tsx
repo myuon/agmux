@@ -12,6 +12,8 @@ interface Props {
     autoApprove?: boolean;
     systemPrompt?: string;
     roleTemplate?: string;
+    ephemeral?: boolean;
+    ephemeralTimeoutSeconds?: number;
   }) => void;
 }
 
@@ -35,6 +37,8 @@ export function CreateSession({ onClose, onCreate }: Props) {
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [templates, setTemplates] = useState<RoleTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState("");
+  const [ephemeral, setEphemeral] = useState(false);
+  const [ephemeralTimeout, setEphemeralTimeout] = useState("");
 
   useEffect(() => {
     api.getRecentProjects()
@@ -94,6 +98,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const timeoutSecs = ephemeralTimeout ? parseInt(ephemeralTimeout, 10) : undefined;
     onCreate({
       name,
       projectPath,
@@ -103,6 +108,8 @@ export function CreateSession({ onClose, onCreate }: Props) {
       autoApprove: provider === "codex" && autoApprove ? true : undefined,
       systemPrompt: systemPrompt || undefined,
       roleTemplate: selectedTemplate || undefined,
+      ephemeral: ephemeral || undefined,
+      ephemeralTimeoutSeconds: ephemeral && timeoutSecs && timeoutSecs > 0 ? timeoutSecs : undefined,
     });
   };
 
@@ -269,6 +276,31 @@ export function CreateSession({ onClose, onCreate }: Props) {
                   </option>
                 ))}
               </select>
+            </div>
+          )}
+          <div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={ephemeral}
+                onChange={(e) => setEphemeral(e.target.checked)}
+              />
+              Ephemeral (auto-archive after completion)
+            </label>
+          </div>
+          {ephemeral && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Timeout (seconds, optional)
+              </label>
+              <input
+                type="number"
+                value={ephemeralTimeout}
+                onChange={(e) => setEphemeralTimeout(e.target.value)}
+                min="0"
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
+                placeholder="e.g. 3600"
+              />
             </div>
           )}
           <div className="flex justify-end gap-2">

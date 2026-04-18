@@ -6,6 +6,7 @@ export const statusDots: Record<Session["status"], string> = {
   paused: "bg-yellow-500",
   exited: "bg-gray-400",
   waiting_input: "bg-orange-500",
+  archived: "bg-gray-300",
 };
 
 export function StatusDot({ status }: { status: Session["status"] }) {

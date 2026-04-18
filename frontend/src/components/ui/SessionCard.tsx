@@ -17,6 +17,7 @@ interface SessionCardProps {
   isSelected?: boolean;
   onClick?: () => void;
   actions?: React.ReactNode;
+  completionReport?: string;
 }
 
 export function SessionCard({
@@ -34,6 +35,7 @@ export function SessionCard({
   isSelected,
   onClick,
   actions,
+  completionReport,
 }: SessionCardProps) {
   const vtn = (suffix: string) => id ? { viewTransitionName: `session-${suffix}-${id}` } : undefined;
   return (
@@ -51,6 +53,9 @@ export function SessionCard({
         </span>
         {type === "controller" && (
           <Chip color="purple">Controller</Chip>
+        )}
+        {type === "ephemeral" && (
+          <Chip color="blue">Ephemeral</Chip>
         )}
         {roleTemplate && (
           <span className="inline-flex items-center" style={vtn("role")}><Chip color="orange">{roleTemplate}</Chip></span>
@@ -70,6 +75,11 @@ export function SessionCard({
       {status === "exited" && lastError && (
         <p className="text-xs text-red-600 truncate mb-0.5" title={lastError}>
           Error: {lastError}
+        </p>
+      )}
+      {status === "archived" && completionReport && (
+        <p className="text-xs text-green-700 truncate mb-0.5" title={completionReport}>
+          {completionReport}
         </p>
       )}
       <p className="text-xs text-gray-500 truncate mb-1">

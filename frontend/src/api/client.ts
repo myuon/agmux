@@ -38,6 +38,8 @@ export const api = {
     systemPrompt?: string;
     parentSessionId?: string;
     roleTemplate?: string;
+    ephemeral?: boolean;
+    ephemeralTimeoutSeconds?: number;
   }) =>
     request<Session>("/sessions", {
       method: "POST",
