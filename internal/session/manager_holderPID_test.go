@@ -40,6 +40,8 @@ func newTestDB(t *testing.T) *sql.DB {
 			goals TEXT NOT NULL DEFAULT '[]',
 			last_error TEXT,
 			conversation_started INTEGER NOT NULL DEFAULT 0,
+			ephemeral_timeout_seconds INTEGER,
+			completion_report TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)

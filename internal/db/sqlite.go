@@ -323,6 +323,18 @@ func migrate(db *sql.DB) error {
 	// Backfill: sessions with a non-empty cli_session_id and initial_prompt are assumed to have started.
 	_, _ = db.Exec(`UPDATE sessions SET conversation_started = 1 WHERE cli_session_id != '' AND initial_prompt != '' AND initial_prompt IS NOT NULL`)
 
+	// Migration: add ephemeral_timeout_seconds column if missing
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN ephemeral_timeout_seconds INTEGER`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
+	// Migration: add completion_report column if missing
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN completion_report TEXT`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	return nil
 }
 
