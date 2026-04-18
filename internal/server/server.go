@@ -203,18 +203,18 @@ func (s *Server) NewHTTPServer(addr string) *http.Server {
 // API handlers
 
 type createSessionRequest struct {
-	Name            string `json:"name"`
-	ProjectPath     string `json:"projectPath"`
-	Prompt          string `json:"prompt,omitempty"`
-	Worktree        bool   `json:"worktree,omitempty"`
-	Provider        string `json:"provider,omitempty"`
-	Model           string `json:"model,omitempty"`
-	AutoApprove     bool   `json:"autoApprove,omitempty"`
-	SystemPrompt    string `json:"systemPrompt,omitempty"`
-	ParentSessionID string `json:"parentSessionId,omitempty"`
-	RoleTemplate    string `json:"roleTemplate,omitempty"`
-	Ephemeral       bool   `json:"ephemeral,omitempty"`
-	EphemeralTimeoutSeconds *int `json:"ephemeralTimeoutSeconds,omitempty"`
+	Name                    string `json:"name"`
+	ProjectPath             string `json:"projectPath"`
+	Prompt                  string `json:"prompt,omitempty"`
+	Worktree                bool   `json:"worktree,omitempty"`
+	Provider                string `json:"provider,omitempty"`
+	Model                   string `json:"model,omitempty"`
+	AutoApprove             bool   `json:"autoApprove,omitempty"`
+	SystemPrompt            string `json:"systemPrompt,omitempty"`
+	ParentSessionID         string `json:"parentSessionId,omitempty"`
+	RoleTemplate            string `json:"roleTemplate,omitempty"`
+	Ephemeral               bool   `json:"ephemeral,omitempty"`
+	EphemeralTimeoutSeconds *int   `json:"ephemeralTimeoutSeconds,omitempty"`
 }
 
 type sendImageData struct {
@@ -306,9 +306,9 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 
 type sessionResponse struct {
 	*session.Session
-	GithubURL  string      `json:"githubUrl,omitempty"`
-	Branch     string      `json:"branch,omitempty"`
-	PullRequests []prInfo  `json:"pullRequests,omitempty"`
+	GithubURL    string   `json:"githubUrl,omitempty"`
+	Branch       string   `json:"branch,omitempty"`
+	PullRequests []prInfo `json:"pullRequests,omitempty"`
 }
 
 type prInfo struct {
@@ -1057,15 +1057,15 @@ type configTemplateJSON struct {
 }
 
 type configJSON struct {
-	Server          configServerJSON           `json:"server"`
-	Daemon          configDaemonJSON           `json:"daemon"`
-	Session         configSessionJSON          `json:"session"`
-	Claude          configClaudeJSON           `json:"claude"`
-	DevMode         bool                       `json:"devMode"`
-	Prompts         *configPromptsJSON         `json:"prompts,omitempty"`
-	Templates       []configTemplateJSON       `json:"templates"`
+	Server          configServerJSON        `json:"server"`
+	Daemon          configDaemonJSON        `json:"daemon"`
+	Session         configSessionJSON       `json:"session"`
+	Claude          configClaudeJSON        `json:"claude"`
+	DevMode         bool                    `json:"devMode"`
+	Prompts         *configPromptsJSON      `json:"prompts,omitempty"`
+	Templates       []configTemplateJSON    `json:"templates"`
 	PromptTemplates []config.PromptTemplate `json:"promptTemplates"`
-	ConfigPath      string                     `json:"configPath,omitempty"`
+	ConfigPath      string                  `json:"configPath,omitempty"`
 }
 
 type configPromptsJSON struct {

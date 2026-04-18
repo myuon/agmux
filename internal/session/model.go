@@ -15,12 +15,12 @@ type RecentProject struct {
 type Status string
 
 const (
-	StatusIdle         Status = "idle"           // Initial state / turn complete, waiting for user
-	StatusWorking      Status = "working"        // AI is working
-	StatusPaused       Status = "paused"         // User explicitly stopped the session
-	StatusExited       Status = "exited"         // Process died unexpectedly
-	StatusWaitingInput Status = "waiting_input"  // Waiting for user input (escalation/permission)
-	StatusArchived     Status = "archived"       // Ephemeral session finished and archived
+	StatusIdle         Status = "idle"          // Initial state / turn complete, waiting for user
+	StatusWorking      Status = "working"       // AI is working
+	StatusPaused       Status = "paused"        // User explicitly stopped the session
+	StatusExited       Status = "exited"        // Process died unexpectedly
+	StatusWaitingInput Status = "waiting_input" // Waiting for user input (escalation/permission)
+	StatusArchived     Status = "archived"      // Ephemeral session finished and archived
 )
 
 type SessionType string
@@ -33,29 +33,29 @@ const (
 )
 
 type Session struct {
-	ID              string       `json:"id"`
-	Name            string       `json:"name"`
-	ProjectPath     string       `json:"projectPath"`
-	InitialPrompt   string       `json:"initialPrompt,omitempty"`
-	SystemPrompt    string       `json:"systemPrompt,omitempty"`
-	Status          Status       `json:"status"`
-	Type            SessionType  `json:"type"`
-	Provider        ProviderName `json:"provider"`
-	CliSessionID    string       `json:"cliSessionId,omitempty"`
-	Model           string       `json:"model,omitempty"`
-	ParentSessionID string       `json:"parentSessionId,omitempty"`
-	RoleTemplate    string       `json:"roleTemplate,omitempty"`
-	CurrentTask     string       `json:"currentTask,omitempty"`
-	Goal            string       `json:"goal,omitempty"`
-	Goals           GoalStack    `json:"goals,omitempty"`
-	LastError       string       `json:"lastError,omitempty"`
-	HolderPID            int          `json:"holderPid,omitempty"`
-	ClearOffset          int64        `json:"clearOffset"`
-	ConversationStarted  bool         `json:"conversationStarted"`
-	EphemeralTimeoutSeconds *int      `json:"ephemeralTimeoutSeconds,omitempty"`
-	CompletionReport     *string      `json:"completionReport,omitempty"`
-	CreatedAt            time.Time    `json:"createdAt"`
-	UpdatedAt            time.Time    `json:"updatedAt"`
+	ID                      string       `json:"id"`
+	Name                    string       `json:"name"`
+	ProjectPath             string       `json:"projectPath"`
+	InitialPrompt           string       `json:"initialPrompt,omitempty"`
+	SystemPrompt            string       `json:"systemPrompt,omitempty"`
+	Status                  Status       `json:"status"`
+	Type                    SessionType  `json:"type"`
+	Provider                ProviderName `json:"provider"`
+	CliSessionID            string       `json:"cliSessionId,omitempty"`
+	Model                   string       `json:"model,omitempty"`
+	ParentSessionID         string       `json:"parentSessionId,omitempty"`
+	RoleTemplate            string       `json:"roleTemplate,omitempty"`
+	CurrentTask             string       `json:"currentTask,omitempty"`
+	Goal                    string       `json:"goal,omitempty"`
+	Goals                   GoalStack    `json:"goals,omitempty"`
+	LastError               string       `json:"lastError,omitempty"`
+	HolderPID               int          `json:"holderPid,omitempty"`
+	ClearOffset             int64        `json:"clearOffset"`
+	ConversationStarted     bool         `json:"conversationStarted"`
+	EphemeralTimeoutSeconds *int         `json:"ephemeralTimeoutSeconds,omitempty"`
+	CompletionReport        *string      `json:"completionReport,omitempty"`
+	CreatedAt               time.Time    `json:"createdAt"`
+	UpdatedAt               time.Time    `json:"updatedAt"`
 }
 
 type GoalEntry struct {

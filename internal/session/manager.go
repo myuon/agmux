@@ -36,8 +36,8 @@ type Manager struct {
 	deletingSet map[string]struct{}
 	deletingMu  sync.Mutex
 	// spawnMu prevents concurrent holder spawns for the same session in SendKeysWithImages.
-	spawnMu sync.Mutex
-	logger  *slog.Logger
+	spawnMu        sync.Mutex
+	logger         *slog.Logger
 	onNewLines     func(sessionID string, newLines []string, total int)
 	onStatusChange func(sessionID string, status Status, lastError string)
 }
@@ -277,14 +277,14 @@ func (m *Manager) killStaleHolder(sessionID string) {
 
 // CreateOpts contains optional parameters for creating a session.
 type CreateOpts struct {
-	Provider        ProviderName
-	Model           string
-	FullAuto        bool   // enable full-auto mode (bypasses permission prompts for Codex)
-	SystemPrompt    string // per-session custom system prompt (appended to defaultSystemPrompt)
-	ParentSessionID string // parent session ID for sub-session creation
-	RoleTemplate    string // name of the role template used to create this session
-	Ephemeral       bool   // create session with type=ephemeral
-	EphemeralTimeoutSeconds *int // timeout in seconds for the ephemeral session
+	Provider                ProviderName
+	Model                   string
+	FullAuto                bool   // enable full-auto mode (bypasses permission prompts for Codex)
+	SystemPrompt            string // per-session custom system prompt (appended to defaultSystemPrompt)
+	ParentSessionID         string // parent session ID for sub-session creation
+	RoleTemplate            string // name of the role template used to create this session
+	Ephemeral               bool   // create session with type=ephemeral
+	EphemeralTimeoutSeconds *int   // timeout in seconds for the ephemeral session
 }
 
 func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts ...CreateOpts) (*Session, error) {
@@ -392,20 +392,20 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		sessionType = TypeEphemeral
 	}
 	s := &Session{
-		ID:              id,
-		Name:            name,
-		ProjectPath:     projectPath,
-		InitialPrompt:   prompt,
-		SystemPrompt:    customSystemPrompt,
-		Status:          StatusIdle,
-		Type:            sessionType,
-		Provider:        pn,
-		Model:           model,
-		ParentSessionID: parentSessionID,
-		RoleTemplate:    roleTemplate,
+		ID:                      id,
+		Name:                    name,
+		ProjectPath:             projectPath,
+		InitialPrompt:           prompt,
+		SystemPrompt:            customSystemPrompt,
+		Status:                  StatusIdle,
+		Type:                    sessionType,
+		Provider:                pn,
+		Model:                   model,
+		ParentSessionID:         parentSessionID,
+		RoleTemplate:            roleTemplate,
 		EphemeralTimeoutSeconds: ephemeralTimeoutSeconds,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		CreatedAt:               now,
+		UpdatedAt:               now,
 	}
 
 	var ephemeralTimeoutArg interface{}
@@ -489,7 +489,6 @@ func (m *Manager) List() ([]Session, error) {
 	}
 	return sessions, rows.Err()
 }
-
 
 func (m *Manager) Get(id string) (*Session, error) {
 	var s Session
