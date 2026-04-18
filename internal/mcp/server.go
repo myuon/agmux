@@ -168,11 +168,15 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 				},
 				map[string]interface{}{
 					"name":        "complete_goal",
-					"description": "現在のゴールを達成済みとしてポップします。親ゴールがあればそれがアクティブになります。",
+					"description": "現在のゴールを達成済みとしてポップします。親ゴールがあればそれがアクティブになります。reportを指定すると完了レポートとして保存されます。",
 					"inputSchema": map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
 							"session_id": sessionIDProperty,
+							"report": map[string]interface{}{
+								"type":        "string",
+								"description": "完了時のレポート文字列（任意）",
+							},
 						},
 					},
 				},
@@ -351,7 +355,12 @@ func (s *Server) handleCompleteGoal(args json.RawMessage) (interface{}, *jsonRPC
 		return nil, rpcErr
 	}
 
-	parentGoal, err := s.apiCompleteGoal(sessionID)
+	var input struct {
+		Report string `json:"report"`
+	}
+	_ = json.Unmarshal(args, &input) // report is optional; ignore error (defaults to empty string)
+
+	parentGoal, err := s.apiCompleteGoal(sessionID, input.Report)
 	if err != nil {
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
@@ -613,12 +622,21 @@ func (s *Server) apiCreateGoal(sessionID string, currentTask, goal string, subgo
 	return nil
 }
 
-func (s *Server) apiCompleteGoal(sessionID string) (string, error) {
+func (s *Server) apiCompleteGoal(sessionID string, report string) (string, error) {
 	url := fmt.Sprintf("%s/api/sessions/%s/goals/complete", s.apiURL, sessionID)
 
-	req, err := http.NewRequest("POST", url, nil)
+	var bodyReader io.Reader
+	if report != "" {
+		body := fmt.Sprintf(`{"report":%s}`, jsonString(report))
+		bodyReader = strings.NewReader(body)
+	}
+
+	req, err := http.NewRequest("POST", url, bodyReader)
 	if err != nil {
 		return "", err
+	}
+	if bodyReader != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 
 	resp, err := http.DefaultClient.Do(req)
