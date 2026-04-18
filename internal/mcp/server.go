@@ -358,7 +358,7 @@ func (s *Server) handleCompleteGoal(args json.RawMessage) (interface{}, *jsonRPC
 	var input struct {
 		Report string `json:"report"`
 	}
-	_ = json.Unmarshal(args, &input)
+	_ = json.Unmarshal(args, &input) // report is optional; ignore error (defaults to empty string)
 
 	parentGoal, err := s.apiCompleteGoal(sessionID, input.Report)
 	if err != nil {

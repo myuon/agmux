@@ -609,9 +609,13 @@ func (s *Server) completeGoal(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// If auto-archived ephemeral session with parent, notify parent
-	if cgResult.AutoArchived && cgResult.ParentSessionID != "" && req.Report != "" {
-		notifyMsg := fmt.Sprintf("[ephemeral session %s completed] %s", cgResult.SessionName, req.Report)
+	// If auto-archived ephemeral session with parent, notify parent regardless of whether report is set
+	if cgResult.AutoArchived && cgResult.ParentSessionID != "" {
+		reportPart := req.Report
+		if reportPart == "" {
+			reportPart = "(report なし)"
+		}
+		notifyMsg := fmt.Sprintf("[ephemeral session %s completed] %s", cgResult.SessionName, reportPart)
 		s.recordSessionAction(cgResult.ParentSessionID, "agent_notification", notifyMsg)
 		if err := s.saveNotification(cgResult.ParentSessionID, "notification", notifyMsg); err != nil {
 			slog.Error("failed to save completion notification", "error", err)

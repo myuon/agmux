@@ -1376,7 +1376,17 @@ func (m *Manager) CompleteGoal(id string, report string) (*CompleteGoalResult, e
 		goal = top.Goal
 	}
 
-	_, err = m.db.Exec(
+	tx, err := m.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	_, err = tx.Exec(
 		"UPDATE sessions SET current_task = ?, goal = ?, goals = ?, updated_at = ? WHERE id = ?",
 		currentTask, goal, newGoals.ToJSON(), time.Now(), id,
 	)
@@ -1396,12 +1406,12 @@ func (m *Manager) CompleteGoal(id string, report string) (*CompleteGoalResult, e
 	// When goal stack is empty and session is ephemeral, auto-archive and save report
 	if newGoals.Top() == nil && s.Type == TypeEphemeral {
 		if report != "" {
-			_, err = m.db.Exec(
+			_, err = tx.Exec(
 				"UPDATE sessions SET completion_report = ?, status = ?, updated_at = ? WHERE id = ?",
 				report, string(StatusArchived), time.Now(), id,
 			)
 		} else {
-			_, err = m.db.Exec(
+			_, err = tx.Exec(
 				"UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?",
 				string(StatusArchived), time.Now(), id,
 			)
@@ -1414,13 +1424,17 @@ func (m *Manager) CompleteGoal(id string, report string) (*CompleteGoalResult, e
 		result.SessionName = s.Name
 	} else if report != "" {
 		// Save completion report even if not auto-archiving
-		_, err = m.db.Exec(
+		_, err = tx.Exec(
 			"UPDATE sessions SET completion_report = ?, updated_at = ? WHERE id = ?",
 			report, time.Now(), id,
 		)
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		return nil, err
 	}
 
 	return result, nil
