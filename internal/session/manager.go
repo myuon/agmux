@@ -266,10 +266,12 @@ func (m *Manager) killStaleHolder(sessionID string) {
 	if !IsHolderAlive(holderPID) {
 		return
 	}
-	// Send SIGTERM to the entire process group so claude CLI also receives the signal
-	// and releases its session lock file before the new holder spawns.
-	syscall.Kill(-holderPID, syscall.SIGTERM)
-	waitForProcessExit(holderPID, 3*time.Second, 100*time.Millisecond)
+	// Send SIGTERM only to the holder process (not the process group).
+	// The holder's SIGTERM handler closes stdin, which triggers claude CLI's
+	// graceful shutdown and session lock release. Sending SIGTERM to the entire
+	// group would kill claude CLI directly (exit 143), leaving the lock file.
+	syscall.Kill(holderPID, syscall.SIGTERM)
+	waitForProcessExit(holderPID, 5*time.Second, 100*time.Millisecond)
 	if !IsHolderAlive(holderPID) {
 		m.logger.Info("killStaleHolder: terminated stale holder via SIGTERM", "sessionId", sessionID, "holderPid", holderPID)
 		return
