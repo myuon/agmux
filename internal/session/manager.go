@@ -246,6 +246,72 @@ func (m *Manager) RecoverStreamProcesses() {
 	if err := rows.Err(); err != nil {
 		m.logger.Error("recover stream processes: rows iteration error", "error", err)
 	}
+
+	// Recover ephemeral timeout goroutines for active ephemeral sessions
+	m.recoverEphemeralTimeouts()
+}
+
+// recoverEphemeralTimeouts scans ephemeral sessions with a timeout that are still
+// in an active state (working/idle) and restarts their timeout goroutines with
+// the remaining time based on created_at + timeout - now.
+func (m *Manager) recoverEphemeralTimeouts() {
+	rows, err := m.db.Query(
+		`SELECT id, parent_session_id, ephemeral_timeout_seconds, created_at
+		 FROM sessions
+		 WHERE type = ? AND ephemeral_timeout_seconds IS NOT NULL AND status IN (?, ?)`,
+		string(TypeEphemeral), string(StatusWorking), string(StatusIdle),
+	)
+	if err != nil {
+		m.logger.Error("recover ephemeral timeouts: query failed", "error", err)
+		return
+	}
+	defer rows.Close()
+
+	now := time.Now()
+	for rows.Next() {
+		var id string
+		var parentSessionID sql.NullString
+		var timeoutSeconds int
+		var createdAt time.Time
+		if err := rows.Scan(&id, &parentSessionID, &timeoutSeconds, &createdAt); err != nil {
+			m.logger.Error("recover ephemeral timeouts: scan failed", "error", err)
+			continue
+		}
+
+		deadline := createdAt.Add(time.Duration(timeoutSeconds) * time.Second)
+		remaining := deadline.Sub(now)
+
+		parentID := ""
+		if parentSessionID.Valid {
+			parentID = parentSessionID.String
+		}
+
+		if remaining <= 0 {
+			// Already expired, archive immediately
+			m.logger.Info("ephemeral session already expired, archiving now",
+				"sessionId", id, "deadline", deadline)
+			m.stopStreamProcess(id)
+			if err := m.UpdateStatus(id, StatusArchived); err != nil {
+				m.logger.Error("recover ephemeral timeouts: failed to archive",
+					"sessionId", id, "error", err)
+			}
+			if _, err := m.db.Exec("UPDATE sessions SET holder_pid = 0, updated_at = ? WHERE id = ?", now, id); err != nil {
+				m.logger.Error("recover ephemeral timeouts: failed to clear holder_pid",
+					"sessionId", id, "error", err)
+			}
+			if parentID != "" {
+				msg := fmt.Sprintf("[system] Ephemeral session %s has been archived due to timeout (%ds).", id, timeoutSeconds)
+				if err := m.SendKeys(parentID, msg); err != nil {
+					m.logger.Warn("recover ephemeral timeouts: failed to notify parent",
+						"sessionId", id, "parentSessionId", parentID, "error", err)
+				}
+			}
+		} else {
+			m.logger.Info("restarting ephemeral timeout goroutine",
+				"sessionId", id, "remaining", remaining)
+			m.startEphemeralTimeout(id, parentID, remaining)
+		}
+	}
 }
 
 // updateHolderPID persists the holder PID to the database.
@@ -429,7 +495,59 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
 
+	// Start ephemeral timeout goroutine if applicable
+	if ephemeral && ephemeralTimeoutSeconds != nil && *ephemeralTimeoutSeconds > 0 {
+		m.startEphemeralTimeout(s.ID, s.ParentSessionID, time.Duration(*ephemeralTimeoutSeconds)*time.Second)
+	}
+
 	return s, nil
+}
+
+// startEphemeralTimeout launches a goroutine that waits for the given duration,
+// then checks if the session is still active (working/idle) and archives it if so.
+// If the session has a parent, a notification is sent to the parent via SendKeys.
+func (m *Manager) startEphemeralTimeout(sessionID, parentSessionID string, timeout time.Duration) {
+	go func() {
+		time.Sleep(timeout)
+
+		s, err := m.Get(sessionID)
+		if err != nil {
+			m.logger.Warn("ephemeral timeout: session not found", "sessionId", sessionID, "error", err)
+			return
+		}
+
+		// Only archive if still in an active state
+		if s.Status != StatusWorking && s.Status != StatusIdle {
+			m.logger.Info("ephemeral timeout: session already in terminal state, skipping",
+				"sessionId", sessionID, "status", s.Status)
+			return
+		}
+
+		// Stop the stream process and archive
+		m.stopStreamProcess(sessionID)
+		if err := m.UpdateStatus(sessionID, StatusArchived); err != nil {
+			m.logger.Error("ephemeral timeout: failed to archive session",
+				"sessionId", sessionID, "error", err)
+			return
+		}
+		// Clear holder_pid since process is stopped
+		if _, err := m.db.Exec("UPDATE sessions SET holder_pid = 0, updated_at = ? WHERE id = ?", time.Now(), sessionID); err != nil {
+			m.logger.Error("ephemeral timeout: failed to clear holder_pid",
+				"sessionId", sessionID, "error", err)
+		}
+
+		m.logger.Info("ephemeral session archived due to timeout",
+			"sessionId", sessionID, "timeout", timeout)
+
+		// Notify parent session if exists
+		if parentSessionID != "" {
+			msg := fmt.Sprintf("[system] Ephemeral session %s has been archived due to timeout (%s).", sessionID, timeout)
+			if err := m.SendKeys(parentSessionID, msg); err != nil {
+				m.logger.Warn("ephemeral timeout: failed to notify parent session",
+					"sessionId", sessionID, "parentSessionId", parentSessionID, "error", err)
+			}
+		}
+	}()
 }
 
 func (m *Manager) List() ([]Session, error) {
