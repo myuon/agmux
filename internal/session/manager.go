@@ -483,7 +483,8 @@ func (m *Manager) List() ([]Session, error) {
 			s.EphemeralTimeoutSeconds = &v
 		}
 		if completionReport.Valid {
-			s.CompletionReport = &completionReport.String
+			v := completionReport.String
+			s.CompletionReport = &v
 		}
 
 		sessions = append(sessions, s)
@@ -546,7 +547,8 @@ func (m *Manager) Get(id string) (*Session, error) {
 		s.EphemeralTimeoutSeconds = &v
 	}
 	if completionReport.Valid {
-		s.CompletionReport = &completionReport.String
+		v := completionReport.String
+		s.CompletionReport = &v
 	}
 	return &s, nil
 }
