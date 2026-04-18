@@ -377,6 +377,9 @@ func sessionCreateCmd() *cobra.Command {
 				return err
 			}
 			defer database.Close()
+			if !ephemeral && ephemeralTimeout > 0 {
+				return fmt.Errorf("--timeout requires --ephemeral")
+			}
 			var ephemeralTimeoutPtr *int
 			if ephemeral && ephemeralTimeout > 0 {
 				ephemeralTimeoutPtr = &ephemeralTimeout

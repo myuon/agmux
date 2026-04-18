@@ -98,7 +98,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const timeoutSecs = ephemeralTimeout ? parseInt(ephemeralTimeout, 10) : undefined;
+    const timeoutSecs = ephemeralTimeout ? Math.max(1, Math.floor(parseInt(ephemeralTimeout, 10))) : undefined;
     onCreate({
       name,
       projectPath,
@@ -297,7 +297,8 @@ export function CreateSession({ onClose, onCreate }: Props) {
                 type="number"
                 value={ephemeralTimeout}
                 onChange={(e) => setEphemeralTimeout(e.target.value)}
-                min="0"
+                min="1"
+                step="1"
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
                 placeholder="e.g. 3600"
               />
