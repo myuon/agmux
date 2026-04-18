@@ -20,6 +20,7 @@ const (
 	StatusPaused       Status = "paused"         // User explicitly stopped the session
 	StatusExited       Status = "exited"         // Process died unexpectedly
 	StatusWaitingInput Status = "waiting_input"  // Waiting for user input (escalation/permission)
+	StatusArchived     Status = "archived"       // Ephemeral session finished and archived
 )
 
 type SessionType string
@@ -28,6 +29,7 @@ const (
 	TypeWorker     SessionType = "worker"
 	TypeController SessionType = "controller"
 	TypeExternal   SessionType = "external"
+	TypeEphemeral  SessionType = "ephemeral"
 )
 
 type Session struct {
@@ -50,6 +52,8 @@ type Session struct {
 	HolderPID            int          `json:"holderPid,omitempty"`
 	ClearOffset          int64        `json:"clearOffset"`
 	ConversationStarted  bool         `json:"conversationStarted"`
+	EphemeralTimeoutSeconds *int      `json:"ephemeralTimeoutSeconds,omitempty"`
+	CompletionReport     *string      `json:"completionReport,omitempty"`
 	CreatedAt            time.Time    `json:"createdAt"`
 	UpdatedAt            time.Time    `json:"updatedAt"`
 }

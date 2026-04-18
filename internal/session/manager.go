@@ -283,6 +283,8 @@ type CreateOpts struct {
 	SystemPrompt    string // per-session custom system prompt (appended to defaultSystemPrompt)
 	ParentSessionID string // parent session ID for sub-session creation
 	RoleTemplate    string // name of the role template used to create this session
+	Ephemeral       bool   // create session with type=ephemeral
+	EphemeralTimeoutSeconds *int // timeout in seconds for the ephemeral session
 }
 
 func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts ...CreateOpts) (*Session, error) {
@@ -292,6 +294,8 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	customSystemPrompt := ""
 	parentSessionID := ""
 	roleTemplate := ""
+	ephemeral := false
+	var ephemeralTimeoutSeconds *int
 	if len(opts) > 0 {
 		if opts[0].Provider != "" {
 			pn = opts[0].Provider
@@ -301,6 +305,8 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		customSystemPrompt = opts[0].SystemPrompt
 		parentSessionID = opts[0].ParentSessionID
 		roleTemplate = opts[0].RoleTemplate
+		ephemeral = opts[0].Ephemeral
+		ephemeralTimeoutSeconds = opts[0].EphemeralTimeoutSeconds
 	}
 
 	// Validate parent session exists when creating a sub-session
@@ -381,6 +387,10 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	m.streamMu.Unlock()
 
 	now := time.Now()
+	sessionType := TypeWorker
+	if ephemeral {
+		sessionType = TypeEphemeral
+	}
 	s := &Session{
 		ID:              id,
 		Name:            name,
@@ -388,19 +398,24 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		InitialPrompt:   prompt,
 		SystemPrompt:    customSystemPrompt,
 		Status:          StatusIdle,
-		Type:            TypeWorker,
+		Type:            sessionType,
 		Provider:        pn,
 		Model:           model,
 		ParentSessionID: parentSessionID,
 		RoleTemplate:    roleTemplate,
+		EphemeralTimeoutSeconds: ephemeralTimeoutSeconds,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
 
+	var ephemeralTimeoutArg interface{}
+	if s.EphemeralTimeoutSeconds != nil {
+		ephemeralTimeoutArg = *s.EphemeralTimeoutSeconds
+	}
 	if _, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, role_template, holder_pid, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, sp.HolderPID(), s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, role_template, holder_pid, ephemeral_timeout_seconds, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, sp.HolderPID(), ephemeralTimeoutArg, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
@@ -410,7 +425,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -424,9 +439,10 @@ func (m *Manager) List() ([]Session, error) {
 		var status string
 		var sessionType string
 		var providerStr string
-		var prompt, systemPrompt, parentSessionID, roleTemplate, currentTask, goal, goalsJSON, lastError sql.NullString
+		var prompt, systemPrompt, parentSessionID, roleTemplate, currentTask, goal, goalsJSON, lastError, completionReport sql.NullString
 		var conversationStartedInt int
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		var ephemeralTimeoutSeconds sql.NullInt64
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.ConversationStarted = conversationStartedInt != 0
@@ -460,6 +476,14 @@ func (m *Manager) List() ([]Session, error) {
 		if lastError.Valid {
 			s.LastError = lastError.String
 		}
+		if ephemeralTimeoutSeconds.Valid {
+			v := int(ephemeralTimeoutSeconds.Int64)
+			s.EphemeralTimeoutSeconds = &v
+		}
+		if completionReport.Valid {
+			v := completionReport.String
+			s.CompletionReport = &v
+		}
 
 		sessions = append(sessions, s)
 	}
@@ -472,12 +496,13 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var status string
 	var sessionType string
 	var providerStr string
-	var prompt, systemPrompt, parentSessionID, roleTemplate, currentTask, goal, goalsJSON, lastError sql.NullString
+	var prompt, systemPrompt, parentSessionID, roleTemplate, currentTask, goal, goalsJSON, lastError, completionReport sql.NullString
 	var conversationStartedInt int
+	var ephemeralTimeoutSeconds sql.NullInt64
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -514,6 +539,14 @@ func (m *Manager) Get(id string) (*Session, error) {
 	}
 	if lastError.Valid {
 		s.LastError = lastError.String
+	}
+	if ephemeralTimeoutSeconds.Valid {
+		v := int(ephemeralTimeoutSeconds.Int64)
+		s.EphemeralTimeoutSeconds = &v
+	}
+	if completionReport.Valid {
+		v := completionReport.String
+		s.CompletionReport = &v
 	}
 	return &s, nil
 }
