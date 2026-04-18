@@ -2,6 +2,7 @@ package session
 
 import (
 	"bufio"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -38,7 +39,12 @@ type Manager struct {
 	deletingMu  sync.Mutex
 	// spawnMu prevents concurrent holder spawns for the same session in SendKeysWithImages.
 	spawnMu sync.Mutex
-	logger  *slog.Logger
+	// ephemeralCancels stores cancel functions for active ephemeral timeout goroutines.
+	// When a session is manually stopped/deleted/archived, its cancel func is invoked
+	// so the goroutine exits immediately rather than leaking until the timer fires.
+	ephemeralCancels   map[string]context.CancelFunc
+	ephemeralCancelsMu sync.Mutex
+	logger             *slog.Logger
 	onNewLines     func(sessionID string, newLines []string, total int)
 	onStatusChange func(sessionID string, status Status, lastError string)
 }
@@ -66,9 +72,10 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 		permissionMode:  permissionMode,
 		apiPort:         apiPort,
 		systemPrompt:    systemPrompt,
-		streamProcesses: make(map[string]*HolderStreamProcess),
-		deletingSet:     make(map[string]struct{}),
-		logger:          logger.With("component", "session_manager"),
+		streamProcesses:  make(map[string]*HolderStreamProcess),
+		deletingSet:      make(map[string]struct{}),
+		ephemeralCancels: make(map[string]context.CancelFunc),
+		logger:           logger.With("component", "session_manager"),
 	}
 }
 
@@ -245,6 +252,93 @@ func (m *Manager) RecoverStreamProcesses() {
 	}
 	if err := rows.Err(); err != nil {
 		m.logger.Error("recover stream processes: rows iteration error", "error", err)
+	}
+
+	// Recover ephemeral timeout goroutines for active ephemeral sessions
+	m.recoverEphemeralTimeouts()
+}
+
+// ephemeralTimeoutEntry holds the data scanned from a single row in recoverEphemeralTimeouts.
+type ephemeralTimeoutEntry struct {
+	id             string
+	parentID       string
+	timeoutSeconds int
+	createdAt      time.Time
+}
+
+// recoverEphemeralTimeouts scans ephemeral sessions with a timeout that are still
+// in an active state (working/idle) and restarts their timeout goroutines with
+// the remaining time based on created_at + timeout - now.
+func (m *Manager) recoverEphemeralTimeouts() {
+	rows, err := m.db.Query(
+		`SELECT id, parent_session_id, ephemeral_timeout_seconds, created_at
+		 FROM sessions
+		 WHERE type = ? AND ephemeral_timeout_seconds IS NOT NULL AND status IN (?, ?)`,
+		string(TypeEphemeral), string(StatusWorking), string(StatusIdle),
+	)
+	if err != nil {
+		m.logger.Error("recover ephemeral timeouts: query failed", "error", err)
+		return
+	}
+
+	// Collect all rows before closing so subsequent DB writes don't compete for the connection.
+	var entries []ephemeralTimeoutEntry
+	for rows.Next() {
+		var id string
+		var parentSessionID sql.NullString
+		var timeoutSeconds int
+		var createdAt time.Time
+		if err := rows.Scan(&id, &parentSessionID, &timeoutSeconds, &createdAt); err != nil {
+			m.logger.Error("recover ephemeral timeouts: scan failed", "error", err)
+			continue
+		}
+		parentID := ""
+		if parentSessionID.Valid {
+			parentID = parentSessionID.String
+		}
+		entries = append(entries, ephemeralTimeoutEntry{
+			id:             id,
+			parentID:       parentID,
+			timeoutSeconds: timeoutSeconds,
+			createdAt:      createdAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		m.logger.Error("recover ephemeral timeouts: rows iteration error", "error", err)
+	}
+	rows.Close()
+
+	now := time.Now()
+	for _, e := range entries {
+		deadline := e.createdAt.Add(time.Duration(e.timeoutSeconds) * time.Second)
+		remaining := deadline.Sub(now)
+
+		if remaining <= 0 {
+			// Already expired, archive immediately
+			m.logger.Info("ephemeral session already expired, archiving now",
+				"sessionId", e.id, "deadline", deadline)
+			m.stopStreamProcess(e.id)
+			// Atomically update status and clear holder_pid in one query
+			if err := m.UpdateStatusWithHolderPIDClear(e.id, StatusArchived); err != nil {
+				m.logger.Error("recover ephemeral timeouts: failed to archive",
+					"sessionId", e.id, "error", err)
+			}
+			if e.parentID != "" {
+				timeout := time.Duration(e.timeoutSeconds) * time.Second
+				msg := fmt.Sprintf("[system] Ephemeral session %s has been archived due to timeout (%s).", e.id, timeout)
+				if err := m.SendKeys(e.parentID, msg); err != nil {
+					m.logger.Warn("recover ephemeral timeouts: failed to notify parent",
+						"sessionId", e.id, "parentSessionId", e.parentID, "error", err)
+				}
+			}
+		} else {
+			m.logger.Info("restarting ephemeral timeout goroutine",
+				"sessionId", e.id, "remaining", remaining)
+			m.startEphemeralTimeout(e.id, e.parentID, remaining)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		m.logger.Error("recover ephemeral timeouts: rows iteration error", "error", err)
 	}
 }
 
@@ -429,7 +523,99 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
 
+	// Start ephemeral timeout goroutine if applicable
+	if ephemeral && ephemeralTimeoutSeconds != nil && *ephemeralTimeoutSeconds > 0 {
+		m.startEphemeralTimeout(s.ID, s.ParentSessionID, time.Duration(*ephemeralTimeoutSeconds)*time.Second)
+	}
+
 	return s, nil
+}
+
+// startEphemeralTimeout launches a goroutine that waits for the given duration,
+// then checks if the session is still active (working/idle) and archives it if so.
+// If the session has a parent, a notification is sent to the parent via SendKeys.
+// The returned cancel func (also stored in m.ephemeralCancels) can be used to
+// terminate the goroutine early when the session is manually stopped/deleted.
+func (m *Manager) startEphemeralTimeout(sessionID, parentSessionID string, timeout time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+
+	m.ephemeralCancelsMu.Lock()
+	m.ephemeralCancels[sessionID] = cancel
+	m.ephemeralCancelsMu.Unlock()
+
+	go func() {
+		defer func() {
+			cancel()
+			m.ephemeralCancelsMu.Lock()
+			delete(m.ephemeralCancels, sessionID)
+			m.ephemeralCancelsMu.Unlock()
+		}()
+
+		select {
+		case <-ctx.Done():
+			if ctx.Err() == context.DeadlineExceeded {
+				// Timer fired normally — proceed to archive
+			} else {
+				// Cancelled externally (manual stop/delete/archive)
+				m.logger.Info("ephemeral timeout goroutine cancelled",
+					"sessionId", sessionID)
+				return
+			}
+		}
+
+		s, err := m.Get(sessionID)
+		if err != nil {
+			m.logger.Warn("ephemeral timeout: session not found", "sessionId", sessionID, "error", err)
+			return
+		}
+
+		// Only archive if still in an active state
+		if s.Status != StatusWorking && s.Status != StatusIdle {
+			m.logger.Info("ephemeral timeout: session already in terminal state, skipping",
+				"sessionId", sessionID, "status", s.Status)
+			return
+		}
+
+		// Stop the stream process and archive (atomically update status + holder_pid in one query)
+		m.stopStreamProcess(sessionID)
+		if err := m.UpdateStatusWithHolderPIDClear(sessionID, StatusArchived); err != nil {
+			m.logger.Error("ephemeral timeout: failed to archive session",
+				"sessionId", sessionID, "error", err)
+			return
+		}
+
+		m.logger.Info("ephemeral session archived due to timeout",
+			"sessionId", sessionID, "timeout", timeout)
+
+		// Notify parent session if exists
+		if parentSessionID != "" {
+			msg := fmt.Sprintf("[system] Ephemeral session %s has been archived due to timeout (%s).", sessionID, timeout)
+			if err := m.SendKeys(parentSessionID, msg); err != nil {
+				m.logger.Warn("ephemeral timeout: failed to notify parent session",
+					"sessionId", sessionID, "parentSessionId", parentSessionID, "error", err)
+			}
+		}
+	}()
+}
+
+// cancelEphemeralTimeout cancels the ephemeral timeout goroutine for the given session,
+// if one is active. This should be called when a session is manually stopped or deleted.
+func (m *Manager) cancelEphemeralTimeout(sessionID string) {
+	m.ephemeralCancelsMu.Lock()
+	cancel, ok := m.ephemeralCancels[sessionID]
+	m.ephemeralCancelsMu.Unlock()
+	if ok {
+		cancel()
+	}
+}
+
+// UpdateStatusWithHolderPIDClear updates the session status and clears holder_pid atomically.
+func (m *Manager) UpdateStatusWithHolderPIDClear(id string, status Status) error {
+	_, err := m.db.Exec("UPDATE sessions SET status = ?, holder_pid = 0, updated_at = ? WHERE id = ?", string(status), time.Now(), id)
+	if err == nil && m.onStatusChange != nil {
+		m.onStatusChange(id, status, "")
+	}
+	return err
 }
 
 func (m *Manager) List() ([]Session, error) {
@@ -726,6 +912,9 @@ func (m *Manager) Stop(id string) error {
 		return err
 	}
 
+	// Cancel ephemeral timeout goroutine if active
+	m.cancelEphemeralTimeout(id)
+
 	// Stop stream process if exists
 	m.stopStreamProcess(id)
 
@@ -750,6 +939,9 @@ func (m *Manager) Delete(id string) error {
 		delete(m.deletingSet, id)
 		m.deletingMu.Unlock()
 	}()
+
+	// Cancel ephemeral timeout goroutine if active
+	m.cancelEphemeralTimeout(id)
 
 	// Stop stream process if exists
 	m.stopStreamProcess(id)
