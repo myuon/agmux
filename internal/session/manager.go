@@ -300,7 +300,7 @@ func (m *Manager) recoverEphemeralTimeouts() {
 					"sessionId", id, "error", err)
 			}
 			if parentID != "" {
-				msg := fmt.Sprintf("[system] Ephemeral session %s has been archived due to timeout (%ds).", id, timeoutSeconds)
+				msg := fmt.Sprintf("[system] Ephemeral session %s has been archived due to timeout (%s).", id, time.Duration(timeoutSeconds)*time.Second)
 				if err := m.SendKeys(parentID, msg); err != nil {
 					m.logger.Warn("recover ephemeral timeouts: failed to notify parent",
 						"sessionId", id, "parentSessionId", parentID, "error", err)
@@ -311,6 +311,9 @@ func (m *Manager) recoverEphemeralTimeouts() {
 				"sessionId", id, "remaining", remaining)
 			m.startEphemeralTimeout(id, parentID, remaining)
 		}
+	}
+	if err := rows.Err(); err != nil {
+		m.logger.Error("recover ephemeral timeouts: rows iteration error", "error", err)
 	}
 }
 
