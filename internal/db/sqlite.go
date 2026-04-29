@@ -335,6 +335,40 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: create background_tasks table
+	// Tracks long-running tasks (agent / tool background tasks) detected from JSONL stream.
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS background_tasks (
+			session_id TEXT NOT NULL,
+			task_id TEXT NOT NULL,
+			task_type TEXT NOT NULL DEFAULT 'unknown',
+			agent_id TEXT,
+			description TEXT,
+			started_at TEXT,
+			last_tool_name TEXT,
+			last_tool_input TEXT,
+			output TEXT,
+			usage_input_tokens INTEGER,
+			usage_output_tokens INTEGER,
+			tool_call_history TEXT NOT NULL DEFAULT '[]',
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (session_id, task_id)
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_background_tasks_session ON background_tasks(session_id)`)
+
+	// Migration: add dismissed_at column for logical delete.
+	// Physical delete + UPSERT could resurrect a dismissed task when a delayed
+	// task_progress event arrived. With dismissed_at set, the row stays in the
+	// DB as a tombstone and List/UPSERT skip it.
+	_, err = db.Exec(`ALTER TABLE background_tasks ADD COLUMN dismissed_at DATETIME`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	return nil
 }
 

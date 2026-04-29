@@ -28,8 +28,23 @@ import { GoalPanel } from "../components/ui/GoalPanel";
 import { ConnectionStatusIndicator } from "../components/ui/ConnectionStatus";
 import { PullRequestBadge } from "../components/ui/PullRequestBadge";
 import { AlertBanner } from "../components/ui/AlertBanner";
-import type { StreamEntry } from "../models/stream";
-import { extractActiveTasks } from "../models/stream";
+import type { ActiveTask } from "../models/stream";
+import type { BackgroundTaskDTO } from "../api/client";
+
+function dtoToActiveTask(dto: BackgroundTaskDTO): ActiveTask {
+  return {
+    taskId: dto.taskId,
+    taskType: dto.taskType,
+    agentId: dto.agentId,
+    description: dto.description,
+    startedAt: dto.startedAt,
+    lastToolName: dto.lastToolName,
+    lastToolInput: dto.lastToolInput,
+    output: dto.output,
+    usage: dto.usage,
+    toolCallHistory: dto.toolCallHistory ?? [],
+  };
+}
 
 type DeferredData = {
   streamOutput: { lines: unknown[]; total: number };
@@ -143,13 +158,25 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const providerVersion = deferred.providerVersion;
   const streamCursorRef = useRef<number | null>(null);
 
-  // Compute active tasks for fixed display above input
-  const activeTasks = useMemo(() => {
-    const entries = streamLines
-      .map((line) => line as StreamEntry)
-      .filter((e: StreamEntry) => e.type === "user" || e.type === "assistant" || e.type === "system");
-    return extractActiveTasks(entries);
-  }, [streamLines]);
+  // Active tasks (background-running agent / tool calls). Fetched from the
+  // backend so the source of truth is the DB. Refetched when new stream
+  // lines arrive (the backend updates the table on each line).
+  const [activeTasks, setActiveTasks] = useState<ActiveTask[]>([]);
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const resp = await api.listBackgroundTasks(sessionId);
+        if (cancelled) return;
+        setActiveTasks(resp.tasks.map(dtoToActiveTask));
+      } catch {
+        // ignore; UI will show last known state
+      }
+    };
+    refresh();
+    return () => { cancelled = true; };
+  }, [sessionId, streamLines.length]);
 
   // Extract slash_commands from system init messages
   const slashCommands = useMemo(() => {

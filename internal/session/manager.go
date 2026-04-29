@@ -47,6 +47,7 @@ type Manager struct {
 	logger             *slog.Logger
 	onNewLines     func(sessionID string, newLines []string, total int)
 	onStatusChange func(sessionID string, status Status, lastError string)
+	backgroundTasks *BackgroundTaskStore
 }
 
 const nanoidAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
@@ -76,7 +77,21 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 		deletingSet:      make(map[string]struct{}),
 		ephemeralCancels: make(map[string]context.CancelFunc),
 		logger:           logger.With("component", "session_manager"),
+		backgroundTasks:  NewBackgroundTaskStore(db),
 	}
+}
+
+// BackgroundTasks returns the manager's background task store.
+func (m *Manager) BackgroundTasks() *BackgroundTaskStore {
+	return m.backgroundTasks
+}
+
+// ListBackgroundTasks returns the persisted background tasks for the session.
+func (m *Manager) ListBackgroundTasks(sessionID string) ([]BackgroundTask, error) {
+	if m.backgroundTasks == nil {
+		return []BackgroundTask{}, nil
+	}
+	return m.backgroundTasks.List(sessionID)
 }
 
 // ManagedHolderPIDs returns the PIDs of all holder processes currently managed by this Manager.
@@ -216,6 +231,14 @@ func (m *Manager) RecoverStreamProcesses() {
 			Model:         dbModel,
 			APIPort:       m.apiPort,
 			ClearOffset:   clearOffset,
+		}
+
+		// Rebuild background_tasks DB from the JSONL so the API reflects
+		// the current task list before any new live lines arrive.
+		if m.backgroundTasks != nil {
+			if err := m.backgroundTasks.RebuildFromJSONL(id, clearOffset); err != nil {
+				m.logger.Warn("failed to rebuild background tasks from JSONL", "sessionId", id, "error", err)
+			}
 		}
 
 		// Try to reconnect to existing holder first
@@ -984,7 +1007,16 @@ func (m *Manager) Delete(id string) error {
 	}
 
 	_, err = m.db.Exec("DELETE FROM sessions WHERE id = ?", id)
-	return err
+	if err != nil {
+		return err
+	}
+	// Drop background task rows for the deleted session.
+	if m.backgroundTasks != nil {
+		if err := m.backgroundTasks.ClearSession(id); err != nil {
+			m.logger.Warn("failed to clear background tasks on delete", "sessionId", id, "error", err)
+		}
+	}
+	return nil
 }
 
 // wireSessionIDCallback sets up the onSessionID callback on a stream process
@@ -1004,11 +1036,27 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProces
 			m.logger.Info("model name captured from stream", "sessionId", sessionID, "model", model)
 		}
 	})
-	if m.onNewLines != nil {
-		sp.SetOnNewLines(m.onNewLines)
-		m.logger.Info("onNewLines callback set for session", "sessionId", sessionID)
+	// Wrap onNewLines so we can update the background_tasks DB table per line.
+	bgStore := m.backgroundTasks
+	upstream := m.onNewLines
+	sp.SetOnNewLines(func(sid string, newLines []string, total int) {
+		if bgStore != nil {
+			for _, line := range newLines {
+				if err := bgStore.ApplyLine(sid, []byte(line)); err != nil {
+					m.logger.Warn("background task apply line failed", "sessionId", sid, "error", err)
+				}
+			}
+		}
+		if upstream != nil {
+			upstream(sid, newLines, total)
+		}
+	})
+	if upstream == nil {
+		// Background task DB updates still run via the wrapper above; only the
+		// upstream broadcast (e.g. WebSocket relay) is missing.
+		m.logger.Info("onNewLines upstream is nil; background task DB updates will still run, but no upstream broadcast is wired", "sessionId", sessionID)
 	} else {
-		m.logger.Warn("onNewLines callback is nil, WebSocket updates will not work", "sessionId", sessionID)
+		m.logger.Info("onNewLines callback set for session", "sessionId", sessionID)
 	}
 	sp.SetOnTurnComplete(func(sid string) {
 		m.logger.Info("turn completed (result event detected), setting status to idle",
@@ -1151,7 +1199,16 @@ func (m *Manager) Clear(id string) error {
 
 	// Store clear_offset and reset task/goal but keep the existing process and CLI session running.
 	_, err = m.db.Exec("UPDATE sessions SET last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', clear_offset = ?, updated_at = ? WHERE id = ?", clearOffset, time.Now(), id)
-	return err
+	if err != nil {
+		return err
+	}
+	// Drop background task rows tied to the cleared portion of the stream.
+	if m.backgroundTasks != nil {
+		if err := m.backgroundTasks.ClearSession(id); err != nil {
+			m.logger.Warn("failed to clear background tasks", "sessionId", id, "error", err)
+		}
+	}
+	return nil
 }
 
 func (m *Manager) SendKeys(id string, text string) error {
@@ -1854,6 +1911,13 @@ func (m *Manager) DismissTask(sessionID, taskID string) error {
 	m.streamMu.Unlock()
 	if ok {
 		sp.DecrementRunningTasks()
+	}
+
+	// Remove DB row so the background task list endpoint stops returning it.
+	if m.backgroundTasks != nil {
+		if err := m.backgroundTasks.Dismiss(sessionID, taskID); err != nil {
+			m.logger.Warn("failed to dismiss background task in DB", "sessionId", sessionID, "taskId", taskID, "error", err)
+		}
 	}
 
 	return nil

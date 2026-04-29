@@ -78,6 +78,9 @@ type SessionService interface {
 
 	// DismissTask writes a dismissed event to the JSONL stream for the given task.
 	DismissTask(sessionID, taskID string) error
+
+	// ListBackgroundTasks returns the persisted background tasks for the session.
+	ListBackgroundTasks(sessionID string) ([]BackgroundTask, error)
 }
 
 // Verify Manager implements SessionService at compile time.
