@@ -187,7 +187,26 @@ export const api = {
       method: "POST",
     }),
 
+  listBackgroundTasks: (sessionId: string) =>
+    request<{ tasks: BackgroundTaskDTO[] }>(
+      `/sessions/${sessionId}/background-tasks`
+    ),
+
 };
+
+// BackgroundTaskDTO mirrors `internal/session.BackgroundTask` (Go).
+export interface BackgroundTaskDTO {
+  taskId: string;
+  taskType: string;
+  agentId?: string;
+  description?: string;
+  startedAt?: string;
+  lastToolName?: string;
+  lastToolInput?: unknown;
+  output?: string;
+  usage?: { inputTokens?: number; outputTokens?: number };
+  toolCallHistory: { toolName: string; description?: string; timestamp?: string }[];
+}
 
 export interface RecentProject {
   projectPath: string;

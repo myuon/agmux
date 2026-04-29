@@ -153,6 +153,8 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/permission", s.createPermission)
 		r.Post("/sessions/{id}/permission/respond", s.respondPermission)
 		r.Post("/sessions/{id}/tasks/{taskId}/dismiss", s.dismissTask)
+		r.Get("/sessions/{id}/background-tasks", s.listBackgroundTasks)
+		r.Delete("/sessions/{id}/background-tasks/{taskId}", s.dismissTask)
 		r.Post("/sessions/{id}/notify", s.sendNotification)
 		r.Post("/sessions/broadcast", s.broadcastToSessions)
 		r.Post("/sessions/controller/restart", s.restartController)
@@ -1918,4 +1920,15 @@ func (s *Server) dismissTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "dismissed"})
+}
+
+// listBackgroundTasks returns the persisted background-task list for the session.
+func (s *Server) listBackgroundTasks(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	tasks, err := s.sessions.ListBackgroundTasks(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"tasks": tasks})
 }
