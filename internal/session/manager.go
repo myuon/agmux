@@ -1052,7 +1052,9 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProces
 		}
 	})
 	if upstream == nil {
-		m.logger.Warn("onNewLines callback is nil, WebSocket updates will not work", "sessionId", sessionID)
+		// Background task DB updates still run via the wrapper above; only the
+		// upstream broadcast (e.g. WebSocket relay) is missing.
+		m.logger.Info("onNewLines upstream is nil; background task DB updates will still run, but no upstream broadcast is wired", "sessionId", sessionID)
 	} else {
 		m.logger.Info("onNewLines callback set for session", "sessionId", sessionID)
 	}

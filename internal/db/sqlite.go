@@ -360,6 +360,15 @@ func migrate(db *sql.DB) error {
 	}
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_background_tasks_session ON background_tasks(session_id)`)
 
+	// Migration: add dismissed_at column for logical delete.
+	// Physical delete + UPSERT could resurrect a dismissed task when a delayed
+	// task_progress event arrived. With dismissed_at set, the row stays in the
+	// DB as a tombstone and List/UPSERT skip it.
+	_, err = db.Exec(`ALTER TABLE background_tasks ADD COLUMN dismissed_at DATETIME`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	return nil
 }
 

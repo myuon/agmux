@@ -1,7 +1,10 @@
 package session
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/myuon/agmux/internal/db"
@@ -177,4 +180,163 @@ func TestBackgroundTaskStore_NonTaskLinesAreIgnored(t *testing.T) {
 	tasks, err := store.List("s")
 	require.NoError(t, err)
 	assert.Len(t, tasks, 0)
+}
+
+// TestBackgroundTaskStore_DismissedTaskIsNotResurrected verifies that a
+// delayed task_progress event for a dismissed task does not bring the row
+// back. The frontend / API List() must continue to hide the task.
+func TestBackgroundTaskStore_DismissedTaskIsNotResurrected(t *testing.T) {
+	store := newTestBgStore(t)
+
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_started","task_id":"t","task_type":"local_agent"}`)))
+	require.NoError(t, store.Dismiss("s", "t"))
+
+	tasks, err := store.List("s")
+	require.NoError(t, err)
+	require.Len(t, tasks, 0)
+
+	// Late-arriving task_progress event for the same task_id must not
+	// resurrect the dismissed row.
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_progress","task_id":"t","description":"late","last_tool_name":"Bash"}`)))
+	tasks, err = store.List("s")
+	require.NoError(t, err)
+	assert.Len(t, tasks, 0, "dismissed task must not be resurrected by late task_progress")
+
+	// And a fresh task_started for the same id is also blocked (tombstone).
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_started","task_id":"t","task_type":"local_agent"}`)))
+	tasks, err = store.List("s")
+	require.NoError(t, err)
+	assert.Len(t, tasks, 0, "dismissed task must stay hidden even when re-started")
+}
+
+// TestBackgroundTaskStore_DismissBeforeAnyTaskStarted creates a tombstone
+// for an unknown task_id and verifies that a subsequent task_started /
+// task_progress for that id is still suppressed.
+func TestBackgroundTaskStore_DismissBeforeAnyTaskStarted(t *testing.T) {
+	store := newTestBgStore(t)
+
+	require.NoError(t, store.Dismiss("s", "t"))
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_started","task_id":"t","task_type":"local_agent"}`)))
+
+	tasks, err := store.List("s")
+	require.NoError(t, err)
+	assert.Len(t, tasks, 0)
+}
+
+// TestBackgroundTaskStore_ConcurrentApplyLine simulates two goroutines
+// (e.g. RebuildFromJSONL and a live onNewLines callback) appending
+// task_progress entries concurrently. Without serialization the
+// tool_call_history would lose entries via read-modify-write race.
+func TestBackgroundTaskStore_ConcurrentApplyLine(t *testing.T) {
+	store := newTestBgStore(t)
+
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_started","task_id":"t","task_type":"local_agent"}`)))
+
+	const N = 50
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; i < N; i++ {
+			line := fmt.Sprintf(`{"type":"system","subtype":"task_progress","task_id":"t","last_tool_name":"A%d","description":"d"}`, i)
+			_ = store.ApplyLine("s", []byte(line))
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < N; i++ {
+			line := fmt.Sprintf(`{"type":"system","subtype":"task_progress","task_id":"t","last_tool_name":"B%d","description":"d"}`, i)
+			_ = store.ApplyLine("s", []byte(line))
+		}
+	}()
+	wg.Wait()
+
+	tasks, err := store.List("s")
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	// Expect exactly 2*N appended history entries (every line has a unique
+	// last_tool_name so dedup never drops anything). Without the mutex this
+	// would frequently come out short.
+	assert.Equal(t, 2*N, len(tasks[0].ToolCallHistory),
+		"expected %d history entries, got %d", 2*N, len(tasks[0].ToolCallHistory))
+}
+
+// TestBackgroundTaskStore_RebuildFromJSONL writes a JSONL file with
+// task events, runs RebuildFromJSONL with various clearOffset values,
+// and asserts the resulting DB state matches the replayed segment.
+func TestBackgroundTaskStore_RebuildFromJSONL(t *testing.T) {
+	store := newTestBgStore(t)
+
+	// RebuildFromJSONL reads from db.StreamsDir(), so point HOME at the
+	// test temp dir to isolate file IO.
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	streamsDir, err := db.StreamsDir()
+	require.NoError(t, err)
+	jsonlPath := filepath.Join(streamsDir, "sess.jsonl")
+
+	earlyLine := `{"type":"system","subtype":"task_started","task_id":"t-early","task_type":"local_agent","description":"early"}` + "\n"
+	lateStarted := `{"type":"system","subtype":"task_started","task_id":"t-late","task_type":"local_agent","description":"late"}` + "\n"
+	lateProgress := `{"type":"system","subtype":"task_progress","task_id":"t-late","last_tool_name":"Bash","description":"step"}` + "\n"
+
+	contents := []byte(earlyLine + lateStarted + lateProgress)
+	require.NoError(t, os.WriteFile(jsonlPath, contents, 0o644))
+
+	// Full replay (offset 0) should yield two tasks.
+	require.NoError(t, store.RebuildFromJSONL("sess", 0))
+	tasks, err := store.List("sess")
+	require.NoError(t, err)
+	require.Len(t, tasks, 2)
+
+	// Replay starting from after the early line should yield only the late task.
+	offset := int64(len(earlyLine))
+	require.NoError(t, store.RebuildFromJSONL("sess", offset))
+	tasks, err = store.List("sess")
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "t-late", tasks[0].TaskID)
+	require.Len(t, tasks[0].ToolCallHistory, 1)
+	assert.Equal(t, "Bash", tasks[0].ToolCallHistory[0].ToolName)
+
+	// Missing JSONL file must not error.
+	require.NoError(t, os.Remove(jsonlPath))
+	require.NoError(t, store.RebuildFromJSONL("sess", 0))
+	tasks, err = store.List("sess")
+	require.NoError(t, err)
+	assert.Len(t, tasks, 0)
+}
+
+// TestBackgroundTaskStore_PendingToolUseInputsCap verifies the 256-entry
+// cap on the pendingToolUseInputs map keeps the oldest entries from
+// growing unbounded.
+func TestBackgroundTaskStore_PendingToolUseInputsCap(t *testing.T) {
+	store := newTestBgStore(t)
+
+	for i := 0; i < 300; i++ {
+		line := fmt.Sprintf(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"id-%d","name":"Tool","input":{"k":%d}}]}}`, i, i)
+		require.NoError(t, store.ApplyLine("s", []byte(line)))
+	}
+
+	store.mu.Lock()
+	got := len(store.pendingToolUseInputs["s"])
+	store.mu.Unlock()
+	assert.LessOrEqual(t, got, 256, "pending tool_use map must be capped to 256 entries")
+	assert.Greater(t, got, 0)
+}
+
+// TestBackgroundTaskStore_NullToolUseInputIsIgnored mirrors the frontend
+// behavior of skipping tool_use blocks whose input is null.
+func TestBackgroundTaskStore_NullToolUseInputIsIgnored(t *testing.T) {
+	store := newTestBgStore(t)
+
+	// tool_use with input: null should not register a pending input.
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu","name":"Agent","input":null}]}}`)))
+
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_started","task_id":"t","task_type":"local_agent","tool_use_id":"tu"}`)))
+	tasks, err := store.List("s")
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Empty(t, tasks[0].LastToolName, "null input must not resolve to a lastToolName")
+	assert.Nil(t, tasks[0].LastToolInput)
 }

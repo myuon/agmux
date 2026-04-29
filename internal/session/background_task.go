@@ -46,7 +46,14 @@ type BackgroundTaskToolCall struct {
 // frontend/src/models/stream.ts.
 type BackgroundTaskStore struct {
 	db *sql.DB
+	// mu guards the in-memory pendingToolUseInputs map.
 	mu sync.Mutex
+	// applyMu serializes ApplyLine to make read-modify-write
+	// (`getTask` -> append history -> `upsertTask`) safe across goroutines.
+	// Holding this around the SQL calls is acceptable: lines arrive from a
+	// single holder reader in the common case, and concurrent rebuild +
+	// live-update paths are rare and per-session.
+	applyMu sync.Mutex
 	// pendingToolUseInputs tracks recent tool_use blocks per session by id
 	// so that when a task_started event references a tool_use_id we can
 	// resolve the tool name / input. Keyed by sessionID, then tool_use_id.
@@ -108,6 +115,12 @@ func (s *BackgroundTaskStore) ApplyLine(sessionID string, line []byte) error {
 		return nil
 	}
 
+	// Serialize to make read-modify-write of tool_call_history race-free when
+	// multiple goroutines feed lines for the same session (e.g. RebuildFromJSONL
+	// vs live `onNewLines`).
+	s.applyMu.Lock()
+	defer s.applyMu.Unlock()
+
 	// 1. Track tool_use inputs from assistant messages so task_started can
 	//    resolve `lastToolName` / `lastToolInput` via tool_use_id.
 	if ev.Type == "assistant" && ev.Message != nil {
@@ -115,11 +128,14 @@ func (s *BackgroundTaskStore) ApplyLine(sessionID string, line []byte) error {
 		if err := json.Unmarshal(ev.Message.Content, &blocks); err == nil {
 			for _, b := range blocks {
 				if b.Type == "tool_use" && b.ID != "" {
-					var input interface{}
-					if len(b.Input) > 0 {
-						_ = json.Unmarshal(b.Input, &input)
+					// Mirror frontend: skip tool_use blocks with null/missing input
+					// when remembering inputs so task_started doesn't resolve to nil.
+					if !isJSONNullOrEmpty(b.Input) {
+						var input interface{}
+						if err := json.Unmarshal(b.Input, &input); err == nil {
+							s.rememberToolUse(sessionID, b.ID, b.Name, input)
+						}
 					}
-					s.rememberToolUse(sessionID, b.ID, b.Name, input)
 					// TaskStop tool calls explicitly remove tasks
 					if b.Name == "TaskStop" && len(b.Input) > 0 {
 						var stop struct {
@@ -242,15 +258,39 @@ func lastToolCall(h []BackgroundTaskToolCall) *BackgroundTaskToolCall {
 	return &h[len(h)-1]
 }
 
+// isJSONNullOrEmpty reports whether the raw JSON value is empty or the
+// literal `null`. Used to mirror the frontend's `b.input != null` guard.
+func isJSONNullOrEmpty(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return true
+	}
+	// Trim whitespace by hand: rawStreamLine fields are well-formed JSON values
+	// emitted by encoding/json, so a trimmed comparison is enough.
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+			continue
+		}
+		// Compare the next 4 bytes to "null".
+		if c == 'n' && len(raw)-i >= 4 && string(raw[i:i+4]) == "null" {
+			return true
+		}
+		return false
+	}
+	return true
+}
+
 // List returns the current background tasks for the given session, ordered
 // by started_at ascending (oldest first), to match frontend insertion order.
+// Dismissed tasks (logical delete) are excluded.
 func (s *BackgroundTaskStore) List(sessionID string) ([]BackgroundTask, error) {
 	rows, err := s.db.Query(
 		`SELECT task_id, task_type, agent_id, description, started_at,
 		        last_tool_name, last_tool_input, output,
 		        usage_input_tokens, usage_output_tokens,
 		        tool_call_history
-		 FROM background_tasks WHERE session_id = ?
+		 FROM background_tasks
+		 WHERE session_id = ? AND dismissed_at IS NULL
 		 ORDER BY started_at ASC, task_id ASC`,
 		sessionID,
 	)
@@ -323,9 +363,34 @@ func (s *BackgroundTaskStore) List(sessionID string) ([]BackgroundTask, error) {
 	return tasks, nil
 }
 
-// Dismiss removes a task row.
+// Dismiss marks a task row as dismissed (logical delete). The row is kept
+// in the DB as a tombstone so that a delayed task_progress event for the
+// same task_id cannot resurrect it via UPSERT.
 func (s *BackgroundTaskStore) Dismiss(sessionID, taskID string) error {
-	return s.deleteTask(sessionID, taskID)
+	res, err := s.db.Exec(
+		`UPDATE background_tasks
+		 SET dismissed_at = CURRENT_TIMESTAMP
+		 WHERE session_id = ? AND task_id = ? AND dismissed_at IS NULL`,
+		sessionID, taskID,
+	)
+	if err != nil {
+		return fmt.Errorf("dismiss background task: %w", err)
+	}
+	rows, _ := res.RowsAffected()
+	if rows == 0 {
+		// No existing row: insert a tombstone so a later delayed task_progress
+		// event cannot recreate the task.
+		_, err = s.db.Exec(
+			`INSERT OR IGNORE INTO background_tasks (
+				session_id, task_id, task_type, dismissed_at, updated_at
+			 ) VALUES (?, ?, 'unknown', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+			sessionID, taskID,
+		)
+		if err != nil {
+			return fmt.Errorf("insert dismiss tombstone: %w", err)
+		}
+	}
+	return nil
 }
 
 // RebuildFromJSONL clears the existing rows for the session and replays all
@@ -422,7 +487,8 @@ func (s *BackgroundTaskStore) getTask(sessionID, taskID string) (*BackgroundTask
 		        last_tool_name, last_tool_input, output,
 		        usage_input_tokens, usage_output_tokens,
 		        tool_call_history
-		 FROM background_tasks WHERE session_id = ? AND task_id = ?`,
+		 FROM background_tasks
+		 WHERE session_id = ? AND task_id = ? AND dismissed_at IS NULL`,
 		sessionID, taskID,
 	)
 	var t BackgroundTask
@@ -507,6 +573,8 @@ func (s *BackgroundTaskStore) upsertTask(sessionID string, t BackgroundTask) err
 			outTok = sql.NullInt64{Int64: int64(*t.Usage.OutputTokens), Valid: true}
 		}
 	}
+	// Skip if the task has been dismissed (tombstone present) so a delayed
+	// task_progress event cannot resurrect a dismissed row.
 	_, err = s.db.Exec(
 		`INSERT INTO background_tasks (
 			session_id, task_id, task_type, agent_id, description, started_at,
@@ -525,7 +593,8 @@ func (s *BackgroundTaskStore) upsertTask(sessionID string, t BackgroundTask) err
 			usage_input_tokens = excluded.usage_input_tokens,
 			usage_output_tokens = excluded.usage_output_tokens,
 			tool_call_history = excluded.tool_call_history,
-			updated_at = CURRENT_TIMESTAMP`,
+			updated_at = CURRENT_TIMESTAMP
+		 WHERE background_tasks.dismissed_at IS NULL`,
 		sessionID, t.TaskID, t.TaskType,
 		nullableString(t.AgentID), nullableString(t.Description), nullableString(t.StartedAt),
 		nullableString(t.LastToolName), lastInputJSON, nullableString(t.Output),
