@@ -37,8 +37,23 @@ type ServerConfig struct {
 }
 
 type DaemonConfig struct {
-	Interval                          string `toml:"interval"`
+	Interval                           string `toml:"interval"`
 	BackgroundTaskNotificationInterval string `toml:"background_task_notification_interval"`
+	// BackgroundTaskNotificationEnabled controls whether the periodic
+	// "バックグラウンドタスク実行中" notification is sent. *bool is used so we
+	// can distinguish "field absent" (treated as enabled for backward compat)
+	// from an explicit "false".
+	BackgroundTaskNotificationEnabled *bool `toml:"background_task_notification_enabled,omitempty"`
+}
+
+// IsBackgroundTaskNotificationEnabled returns true when the periodic
+// background-task notification should fire. Defaults to true when the
+// underlying *bool is nil (backward compatibility with existing config files).
+func (d DaemonConfig) IsBackgroundTaskNotificationEnabled() bool {
+	if d.BackgroundTaskNotificationEnabled == nil {
+		return true
+	}
+	return *d.BackgroundTaskNotificationEnabled
 }
 
 type SessionConfig struct {

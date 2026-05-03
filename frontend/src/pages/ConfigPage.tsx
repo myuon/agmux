@@ -82,6 +82,26 @@ export function ConfigPage() {
               className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-32 focus:outline-none focus:border-blue-500"
             />
           </Field>
+          <Field label="バックグラウンドタスク通知">
+            <ToggleButton
+              enabled={config.daemon.backgroundTaskNotificationEnabled !== false}
+              onClick={() =>
+                setConfig({
+                  ...config,
+                  daemon: {
+                    ...config.daemon,
+                    backgroundTaskNotificationEnabled:
+                      config.daemon.backgroundTaskNotificationEnabled === false,
+                  },
+                })
+              }
+            >
+              {config.daemon.backgroundTaskNotificationEnabled !== false ? "ON" : "OFF"}
+            </ToggleButton>
+          </Field>
+          <p className="text-xs text-gray-500">
+            有効にするとバックグラウンドタスク実行中、定期的に経過時間を通知します（間隔は config.toml の <code className="font-mono bg-gray-100 px-1 rounded">background_task_notification_interval</code>、default 30m）
+          </p>
         </Section>
 
         <Section title="Session">

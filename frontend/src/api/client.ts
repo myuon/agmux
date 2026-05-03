@@ -243,7 +243,11 @@ export interface PromptTemplate {
 
 export interface AppConfig {
   server: { port: number; frontendDir?: string };
-  daemon: { interval: string };
+  daemon: {
+    interval: string;
+    backgroundTaskNotificationInterval?: string;
+    backgroundTaskNotificationEnabled?: boolean;
+  };
   session: { claudeCommand: string; defaultRole?: string; defaultModel?: string; claudeDefaultModel?: string; codexDefaultModel?: string };
   devMode: boolean;
   prompts?: { systemPrompt: string };

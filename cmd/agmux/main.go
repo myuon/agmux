@@ -133,15 +133,21 @@ func initManager(cfg *config.Config, port int, logger *slog.Logger) (session.Ses
 	mgr.SetDefaultModels(cfg.Session.ClaudeDefaultModel, cfg.Session.CodexDefaultModel)
 
 	// Configure background task notification interval
-	bgNotifyIntervalStr := cfg.Daemon.BackgroundTaskNotificationInterval
-	if bgNotifyIntervalStr == "" {
-		bgNotifyIntervalStr = "30m"
-	}
-	if d, err := time.ParseDuration(bgNotifyIntervalStr); err == nil {
-		mgr.SetNotifyInterval(d)
+	if !cfg.Daemon.IsBackgroundTaskNotificationEnabled() {
+		// Setting interval to 0 disables the periodic notification
+		// (HolderStreamProcess.startPeriodicNotification short-circuits when <= 0).
+		mgr.SetNotifyInterval(0)
 	} else {
-		logger.Warn("invalid background_task_notification_interval, using default 30m", "value", bgNotifyIntervalStr, "error", err)
-		mgr.SetNotifyInterval(30 * time.Minute)
+		bgNotifyIntervalStr := cfg.Daemon.BackgroundTaskNotificationInterval
+		if bgNotifyIntervalStr == "" {
+			bgNotifyIntervalStr = "30m"
+		}
+		if d, err := time.ParseDuration(bgNotifyIntervalStr); err == nil {
+			mgr.SetNotifyInterval(d)
+		} else {
+			logger.Warn("invalid background_task_notification_interval, using default 30m", "value", bgNotifyIntervalStr, "error", err)
+			mgr.SetNotifyInterval(30 * time.Minute)
+		}
 	}
 
 	return mgr, database, nil
