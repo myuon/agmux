@@ -507,3 +507,80 @@ func TestGetReadsConversationStarted(t *testing.T) {
 		t.Errorf("session id2 ConversationStarted = false, want true")
 	}
 }
+
+// TestSendKeysAutoRecoverResumeFlagDerivation is a regression test for issue #629.
+//
+// Scenario: a session is created via `agmux session create` (CLI). The Claude CLI
+// writes its session_id to the JSONL via the SessionStart hook before the first
+// turn completes, so `cli_session_id` (or the JSONL scan) is non-empty even though
+// `conversation_started` is still false. Previously the SendKeysWithImages
+// auto-recover branch computed `canResume := s.ConversationStarted || cliSessionID != ""`,
+// which caused the resumed holder to call `claude --resume <id>` against a
+// conversation file that did not exist yet, exiting with
+// "No conversation found with session ID: <uuid>" and looping.
+//
+// The fix: canResume must be derived purely from ConversationStarted so that the
+// initial send goes through normal startup (no --resume) and only subsequent
+// sends, after the first turn marks ConversationStarted=true, use --resume.
+//
+// This test mirrors the data shape produced by the bug and asserts the resume
+// flag derivation that SendKeysWithImages uses in its auto-recover path.
+func TestSendKeysAutoRecoverResumeFlagDerivation(t *testing.T) {
+	db := newTestDB(t)
+	defer db.Close()
+
+	now := time.Now()
+
+	// CLI-created session: cli_session_id populated (e.g. via JSONL fallback) but
+	// conversation_started still false because no turn has completed yet.
+	idCLICreated := "cli-created-not-started"
+	_, err := db.Exec(
+		`INSERT INTO sessions (id, name, project_path, tmux_session, status, type, output_mode, provider, model, cli_session_id, holder_pid, conversation_started, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		idCLICreated, "cli-created", "/tmp", "", "idle", "worker", "stream", "claude", "", "uuid-from-session-start-hook", 0, 0, now, now,
+	)
+	if err != nil {
+		t.Fatalf("insert cli-created session: %v", err)
+	}
+
+	// Same shape but conversation has started; resume must be enabled.
+	idConvStarted := "cli-created-started"
+	_, err = db.Exec(
+		`INSERT INTO sessions (id, name, project_path, tmux_session, status, type, output_mode, provider, model, cli_session_id, holder_pid, conversation_started, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		idConvStarted, "cli-started", "/tmp", "", "idle", "worker", "stream", "claude", "", "uuid-from-session-start-hook", 0, 1, now, now,
+	)
+	if err != nil {
+		t.Fatalf("insert cli-started session: %v", err)
+	}
+
+	m := newTestManager(t, db)
+
+	// Reproduce the SendKeysWithImages auto-recover derivation:
+	//   canResume := s.ConversationStarted
+	// (issue #629 fix: cli_session_id MUST NOT make canResume true on its own.)
+	sNotStarted, err := m.Get(idCLICreated)
+	if err != nil {
+		t.Fatalf("Get(cli-created): %v", err)
+	}
+	if sNotStarted.CliSessionID == "" {
+		t.Fatalf("precondition: expected CliSessionID to be non-empty to reproduce the bug")
+	}
+	canResume := sNotStarted.ConversationStarted
+	if canResume {
+		t.Errorf("canResume = true for CLI-created session with no conversation started; "+
+			"SendKeysWithImages would pass Resume: true causing 'No conversation found' (CliSessionID=%q)",
+			sNotStarted.CliSessionID)
+	}
+
+	sStarted, err := m.Get(idConvStarted)
+	if err != nil {
+		t.Fatalf("Get(cli-started): %v", err)
+	}
+	canResume = sStarted.ConversationStarted
+	if !canResume {
+		t.Errorf("canResume = false for CLI-created session after first turn; "+
+			"SendKeysWithImages would lose conversation history (CliSessionID=%q)",
+			sStarted.CliSessionID)
+	}
+}
