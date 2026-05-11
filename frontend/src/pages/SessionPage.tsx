@@ -685,7 +685,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           <>
             <span className="inline-flex shrink-0" style={{ viewTransitionName: `session-dot-${session.id}` }}><StatusDot status={session.status} /></span>
             <h2
-              className="text-xl sm:text-2xl font-bold hover:text-indigo-600 transition-colors cursor-pointer"
+              className="text-xl sm:text-2xl font-bold hover:text-indigo-600 transition-colors cursor-pointer truncate min-w-0 max-w-full"
               style={{ viewTransitionName: `session-name-${session.id}` }}
               onClick={() => {
                 navigator.clipboard.writeText(session.name).then(() => {
@@ -755,8 +755,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         </div>
       )}
       {session ? (
-        <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm text-gray-500">
-          <IconText icon={<FolderOpen className="w-3.5 h-3.5" />} className="text-xs sm:text-sm">
+        <div className="flex items-center gap-1.5 mb-2 shrink-0 text-xs sm:text-sm text-gray-500 min-w-0">
+          <IconText icon={<FolderOpen className="w-3.5 h-3.5" />} className="text-xs sm:text-sm min-w-0 flex-1">
             <span className="truncate" title={session.projectPath}>{session.projectPath}</span>
           </IconText>
         {session.githubUrl && (
