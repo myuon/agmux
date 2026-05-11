@@ -18,6 +18,89 @@ const roleStyles: Record<string, { bg: string; label: string; text: string }> = 
 
 type StreamViewMode = "markdown" | "json";
 
+// Known top-level entry types that the markdown view supports
+const KNOWN_ENTRY_TYPES = new Set(["user", "assistant", "system", "rate_limit_event", "result"]);
+
+// Build a one-line summary for a stream entry (used in JSON view)
+function summarizeEntry(line: unknown): { type: string; subtype?: string; summary: string; isUnknown: boolean } {
+  if (line == null || typeof line !== "object") {
+    return { type: typeof line, summary: String(line), isUnknown: true };
+  }
+  const raw = line as Record<string, unknown>;
+  const type = typeof raw.type === "string" ? raw.type : "(no type)";
+  const isUnknown = !KNOWN_ENTRY_TYPES.has(type);
+
+  if (type === "assistant" || type === "user") {
+    const msg = raw.message as Record<string, unknown> | undefined;
+    const content = msg?.content ?? raw.content;
+    let summary = "";
+    const parts: string[] = [];
+    if (typeof content === "string") {
+      summary = content;
+    } else if (Array.isArray(content)) {
+      for (const block of content as Array<Record<string, unknown>>) {
+        const bt = block.type;
+        if (bt === "text" && typeof block.text === "string") {
+          parts.push(block.text);
+        } else if (bt === "tool_use" && typeof block.name === "string") {
+          parts.push(`[tool_use: ${block.name}]`);
+        } else if (bt === "tool_result") {
+          const c = block.content;
+          if (typeof c === "string") parts.push(`[tool_result: ${c.slice(0, 40)}]`);
+          else parts.push("[tool_result]");
+        } else if (bt === "thinking" && typeof block.thinking === "string") {
+          parts.push(`[thinking: ${block.thinking}]`);
+        } else if (bt === "image") {
+          parts.push("[image]");
+        } else if (typeof bt === "string") {
+          parts.push(`[${bt}]`);
+        }
+      }
+      summary = parts.join(" ");
+    }
+    summary = summary.replace(/\s+/g, " ").trim();
+    return { type, summary, isUnknown };
+  }
+
+  if (type === "system") {
+    const subtype = typeof raw.subtype === "string" ? raw.subtype : undefined;
+    const extras: string[] = [];
+    if (typeof raw.status === "string") extras.push(`status=${raw.status}`);
+    if (typeof raw.task_id === "string") extras.push(`task_id=${(raw.task_id as string).slice(0, 8)}`);
+    if (typeof raw.task_type === "string") extras.push(`task_type=${raw.task_type}`);
+    return { type, subtype, summary: extras.join(" "), isUnknown };
+  }
+
+  if (type === "result") {
+    const subtype = typeof raw.subtype === "string" ? raw.subtype : undefined;
+    const isError = raw.is_error === true;
+    const result = typeof raw.result === "string" ? (raw.result as string).slice(0, 60) : "";
+    return { type, subtype, summary: `${isError ? "error " : ""}${result}`.trim(), isUnknown };
+  }
+
+  if (type === "rate_limit_event") {
+    const info = raw.rate_limit_info as Record<string, unknown> | undefined;
+    const parts: string[] = [];
+    if (info) {
+      if (typeof info.rateLimitType === "string") parts.push(info.rateLimitType);
+      if (typeof info.status === "string") parts.push(`status=${info.status}`);
+    }
+    return { type, summary: parts.join(" "), isUnknown };
+  }
+
+  // Unknown / unsupported type: surface a few primitive fields as a hint
+  const hintParts: string[] = [];
+  for (const [k, v] of Object.entries(raw)) {
+    if (k === "type") continue;
+    if (hintParts.length >= 3) break;
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+      const s = String(v);
+      hintParts.push(`${k}=${s.length > 30 ? s.slice(0, 30) + "..." : s}`);
+    }
+  }
+  return { type, summary: hintParts.join(" "), isUnknown };
+}
+
 export function StreamOutputView({ lines, partialText, className, onAnswer, sessionId, pendingPermission, onPermissionResponded, provider }: {
   lines: unknown[];
   partialText?: string;
@@ -30,6 +113,32 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
 }) {
   const { ref, onScroll } = useAutoScroll(lines);
   const [viewMode, setViewMode] = useState<StreamViewMode>("markdown");
+  const [selectedJsonEntry, setSelectedJsonEntry] = useState<{ index: number; line: unknown } | null>(null);
+  // Persist scroll ratio across view-mode switches so position is roughly preserved
+  const scrollRatioRef = useRef<number>(0);
+  const prevViewModeRef = useRef<StreamViewMode>("markdown");
+
+  // Track the current scroll ratio (scrollTop / scrollHeight)
+  const handleScroll = useCallback(() => {
+    if (ref.current) {
+      const el = ref.current;
+      const denom = el.scrollHeight - el.clientHeight;
+      scrollRatioRef.current = denom > 0 ? el.scrollTop / denom : 0;
+    }
+    onScroll();
+  }, [ref, onScroll]);
+
+  // Restore scroll ratio after view-mode switches
+  useEffect(() => {
+    if (prevViewModeRef.current !== viewMode && ref.current) {
+      const el = ref.current;
+      const denom = el.scrollHeight - el.clientHeight;
+      if (denom > 0) {
+        el.scrollTop = scrollRatioRef.current * denom;
+      }
+    }
+    prevViewModeRef.current = viewMode;
+  }, [viewMode, ref]);
 
   const entries = lines
     .map((line) => line as StreamEntry)
@@ -67,16 +176,39 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
           {viewMode === "markdown" ? "JSON" : "Markdown"}
         </button>
       </div>
-      <div ref={ref} onScroll={onScroll} className="bg-white border border-gray-200 rounded-lg p-3 text-sm flex-1 min-h-0 overflow-y-auto space-y-3">
+      <div ref={ref} onScroll={handleScroll} className={`bg-white border border-gray-200 rounded-lg p-3 text-sm flex-1 min-h-0 overflow-y-auto ${viewMode === "json" ? "" : "space-y-3"}`}>
         {viewMode === "json" ? (
           lines.length === 0 ? (
             <p className="text-gray-400">No stream output yet</p>
           ) : (
-            lines.map((line, i) => (
-              <pre key={i} className="text-gray-600 text-xs whitespace-pre-wrap">
-                {JSON.stringify(line, null, 2)}
-              </pre>
-            ))
+            <ul className="divide-y divide-gray-100 font-mono">
+              {lines.map((line, i) => {
+                const { type, subtype, summary, isUnknown } = summarizeEntry(line);
+                return (
+                  <li key={i}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedJsonEntry({ index: i, line })}
+                      className="w-full text-left flex items-center gap-2 px-1 py-1 hover:bg-gray-50 cursor-pointer text-[11px]"
+                      title="Click for full JSON"
+                    >
+                      <span className="text-gray-400 w-8 text-right shrink-0">{i}</span>
+                      <span
+                        className={`shrink-0 px-1.5 rounded font-semibold ${
+                          isUnknown
+                            ? "bg-amber-100 text-amber-800 ring-1 ring-amber-300"
+                            : "bg-gray-100 text-gray-700"
+                        }`}
+                      >
+                        {type}
+                        {subtype ? `:${subtype}` : ""}
+                      </span>
+                      <span className="text-gray-600 truncate min-w-0 flex-1">{summary}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
           )
         ) : groups.length === 0 ? (
           <p className="text-gray-400">No stream output yet</p>
@@ -136,6 +268,22 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
           </div>
         )}
       </div>
+      <Modal
+        open={selectedJsonEntry !== null}
+        onClose={() => setSelectedJsonEntry(null)}
+        title={
+          <span className="font-mono">
+            #{selectedJsonEntry?.index ?? ""}{" "}
+            {selectedJsonEntry ? summarizeEntry(selectedJsonEntry.line).type : ""}
+          </span>
+        }
+      >
+        {selectedJsonEntry && (
+          <pre className="text-gray-700 text-xs whitespace-pre-wrap break-all font-mono">
+            {JSON.stringify(selectedJsonEntry.line, null, 2)}
+          </pre>
+        )}
+      </Modal>
     </div>
   );
 }
