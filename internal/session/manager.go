@@ -1257,10 +1257,14 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			cliSessionID = ReadCLISessionID(s.ID, provider)
 		}
 
-		// Resume if the DB flag says a conversation was started, OR if we found
-		// a CLI session ID in the JSONL stream (which proves a conversation exists
-		// even when the DB flag wasn't updated — e.g. session created via CLI).
-		canResume := s.ConversationStarted || cliSessionID != ""
+		// Only resume if a conversation turn has actually completed. A CLI
+		// session_id can be written to the JSONL by the SessionStart hook
+		// before the first turn finishes — for sessions created via the CLI
+		// and not yet replied to, the conversation file
+		// (~/.claude/projects/.../<id>.jsonl) does not exist yet, so
+		// `--resume <id>` would fail with "No conversation found with session
+		// ID: <uuid>" and the holder would loop. See issue #629.
+		canResume := s.ConversationStarted
 
 		effectiveSP := m.buildEffectiveSystemPrompt(s.SystemPrompt)
 		if s.Provider == ProviderCodex && cliSessionID != "" && canResume {
