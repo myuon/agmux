@@ -127,6 +127,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
 
 
   const [pendingImages, setPendingImages] = useState<{ data: string; mediaType: string; preview: string }[]>([]);
+  const [isSending, setIsSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingEscalationId, setPendingEscalationId] = useState<string | null>(null);
   const [escalationMessage, setEscalationMessage] = useState<string | null>(null);
@@ -351,17 +353,28 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!sessionId || (!message.trim() && pendingImages.length === 0)) return;
-    const images = pendingImages.length > 0
-      ? pendingImages.map(({ data, mediaType }) => ({ data, mediaType }))
+    if (!sessionId || isSending || (!message.trim() && pendingImages.length === 0)) return;
+    const text = message;
+    const prevImages = pendingImages;
+    const images = prevImages.length > 0
+      ? prevImages.map(({ data, mediaType }) => ({ data, mediaType }))
       : undefined;
+    // Optimistic clear
+    setMessage("");
+    setPendingImages([]);
+    setSendError(null);
+    setIsSending(true);
     try {
-      await api.sendToSession(sessionId, message, images);
-      setMessage("");
-      setPendingImages([]);
+      await api.sendToSession(sessionId, text, images);
       // Stream mode updates arrive via WebSocket automatically
     } catch (err) {
       console.error("Failed to send message:", err);
+      // Rollback on failure
+      setMessage(text);
+      setPendingImages(prevImages);
+      setSendError(err instanceof Error ? err.message : "送信に失敗しました");
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -382,7 +395,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               <button
                 type="button"
                 onClick={() => removeImage(i)}
-                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px]"
+                disabled={isSending}
+                className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <X className="w-2.5 h-2.5" />
               </button>
@@ -397,7 +411,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             shape="circle"
             variant="secondary"
             onClick={() => { setShowActionMenu((v) => !v); setShowTemplateMenu(false); }}
-            title="Actions"
+            disabled={isSending}
+            title={isSending ? "送信中..." : "Actions"}
           >
             <Plus className="w-4 h-4" />
           </IconButton>
@@ -653,15 +668,28 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                 addImageFiles(imageFiles);
               }
             }}
+            disabled={isSending}
             placeholder="Send a message..."
-            className="block w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none h-9 overflow-auto"
+            className="block w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none h-9 overflow-auto disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
           />
         </div>
         {/* Send button */}
-        <IconButton shape="circle" variant="primary" type="submit">
+        <IconButton
+          shape="circle"
+          variant="primary"
+          type="submit"
+          disabled={isSending || (!message.trim() && pendingImages.length === 0)}
+          title={isSending ? "送信中..." : message.trim() || pendingImages.length > 0 ? "Send" : "入力してください"}
+          className={isSending ? "opacity-60 cursor-not-allowed" : ""}
+        >
           <SendHorizonal className="w-4 h-4" />
         </IconButton>
       </div>
+      {sendError && (
+        <p className="text-red-600 text-xs mt-1" role="alert">
+          {sendError}
+        </p>
+      )}
     </form>
     </div>
   ) : null;
