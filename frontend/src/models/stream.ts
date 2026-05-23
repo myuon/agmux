@@ -248,6 +248,13 @@ export type DisplayGroup =
   | { role: "user" | "assistant"; items: StreamDisplayItem[] }
   | { role: "system"; items: StreamDisplayItem[] };
 
+// Providers that emit tool_use and tool_result co-located in the same assistant
+// message content array (instead of the Claude pattern where tool_result lives
+// in a follow-up user entry, looked up by tool_use_id).
+function isProviderCoLocatedTools(provider?: string): boolean {
+  return provider === "codex" || provider === "cursor";
+}
+
 // Merge assistant/user entries into display items, pairing tool_use with tool_result by id
 // partialText: incremental text from stream_event deltas (shown as "typing" in the last assistant group)
 export function mergeStreamEntries(entries: StreamEntry[], partialText?: string, provider?: string): DisplayGroup[] {
@@ -444,8 +451,8 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
           let result: string | undefined;
           let resultImages: Array<{ mediaType: string; data: string }> | undefined;
 
-          if (provider === "codex") {
-            // Codex: tool_result is in the same assistant content array, directly after tool_use
+          if (isProviderCoLocatedTools(provider)) {
+            // Codex/Cursor: tool_result is in the same assistant content array, directly after tool_use
             if (bi + 1 < blocks.length && blocks[bi + 1].type === "tool_result") {
               const nextBlock = blocks[bi + 1];
               if (typeof nextBlock.content === "string") {

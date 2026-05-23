@@ -4,8 +4,23 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 )
+
+// knownCursorToolKinds lists the tool kind keys that may appear in
+// {"tool_call":{"<kind>":{...}}}. They are tried in order so that the chosen
+// kind is deterministic even though Go map iteration is not.
+var knownCursorToolKinds = []string{
+	"readToolCall",
+	"shellToolCall",
+	"editToolCall",
+	"globToolCall",
+	"grepToolCall",
+	"awaitToolCall",
+	"listDirToolCall",
+	"todoToolCall",
+}
 
 // CursorProvider implements Provider for Cursor Agent CLI (`agent` / `cursor-agent`).
 //
@@ -216,13 +231,29 @@ func (p *CursorProvider) normalizeToolCall(line []byte, subtype string) []byte {
 		return line
 	}
 
-	// Find the first kind key (there should be exactly one).
+	// Find the kind key. Map iteration order in Go is non-deterministic, so we
+	// first try known kinds in a fixed order, then fall back to any remaining
+	// key (using sorted order for determinism) for forward-compatibility with
+	// new Cursor tool kinds.
 	var kind string
 	var inner json.RawMessage
-	for k, v := range msg.ToolCall {
-		kind = k
-		inner = v
-		break
+	for _, known := range knownCursorToolKinds {
+		if v, ok := msg.ToolCall[known]; ok {
+			kind = known
+			inner = v
+			break
+		}
+	}
+	if kind == "" {
+		keys := make([]string, 0, len(msg.ToolCall))
+		for k := range msg.ToolCall {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		if len(keys) > 0 {
+			kind = keys[0]
+			inner = msg.ToolCall[kind]
+		}
 	}
 	if kind == "" {
 		// Unknown shape — fall back to pass-through to avoid losing data.
