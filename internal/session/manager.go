@@ -864,10 +864,10 @@ func (m *Manager) Fork(id string, preserveContext bool, initialPrompt string) (*
 	effectiveSystemPrompt := m.buildEffectiveSystemPrompt(src.SystemPrompt)
 	effectiveSystemPrompt += "\n\n" + forkSystemReminder
 
-	// For Codex, pass initialPrompt as command-line argument via StreamOpts.
+	// For one-shot providers (Codex, Cursor), pass initialPrompt as command-line argument via StreamOpts.
 	// For Claude, the prompt is sent via stdin after the holder starts.
 	streamOptsInitialPrompt := ""
-	if src.Provider == ProviderCodex {
+	if provider.IsOneShot() {
 		streamOptsInitialPrompt = initialPrompt
 	}
 
@@ -888,8 +888,8 @@ func (m *Manager) Fork(id string, preserveContext bool, initialPrompt string) (*
 		return nil, fmt.Errorf("start stream process: %w", err)
 	}
 
-	// For non-Codex providers (Claude), send the initial prompt via stdin.
-	if src.Provider != ProviderCodex {
+	// For non-one-shot providers (Claude), send the initial prompt via stdin.
+	if !provider.IsOneShot() {
 		if err := sp.Send(initialPrompt); err != nil {
 			return nil, fmt.Errorf("send initial prompt: %w", err)
 		}
