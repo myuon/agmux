@@ -149,6 +149,29 @@ func TestCursorProvider_BuildStreamCommand_WithSystemPrompt(t *testing.T) {
 	}
 }
 
+func TestCursorProvider_BuildStreamCommand_EmptyPromptOmitsPositional(t *testing.T) {
+	p := NewCursorProvider("agent")
+	cmd := p.BuildStreamCommand(StreamOpts{
+		SessionID:   "sess-1",
+		ProjectPath: "/tmp/project",
+	})
+
+	args := cmd.Args
+	// No positional prompt should be appended when InitialPrompt is empty
+	// (Cursor has no stdin path, so a placeholder would only confuse users).
+	for _, a := range args {
+		if strings.Contains(a, "Follow the instructions given via stdin") {
+			t.Errorf("did not expect stdin placeholder in args, got: %v", args)
+		}
+	}
+	// Last arg should be the --workspace value (or some flag-style arg),
+	// not a positional prompt placeholder.
+	lastArg := args[len(args)-1]
+	if !strings.HasPrefix(lastArg, "/") && !strings.HasPrefix(lastArg, "-") {
+		t.Errorf("expected last arg to be a flag-style or path value when prompt is empty, got: %q", lastArg)
+	}
+}
+
 func TestCursorProvider_BuildStreamCommand_EnvFiltersCLAUDECODE(t *testing.T) {
 	p := NewCursorProvider("agent")
 	cmd := p.BuildStreamCommand(StreamOpts{

@@ -58,14 +58,14 @@ func (p *CursorProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 	}
 
 	// Build the prompt to pass as the last positional argument.
+	// Unlike Codex, Cursor has no stdin code path, so we never inject a dummy
+	// placeholder for empty prompts — we simply omit the positional arg. The
+	// only callers that reach here with an empty prompt are the ones that
+	// resume an existing session (where the prompt is added by the resume
+	// branch above) or callers that genuinely don't want to send anything.
 	prompt := opts.InitialPrompt
-	if !(opts.Resume && opts.CLISessionID != "") {
-		if prompt == "" {
-			prompt = "Follow the instructions given via stdin"
-		}
-		if opts.SystemPrompt != "" {
-			prompt = opts.SystemPrompt + "\n\n" + prompt
-		}
+	if !(opts.Resume && opts.CLISessionID != "") && opts.SystemPrompt != "" && prompt != "" {
+		prompt = opts.SystemPrompt + "\n\n" + prompt
 	}
 	if prompt != "" {
 		args = append(args, prompt)
