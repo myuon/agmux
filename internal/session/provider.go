@@ -46,6 +46,9 @@ type Provider interface {
 	AppendOTelEnv(env []string, port int) []string
 	// Name returns the provider name.
 	Name() ProviderName
+	// IsOneShot returns true if the underlying CLI exits after each prompt
+	// and must be re-spawned with --resume to continue the conversation.
+	IsOneShot() bool
 	// NormalizeStreamLine converts a provider-specific JSONL line into
 	// Claude-compatible stream-json format. If the line should be kept as-is,
 	// it returns the original bytes unchanged. If the line should be dropped,

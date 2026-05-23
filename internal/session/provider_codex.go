@@ -28,6 +28,12 @@ func (p *CodexProvider) Name() ProviderName {
 	return ProviderCodex
 }
 
+// IsOneShot returns true because the Codex CLI exits after each prompt
+// and must be re-spawned with --resume to continue the conversation.
+func (p *CodexProvider) IsOneShot() bool {
+	return true
+}
+
 func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 	var args []string
 

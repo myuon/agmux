@@ -508,7 +508,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	}
 	streamOpts.APIPort = m.apiPort
 	var sp *HolderStreamProcess
-	if (pn == ProviderCodex || pn == ProviderCursor) && prompt != "" {
+	if provider.IsOneShot() && prompt != "" {
 		// One-shot exec providers (Codex/Cursor): pass the initial prompt as a
 		// command-line positional argument rather than via stdin. The CLI exits
 		// after producing the response.
@@ -1101,7 +1101,7 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProces
 		// the CLI exits after each prompt. Keep the session running and the
 		// stream process in the map so the next message can re-spawn it with
 		// --resume + the new prompt as a positional arg.
-		if (sp.ProviderName() == ProviderCodex || sp.ProviderName() == ProviderCursor) && exitErr == nil {
+		if sp.IsOneShot() && exitErr == nil {
 			m.logger.Info("one-shot provider exited normally (exit code 0), keeping session running for resume",
 				"provider", sp.ProviderName(),
 				"sessionId", sid,
@@ -1291,7 +1291,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 		canResume := s.ConversationStarted
 
 		effectiveSP := m.buildEffectiveSystemPrompt(s.SystemPrompt)
-		if (s.Provider == ProviderCodex || s.Provider == ProviderCursor) && cliSessionID != "" && canResume {
+		if provider.IsOneShot() && cliSessionID != "" && canResume {
 			// For one-shot exec providers (Codex/Cursor), start resume directly
 			// with the prompt as a positional arg.
 			m.killStaleHolder(id)

@@ -13,6 +13,13 @@ func TestCodexProvider_Name(t *testing.T) {
 	}
 }
 
+func TestCodexProvider_IsOneShot(t *testing.T) {
+	p := NewCodexProvider("")
+	if !p.IsOneShot() {
+		t.Errorf("expected CodexProvider.IsOneShot() = true, got false")
+	}
+}
+
 func TestCodexProvider_DefaultCommand(t *testing.T) {
 	p := NewCodexProvider("")
 	if p.command != "codex" {
