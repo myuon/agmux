@@ -312,6 +312,120 @@ func TestCursorProvider_AppendOTelEnv_Noop(t *testing.T) {
 	}
 }
 
+func TestCursorProvider_cursorToolKindToName(t *testing.T) {
+	tests := map[string]string{
+		"readToolCall":    "Read",
+		"shellToolCall":   "Bash",
+		"editToolCall":    "Edit",
+		"globToolCall":    "Glob",
+		"grepToolCall":    "Grep",
+		"awaitToolCall":   "Await",
+		"listDirToolCall": "ListDir",
+		"todoToolCall":    "Todo",
+		"unknownToolCall": "Unknown",
+		"":                "tool",
+	}
+	for in, want := range tests {
+		if got := cursorToolKindToName(in); got != want {
+			t.Errorf("cursorToolKindToName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestCursorProvider_NormalizeToolCall_MoreKinds(t *testing.T) {
+	p := NewCursorProvider("")
+
+	type extracted struct {
+		Name      string
+		ID        string
+		ToolUseID string
+		HasInput  bool
+		HasResult bool
+	}
+
+	parse := func(t *testing.T, raw []byte) extracted {
+		t.Helper()
+		var env struct {
+			Message struct {
+				Content []map[string]interface{} `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal(raw, &env); err != nil {
+			t.Fatalf("failed to parse: %v\n%s", err, string(raw))
+		}
+		if len(env.Message.Content) != 2 {
+			t.Fatalf("expected 2 content blocks, got %d\n%s", len(env.Message.Content), string(raw))
+		}
+		e := extracted{}
+		for _, b := range env.Message.Content {
+			switch b["type"] {
+			case "tool_use":
+				if v, ok := b["name"].(string); ok {
+					e.Name = v
+				}
+				if v, ok := b["id"].(string); ok {
+					e.ID = v
+				}
+				if _, ok := b["input"]; ok {
+					e.HasInput = true
+				}
+			case "tool_result":
+				if v, ok := b["tool_use_id"].(string); ok {
+					e.ToolUseID = v
+				}
+				if v, ok := b["content"].(string); ok && v != "" {
+					e.HasResult = true
+				}
+			}
+		}
+		return e
+	}
+
+	cases := []struct {
+		name     string
+		input    string
+		wantName string
+	}{
+		{
+			name:     "edit",
+			input:    `{"type":"tool_call","subtype":"completed","call_id":"tool_e1","tool_call":{"editToolCall":{"args":{"path":"a.go","streamContent":"x"},"result":{"success":{"path":"a.go","linesAdded":1,"linesRemoved":0,"diffString":"--- a/a.go"}}}}}`,
+			wantName: "Edit",
+		},
+		{
+			name:     "glob",
+			input:    `{"type":"tool_call","subtype":"completed","call_id":"tool_g1","tool_call":{"globToolCall":{"args":{"globPattern":"**/*.go"},"result":{"success":{"files":["a.go","b.go"],"totalFiles":2}}}}}`,
+			wantName: "Glob",
+		},
+		{
+			name:     "grep",
+			input:    `{"type":"tool_call","subtype":"completed","call_id":"tool_p1","tool_call":{"grepToolCall":{"args":{"pattern":"foo"},"result":{"success":{"pattern":"foo","workspaceResults":[]}}}}}`,
+			wantName: "Grep",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out := p.NormalizeStreamLine([]byte(tc.input))
+			if out == nil {
+				t.Fatalf("expected normalized output, got nil")
+			}
+			got := parse(t, out)
+			if got.Name != tc.wantName {
+				t.Errorf("name = %q, want %q", got.Name, tc.wantName)
+			}
+			if got.ID == "" || got.ToolUseID == "" || got.ID != got.ToolUseID {
+				t.Errorf("expected matching id/tool_use_id, got id=%q tool_use_id=%q", got.ID, got.ToolUseID)
+			}
+			if !got.HasInput {
+				t.Errorf("expected input present")
+			}
+			if !got.HasResult {
+				t.Errorf("expected result content present")
+			}
+		})
+	}
+}
+
 func TestCursorProvider_NormalizeStreamLine(t *testing.T) {
 	p := NewCursorProvider("")
 
@@ -339,13 +453,43 @@ func TestCursorProvider_NormalizeStreamLine(t *testing.T) {
 		},
 		{
 			name:    "tool_call started is dropped",
-			input:   `{"type":"tool_call","subtype":"started","name":"bash","input":{"cmd":"ls"}}`,
+			input:   `{"type":"tool_call","subtype":"started","call_id":"tool_x","tool_call":{"readToolCall":{"args":{"path":"/a"}}}}`,
 			wantNil: true,
 		},
 		{
-			name:     "tool_call completed becomes assistant tool_use+tool_result",
-			input:    `{"type":"tool_call","subtype":"completed","name":"bash","input":{"command":"ls"},"result":"file1\nfile2"}`,
-			wantJSON: `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"ls"}},{"type":"tool_result","content":"file1\nfile2"}]}}`,
+			name:     "tool_call completed (read) becomes assistant tool_use+tool_result",
+			input:    `{"type":"tool_call","subtype":"completed","call_id":"tool_r1","tool_call":{"readToolCall":{"args":{"path":"/x.md"},"result":{"success":{"content":"hello","path":"/x.md","fileSize":5}}}}}`,
+			wantJSON: `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tool_r1","name":"Read","input":{"path":"/x.md"}},{"type":"tool_result","tool_use_id":"tool_r1","content":"{\"content\":\"hello\",\"path\":\"/x.md\",\"fileSize\":5}"}]}}`,
+		},
+		{
+			name:     "tool_call completed (shell) maps to Bash",
+			input:    `{"type":"tool_call","subtype":"completed","call_id":"tool_s1","tool_call":{"shellToolCall":{"args":{"command":"ls"},"result":{"success":{"command":"ls","exitCode":0,"stdout":"a\nb","stderr":""}}}}}`,
+			wantJSON: `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tool_s1","name":"Bash","input":{"command":"ls"}},{"type":"tool_result","tool_use_id":"tool_s1","content":"{\"command\":\"ls\",\"exitCode\":0,\"stdout\":\"a\\nb\",\"stderr\":\"\"}"}]}}`,
+		},
+		{
+			name:     "tool_call completed with failure result",
+			input:    `{"type":"tool_call","subtype":"completed","call_id":"tool_s2","tool_call":{"shellToolCall":{"args":{"command":"bad"},"result":{"failure":{"command":"bad","exitCode":127,"stderr":"not found"}}}}}`,
+			wantJSON: `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tool_s2","name":"Bash","input":{"command":"bad"}},{"type":"tool_result","tool_use_id":"tool_s2","content":"{\"command\":\"bad\",\"exitCode\":127,\"stderr\":\"not found\"}"}]}}`,
+		},
+		{
+			name:     "tool_call completed with error result",
+			input:    `{"type":"tool_call","subtype":"completed","call_id":"tool_a1","tool_call":{"awaitToolCall":{"args":{},"result":{"error":{"error":"No shell found for id 45563"}}}}}`,
+			wantJSON: `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tool_a1","name":"Await","input":{}},{"type":"tool_result","tool_use_id":"tool_a1","content":"{\"error\":\"No shell found for id 45563\"}"}]}}`,
+		},
+		{
+			name:     "thinking delta becomes assistant thinking block",
+			input:    `{"type":"thinking","subtype":"delta","text":"Let me think","session_id":"abc","timestamp_ms":1}`,
+			wantJSON: `{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Let me think"}]}}`,
+		},
+		{
+			name:    "thinking completed is dropped",
+			input:   `{"type":"thinking","subtype":"completed","session_id":"abc","timestamp_ms":1}`,
+			wantNil: true,
+		},
+		{
+			name:    "thinking delta with empty text is dropped",
+			input:   `{"type":"thinking","subtype":"delta","text":"","session_id":"abc","timestamp_ms":1}`,
+			wantNil: true,
 		},
 		{
 			name:  "invalid JSON passes through",
