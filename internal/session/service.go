@@ -69,6 +69,11 @@ type SessionService interface {
 	StopAllStreamProcesses()
 	// SetCodexCommand sets the codex command for the manager.
 	SetCodexCommand(cmd string)
+	// SetCursorCommand sets the cursor agent command for the manager.
+	SetCursorCommand(cmd string)
+	// SetCursorDefaultModel configures the default model used for Cursor sessions
+	// when no explicit model is provided.
+	SetCursorDefaultModel(model string)
 
 	// ListRecentProjects returns recently used project paths.
 	ListRecentProjects(limit int) ([]RecentProject, error)

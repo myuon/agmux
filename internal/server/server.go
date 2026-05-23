@@ -1119,10 +1119,12 @@ type configDaemonJSON struct {
 }
 type configSessionJSON struct {
 	ClaudeCommand      string `json:"claudeCommand"`
+	CursorCommand      string `json:"cursorCommand,omitempty"`
 	DefaultRole        string `json:"defaultRole,omitempty"`
 	DefaultModel       string `json:"defaultModel,omitempty"` // Deprecated: use ClaudeDefaultModel
 	ClaudeDefaultModel string `json:"claudeDefaultModel,omitempty"`
 	CodexDefaultModel  string `json:"codexDefaultModel,omitempty"`
+	CursorDefaultModel string `json:"cursorDefaultModel,omitempty"`
 }
 type configClaudeJSON struct {
 	PermissionMode string `json:"permissionMode"`
@@ -1147,7 +1149,7 @@ func configToJSON(cfg *config.Config) configJSON {
 			BackgroundTaskNotificationInterval: cfg.Daemon.BackgroundTaskNotificationInterval,
 			BackgroundTaskNotificationEnabled:  &bgEnabled,
 		},
-		Session:         configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand, DefaultRole: cfg.Session.DefaultRole, DefaultModel: cfg.Session.DefaultModel, ClaudeDefaultModel: cfg.Session.ClaudeDefaultModel, CodexDefaultModel: cfg.Session.CodexDefaultModel},
+		Session:         configSessionJSON{ClaudeCommand: cfg.Session.ClaudeCommand, CursorCommand: cfg.Session.CursorCommand, DefaultRole: cfg.Session.DefaultRole, DefaultModel: cfg.Session.DefaultModel, ClaudeDefaultModel: cfg.Session.ClaudeDefaultModel, CodexDefaultModel: cfg.Session.CodexDefaultModel, CursorDefaultModel: cfg.Session.CursorDefaultModel},
 		Claude:          configClaudeJSON{PermissionMode: cfg.Claude.ClaudePermissionMode()},
 		DevMode:         cfg.DevMode,
 		Templates:       templates,
@@ -1173,7 +1175,7 @@ func jsonToConfig(j configJSON) *config.Config {
 			BackgroundTaskNotificationInterval: j.Daemon.BackgroundTaskNotificationInterval,
 			BackgroundTaskNotificationEnabled:  j.Daemon.BackgroundTaskNotificationEnabled,
 		},
-		Session:         config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand, DefaultRole: j.Session.DefaultRole, DefaultModel: j.Session.DefaultModel, ClaudeDefaultModel: j.Session.ClaudeDefaultModel, CodexDefaultModel: j.Session.CodexDefaultModel},
+		Session:         config.SessionConfig{ClaudeCommand: j.Session.ClaudeCommand, CursorCommand: j.Session.CursorCommand, DefaultRole: j.Session.DefaultRole, DefaultModel: j.Session.DefaultModel, ClaudeDefaultModel: j.Session.ClaudeDefaultModel, CodexDefaultModel: j.Session.CodexDefaultModel, CursorDefaultModel: j.Session.CursorDefaultModel},
 		Claude:          config.ClaudeConfig{PermissionMode: j.Claude.PermissionMode},
 		DevMode:         j.DevMode,
 		Templates:       templates,

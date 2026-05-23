@@ -492,8 +492,10 @@ func (sp *HolderStreamProcess) Send(message string) error {
 
 // SendWithImages writes a user message with optional images via the socket.
 func (sp *HolderStreamProcess) SendWithImages(message string, images []ImageData) error {
-	// For Codex, check if the process has finished and handle restart
-	if sp.provider.Name() == ProviderCodex {
+	// Codex/Cursor are one-shot exec providers: the CLI exits after each prompt
+	// and must be re-spawned with --resume + the new prompt as positional arg.
+	// Both share the same restart-style send path (sendCodex).
+	if sp.provider.Name() == ProviderCodex || sp.provider.Name() == ProviderCursor {
 		return sp.sendCodex(message)
 	}
 
@@ -656,10 +658,10 @@ func (sp *HolderStreamProcess) sendCodex(message string) error {
 	sp.mu.RUnlock()
 
 	if cliSessionID == "" {
-		return fmt.Errorf("no CLI session ID available for codex resume")
+		return fmt.Errorf("no CLI session ID available for %s resume", sp.provider.Name())
 	}
 
-	slog.Info("restarting codex via new holder", "cliSessionID", cliSessionID, "message", message)
+	slog.Info("restarting one-shot provider via new holder", "provider", sp.provider.Name(), "cliSessionID", cliSessionID, "message", message)
 	return sp.restartForCodex(message, cliSessionID)
 }
 

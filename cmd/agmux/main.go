@@ -130,7 +130,9 @@ func initManager(cfg *config.Config, port int, logger *slog.Logger) (session.Ses
 	}
 	mgr := session.NewManager(database, cfg.Session.ClaudeCommand, cfg.Claude.ClaudePermissionMode(), cfg.Server.Port, logger, cfg.Session.SystemPrompt)
 	mgr.SetCodexCommand(cfg.Session.CodexCommand)
+	mgr.SetCursorCommand(cfg.Session.CursorCommand)
 	mgr.SetDefaultModels(cfg.Session.ClaudeDefaultModel, cfg.Session.CodexDefaultModel)
+	mgr.SetCursorDefaultModel(cfg.Session.CursorDefaultModel)
 
 	// Configure background task notification interval
 	if !cfg.Daemon.IsBackgroundTaskNotificationEnabled() {
@@ -411,7 +413,7 @@ func sessionCreateCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&projectPath, "path", "p", ".", "Project directory path")
 	cmd.Flags().StringVarP(&prompt, "message", "m", "", "Initial prompt to send")
 	cmd.Flags().BoolVarP(&worktree, "worktree", "w", false, "Create a git worktree for the session")
-	cmd.Flags().StringVar(&provider, "provider", "claude", "Provider: claude or codex")
+	cmd.Flags().StringVar(&provider, "provider", "claude", "Provider: claude, codex, or cursor")
 	cmd.Flags().StringVar(&model, "model", "", "Model to use (e.g. claude-sonnet-4-5, o4-mini)")
 	cmd.Flags().BoolVar(&autoApprove, "auto-approve", true, "Enable full-auto mode (bypass permission prompts for Codex)")
 	cmd.Flags().StringVar(&parentSessionID, "parent", "", "Parent session ID to create a sub-session")
