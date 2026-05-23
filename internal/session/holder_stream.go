@@ -425,6 +425,12 @@ func (sp *HolderStreamProcess) ProviderName() ProviderName {
 	return sp.provider.Name()
 }
 
+// IsOneShot reports whether the underlying provider's CLI exits after each
+// prompt (e.g. Codex/Cursor exec-style providers).
+func (sp *HolderStreamProcess) IsOneShot() bool {
+	return sp.provider.IsOneShot()
+}
+
 // HolderPID returns the PID of the holder process.
 func (sp *HolderStreamProcess) HolderPID() int {
 	return sp.holderPID
@@ -492,10 +498,10 @@ func (sp *HolderStreamProcess) Send(message string) error {
 
 // SendWithImages writes a user message with optional images via the socket.
 func (sp *HolderStreamProcess) SendWithImages(message string, images []ImageData) error {
-	// Codex/Cursor are one-shot exec providers: the CLI exits after each prompt
-	// and must be re-spawned with --resume + the new prompt as positional arg.
-	// Both share the same restart-style send path (sendCodex).
-	if sp.provider.Name() == ProviderCodex || sp.provider.Name() == ProviderCursor {
+	// One-shot exec providers (Codex/Cursor) exit after each prompt and must
+	// be re-spawned with --resume + the new prompt as positional arg. Both
+	// share the same restart-style send path (sendCodex).
+	if sp.provider.IsOneShot() {
 		return sp.sendCodex(message)
 	}
 

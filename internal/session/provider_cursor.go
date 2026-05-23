@@ -37,6 +37,12 @@ func (p *CursorProvider) Name() ProviderName {
 	return ProviderCursor
 }
 
+// IsOneShot returns true because the Cursor Agent CLI exits after each prompt
+// and must be re-spawned with --resume to continue the conversation.
+func (p *CursorProvider) IsOneShot() bool {
+	return true
+}
+
 func (p *CursorProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 	args := []string{
 		"-p",

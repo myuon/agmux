@@ -13,6 +13,13 @@ func TestCursorProvider_Name(t *testing.T) {
 	}
 }
 
+func TestCursorProvider_IsOneShot(t *testing.T) {
+	p := NewCursorProvider("")
+	if !p.IsOneShot() {
+		t.Errorf("expected CursorProvider.IsOneShot() = true, got false")
+	}
+}
+
 func TestCursorProvider_DefaultCommand(t *testing.T) {
 	p := NewCursorProvider("")
 	if p.command != "agent" {

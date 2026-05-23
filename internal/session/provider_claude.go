@@ -37,6 +37,12 @@ func (p *ClaudeProvider) Name() ProviderName {
 	return ProviderClaude
 }
 
+// IsOneShot returns false because the Claude CLI keeps the process alive
+// across multiple prompts via stdin.
+func (p *ClaudeProvider) IsOneShot() bool {
+	return false
+}
+
 func (p *ClaudeProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 	sessionFlag := "--session-id"
 	resumeID := opts.SessionID
