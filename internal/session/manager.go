@@ -47,9 +47,9 @@ type Manager struct {
 	ephemeralCancels   map[string]context.CancelFunc
 	ephemeralCancelsMu sync.Mutex
 	logger             *slog.Logger
-	onNewLines     func(sessionID string, newLines []string, total int)
-	onStatusChange func(sessionID string, status Status, lastError string)
-	backgroundTasks *BackgroundTaskStore
+	onNewLines         func(sessionID string, newLines []string, total int)
+	onStatusChange     func(sessionID string, status Status, lastError string)
+	backgroundTasks    *BackgroundTaskStore
 }
 
 const nanoidAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
@@ -69,13 +69,13 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 		systemPrompt = defaultSystemPrompt
 	}
 	return &Manager{
-		db:              db,
-		claudeCommand:   claudeCommand,
-		codexCommand:    "codex",
-		cursorCommand:   "agent",
-		permissionMode:  permissionMode,
-		apiPort:         apiPort,
-		systemPrompt:    systemPrompt,
+		db:               db,
+		claudeCommand:    claudeCommand,
+		codexCommand:     "codex",
+		cursorCommand:    "agent",
+		permissionMode:   permissionMode,
+		apiPort:          apiPort,
+		systemPrompt:     systemPrompt,
 		streamProcesses:  make(map[string]*HolderStreamProcess),
 		deletingSet:      make(map[string]struct{}),
 		ephemeralCancels: make(map[string]context.CancelFunc),
@@ -508,7 +508,17 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	}
 	streamOpts.APIPort = m.apiPort
 	var sp *HolderStreamProcess
-	if provider.IsOneShot() && prompt != "" {
+	switch {
+	case provider.IsOneShot() && prompt == "":
+		// One-shot exec providers (Codex/Cursor) require a prompt to run. If the
+		// caller did not supply one at create time, defer spawning the holder
+		// until the first send arrives — otherwise the CLI would start with no
+		// input, exit immediately, and put the session into an unrecoverable
+		// loop. See issue #643.
+		m.logger.Info("deferring holder spawn for one-shot provider with empty initial prompt",
+			"sessionId", id, "provider", pn)
+		sp = nil
+	case provider.IsOneShot():
 		// One-shot exec providers (Codex/Cursor): pass the initial prompt as a
 		// command-line positional argument rather than via stdin. The CLI exits
 		// after producing the response.
@@ -520,7 +530,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		// Record the user message in the stream for UI display
 		hsp.recordUserMessage(prompt)
 		sp = hsp
-	} else {
+	default:
 		hsp, err := StartHolderStreamProcess(streamOpts, provider)
 		if err != nil {
 			return nil, fmt.Errorf("start stream process: %w", err)
@@ -533,10 +543,12 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		}
 		sp = hsp
 	}
-	m.wireSessionIDCallback(id, sp)
-	m.streamMu.Lock()
-	m.streamProcesses[id] = sp
-	m.streamMu.Unlock()
+	if sp != nil {
+		m.wireSessionIDCallback(id, sp)
+		m.streamMu.Lock()
+		m.streamProcesses[id] = sp
+		m.streamMu.Unlock()
+	}
 
 	now := time.Now()
 	sessionType := TypeWorker
@@ -560,10 +572,14 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		UpdatedAt:               now,
 	}
 
+	holderPID := 0
+	if sp != nil {
+		holderPID = sp.HolderPID()
+	}
 	if _, err := m.db.Exec(
 		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, role_template, holder_pid, ephemeral_timeout_seconds, completion_report, created_at, updated_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, sp.HolderPID(), s.EphemeralTimeoutSeconds, s.CompletionReport, s.CreatedAt, s.UpdatedAt,
+		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, holderPID, s.EphemeralTimeoutSeconds, s.CompletionReport, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
@@ -729,7 +745,6 @@ func (m *Manager) List() ([]Session, error) {
 	}
 	return sessions, rows.Err()
 }
-
 
 func (m *Manager) Get(id string) (*Session, error) {
 	var s Session
@@ -1309,6 +1324,37 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			}, provider)
 			if err != nil {
 				return fmt.Errorf("restart stream process: %w", err)
+			}
+			hsp.recordUserMessage(text)
+			sp = hsp
+			m.wireSessionIDCallback(id, sp)
+			m.streamMu.Lock()
+			m.streamProcesses[id] = sp
+			m.streamMu.Unlock()
+			m.updateHolderPID(id, hsp.HolderPID())
+			return nil
+		}
+
+		if provider.IsOneShot() {
+			// First send for a one-shot session that was created without an
+			// initial prompt (or that never completed a turn): spawn the holder
+			// now with the user's message as the positional prompt. Spawning
+			// with no prompt would cause Codex/Cursor to exit immediately.
+			// See issue #643.
+			m.killStaleHolder(id)
+			hsp, err := StartHolderStreamProcess(StreamOpts{
+				SessionID:     s.ID,
+				ProjectPath:   s.ProjectPath,
+				MCPConfigPath: mcpPath,
+				SystemPrompt:  effectiveSP,
+				InitialPrompt: text,
+				Resume:        false,
+				Model:         s.Model,
+				APIPort:       m.apiPort,
+				ClearOffset:   s.ClearOffset,
+			}, provider)
+			if err != nil {
+				return fmt.Errorf("start stream process: %w", err)
 			}
 			hsp.recordUserMessage(text)
 			sp = hsp
