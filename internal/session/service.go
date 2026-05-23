@@ -69,6 +69,8 @@ type SessionService interface {
 	StopAllStreamProcesses()
 	// SetCodexCommand sets the codex command for the manager.
 	SetCodexCommand(cmd string)
+	// SetCursorCommand sets the cursor agent command for the manager.
+	SetCursorCommand(cmd string)
 
 	// ListRecentProjects returns recently used project paths.
 	ListRecentProjects(limit int) ([]RecentProject, error)

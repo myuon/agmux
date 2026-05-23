@@ -148,6 +148,28 @@ export function ConfigPage() {
               className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
             />
           </Field>
+          <Field label="Cursor Command">
+            <input
+              type="text"
+              value={config.session.cursorCommand || ""}
+              onChange={(e) =>
+                setConfig({ ...config, session: { ...config.session, cursorCommand: e.target.value || undefined } })
+              }
+              placeholder="agent"
+              className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
+            />
+          </Field>
+          <Field label="Cursor Default Model (optional)">
+            <input
+              type="text"
+              value={config.session.cursorDefaultModel || ""}
+              onChange={(e) =>
+                setConfig({ ...config, session: { ...config.session, cursorDefaultModel: e.target.value || undefined } })
+              }
+              placeholder="e.g. sonnet-4"
+              className="bg-white border border-gray-300 rounded px-3 py-1.5 text-sm w-full focus:outline-none focus:border-blue-500"
+            />
+          </Field>
         </Section>
 
         <NotificationStatus />
@@ -603,6 +625,7 @@ function TemplateManager({ templates, onUpdate }: { templates: RoleTemplate[]; o
             >
               <option value="claude">Claude</option>
               <option value="codex">Codex</option>
+              <option value="cursor">Cursor</option>
             </select>
           </div>
           <div>

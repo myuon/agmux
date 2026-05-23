@@ -248,7 +248,7 @@ export interface AppConfig {
     backgroundTaskNotificationInterval?: string;
     backgroundTaskNotificationEnabled?: boolean;
   };
-  session: { claudeCommand: string; defaultRole?: string; defaultModel?: string; claudeDefaultModel?: string; codexDefaultModel?: string };
+  session: { claudeCommand: string; cursorCommand?: string; defaultRole?: string; defaultModel?: string; claudeDefaultModel?: string; codexDefaultModel?: string; cursorDefaultModel?: string };
   devMode: boolean;
   prompts?: { systemPrompt: string };
   templates: RoleTemplate[];

@@ -59,11 +59,13 @@ func (d DaemonConfig) IsBackgroundTaskNotificationEnabled() bool {
 type SessionConfig struct {
 	ClaudeCommand      string `toml:"claude_command"`
 	CodexCommand       string `toml:"codex_command"`
+	CursorCommand      string `toml:"cursor_command"`
 	SystemPrompt       string `toml:"system_prompt"`
 	DefaultRole        string `toml:"default_role" json:"default_role,omitempty"`
 	DefaultModel       string `toml:"default_model" json:"default_model,omitempty"`       // Deprecated: use ClaudeDefaultModel
 	ClaudeDefaultModel string `toml:"claude_default_model" json:"claude_default_model,omitempty"`
 	CodexDefaultModel  string `toml:"codex_default_model" json:"codex_default_model,omitempty"`
+	CursorDefaultModel string `toml:"cursor_default_model" json:"cursor_default_model,omitempty"`
 }
 
 // DefaultPermissionMode is the default Claude CLI permission mode.
@@ -111,6 +113,7 @@ func Default() *Config {
 		Session: SessionConfig{
 			ClaudeCommand: "claude",
 			CodexCommand:  "codex",
+			CursorCommand: "agent",
 		},
 		Claude: ClaudeConfig{
 			PermissionMode: DefaultPermissionMode,

@@ -221,6 +221,7 @@ export function CreateSession({ onClose, onCreate }: Props) {
             >
               <option value="claude">Claude</option>
               <option value="codex">Codex</option>
+              <option value="cursor">Cursor</option>
             </select>
           </div>
           {provider === "codex" && (

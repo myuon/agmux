@@ -24,11 +24,13 @@ type Manager struct {
 	db                 *sql.DB
 	claudeCommand      string
 	codexCommand       string
+	cursorCommand      string
 	permissionMode     string
 	apiPort            int
 	systemPrompt       string
 	claudeDefaultModel string
 	codexDefaultModel  string
+	cursorDefaultModel string
 	notifyInterval     time.Duration
 	streamProcesses    map[string]*HolderStreamProcess
 	streamMu           sync.Mutex
@@ -70,6 +72,7 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 		db:              db,
 		claudeCommand:   claudeCommand,
 		codexCommand:    "codex",
+		cursorCommand:   "agent",
 		permissionMode:  permissionMode,
 		apiPort:         apiPort,
 		systemPrompt:    systemPrompt,
@@ -123,10 +126,23 @@ func (m *Manager) SetCodexCommand(cmd string) {
 	}
 }
 
+// SetCursorCommand sets the cursor agent command for the manager.
+func (m *Manager) SetCursorCommand(cmd string) {
+	if cmd != "" {
+		m.cursorCommand = cmd
+	}
+}
+
 // SetDefaultModels configures provider-specific default models.
 func (m *Manager) SetDefaultModels(claudeDefaultModel, codexDefaultModel string) {
 	m.claudeDefaultModel = claudeDefaultModel
 	m.codexDefaultModel = codexDefaultModel
+}
+
+// SetCursorDefaultModel configures the default model used for Cursor sessions
+// when no explicit --model is provided.
+func (m *Manager) SetCursorDefaultModel(model string) {
+	m.cursorDefaultModel = model
 }
 
 // SetOnNewLines sets a callback that fires when new stream lines arrive for any session.
@@ -144,6 +160,8 @@ func (m *Manager) getProvider(name ProviderName) Provider {
 	switch name {
 	case ProviderCodex:
 		return GetProvider(ProviderCodex, m.codexCommand, "")
+	case ProviderCursor:
+		return GetProvider(ProviderCursor, m.cursorCommand, "")
 	default:
 		return GetProvider(ProviderClaude, m.claudeCommand, m.permissionMode)
 	}
@@ -457,6 +475,8 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 			} else {
 				model = ReadCodexDefaultModel()
 			}
+		case ProviderCursor:
+			model = m.cursorDefaultModel
 		}
 	}
 

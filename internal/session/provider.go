@@ -10,6 +10,7 @@ type ProviderName string
 const (
 	ProviderClaude ProviderName = "claude"
 	ProviderCodex  ProviderName = "codex"
+	ProviderCursor ProviderName = "cursor"
 )
 
 // StreamOpts contains parameters for building a stream-mode command.
@@ -59,6 +60,8 @@ func GetProvider(name ProviderName, command string, permissionMode string) Provi
 	switch name {
 	case ProviderCodex:
 		return NewCodexProvider(command)
+	case ProviderCursor:
+		return NewCursorProvider(command)
 	default:
 		return NewClaudeProvider(command, permissionMode)
 	}
