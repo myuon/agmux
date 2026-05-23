@@ -658,10 +658,10 @@ func (sp *HolderStreamProcess) sendCodex(message string) error {
 	sp.mu.RUnlock()
 
 	if cliSessionID == "" {
-		return fmt.Errorf("no CLI session ID available for codex resume")
+		return fmt.Errorf("no CLI session ID available for %s resume", sp.provider.Name())
 	}
 
-	slog.Info("restarting codex via new holder", "cliSessionID", cliSessionID, "message", message)
+	slog.Info("restarting one-shot provider via new holder", "provider", sp.provider.Name(), "cliSessionID", cliSessionID, "message", message)
 	return sp.restartForCodex(message, cliSessionID)
 }
 
