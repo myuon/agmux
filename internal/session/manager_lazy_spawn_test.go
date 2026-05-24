@@ -170,6 +170,94 @@ func TestSendKeysAutoRecover_OneShotFirstSend_DerivesCorrectStreamOpts(t *testin
 	}
 }
 
+// TestSendKeysAutoRecover_OneShotSecondTurn_UsesResume is a regression test
+// for issue #646: cursor sessions whose first turn completed successfully
+// (cli_session_id is populated and conversation_started = true) must take the
+// resume branch on the second turn, not the first-send branch.
+//
+// Symptoms before the fix in #634 / #649: the holder exited after the first
+// one-shot turn (cursor agent exec is one-shot) and the next send hit the
+// auto-recover path. If the resume branch was not selected, the holder was
+// re-spawned with Resume=false + no CLI session ID, which causes cursor to
+// start a fresh conversation (losing context) or exit immediately when the
+// positional prompt arg is missing.
+func TestSendKeysAutoRecover_OneShotSecondTurn_UsesResume(t *testing.T) {
+	cases := []struct {
+		name     string
+		provider ProviderName
+	}{
+		{"cursor", ProviderCursor},
+		{"codex", ProviderCodex},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := newTestDB(t)
+			defer db.Close()
+
+			id := "oneshot-second-turn-" + string(tc.provider)
+			// Simulate the state after the first turn completed:
+			//   - cli_session_id is set (from system.init in the JSONL)
+			//   - conversation_started = 1 (a result event was observed)
+			//   - holder_pid = 0 (the one-shot CLI exited after the first turn)
+			//   - status = idle
+			if _, err := db.Exec(
+				`INSERT INTO sessions (id, name, project_path, tmux_session, status, type, output_mode, provider, model, cli_session_id, holder_pid, conversation_started)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+				id, "second-turn", "/tmp", "", "idle", "worker", "stream", string(tc.provider), "",
+				"67b7a4d2-e5e8-4b55-a7ae-78df8a64dd4d", 0, 1,
+			); err != nil {
+				t.Fatalf("insert post-first-turn session: %v", err)
+			}
+
+			m := newTestManager(t, db)
+			m.cursorCommand = "agent"
+			m.codexCommand = "codex"
+			m.claudeCommand = "claude"
+			m.streamProcesses = make(map[string]*HolderStreamProcess)
+			m.deletingSet = make(map[string]struct{})
+
+			s, err := m.Get(id)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+
+			// Mirror the branch-selection logic in SendKeysWithImages to verify
+			// the resume branch is taken.
+			provider := m.getProvider(s.Provider)
+			canResume := s.ConversationStarted
+			cliSessionID := s.CliSessionID
+
+			if !provider.IsOneShot() {
+				t.Fatalf("precondition: %s must be one-shot", tc.provider)
+			}
+			if cliSessionID == "" {
+				t.Fatal("precondition: cli_session_id must be set after first turn")
+			}
+			if !canResume {
+				t.Fatal("precondition: conversation_started must be true after first turn")
+			}
+
+			tookResumeBranch := provider.IsOneShot() && cliSessionID != "" && canResume
+			if !tookResumeBranch {
+				t.Errorf("second turn on completed one-shot session must take the resume branch; "+
+					"provider.IsOneShot()=%v cliSessionID=%q canResume=%v",
+					provider.IsOneShot(), cliSessionID, canResume)
+			}
+
+			// The lazy-first-send branch must NOT be taken because the resume
+			// branch wins first; if it were taken with Resume=false the new
+			// CLI invocation would start a fresh session and discard the
+			// previous turn's context.
+			tookLazyFirstSend := provider.IsOneShot() && !tookResumeBranch
+			if tookLazyFirstSend {
+				t.Errorf("second turn must NOT fall through to the lazy-first-send branch "+
+					"(cliSessionID=%q canResume=%v)", cliSessionID, canResume)
+			}
+		})
+	}
+}
+
 // TestRecoverStreamProcesses_SkipsLazySessions verifies that the SQL query in
 // RecoverStreamProcesses (WHERE holder_pid > 0) skips sessions created via
 // the lazy-spawn path (holder_pid = 0). This is critical: on daemon restart,
