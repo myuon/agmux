@@ -187,8 +187,12 @@ func (p *ClaudeProvider) AppendOTelEnv(env []string, port int) []string {
 	return env
 }
 
-func (p *ClaudeProvider) NormalizeStreamLine(line []byte) []byte {
+func (p *ClaudeProvider) NormalizeStreamLine(line []byte) [][]byte {
 	// Claude lines are already in the expected format; return as-is.
-	return line
+	return [][]byte{line}
 }
+
+// ResetBuffers is a no-op for ClaudeProvider — it holds no per-session
+// normalization state.
+func (p *ClaudeProvider) ResetBuffers(sessionID string) {}
 

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // knownCursorToolKinds lists the tool kind keys that may appear in
@@ -38,6 +39,14 @@ var knownCursorToolKinds = []string{
 // them uniformly.
 type CursorProvider struct {
 	command string
+
+	// thinkingMu guards thinkingBuffers.
+	thinkingMu sync.Mutex
+	// thinkingBuffers accumulates thinking/delta text per Cursor session_id.
+	// A buffer is flushed (and removed) when thinking/completed arrives, or
+	// when any non-thinking event is observed for that session_id, so that
+	// the buffered thinking text is emitted before the interrupting event.
+	thinkingBuffers map[string]*strings.Builder
 }
 
 // NewCursorProvider creates a CursorProvider with the given command.
@@ -46,7 +55,10 @@ func NewCursorProvider(command string) *CursorProvider {
 	if command == "" {
 		command = "agent"
 	}
-	return &CursorProvider{command: command}
+	return &CursorProvider{
+		command:         command,
+		thinkingBuffers: make(map[string]*strings.Builder),
+	}
 }
 
 func (p *CursorProvider) Name() ProviderName {
@@ -161,23 +173,43 @@ func (p *CursorProvider) AppendOTelEnv(env []string, port int) []string {
 // NormalizeStreamLine converts Cursor-specific events into Claude-compatible
 // stream-json format. Most event types are already Claude-compatible and pass
 // through unchanged.
-func (p *CursorProvider) NormalizeStreamLine(line []byte) []byte {
+//
+// Returns a slice of zero or more output lines. The cursor provider buffers
+// consecutive thinking/delta events and emits them as a single assistant
+// message when thinking/completed arrives or when an intervening non-thinking
+// event needs to be emitted first.
+func (p *CursorProvider) NormalizeStreamLine(line []byte) [][]byte {
 	var envelope struct {
-		Type    string `json:"type"`
-		Subtype string `json:"subtype"`
+		Type      string `json:"type"`
+		Subtype   string `json:"subtype"`
+		SessionID string `json:"session_id"`
 	}
 	if json.Unmarshal(line, &envelope) != nil {
-		return line
+		// Non-JSON line: flush any buffered thinking (we don't know which
+		// session it belongs to, so flush all) and then pass through.
+		flushed := p.flushAllThinking()
+		flushed = append(flushed, line)
+		return flushed
 	}
 
 	switch envelope.Type {
-	case "tool_call":
-		return p.normalizeToolCall(line, envelope.Subtype)
 	case "thinking":
-		return p.normalizeThinking(line, envelope.Subtype)
+		return p.handleThinking(line, envelope.Subtype, envelope.SessionID)
+	case "tool_call":
+		// Flush any buffered thinking for this session before emitting the
+		// tool_call so ordering is preserved.
+		out := p.flushThinking(envelope.SessionID)
+		if normalized := p.normalizeToolCall(line, envelope.Subtype); normalized != nil {
+			out = append(out, normalized)
+		}
+		return out
 	default:
 		// system, assistant, user, result, etc. are Claude-compatible.
-		return line
+		// Flush any buffered thinking for this session first so that thinking
+		// text appears before the interrupting event.
+		out := p.flushThinking(envelope.SessionID)
+		out = append(out, line)
+		return out
 	}
 }
 
@@ -332,42 +364,129 @@ func cursorExtractToolResult(raw json.RawMessage) string {
 	return jsonRawToString(raw)
 }
 
-// normalizeThinking converts Cursor's incremental thinking events into a
-// Claude-compatible assistant message with a thinking block. Cursor emits:
+// handleThinking buffers Cursor's incremental thinking deltas and emits a
+// single Claude-compatible assistant message when the run of deltas ends
+// (either via thinking/completed or because another event for the same
+// session is about to be emitted).
+//
+// Cursor emits:
 //
 //	{"type":"thinking","subtype":"delta","text":"...",...}
 //	{"type":"thinking","subtype":"completed",...}
 //
-// Each delta is converted into an assistant message of the form
+// The combined text is emitted as
 //
 //	{"type":"assistant","message":{"role":"assistant",
-//	  "content":[{"type":"thinking","thinking":"<text>"}]}}
+//	  "content":[{"type":"thinking","thinking":"<concatenated text>"}]}}
 //
 // so the frontend's StreamDisplayItem("thinking") rendering picks it up.
-// The "completed" event is dropped — it carries no new text.
-func (p *CursorProvider) normalizeThinking(line []byte, subtype string) []byte {
-	if subtype != "delta" {
-		// "completed" (and any unknown subtype) carries no payload.
+//
+// NOTE: In practice the Cursor CLI does not currently emit a standalone
+// thinking/completed event — flushes are driven almost entirely by the
+// arrival of the next non-thinking event (e.g. an assistant message or
+// tool_call) for the same session. The completed branch below is kept so
+// that we behave correctly if/when Cursor starts emitting it.
+func (p *CursorProvider) handleThinking(line []byte, subtype, sessionID string) [][]byte {
+	switch subtype {
+	case "delta":
+		var msg struct {
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(line, &msg) != nil {
+			// Malformed delta — keep raw line for visibility.
+			out := p.flushThinking(sessionID)
+			out = append(out, line)
+			return out
+		}
+		if msg.Text == "" {
+			return nil
+		}
+		p.thinkingMu.Lock()
+		buf, ok := p.thinkingBuffers[sessionID]
+		if !ok {
+			buf = &strings.Builder{}
+			p.thinkingBuffers[sessionID] = buf
+		}
+		buf.WriteString(msg.Text)
+		p.thinkingMu.Unlock()
+		return nil
+	case "completed":
+		return p.flushThinking(sessionID)
+	default:
+		// Unknown thinking subtype — flush and drop.
+		return p.flushThinking(sessionID)
+	}
+}
+
+// flushThinking emits the buffered thinking text for the given session_id (if
+// any) as a single assistant message and clears the buffer. Returns the
+// produced output lines (zero or one).
+func (p *CursorProvider) flushThinking(sessionID string) [][]byte {
+	p.thinkingMu.Lock()
+	buf, ok := p.thinkingBuffers[sessionID]
+	if !ok || buf.Len() == 0 {
+		if ok {
+			delete(p.thinkingBuffers, sessionID)
+		}
+		p.thinkingMu.Unlock()
 		return nil
 	}
+	text := buf.String()
+	delete(p.thinkingBuffers, sessionID)
+	p.thinkingMu.Unlock()
+	return [][]byte{buildCursorThinkingMessage(text)}
+}
 
-	var msg struct {
-		Type    string `json:"type"`
-		Subtype string `json:"subtype"`
-		Text    string `json:"text"`
+// ResetBuffers drops any accumulated thinking text for the given session ID
+// without emitting it. Intended to be called after replaying historical
+// JSONL through NormalizeStreamLine (e.g. loadExistingLines) so that a
+// partially-buffered turn whose `completed` event never arrived does not
+// leak into the live stream that follows.
+//
+// If sessionID is empty, all buffered sessions are dropped.
+func (p *CursorProvider) ResetBuffers(sessionID string) {
+	p.thinkingMu.Lock()
+	defer p.thinkingMu.Unlock()
+	if sessionID == "" {
+		p.thinkingBuffers = make(map[string]*strings.Builder)
+		return
 	}
-	if json.Unmarshal(line, &msg) != nil {
-		return line
-	}
-	if msg.Text == "" {
+	delete(p.thinkingBuffers, sessionID)
+}
+
+// flushAllThinking emits every buffered session's accumulated thinking text
+// as separate assistant messages, then clears all buffers. Used as a
+// defensive fallback when we can't determine which session a line belongs to
+// (e.g. unparseable JSON).
+func (p *CursorProvider) flushAllThinking() [][]byte {
+	p.thinkingMu.Lock()
+	if len(p.thinkingBuffers) == 0 {
+		p.thinkingMu.Unlock()
 		return nil
 	}
+	keys := make([]string, 0, len(p.thinkingBuffers))
+	for k := range p.thinkingBuffers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys) // deterministic ordering
+	out := make([][]byte, 0, len(keys))
+	for _, k := range keys {
+		buf := p.thinkingBuffers[k]
+		if buf.Len() > 0 {
+			out = append(out, buildCursorThinkingMessage(buf.String()))
+		}
+		delete(p.thinkingBuffers, k)
+	}
+	p.thinkingMu.Unlock()
+	return out
+}
 
+func buildCursorThinkingMessage(text string) []byte {
 	type thinkingBlock struct {
 		Type     string `json:"type"`
 		Thinking string `json:"thinking"`
 	}
-	tb := thinkingBlock{Type: "thinking", Thinking: msg.Text}
+	tb := thinkingBlock{Type: "thinking", Thinking: text}
 	tbJSON, _ := json.Marshal(tb)
 
 	wrapper := struct {

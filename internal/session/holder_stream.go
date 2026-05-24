@@ -227,24 +227,40 @@ func (sp *HolderStreamProcess) loadExistingLines(sessionID string, clearOffset i
 	for scanner.Scan() {
 		line := scanner.Text()
 		// Normalize lines from JSONL (holder writes raw lines)
-		normalized := sp.provider.NormalizeStreamLine([]byte(line))
-		if normalized == nil {
-			continue
-		}
-		normalizedStr := string(normalized)
-
-		// Skip stream_events (transient, not for history)
-		if len(normalized) > 0 && normalized[0] == '{' {
-			var peek struct {
-				Type string `json:"type"`
-			}
-			if json.Unmarshal(normalized, &peek) == nil && peek.Type == "stream_event" {
+		normalizedLines := sp.provider.NormalizeStreamLine([]byte(line))
+		for _, normalized := range normalizedLines {
+			if normalized == nil {
 				continue
 			}
-		}
+			normalizedStr := string(normalized)
 
-		sp.lines = append(sp.lines, normalizedStr)
+			// Skip stream_events (transient, not for history)
+			if len(normalized) > 0 && normalized[0] == '{' {
+				var peek struct {
+					Type string `json:"type"`
+				}
+				if json.Unmarshal(normalized, &peek) == nil && peek.Type == "stream_event" {
+					continue
+				}
+			}
+
+			sp.lines = append(sp.lines, normalizedStr)
+		}
 	}
+
+	// Drop any per-session normalization state left over from replay (e.g.
+	// cursor thinking deltas whose `completed` never arrived because the
+	// underlying CLI process died mid-turn). Without this, live events
+	// arriving after a reconnect could be prefixed with stale thinking text
+	// from a previous turn.
+	//
+	// We pass the empty string to clear every buffer this provider instance
+	// is currently holding: providers are created per-stream by Manager (see
+	// Manager.getProvider), and the cursor provider's buffers are keyed by
+	// the cursor CLI session_id (read from JSONL events) — not the agmux
+	// session ID we'd otherwise pass here — so a targeted delete would miss
+	// the buffer when the agmux/CLI IDs differ.
+	sp.provider.ResetBuffers("")
 }
 
 func (sp *HolderStreamProcess) readLoop() {
@@ -380,35 +396,39 @@ func (sp *HolderStreamProcess) readLoop() {
 			}
 		}
 
-		// Normalize the line
-		normalized := sp.provider.NormalizeStreamLine([]byte(line))
-		if normalized == nil {
-			continue
-		}
-		normalizedStr := string(normalized)
-
-		// Check for stream_event (real-time only, not persisted)
-		isStreamEvent := false
-		if len(normalized) > 0 && normalized[0] == '{' {
-			var peek struct {
-				Type string `json:"type"`
+		// Normalize the line (may expand to multiple output lines, e.g. when
+		// the cursor provider flushes buffered thinking text before the
+		// current event).
+		normalizedLines := sp.provider.NormalizeStreamLine([]byte(line))
+		for _, normalized := range normalizedLines {
+			if normalized == nil {
+				continue
 			}
-			if json.Unmarshal(normalized, &peek) == nil && peek.Type == "stream_event" {
-				isStreamEvent = true
+			normalizedStr := string(normalized)
+
+			// Check for stream_event (real-time only, not persisted)
+			isStreamEvent := false
+			if len(normalized) > 0 && normalized[0] == '{' {
+				var peek struct {
+					Type string `json:"type"`
+				}
+				if json.Unmarshal(normalized, &peek) == nil && peek.Type == "stream_event" {
+					isStreamEvent = true
+				}
 			}
-		}
 
-		sp.mu.Lock()
-		if !isStreamEvent {
-			sp.lines = append(sp.lines, normalizedStr)
-			// Note: holder already writes to JSONL file, so we don't write here
-		}
-		total := len(sp.lines)
-		cb := sp.onNewLines
-		sp.mu.Unlock()
+			sp.mu.Lock()
+			if !isStreamEvent {
+				sp.lines = append(sp.lines, normalizedStr)
+				// Note: holder already writes to JSONL file, so we don't write here
+			}
+			total := len(sp.lines)
+			cb := sp.onNewLines
+			sp.mu.Unlock()
 
-		if cb != nil {
-			cb(sp.streamOpts.SessionID, []string{normalizedStr}, total)
+			if cb != nil {
+				cb(sp.streamOpts.SessionID, []string{normalizedStr}, total)
+			}
 		}
 	}
 }
