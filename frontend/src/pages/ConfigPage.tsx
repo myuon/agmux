@@ -308,7 +308,7 @@ function HostMachineSection() {
       <Field label="Uptime">
         <span className="text-sm text-gray-800">{machine.uptime}</span>
       </Field>
-      <Field label="Memory">
+      <Field label="Daemon memory">
         <span className="text-sm text-gray-800">{formatBytes(machine.memoryBytes)}</span>
       </Field>
 

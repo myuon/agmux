@@ -1526,7 +1526,10 @@ type hostMachineInfo struct {
 	IPAddresses   []string `json:"ipAddresses"`
 	PID           int      `json:"pid"`
 	Uptime        string   `json:"uptime"`
-	MemoryBytes   uint64   `json:"memoryBytes"`
+	// MemoryBytes is the memory used by the agmux daemon (Go runtime) process,
+	// taken from runtime.MemStats.Sys. It is NOT the host's total physical
+	// memory; the frontend labels it as "Daemon memory" to avoid confusion.
+	MemoryBytes uint64 `json:"memoryBytes"`
 }
 
 type hostProviderInfo struct {
@@ -1552,6 +1555,8 @@ func (s *Server) collectMachineInfo() hostMachineInfo {
 		hostname = "unknown"
 	}
 
+	// memStats reports memory used by this agmux daemon (Go runtime) process,
+	// not the host's total physical memory.
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
 
@@ -1563,7 +1568,8 @@ func (s *Server) collectMachineInfo() hostMachineInfo {
 		IPAddresses:   localIPAddresses(),
 		PID:           os.Getpid(),
 		Uptime:        time.Since(s.startTime).Round(time.Second).String(),
-		MemoryBytes:   memStats.Sys,
+		// Daemon (Go runtime) memory usage, not host physical memory.
+		MemoryBytes: memStats.Sys,
 	}
 }
 
