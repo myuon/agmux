@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLoaderData } from "react-router-dom";
 import { api } from "../api/client";
-import type { AppConfig, RoleTemplate, PromptTemplate } from "../api/client";
+import type { AppConfig, RoleTemplate, PromptTemplate, HostInfo } from "../api/client";
 
 type ConfigUpdater = (updater: (prev: AppConfig) => AppConfig) => void;
 import { Section, Field } from "../components/ui/Section";
@@ -209,6 +209,8 @@ export function ConfigPage() {
           </div>
         )}
 
+        <HostMachineSection />
+
         <VersionInfo />
 
         <div className="pt-4">
@@ -239,6 +241,110 @@ function VersionInfo() {
       <div>Version: {info.version} ({info.commit})</div>
       <div>Build date: {info.buildDate}</div>
     </div>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes) return "-";
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value.toFixed(1)} ${units[unit]}`;
+}
+
+function HostMachineSection() {
+  const [info, setInfo] = useState<HostInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.getHostInfo().then(setInfo).catch((e) => setError(String(e)));
+  }, []);
+
+  if (error) {
+    return (
+      <Section title="Host Machine">
+        <div className="text-sm text-red-500">Failed to load host info: {error}</div>
+      </Section>
+    );
+  }
+
+  if (!info) {
+    return (
+      <Section title="Host Machine">
+        <div className="text-sm text-gray-400">Loading...</div>
+      </Section>
+    );
+  }
+
+  const { machine, providers, skills } = info;
+
+  return (
+    <Section title="Host Machine">
+      <Field label="OS / Arch">
+        <span className="text-sm text-gray-800">
+          {machine.os} / {machine.arch}
+        </span>
+      </Field>
+      {machine.kernelVersion && (
+        <Field label="Kernel">
+          <span className="text-sm text-gray-800">{machine.kernelVersion}</span>
+        </Field>
+      )}
+      <Field label="Hostname">
+        <span className="text-sm text-gray-800">{machine.hostname}</span>
+      </Field>
+      <Field label="IP Addresses">
+        <span className="text-sm text-gray-800 text-right">
+          {machine.ipAddresses.length > 0 ? machine.ipAddresses.join(", ") : "-"}
+        </span>
+      </Field>
+      <Field label="Daemon PID">
+        <span className="text-sm text-gray-800">{machine.pid}</span>
+      </Field>
+      <Field label="Uptime">
+        <span className="text-sm text-gray-800">{machine.uptime}</span>
+      </Field>
+      <Field label="Memory">
+        <span className="text-sm text-gray-800">{formatBytes(machine.memoryBytes)}</span>
+      </Field>
+
+      <div className="border-t border-gray-100 pt-4">
+        <div className="text-xs font-semibold text-gray-500 mb-2">Providers</div>
+        {providers.map((p) => (
+          <Field key={p.name} label={`${p.name} (${p.command})`}>
+            <span
+              className={`text-sm font-medium ${
+                p.available ? "text-green-600" : "text-gray-400"
+              }`}
+            >
+              {p.available ? "Available" : "Not found"}
+            </span>
+          </Field>
+        ))}
+      </div>
+
+      <div className="border-t border-gray-100 pt-4">
+        <div className="text-xs font-semibold text-gray-500 mb-2">Global Skills</div>
+        {skills.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {skills.map((s) => (
+              <span
+                key={s}
+                className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded"
+              >
+                {s}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-gray-400">No global skills found</div>
+        )}
+      </div>
+    </Section>
   );
 }
 

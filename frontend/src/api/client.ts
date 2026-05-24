@@ -61,6 +61,8 @@ export const api = {
   getAgmuxVersion: () =>
     request<{ version: string; commit: string; buildDate: string }>("/version"),
 
+  getHostInfo: () => request<HostInfo>("/host-info"),
+
   getSession: (id: string) => request<Session>(`/sessions/${id}`),
 
   stopSession: (id: string) =>
@@ -212,6 +214,29 @@ export interface RecentProject {
   projectPath: string;
   lastUsedAt: string;
   sessionCount: number;
+}
+
+export interface HostMachineInfo {
+  os: string;
+  arch: string;
+  kernelVersion: string;
+  hostname: string;
+  ipAddresses: string[];
+  pid: number;
+  uptime: string;
+  memoryBytes: number;
+}
+
+export interface HostProviderInfo {
+  name: string;
+  command: string;
+  available: boolean;
+}
+
+export interface HostInfo {
+  machine: HostMachineInfo;
+  providers: HostProviderInfo[];
+  skills: string[];
 }
 
 export interface CodexModel {

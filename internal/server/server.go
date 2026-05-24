@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,6 +44,7 @@ type Server struct {
 	version          string
 	commit           string
 	buildDate        string
+	startTime        time.Time
 }
 
 func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.Logger, sqlDB *sql.DB, port int) *Server {
@@ -59,6 +61,7 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 		otelReceiver:     otel.NewReceiver(sqlDB, logger),
 		sqlDB:            sqlDB,
 		externalDetector: extDetector,
+		startTime:        time.Now(),
 	}
 
 	// Wire real-time stream updates via WebSocket
@@ -171,6 +174,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/metrics/summary", s.getMetricsSummary)
 		r.Get("/metrics/events", s.getMetricsEvents)
 		r.Get("/version", s.getVersion)
+		r.Get("/host-info", s.getHostInfo)
 
 	})
 
@@ -1505,6 +1509,153 @@ func (s *Server) getCodexVersion(w http.ResponseWriter, r *http.Request) {
 	}
 	version := strings.TrimSpace(string(out))
 	writeJSON(w, http.StatusOK, map[string]string{"version": version})
+}
+
+// hostInfoResponse is the payload for GET /api/host-info.
+type hostInfoResponse struct {
+	Machine   hostMachineInfo    `json:"machine"`
+	Providers []hostProviderInfo `json:"providers"`
+	Skills    []string           `json:"skills"`
+}
+
+type hostMachineInfo struct {
+	OS            string   `json:"os"`
+	Arch          string   `json:"arch"`
+	KernelVersion string   `json:"kernelVersion"`
+	Hostname      string   `json:"hostname"`
+	IPAddresses   []string `json:"ipAddresses"`
+	PID           int      `json:"pid"`
+	Uptime        string   `json:"uptime"`
+	MemoryBytes   uint64   `json:"memoryBytes"`
+}
+
+type hostProviderInfo struct {
+	Name      string `json:"name"`
+	Command   string `json:"command"`
+	Available bool   `json:"available"`
+}
+
+// getHostInfo returns information about the host machine, registered providers
+// and global skills. It is a one-shot snapshot (no live updates).
+func (s *Server) getHostInfo(w http.ResponseWriter, r *http.Request) {
+	resp := hostInfoResponse{
+		Machine:   s.collectMachineInfo(),
+		Providers: s.collectProviderInfo(),
+		Skills:    collectGlobalSkills(),
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) collectMachineInfo() hostMachineInfo {
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "unknown"
+	}
+
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+
+	return hostMachineInfo{
+		OS:            runtime.GOOS,
+		Arch:          runtime.GOARCH,
+		KernelVersion: kernelVersion(),
+		Hostname:      hostname,
+		IPAddresses:   localIPAddresses(),
+		PID:           os.Getpid(),
+		Uptime:        time.Since(s.startTime).Round(time.Second).String(),
+		MemoryBytes:   memStats.Sys,
+	}
+}
+
+// kernelVersion returns the OS kernel version via "uname -r".
+func kernelVersion() string {
+	out, err := exec.Command("uname", "-r").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// localIPAddresses returns the host's non-link-local unicast IPv4/IPv6
+// addresses (including loopback) as strings.
+func localIPAddresses() []string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return []string{}
+	}
+	result := make([]string, 0, len(addrs))
+	for _, addr := range addrs {
+		ipNet, ok := addr.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		ip := ipNet.IP
+		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			continue
+		}
+		result = append(result, ip.String())
+	}
+	return result
+}
+
+func (s *Server) collectProviderInfo() []hostProviderInfo {
+	cfg, err := config.Load()
+	if err != nil {
+		cfg = config.Default()
+	}
+
+	defaults := config.Default().Session
+	resolve := func(configured, fallback string) string {
+		if strings.TrimSpace(configured) != "" {
+			return configured
+		}
+		return fallback
+	}
+
+	specs := []struct {
+		name string
+		cmd  string
+	}{
+		{"claude", resolve(cfg.Session.ClaudeCommand, defaults.ClaudeCommand)},
+		{"codex", resolve(cfg.Session.CodexCommand, defaults.CodexCommand)},
+		{"cursor", resolve(cfg.Session.CursorCommand, defaults.CursorCommand)},
+	}
+
+	providers := make([]hostProviderInfo, 0, len(specs))
+	for _, spec := range specs {
+		_, lookErr := exec.LookPath(spec.cmd)
+		providers = append(providers, hostProviderInfo{
+			Name:      spec.name,
+			Command:   spec.cmd,
+			Available: lookErr == nil,
+		})
+	}
+	return providers
+}
+
+// collectGlobalSkills lists global skills under ~/.claude/skills/ (directories
+// that contain a SKILL.md file).
+func collectGlobalSkills() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return []string{}
+	}
+	skillsDir := filepath.Join(home, ".claude", "skills")
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		return []string{}
+	}
+	skills := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, statErr := os.Stat(filepath.Join(skillsDir, entry.Name(), "SKILL.md")); statErr != nil {
+			continue
+		}
+		skills = append(skills, entry.Name())
+	}
+	return skills
 }
 
 // helpers
