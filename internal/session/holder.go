@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -34,9 +35,10 @@ func SocketPath(sessionID string) string {
 type HolderControlMessage struct {
 	Type    string `json:"type"`
 	Action  string `json:"action,omitempty"`  // server → holder: "stop", "restart"
-	Event   string `json:"event,omitempty"`   // holder → server: "exited"
-	Code    int    `json:"code,omitempty"`     // exit code
+	Event   string `json:"event,omitempty"`   // holder → server: "exited", "hello"
+	Code    int    `json:"code,omitempty"`    // exit code
 	Content string `json:"content,omitempty"` // message content
+	PID     int    `json:"pid,omitempty"`     // holder → server: holder's own PID (for hello)
 }
 
 // RunHolder is the main entry point for the holder subprocess.
@@ -268,6 +270,30 @@ func (h *holder) acceptLoop() {
 
 		slog.Info("holder: client connected", "sessionId", h.sessionID)
 
+		// Immediately send a hello so the client can verify it connected to
+		// the expected holder (i.e. not to a previous holder that was about to
+		// exit on the same socket path). The PID lets the client detect the
+		// race window where the old listener is still alive while the new
+		// one is being spawned with the same socket path.
+		hello, err := json.Marshal(HolderControlMessage{
+			Type:  "control",
+			Event: "hello",
+			PID:   os.Getpid(),
+		})
+		if err == nil {
+			conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+			if _, werr := fmt.Fprintf(conn, "%s\n", hello); werr != nil {
+				slog.Debug("holder: failed to write hello to client, removing", "error", werr, "sessionId", h.sessionID)
+				h.clientsMu.Lock()
+				delete(h.clients, conn)
+				h.clientsMu.Unlock()
+				conn.Close()
+				continue
+			}
+			// Reset write deadline so subsequent broadcasts use their own deadlines.
+			conn.SetWriteDeadline(time.Time{})
+		}
+
 		// Handle incoming messages from this client
 		go h.handleClient(conn)
 	}
@@ -375,6 +401,12 @@ func SpawnHolder(sessionID string, cmdArgs []string, projectPath string, env []s
 
 // ConnectToHolder connects to a holder's Unix socket and returns the connection.
 // It retries for a short period to allow the holder time to start listening.
+//
+// Deprecated: prefer ConnectToHolderExpectingPID when the expected holder PID
+// is known. Plain ConnectToHolder can race with a previous holder whose
+// listener is still alive on the same socket path during its shutdown window
+// (see #656). Returned conn does NOT consume the leading hello control message,
+// so the caller's readLoop will see it as the first line on the socket.
 func ConnectToHolder(sessionID string) (net.Conn, error) {
 	sockPath := SocketPath(sessionID)
 
@@ -388,6 +420,134 @@ func ConnectToHolder(sessionID string) (net.Conn, error) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return nil, fmt.Errorf("connect to holder socket %s: %w", sockPath, err)
+}
+
+// ConnectToHolderExpectingPID dials the holder's socket and reads the leading
+// hello control message to confirm we connected to the holder whose PID is
+// expectedPID. If the dial lands on a different (e.g. previous) holder, the
+// connection is closed and the dial is retried. This eliminates the race
+// described in #656 where the daemon connected to a dying old holder during
+// the small shutdown window where its listener was still bound to the shared
+// socket path.
+//
+// If expectedPID is 0, the function accepts the first holder that responds
+// with a hello (no PID match required).
+//
+// Backward compatibility: if a connection succeeds but no hello arrives within
+// the read deadline (because the holder pre-dates the hello protocol added in
+// #656), the connection is returned as-is. This lets the daemon recover
+// connections to long-lived holders started by an older agmux binary.
+//
+// The hello message, when present, is consumed from the connection: callers
+// should NOT see it in their subsequent reads.
+func ConnectToHolderExpectingPID(sessionID string, expectedPID int) (net.Conn, error) {
+	sockPath := SocketPath(sessionID)
+
+	deadline := time.Now().Add(15 * time.Second)
+	var lastErr error
+	mismatchAttempts := 0
+	for time.Now().Before(deadline) {
+		conn, err := net.Dial("unix", sockPath)
+		if err != nil {
+			lastErr = err
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		// Read the hello message byte-by-byte until newline so we do NOT
+		// over-read into the caller's subsequent stream (which they will
+		// read via their own bufio.Reader on the same conn). Use a short
+		// read deadline so a stuck or dead-but-still-bound socket doesn't
+		// block us forever.
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		line, rerr := readLineFromConn(conn, 4096)
+		_ = conn.SetReadDeadline(time.Time{})
+
+		if rerr != nil {
+			// Read timeout or EOF before hello. Two cases:
+			// 1) Pre-hello holder (older binary): no hello will ever come.
+			//    Best-effort: return the conn so the daemon can still receive
+			//    broadcast events.
+			// 2) Newly spawned holder that hasn't accepted yet, or dying old
+			//    holder whose conn is broken. Retry.
+			// We discriminate by errno: io.EOF or "connection reset" means
+			// the conn is dead; timeout means the holder is silent (likely
+			// pre-hello).
+			if isReadTimeout(rerr) {
+				slog.Warn("holder: no hello received within deadline; assuming pre-hello holder",
+					"sessionId", sessionID, "expected_pid", expectedPID)
+				return conn, nil
+			}
+			conn.Close()
+			lastErr = fmt.Errorf("read hello: %w", rerr)
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		var msg HolderControlMessage
+		if err := json.Unmarshal([]byte(strings.TrimRight(line, "\n")), &msg); err != nil || msg.Type != "control" || msg.Event != "hello" {
+			// First line wasn't a hello — could be a stale broadcast from a
+			// pre-hello holder. Best-effort: log and return the conn so the
+			// caller still gets subsequent broadcasts. The caller's readLoop
+			// will skip non-event lines.
+			slog.Warn("holder: first line was not hello; assuming pre-hello holder",
+				"sessionId", sessionID, "line", line)
+			return conn, nil
+		}
+
+		if expectedPID > 0 && msg.PID != expectedPID {
+			// We dialed an old (or unexpected) holder. Close and retry —
+			// the old one is shutting down on the same socket path; subsequent
+			// dials will eventually land on the new listener.
+			mismatchAttempts++
+			slog.Info("holder: hello PID mismatch, retrying", "sessionId", sessionID, "expected", expectedPID, "got", msg.PID, "attempt", mismatchAttempts)
+			conn.Close()
+			lastErr = fmt.Errorf("hello pid %d != expected %d", msg.PID, expectedPID)
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		return conn, nil
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("timeout")
+	}
+	return nil, fmt.Errorf("connect to holder socket %s expecting pid %d: %w", sockPath, expectedPID, lastErr)
+}
+
+// isReadTimeout reports whether err is a net.Conn read deadline / timeout.
+func isReadTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+	if ne, ok := err.(net.Error); ok && ne.Timeout() {
+		return true
+	}
+	return false
+}
+
+// readLineFromConn reads bytes from conn one at a time until it hits '\n' or
+// the line exceeds maxBytes. Used during the hello handshake to avoid the
+// over-read problem that a bufio.Reader would cause (any bytes the bufio
+// reader pulled in past the hello newline would be invisible to the caller's
+// own bufio.Reader on the same conn).
+func readLineFromConn(conn net.Conn, maxBytes int) (string, error) {
+	buf := make([]byte, 0, 256)
+	one := make([]byte, 1)
+	for len(buf) < maxBytes {
+		n, err := conn.Read(one)
+		if err != nil {
+			return string(buf), err
+		}
+		if n == 0 {
+			continue
+		}
+		if one[0] == '\n' {
+			return string(buf), nil
+		}
+		buf = append(buf, one[0])
+	}
+	return string(buf), fmt.Errorf("line exceeded %d bytes", maxBytes)
 }
 
 // IsHolderAlive checks if a holder process with the given PID is still running.
