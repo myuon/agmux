@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/myuon/agmux/internal/db"
@@ -150,9 +151,16 @@ func StartHolderStreamProcess(opts StreamOpts, provider Provider) (*HolderStream
 		return nil, fmt.Errorf("spawn holder: %w", err)
 	}
 
-	// Connect to the holder's socket
-	conn, err := ConnectToHolder(opts.SessionID)
+	// Connect to the holder's socket, verifying via hello handshake that we
+	// connected to the holder we just spawned (not a previous holder still
+	// shutting down on the same socket path). See #656.
+	conn, err := ConnectToHolderExpectingPID(opts.SessionID, pid)
 	if err != nil {
+		// Kill the orphaned holder so it does not silently process the
+		// prompt with no daemon listening, leaving the session stuck.
+		if p, ferr := os.FindProcess(pid); ferr == nil {
+			_ = p.Signal(syscall.SIGTERM)
+		}
 		return nil, fmt.Errorf("connect to holder: %w", err)
 	}
 
@@ -180,9 +188,29 @@ func ReconnectHolderStreamProcess(opts StreamOpts, provider Provider, holderPID 
 		return nil, fmt.Errorf("holder process %d is not alive", holderPID)
 	}
 
-	conn, err := ConnectToHolder(opts.SessionID)
+	// Verify hello handshake matches the expected holder PID. This prevents
+	// the daemon from binding to a stale socket bound by a previous holder
+	// that happens to share the path (see #656).
+	conn, err := ConnectToHolderExpectingPID(opts.SessionID, holderPID)
 	if err != nil {
-		return nil, fmt.Errorf("reconnect to holder: %w", err)
+		// On daemon restart we may be reconnecting to a holder that was
+		// spawned by an older agmux binary which doesn't speak the hello
+		// protocol. In that case ConnectToHolderExpectingPID with a non-zero
+		// PID fails (by design, see Follow-up 1 of PR #657 review). If the
+		// holder PID is still alive, fall back to a non-PID-verifying
+		// connect — there is no race partner during recover so PID
+		// verification offers no additional safety here.
+		if IsHolderAlive(holderPID) {
+			slog.Warn("holder: PID-verified reconnect failed, retrying without PID verification (may be pre-hello binary)",
+				"sessionId", opts.SessionID, "holderPid", holderPID, "error", err)
+			var fallbackErr error
+			conn, fallbackErr = ConnectToHolderExpectingPID(opts.SessionID, 0)
+			if fallbackErr != nil {
+				return nil, fmt.Errorf("reconnect to holder (fallback): %w", fallbackErr)
+			}
+		} else {
+			return nil, fmt.Errorf("reconnect to holder: %w", err)
+		}
 	}
 
 	sp := &HolderStreamProcess{
@@ -272,6 +300,26 @@ func (sp *HolderStreamProcess) readLoop() {
 		if err != nil {
 			if err != io.EOF {
 				slog.Error("holder stream: read error", "error", err)
+			}
+			// EOF / read error on the holder socket after a successful PID
+			// handshake means the holder went away unexpectedly. Without
+			// firing onProcessExit here the daemon would never receive an
+			// "exited" control event (the holder process is already gone)
+			// and the session status would stay stuck on "running" forever.
+			// We skip the callback when stopped == true so that intentional
+			// shutdowns (Stop / sendCodex) keep their existing flow.
+			sp.mu.RLock()
+			stopped := sp.stopped
+			cb := sp.onProcessExit
+			sp.mu.RUnlock()
+			if !stopped && cb != nil {
+				var exitErr error
+				if err == io.EOF {
+					exitErr = fmt.Errorf("holder conn closed (EOF, holder presumed exited)")
+				} else {
+					exitErr = fmt.Errorf("holder conn closed unexpectedly: %w", err)
+				}
+				cb(sp.streamOpts.SessionID, exitErr)
 			}
 			return
 		}
@@ -707,8 +755,18 @@ func (sp *HolderStreamProcess) restartForCodex(message, cliSessionID string) err
 		return fmt.Errorf("spawn holder for codex resume: %w", err)
 	}
 
-	conn, err := ConnectToHolder(opts.SessionID)
+	// Verify hello-PID matches the just-spawned holder. The old holder may
+	// still be alive on the same socket path during its 100ms shutdown
+	// window after broadcasting "exited" — without this check the daemon
+	// would silently connect to the dying old holder and never receive any
+	// events from the new one. See #656.
+	conn, err := ConnectToHolderExpectingPID(opts.SessionID, pid)
 	if err != nil {
+		// Kill the orphaned holder so it does not silently process the
+		// prompt with no daemon listening, leaving the session stuck.
+		if p, ferr := os.FindProcess(pid); ferr == nil {
+			_ = p.Signal(syscall.SIGTERM)
+		}
 		return fmt.Errorf("connect to holder for codex resume: %w", err)
 	}
 

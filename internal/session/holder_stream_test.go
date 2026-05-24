@@ -1,10 +1,13 @@
 package session
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/myuon/agmux/internal/db"
 )
@@ -134,4 +137,146 @@ func TestLoadExistingLines_ClaudeProviderResetBuffers_NoOp(t *testing.T) {
 		t.Errorf("expected replayed lines, got 0")
 	}
 }
+
+// TestReadLoop_EOFTriggersOnProcessExit verifies the follow-up fix: when the
+// holder socket reaches EOF (= the holder process died unexpectedly without
+// sending a control "exited" event), the readLoop must fire the
+// onProcessExit callback so the daemon can update session status. Without
+// this, the status stays stuck on "running" until manual intervention.
+func TestReadLoop_EOFTriggersOnProcessExit(t *testing.T) {
+	// Set up a pair of connected unix sockets via net.Pipe-like construct
+	// using socketpair via listen+dial. Use shortTempDir to stay under the
+	// macOS 104-byte unix socket path limit.
+	dir := shortTempDir(t)
+	sockPath := filepath.Join(dir, "rl-eof.sock")
+	l, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer l.Close()
+
+	serverDone := make(chan net.Conn, 1)
+	go func() {
+		c, err := l.Accept()
+		if err != nil {
+			serverDone <- nil
+			return
+		}
+		serverDone <- c
+	}()
+
+	clientConn, err := net.Dial("unix", sockPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	serverConn := <-serverDone
+	if serverConn == nil {
+		t.Fatal("accept failed")
+	}
+
+	const sessionID = "eof-fires-callback"
+
+	type capture struct {
+		sessionID string
+		err       error
+	}
+	cbCh := make(chan capture, 1)
+
+	sp := &HolderStreamProcess{
+		conn:       clientConn,
+		done:       make(chan struct{}),
+		provider:   NewClaudeProvider("", ""),
+		holderPID:  12345,
+		streamOpts: StreamOpts{SessionID: sessionID},
+		onProcessExit: func(sid string, exitErr error) {
+			cbCh <- capture{sessionID: sid, err: exitErr}
+		},
+	}
+
+	go sp.readLoop()
+
+	// Simulate the holder going away unexpectedly: close the server side of
+	// the conn, causing EOF on the client side.
+	_ = serverConn.Close()
+
+	var got capture
+	select {
+	case got = <-cbCh:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("onProcessExit did not fire within 3s after EOF")
+	}
+
+	// Wait for readLoop to fully exit.
+	select {
+	case <-sp.done:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("readLoop did not exit within 3s after callback fired")
+	}
+
+	if got.sessionID != sessionID {
+		t.Errorf("callback got sessionID %q, want %q", got.sessionID, sessionID)
+	}
+	if got.err == nil {
+		t.Errorf("callback got nil error, want a non-nil EOF-related error")
+	} else if !strings.Contains(got.err.Error(), "EOF") && !strings.Contains(got.err.Error(), "closed") {
+		t.Errorf("callback error %q should reference EOF / closed conn", got.err.Error())
+	}
+}
+
+// TestReadLoop_StoppedSuppressesOnProcessExitOnEOF verifies that when Stop /
+// sendCodex has marked sp.stopped = true, an EOF on the conn does NOT
+// re-fire onProcessExit. This preserves the existing intentional-shutdown
+// flow where the callback either was (Stop path) or will be (control
+// "exited" path) handled separately.
+func TestReadLoop_StoppedSuppressesOnProcessExitOnEOF(t *testing.T) {
+	dir := shortTempDir(t)
+	sockPath := filepath.Join(dir, "rl-stop.sock")
+	l, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer l.Close()
+
+	serverDone := make(chan net.Conn, 1)
+	go func() {
+		c, _ := l.Accept()
+		serverDone <- c
+	}()
+	clientConn, err := net.Dial("unix", sockPath)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	serverConn := <-serverDone
+	if serverConn == nil {
+		t.Fatal("accept failed")
+	}
+
+	var fired atomic.Bool
+	sp := &HolderStreamProcess{
+		conn:       clientConn,
+		done:       make(chan struct{}),
+		provider:   NewClaudeProvider("", ""),
+		streamOpts: StreamOpts{SessionID: "stopped-eof"},
+		stopped:    true, // explicit shutdown in progress
+		onProcessExit: func(sid string, exitErr error) {
+			fired.Store(true)
+		},
+	}
+
+	go sp.readLoop()
+
+	_ = serverConn.Close()
+
+	select {
+	case <-sp.done:
+	case <-time.After(3 * time.Second):
+		t.Fatalf("readLoop did not exit within 3s after EOF")
+	}
+
+	if fired.Load() {
+		t.Errorf("onProcessExit should not fire when sp.stopped=true, but it did")
+	}
+}
+
+
 
