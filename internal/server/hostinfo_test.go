@@ -139,6 +139,45 @@ func TestCollectProviderInfo(t *testing.T) {
 	}
 }
 
+func TestCollectProviderInfoCommandWithFlags(t *testing.T) {
+	// A configured command may include flags (e.g. "claude --foo --bar"). The
+	// availability check must resolve only the leading executable token, not the
+	// whole string, otherwise LookPath fails on the flags.
+	binDir := t.TempDir()
+	fakeBin := "agmux-fake-provider"
+	fakePath := filepath.Join(binDir, fakeBin)
+	if err := os.WriteFile(fakePath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	claudeCmd := fakeBin + " --foo --bar"
+	configBody := "" +
+		"[session]\n" +
+		"claude_command = \"" + claudeCmd + "\"\n"
+	newTestHomeConfig(t, configBody)
+
+	s := &Server{startTime: time.Now()}
+	providers := s.collectProviderInfo()
+
+	byName := make(map[string]hostProviderInfo, len(providers))
+	for _, p := range providers {
+		byName[p.Name] = p
+	}
+
+	claude, ok := byName["claude"]
+	if !ok {
+		t.Fatalf("missing claude provider in %+v", providers)
+	}
+	if !claude.Available {
+		t.Errorf("claude should be available when command has flags (resolves to %s)", fakePath)
+	}
+	// The displayed command keeps the full configured string (flags included).
+	if claude.Command != claudeCmd {
+		t.Errorf("claude command = %q, want %q", claude.Command, claudeCmd)
+	}
+}
+
 func TestCollectGlobalSkills(t *testing.T) {
 	home := newTestHomeConfig(t, "")
 	skillsDir := filepath.Join(home, ".claude", "skills")

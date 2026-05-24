@@ -1629,11 +1629,18 @@ func (s *Server) collectProviderInfo() []hostProviderInfo {
 
 	providers := make([]hostProviderInfo, 0, len(specs))
 	for _, spec := range specs {
-		_, lookErr := exec.LookPath(spec.cmd)
+		// The configured command may include flags (e.g.
+		// "claude --dangerously-skip-permissions --model ..."), so resolve
+		// availability using only the leading executable token.
+		available := false
+		if fields := strings.Fields(spec.cmd); len(fields) > 0 {
+			_, lookErr := exec.LookPath(fields[0])
+			available = lookErr == nil
+		}
 		providers = append(providers, hostProviderInfo{
 			Name:      spec.name,
 			Command:   spec.cmd,
-			Available: lookErr == nil,
+			Available: available,
 		})
 	}
 	return providers
