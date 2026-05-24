@@ -175,13 +175,27 @@ func TestSendKeysAutoRecover_OneShotFirstSend_DerivesCorrectStreamOpts(t *testin
 // (cli_session_id is populated and conversation_started = true) must take the
 // resume branch on the second turn, not the first-send branch.
 //
-// Symptoms before the fix in #634 / #649: the holder exited after the first
-// one-shot turn (cursor agent exec is one-shot) and the next send hit the
-// auto-recover path. If the resume branch was not selected, the holder was
-// re-spawned with Resume=false + no CLI session ID, which causes cursor to
-// start a fresh conversation (losing context) or exit immediately when the
+// Issue #646 was resolved by the combination of #634 (suppress resume on
+// sessions that have not completed a turn) and #649 (lazy-spawn on first
+// send). This test guards against a regression by directly asserting the
+// shape of the StreamOpts that the resume branch hands to
+// StartHolderStreamProcess via the extracted buildOneShotResumeOpts helper.
+//
+// Symptoms before the fix: the holder exited after the first one-shot turn
+// (cursor agent exec is one-shot) and the next send hit the auto-recover
+// path. If the resume branch was not selected, the holder was re-spawned
+// with Resume=false + no CLI session ID, which causes cursor to start a
+// fresh conversation (losing context) or exit immediately when the
 // positional prompt arg is missing.
 func TestSendKeysAutoRecover_OneShotSecondTurn_UsesResume(t *testing.T) {
+	// A readable stand-in for the cli_session_id that would be written to
+	// the JSONL by the CLI's system.init event during the first turn.
+	const cliSessionAfterFirstTurn = "cli-session-after-first-turn"
+	const sendText = "second turn prompt"
+	const mcpConfigPath = "/tmp/mcp.json"
+	const effectiveSystemPrompt = "effective-system-prompt"
+	const apiPort = 4321
+
 	cases := []struct {
 		name     string
 		provider ProviderName
@@ -204,8 +218,8 @@ func TestSendKeysAutoRecover_OneShotSecondTurn_UsesResume(t *testing.T) {
 			if _, err := db.Exec(
 				`INSERT INTO sessions (id, name, project_path, tmux_session, status, type, output_mode, provider, model, cli_session_id, holder_pid, conversation_started)
 				 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-				id, "second-turn", "/tmp", "", "idle", "worker", "stream", string(tc.provider), "",
-				"67b7a4d2-e5e8-4b55-a7ae-78df8a64dd4d", 0, 1,
+				id, "second-turn", "/tmp/project", "", "idle", "worker", "stream", string(tc.provider), "claude-sonnet-4-5",
+				cliSessionAfterFirstTurn, 0, 1,
 			); err != nil {
 				t.Fatalf("insert post-first-turn session: %v", err)
 			}
@@ -222,8 +236,11 @@ func TestSendKeysAutoRecover_OneShotSecondTurn_UsesResume(t *testing.T) {
 				t.Fatalf("Get: %v", err)
 			}
 
-			// Mirror the branch-selection logic in SendKeysWithImages to verify
-			// the resume branch is taken.
+			// Preconditions: the DB row mirrors the state after the first turn,
+			// so the branch selector in SendKeysWithImages must dispatch to the
+			// resume branch (not the lazy-first-send branch). The cliSessionID
+			// precondition being non-empty also implies the lazy-first-send
+			// branch cannot be reached with this state.
 			provider := m.getProvider(s.Provider)
 			canResume := s.ConversationStarted
 			cliSessionID := s.CliSessionID
@@ -237,22 +254,53 @@ func TestSendKeysAutoRecover_OneShotSecondTurn_UsesResume(t *testing.T) {
 			if !canResume {
 				t.Fatal("precondition: conversation_started must be true after first turn")
 			}
-
-			tookResumeBranch := provider.IsOneShot() && cliSessionID != "" && canResume
-			if !tookResumeBranch {
-				t.Errorf("second turn on completed one-shot session must take the resume branch; "+
-					"provider.IsOneShot()=%v cliSessionID=%q canResume=%v",
-					provider.IsOneShot(), cliSessionID, canResume)
+			if !(provider.IsOneShot() && cliSessionID != "" && canResume) {
+				t.Fatal("precondition: branch selector must dispatch to the resume branch")
 			}
 
-			// The lazy-first-send branch must NOT be taken because the resume
-			// branch wins first; if it were taken with Resume=false the new
-			// CLI invocation would start a fresh session and discard the
-			// previous turn's context.
-			tookLazyFirstSend := provider.IsOneShot() && !tookResumeBranch
-			if tookLazyFirstSend {
-				t.Errorf("second turn must NOT fall through to the lazy-first-send branch "+
-					"(cliSessionID=%q canResume=%v)", cliSessionID, canResume)
+			// Call the extracted pure function used by the resume branch and
+			// assert the concrete StreamOpts shape. This catches regressions
+			// where Resume is silently flipped to false or the CLISessionID
+			// is dropped / overwritten with the wrong source field.
+			opts := buildOneShotResumeOpts(s, sendText, mcpConfigPath, effectiveSystemPrompt, cliSessionID, apiPort)
+
+			if !opts.Resume {
+				t.Errorf("Resume = false, want true (second turn must resume the existing CLI session)")
+			}
+			if opts.CLISessionID != cliSessionAfterFirstTurn {
+				t.Errorf("CLISessionID = %q, want %q (must be copied from the DB cli_session_id)",
+					opts.CLISessionID, cliSessionAfterFirstTurn)
+			}
+			if opts.InitialPrompt != sendText {
+				t.Errorf("InitialPrompt = %q, want %q (positional prompt arg must carry the user's text)",
+					opts.InitialPrompt, sendText)
+			}
+			if opts.SessionID != s.ID {
+				t.Errorf("SessionID = %q, want %q", opts.SessionID, s.ID)
+			}
+			if opts.ProjectPath != s.ProjectPath {
+				t.Errorf("ProjectPath = %q, want %q", opts.ProjectPath, s.ProjectPath)
+			}
+			if opts.MCPConfigPath != mcpConfigPath {
+				t.Errorf("MCPConfigPath = %q, want %q", opts.MCPConfigPath, mcpConfigPath)
+			}
+			if opts.SystemPrompt != effectiveSystemPrompt {
+				t.Errorf("SystemPrompt = %q, want %q", opts.SystemPrompt, effectiveSystemPrompt)
+			}
+			if opts.APIPort != apiPort {
+				t.Errorf("APIPort = %d, want %d", opts.APIPort, apiPort)
+			}
+
+			// Independently verify that the lazy-first-send opts builder
+			// produces a clearly different shape (Resume = false, empty
+			// CLISessionID). This guards the test from collapsing if the two
+			// branches ever start sharing one builder.
+			firstSendOpts := buildOneShotFirstSendOpts(s, sendText, mcpConfigPath, effectiveSystemPrompt, apiPort)
+			if firstSendOpts.Resume {
+				t.Errorf("buildOneShotFirstSendOpts: Resume = true, want false")
+			}
+			if firstSendOpts.CLISessionID != "" {
+				t.Errorf("buildOneShotFirstSendOpts: CLISessionID = %q, want empty", firstSendOpts.CLISessionID)
 			}
 		})
 	}

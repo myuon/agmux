@@ -181,6 +181,47 @@ func (m *Manager) buildEffectiveSystemPrompt(customSystemPrompt string) string {
 	return m.systemPrompt + "\n\n" + customSystemPrompt
 }
 
+// buildOneShotResumeOpts constructs the StreamOpts used when SendKeysWithImages
+// auto-recovers a one-shot provider session (Codex/Cursor) that has already
+// completed at least one turn. The resulting opts must always carry
+// Resume = true and a non-empty CLISessionID — these invariants are what the
+// regression test for issue #646 asserts. Extracted as a pure function so the
+// test does not have to reproduce SendKeysWithImages' branch-selection logic
+// and the actual StreamOpts shape is checked directly.
+func buildOneShotResumeOpts(s *Session, text, mcpPath, effectiveSP, cliSessionID string, apiPort int) StreamOpts {
+	return StreamOpts{
+		SessionID:     s.ID,
+		ProjectPath:   s.ProjectPath,
+		MCPConfigPath: mcpPath,
+		SystemPrompt:  effectiveSP,
+		InitialPrompt: text,
+		Resume:        true,
+		CLISessionID:  cliSessionID,
+		Model:         s.Model,
+		APIPort:       apiPort,
+		ClearOffset:   s.ClearOffset,
+	}
+}
+
+// buildOneShotFirstSendOpts constructs the StreamOpts used when
+// SendKeysWithImages takes the lazy-first-send branch for a one-shot provider
+// session that was created without an initial prompt. Resume is always false
+// here and CLISessionID is left empty so the CLI starts a fresh conversation.
+// See issue #643.
+func buildOneShotFirstSendOpts(s *Session, text, mcpPath, effectiveSP string, apiPort int) StreamOpts {
+	return StreamOpts{
+		SessionID:     s.ID,
+		ProjectPath:   s.ProjectPath,
+		MCPConfigPath: mcpPath,
+		SystemPrompt:  effectiveSP,
+		InitialPrompt: text,
+		Resume:        false,
+		Model:         s.Model,
+		APIPort:       apiPort,
+		ClearOffset:   s.ClearOffset,
+	}
+}
+
 // RecoverStreamProcesses recovers stream processes for all sessions with holder_pid > 0.
 // If a holder process is still alive (survived server restart), reconnect to it.
 // Otherwise, start a new holder process with --resume.
@@ -1310,18 +1351,10 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			// For one-shot exec providers (Codex/Cursor), start resume directly
 			// with the prompt as a positional arg.
 			m.killStaleHolder(id)
-			hsp, err := StartHolderStreamProcess(StreamOpts{
-				SessionID:     s.ID,
-				ProjectPath:   s.ProjectPath,
-				MCPConfigPath: mcpPath,
-				SystemPrompt:  effectiveSP,
-				InitialPrompt: text,
-				Resume:        true,
-				CLISessionID:  cliSessionID,
-				Model:         s.Model,
-				APIPort:       m.apiPort,
-				ClearOffset:   s.ClearOffset,
-			}, provider)
+			hsp, err := StartHolderStreamProcess(
+				buildOneShotResumeOpts(s, text, mcpPath, effectiveSP, cliSessionID, m.apiPort),
+				provider,
+			)
 			if err != nil {
 				return fmt.Errorf("restart stream process: %w", err)
 			}
@@ -1342,17 +1375,10 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			// with no prompt would cause Codex/Cursor to exit immediately.
 			// See issue #643.
 			m.killStaleHolder(id)
-			hsp, err := StartHolderStreamProcess(StreamOpts{
-				SessionID:     s.ID,
-				ProjectPath:   s.ProjectPath,
-				MCPConfigPath: mcpPath,
-				SystemPrompt:  effectiveSP,
-				InitialPrompt: text,
-				Resume:        false,
-				Model:         s.Model,
-				APIPort:       m.apiPort,
-				ClearOffset:   s.ClearOffset,
-			}, provider)
+			hsp, err := StartHolderStreamProcess(
+				buildOneShotFirstSendOpts(s, text, mcpPath, effectiveSP, m.apiPort),
+				provider,
+			)
 			if err != nil {
 				return fmt.Errorf("start stream process: %w", err)
 			}
