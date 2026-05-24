@@ -247,6 +247,20 @@ func (sp *HolderStreamProcess) loadExistingLines(sessionID string, clearOffset i
 			sp.lines = append(sp.lines, normalizedStr)
 		}
 	}
+
+	// Drop any per-session normalization state left over from replay (e.g.
+	// cursor thinking deltas whose `completed` never arrived because the
+	// underlying CLI process died mid-turn). Without this, live events
+	// arriving after a reconnect could be prefixed with stale thinking text
+	// from a previous turn.
+	//
+	// We pass the empty string to clear every buffer this provider instance
+	// is currently holding: providers are created per-stream by Manager (see
+	// Manager.getProvider), and the cursor provider's buffers are keyed by
+	// the cursor CLI session_id (read from JSONL events) — not the agmux
+	// session ID we'd otherwise pass here — so a targeted delete would miss
+	// the buffer when the agmux/CLI IDs differ.
+	sp.provider.ResetBuffers("")
 }
 
 func (sp *HolderStreamProcess) readLoop() {

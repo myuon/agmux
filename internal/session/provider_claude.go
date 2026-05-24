@@ -192,3 +192,7 @@ func (p *ClaudeProvider) NormalizeStreamLine(line []byte) [][]byte {
 	return [][]byte{line}
 }
 
+// ResetBuffers is a no-op for ClaudeProvider — it holds no per-session
+// normalization state.
+func (p *ClaudeProvider) ResetBuffers(sessionID string) {}
+

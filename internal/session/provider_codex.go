@@ -215,6 +215,10 @@ func (p *CodexProvider) buildAssistantText(text string) []byte {
 	return b
 }
 
+// ResetBuffers is a no-op for CodexProvider — it holds no per-session
+// normalization state.
+func (p *CodexProvider) ResetBuffers(sessionID string) {}
+
 func (p *CodexProvider) buildAssistantToolUse(command, output string) []byte {
 	type toolUseBlock struct {
 		Type  string            `json:"type"`

@@ -62,6 +62,15 @@ type Provider interface {
 	//
 	// Callers must iterate the returned slice in order.
 	NormalizeStreamLine(line []byte) [][]byte
+	// ResetBuffers drops any per-session normalization state (e.g. partially
+	// accumulated thinking text) for the given session ID without emitting
+	// the buffered content. This is intended for use after replaying past
+	// JSONL through NormalizeStreamLine (e.g. loadExistingLines), so that
+	// state left over from a turn that never reached `completed` is not
+	// carried into the live stream.
+	//
+	// Providers without buffered state should implement this as a no-op.
+	ResetBuffers(sessionID string)
 }
 
 // GetProvider returns a Provider instance for the given name.

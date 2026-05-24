@@ -702,4 +702,129 @@ func TestCursorProvider_ThinkingBuffering(t *testing.T) {
 			t.Errorf("session B thinking = %q, want %q", got, "B")
 		}
 	})
+
+	// Covers the edge case where a session ends without ever emitting a
+	// thinking delta: nothing is buffered, and a follow-up flush (or
+	// ResetBuffers) is a no-op.
+	t.Run("session with no thinking delta has empty buffer", func(t *testing.T) {
+		p := NewCursorProvider("")
+		// Drive a system + assistant + result pipeline without any thinking.
+		_ = p.NormalizeStreamLine([]byte(`{"type":"system","subtype":"init","session_id":"sX","model":"sonnet-4"}`))
+		_ = p.NormalizeStreamLine([]byte(`{"type":"assistant","message":{"role":"assistant","model":"sonnet-4","content":[{"type":"text","text":"ok"}]},"session_id":"sX"}`))
+		_ = p.NormalizeStreamLine([]byte(`{"type":"result","subtype":"success","is_error":false,"result":"done","session_id":"sX"}`))
+
+		p.thinkingMu.Lock()
+		_, hasBuf := p.thinkingBuffers["sX"]
+		bufCount := len(p.thinkingBuffers)
+		p.thinkingMu.Unlock()
+		if hasBuf {
+			t.Errorf("expected no thinking buffer for sX, but one exists")
+		}
+		if bufCount != 0 {
+			t.Errorf("expected no thinking buffers at all, got %d", bufCount)
+		}
+
+		// A completed event with nothing buffered should produce no output.
+		out := p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"completed","session_id":"sX"}`))
+		if len(out) != 0 {
+			t.Errorf("expected no output for completed-with-empty-buffer, got %d", len(out))
+		}
+
+		// ResetBuffers on a session that never buffered should also be a
+		// safe no-op.
+		p.ResetBuffers("sX")
+		p.thinkingMu.Lock()
+		bufCount = len(p.thinkingBuffers)
+		p.thinkingMu.Unlock()
+		if bufCount != 0 {
+			t.Errorf("expected no buffers after ResetBuffers, got %d", bufCount)
+		}
+	})
+}
+
+func TestCursorProvider_ResetBuffers(t *testing.T) {
+	t.Run("drops partially buffered thinking without emitting it", func(t *testing.T) {
+		p := NewCursorProvider("")
+
+		// Accumulate some thinking text but never reach `completed`.
+		_ = p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"delta","text":"half-","session_id":"sR"}`))
+		_ = p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"delta","text":"baked","session_id":"sR"}`))
+
+		// Sanity check: buffer is populated.
+		p.thinkingMu.Lock()
+		buf, ok := p.thinkingBuffers["sR"]
+		p.thinkingMu.Unlock()
+		if !ok || buf == nil || buf.Len() == 0 {
+			t.Fatalf("precondition: expected non-empty buffer for sR")
+		}
+
+		// Reset and verify buffer is gone.
+		p.ResetBuffers("sR")
+		p.thinkingMu.Lock()
+		_, stillThere := p.thinkingBuffers["sR"]
+		p.thinkingMu.Unlock()
+		if stillThere {
+			t.Errorf("ResetBuffers should have removed sR's buffer")
+		}
+
+		// A subsequent flush attempt produces nothing (delta dropped, not emitted).
+		out := p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"completed","session_id":"sR"}`))
+		if len(out) != 0 {
+			t.Errorf("expected no flushed output after ResetBuffers, got %d: %v", len(out), bytesSliceToStrings(out))
+		}
+
+		// And the next live event for this session must NOT carry leaked thinking text.
+		live := p.NormalizeStreamLine([]byte(`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"fresh"}]},"session_id":"sR"}`))
+		if len(live) != 1 {
+			t.Fatalf("expected single passthrough output, got %d: %v", len(live), bytesSliceToStrings(live))
+		}
+		// The output should be the assistant line itself, not a thinking message.
+		if strings.Contains(string(live[0]), `"thinking"`) {
+			t.Errorf("ResetBuffers leaked thinking into live stream: %s", string(live[0]))
+		}
+	})
+
+	t.Run("only drops the targeted session", func(t *testing.T) {
+		p := NewCursorProvider("")
+
+		_ = p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"delta","text":"keep","session_id":"sKeep"}`))
+		_ = p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"delta","text":"drop","session_id":"sDrop"}`))
+
+		p.ResetBuffers("sDrop")
+
+		p.thinkingMu.Lock()
+		_, keepOK := p.thinkingBuffers["sKeep"]
+		_, dropOK := p.thinkingBuffers["sDrop"]
+		p.thinkingMu.Unlock()
+		if !keepOK {
+			t.Errorf("ResetBuffers should not have touched sKeep's buffer")
+		}
+		if dropOK {
+			t.Errorf("ResetBuffers should have removed sDrop's buffer")
+		}
+	})
+
+	t.Run("empty sessionID drops all buffers", func(t *testing.T) {
+		p := NewCursorProvider("")
+
+		_ = p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"delta","text":"a","session_id":"s1"}`))
+		_ = p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"delta","text":"b","session_id":"s2"}`))
+
+		p.ResetBuffers("")
+
+		p.thinkingMu.Lock()
+		count := len(p.thinkingBuffers)
+		p.thinkingMu.Unlock()
+		if count != 0 {
+			t.Errorf("ResetBuffers(\"\") should drop all buffers, got %d remaining", count)
+		}
+	})
+
+	t.Run("no-op on Claude and Codex providers", func(t *testing.T) {
+		// Both should expose ResetBuffers and not panic.
+		var _ Provider = NewClaudeProvider("", "")
+		var _ Provider = NewCodexProvider("")
+		NewClaudeProvider("", "").ResetBuffers("anything")
+		NewCodexProvider("").ResetBuffers("anything")
+	})
 }

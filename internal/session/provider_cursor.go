@@ -380,6 +380,12 @@ func cursorExtractToolResult(raw json.RawMessage) string {
 //	  "content":[{"type":"thinking","thinking":"<concatenated text>"}]}}
 //
 // so the frontend's StreamDisplayItem("thinking") rendering picks it up.
+//
+// NOTE: In practice the Cursor CLI does not currently emit a standalone
+// thinking/completed event — flushes are driven almost entirely by the
+// arrival of the next non-thinking event (e.g. an assistant message or
+// tool_call) for the same session. The completed branch below is kept so
+// that we behave correctly if/when Cursor starts emitting it.
 func (p *CursorProvider) handleThinking(line []byte, subtype, sessionID string) [][]byte {
 	switch subtype {
 	case "delta":
@@ -429,6 +435,23 @@ func (p *CursorProvider) flushThinking(sessionID string) [][]byte {
 	delete(p.thinkingBuffers, sessionID)
 	p.thinkingMu.Unlock()
 	return [][]byte{buildCursorThinkingMessage(text)}
+}
+
+// ResetBuffers drops any accumulated thinking text for the given session ID
+// without emitting it. Intended to be called after replaying historical
+// JSONL through NormalizeStreamLine (e.g. loadExistingLines) so that a
+// partially-buffered turn whose `completed` event never arrived does not
+// leak into the live stream that follows.
+//
+// If sessionID is empty, all buffered sessions are dropped.
+func (p *CursorProvider) ResetBuffers(sessionID string) {
+	p.thinkingMu.Lock()
+	defer p.thinkingMu.Unlock()
+	if sessionID == "" {
+		p.thinkingBuffers = make(map[string]*strings.Builder)
+		return
+	}
+	delete(p.thinkingBuffers, sessionID)
 }
 
 // flushAllThinking emits every buffered session's accumulated thinking text
