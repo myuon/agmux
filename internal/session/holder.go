@@ -434,9 +434,15 @@ func ConnectToHolder(sessionID string) (net.Conn, error) {
 // with a hello (no PID match required).
 //
 // Backward compatibility: if a connection succeeds but no hello arrives within
-// the read deadline (because the holder pre-dates the hello protocol added in
-// #656), the connection is returned as-is. This lets the daemon recover
-// connections to long-lived holders started by an older agmux binary.
+// the read deadline AND expectedPID == 0 (recover path), the connection is
+// returned as-is. This lets the daemon recover connections to long-lived
+// holders started by an older agmux binary that does not speak hello.
+//
+// When expectedPID > 0 (spawn/restart path), a hello timeout is treated as a
+// hard error: the holder we just spawned must be from the current binary and
+// therefore must send hello. Falling back silently in that case would re-open
+// the very race window #656 fixes (we could end up trusting a dying old
+// listener that happens to share the socket path).
 //
 // The hello message, when present, is consumed from the connection: callers
 // should NOT see it in their subsequent reads.
@@ -467,16 +473,32 @@ func ConnectToHolderExpectingPID(sessionID string, expectedPID int) (net.Conn, e
 			// Read timeout or EOF before hello. Two cases:
 			// 1) Pre-hello holder (older binary): no hello will ever come.
 			//    Best-effort: return the conn so the daemon can still receive
-			//    broadcast events.
+			//    broadcast events. Only safe when expectedPID == 0 (i.e. the
+			//    recover path where we don't know which binary spawned the
+			//    holder). For new spawn / restart paths we know the holder
+			//    binary is current and must speak hello — silently falling
+			//    back there would mask the very race #656 is trying to fix.
 			// 2) Newly spawned holder that hasn't accepted yet, or dying old
 			//    holder whose conn is broken. Retry.
 			// We discriminate by errno: io.EOF or "connection reset" means
 			// the conn is dead; timeout means the holder is silent (likely
 			// pre-hello).
 			if isReadTimeout(rerr) {
-				slog.Warn("holder: no hello received within deadline; assuming pre-hello holder",
-					"sessionId", sessionID, "expected_pid", expectedPID)
-				return conn, nil
+				if expectedPID == 0 {
+					slog.Warn("holder: no hello received within deadline; assuming pre-hello holder",
+						"sessionId", sessionID, "expected_pid", expectedPID)
+					return conn, nil
+				}
+				// expectedPID > 0: the holder we want is from the current
+				// binary, which must send hello. A timeout here is a real
+				// failure (likely the accept goroutine of the new holder is
+				// briefly stuck, or we somehow landed on a dying old holder
+				// that no longer responds). Fail fast instead of silently
+				// regressing into the pre-fix race window.
+				conn.Close()
+				lastErr = fmt.Errorf("hello timeout from holder (expected pid %d)", expectedPID)
+				time.Sleep(100 * time.Millisecond)
+				continue
 			}
 			conn.Close()
 			lastErr = fmt.Errorf("read hello: %w", rerr)
@@ -487,12 +509,19 @@ func ConnectToHolderExpectingPID(sessionID string, expectedPID int) (net.Conn, e
 		var msg HolderControlMessage
 		if err := json.Unmarshal([]byte(strings.TrimRight(line, "\n")), &msg); err != nil || msg.Type != "control" || msg.Event != "hello" {
 			// First line wasn't a hello — could be a stale broadcast from a
-			// pre-hello holder. Best-effort: log and return the conn so the
-			// caller still gets subsequent broadcasts. The caller's readLoop
-			// will skip non-event lines.
-			slog.Warn("holder: first line was not hello; assuming pre-hello holder",
-				"sessionId", sessionID, "line", line)
-			return conn, nil
+			// pre-hello holder. Same logic as the timeout branch: only treat
+			// this as a pre-hello fallback on the recover path (expectedPID
+			// == 0). On spawn/restart, force a retry so we don't trust a
+			// connection that doesn't start with a verifiable hello.
+			if expectedPID == 0 {
+				slog.Warn("holder: first line was not hello; assuming pre-hello holder",
+					"sessionId", sessionID, "line", line)
+				return conn, nil
+			}
+			conn.Close()
+			lastErr = fmt.Errorf("hello malformed from holder (expected pid %d): %q", expectedPID, line)
+			time.Sleep(100 * time.Millisecond)
+			continue
 		}
 
 		if expectedPID > 0 && msg.PID != expectedPID {

@@ -158,10 +158,15 @@ func TestConnectToHolderExpectingPID_ZeroPID_AcceptsAny(t *testing.T) {
 }
 
 // TestConnectToHolderExpectingPID_PreHelloHolder_FallsBack verifies backward
-// compat: if the holder is an older binary that never sends a hello (silent
-// after accept), the function eventually returns the connection so the
-// daemon can still receive subsequent broadcasts. The fallback uses the
-// short read deadline to detect the silent peer.
+// compat on the recover path (expectedPID == 0): if the holder is an older
+// binary that never sends a hello (silent after accept), the function
+// eventually returns the connection so the daemon can still receive
+// subsequent broadcasts. The fallback uses the short read deadline to
+// detect the silent peer.
+//
+// Important: fallback is only valid when expectedPID == 0. The spawn /
+// restart path (expectedPID > 0) intentionally does NOT fall back — see
+// TestConnectToHolderExpectingPID_NoFallbackWhenPIDExpected.
 func TestConnectToHolderExpectingPID_PreHelloHolder_FallsBack(t *testing.T) {
 	t.Setenv("TMPDIR", shortTempDir(t))
 
@@ -190,9 +195,10 @@ func TestConnectToHolderExpectingPID_PreHelloHolder_FallsBack(t *testing.T) {
 	}()
 
 	start := time.Now()
-	conn, err := ConnectToHolderExpectingPID(sessionID, 1234)
+	// expectedPID == 0 = recover path: fallback is allowed.
+	conn, err := ConnectToHolderExpectingPID(sessionID, 0)
 	if err != nil {
-		t.Fatalf("expected fallback success, got error: %v", err)
+		t.Fatalf("expected fallback success on recover path, got error: %v", err)
 	}
 	defer conn.Close()
 
@@ -262,6 +268,107 @@ func TestHolderHelloProtocol_NoOverReadIntoSubsequentBroadcast(t *testing.T) {
 	}
 	if got != firstEvent {
 		t.Errorf("first post-hello line = %q, want %q (over-read regression)", got, firstEvent)
+	}
+}
+
+// TestConnectToHolderExpectingPID_NoFallbackWhenPIDExpected verifies that
+// when expectedPID > 0 (= spawn or restart path), the function does NOT fall
+// back to "assume pre-hello holder" if the hello never arrives. Falling back
+// in that case would silently re-open the very race window #656 fixes.
+//
+// We simulate a silent holder (accepts but never writes) and assert that
+// ConnectToHolderExpectingPID returns an error before the overall 15s
+// deadline expires (it should keep retrying on each accept and eventually
+// time out).
+func TestConnectToHolderExpectingPID_NoFallbackWhenPIDExpected(t *testing.T) {
+	t.Setenv("TMPDIR", shortTempDir(t))
+
+	sessionID := "no-fallback-when-pid-expected"
+	if err := os.MkdirAll(SocketDir(), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	sockPath := SocketPath(sessionID)
+	_ = os.Remove(sockPath)
+	l, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer l.Close()
+
+	// Accept connections but never write anything (simulates a stuck/silent
+	// or dying old holder that won't speak the hello protocol).
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			_ = c // hold open
+		}
+	}()
+
+	// Use a short overall deadline by capping with t.Deadline if any; here we
+	// just rely on the function's internal 15s deadline. To keep CI fast we
+	// abort the test if it doesn't return within 20s.
+	done := make(chan error, 1)
+	go func() {
+		_, e := ConnectToHolderExpectingPID(sessionID, 4242)
+		done <- e
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatalf("expected error when expectedPID>0 and no hello arrives, got nil (silent fallback regression)")
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatalf("ConnectToHolderExpectingPID did not return within 20s")
+	}
+}
+
+// TestConnectToHolderExpectingPID_NoFallbackOnMalformedHello verifies that
+// a malformed (non-hello) first line is also NOT silently accepted when
+// expectedPID > 0. This mirrors the timeout case above.
+func TestConnectToHolderExpectingPID_NoFallbackOnMalformedHello(t *testing.T) {
+	t.Setenv("TMPDIR", shortTempDir(t))
+
+	sessionID := "no-fallback-on-malformed"
+	if err := os.MkdirAll(SocketDir(), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	sockPath := SocketPath(sessionID)
+	_ = os.Remove(sockPath)
+	l, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer l.Close()
+
+	// Accept and write a non-hello line (e.g. a stale broadcast).
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			_, _ = fmt.Fprintln(c, `{"type":"system","subtype":"init"}`)
+			// hold the conn open so we don't get EOF before our read
+		}
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		_, e := ConnectToHolderExpectingPID(sessionID, 5555)
+		done <- e
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatalf("expected error when expectedPID>0 and first line is not hello, got nil")
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatalf("ConnectToHolderExpectingPID did not return within 20s")
 	}
 }
 

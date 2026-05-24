@@ -193,7 +193,24 @@ func ReconnectHolderStreamProcess(opts StreamOpts, provider Provider, holderPID 
 	// that happens to share the path (see #656).
 	conn, err := ConnectToHolderExpectingPID(opts.SessionID, holderPID)
 	if err != nil {
-		return nil, fmt.Errorf("reconnect to holder: %w", err)
+		// On daemon restart we may be reconnecting to a holder that was
+		// spawned by an older agmux binary which doesn't speak the hello
+		// protocol. In that case ConnectToHolderExpectingPID with a non-zero
+		// PID fails (by design, see Follow-up 1 of PR #657 review). If the
+		// holder PID is still alive, fall back to a non-PID-verifying
+		// connect — there is no race partner during recover so PID
+		// verification offers no additional safety here.
+		if IsHolderAlive(holderPID) {
+			slog.Warn("holder: PID-verified reconnect failed, retrying without PID verification (may be pre-hello binary)",
+				"sessionId", opts.SessionID, "holderPid", holderPID, "error", err)
+			var fallbackErr error
+			conn, fallbackErr = ConnectToHolderExpectingPID(opts.SessionID, 0)
+			if fallbackErr != nil {
+				return nil, fmt.Errorf("reconnect to holder (fallback): %w", fallbackErr)
+			}
+		} else {
+			return nil, fmt.Errorf("reconnect to holder: %w", err)
+		}
 	}
 
 	sp := &HolderStreamProcess{
@@ -283,6 +300,26 @@ func (sp *HolderStreamProcess) readLoop() {
 		if err != nil {
 			if err != io.EOF {
 				slog.Error("holder stream: read error", "error", err)
+			}
+			// EOF / read error on the holder socket after a successful PID
+			// handshake means the holder went away unexpectedly. Without
+			// firing onProcessExit here the daemon would never receive an
+			// "exited" control event (the holder process is already gone)
+			// and the session status would stay stuck on "running" forever.
+			// We skip the callback when stopped == true so that intentional
+			// shutdowns (Stop / sendCodex) keep their existing flow.
+			sp.mu.RLock()
+			stopped := sp.stopped
+			cb := sp.onProcessExit
+			sp.mu.RUnlock()
+			if !stopped && cb != nil {
+				var exitErr error
+				if err == io.EOF {
+					exitErr = fmt.Errorf("holder conn closed (EOF, holder presumed exited)")
+				} else {
+					exitErr = fmt.Errorf("holder conn closed unexpectedly: %w", err)
+				}
+				cb(sp.streamOpts.SessionID, exitErr)
 			}
 			return
 		}
