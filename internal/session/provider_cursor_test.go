@@ -405,11 +405,11 @@ func TestCursorProvider_NormalizeToolCall_MoreKinds(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			out := p.NormalizeStreamLine([]byte(tc.input))
-			if out == nil {
-				t.Fatalf("expected normalized output, got nil")
+			outs := p.NormalizeStreamLine([]byte(tc.input))
+			if len(outs) == 0 {
+				t.Fatalf("expected normalized output, got none")
 			}
-			got := parse(t, out)
+			got := parse(t, outs[len(outs)-1])
 			if got.Name != tc.wantName {
 				t.Errorf("name = %q, want %q", got.Name, tc.wantName)
 			}
@@ -427,8 +427,9 @@ func TestCursorProvider_NormalizeToolCall_MoreKinds(t *testing.T) {
 }
 
 func TestCursorProvider_NormalizeStreamLine(t *testing.T) {
-	p := NewCursorProvider("")
-
+	// Each test case is a single line processed in isolation; the test
+	// constructs a fresh provider per case so buffered thinking from one case
+	// doesn't leak into the next.
 	tests := []struct {
 		name     string
 		input    string
@@ -477,12 +478,15 @@ func TestCursorProvider_NormalizeStreamLine(t *testing.T) {
 			wantJSON: `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tool_a1","name":"Await","input":{}},{"type":"tool_result","tool_use_id":"tool_a1","content":"{\"error\":\"No shell found for id 45563\"}"}]}}`,
 		},
 		{
-			name:     "thinking delta becomes assistant thinking block",
-			input:    `{"type":"thinking","subtype":"delta","text":"Let me think","session_id":"abc","timestamp_ms":1}`,
-			wantJSON: `{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Let me think"}]}}`,
+			// Single delta with no following completed or interrupt is
+			// buffered and produces no immediate output.
+			name:    "thinking delta is buffered (no output until flush)",
+			input:   `{"type":"thinking","subtype":"delta","text":"Let me think","session_id":"abc","timestamp_ms":1}`,
+			wantNil: true,
 		},
 		{
-			name:    "thinking completed is dropped",
+			// Without any prior buffered text, completed produces nothing.
+			name:    "thinking completed with empty buffer is dropped",
 			input:   `{"type":"thinking","subtype":"completed","session_id":"abc","timestamp_ms":1}`,
 			wantNil: true,
 		},
@@ -499,18 +503,20 @@ func TestCursorProvider_NormalizeStreamLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := p.NormalizeStreamLine([]byte(tt.input))
+			p := NewCursorProvider("")
+			results := p.NormalizeStreamLine([]byte(tt.input))
 
 			if tt.wantNil {
-				if result != nil {
-					t.Errorf("expected nil, got %s", string(result))
+				if len(results) != 0 {
+					t.Errorf("expected no output, got %d lines: %v", len(results), bytesSliceToStrings(results))
 				}
 				return
 			}
 
-			if result == nil {
-				t.Fatal("expected non-nil result")
+			if len(results) != 1 {
+				t.Fatalf("expected exactly 1 output line, got %d: %v", len(results), bytesSliceToStrings(results))
 			}
+			result := results[0]
 
 			if tt.wantJSON != "" {
 				var got, want interface{}
@@ -532,4 +538,168 @@ func TestCursorProvider_NormalizeStreamLine(t *testing.T) {
 			}
 		})
 	}
+}
+
+func bytesSliceToStrings(bs [][]byte) []string {
+	out := make([]string, len(bs))
+	for i, b := range bs {
+		out[i] = string(b)
+	}
+	return out
+}
+
+// TestCursorProvider_ThinkingBuffering covers the per-session buffering of
+// thinking/delta events introduced for issue #650: many small deltas should
+// be coalesced into a single assistant thinking message, and intervening
+// non-thinking events should cause an in-progress buffer to be flushed first
+// so ordering is preserved.
+func TestCursorProvider_ThinkingBuffering(t *testing.T) {
+	type assistantThinking struct {
+		Type    string `json:"type"`
+		Message struct {
+			Role    string `json:"role"`
+			Content []struct {
+				Type     string `json:"type"`
+				Thinking string `json:"thinking"`
+			} `json:"content"`
+		} `json:"message"`
+	}
+
+	parseThinking := func(t *testing.T, raw []byte) string {
+		t.Helper()
+		var msg assistantThinking
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			t.Fatalf("failed to parse thinking message: %v\n%s", err, string(raw))
+		}
+		if msg.Type != "assistant" {
+			t.Fatalf("expected type=assistant, got %q", msg.Type)
+		}
+		if len(msg.Message.Content) != 1 || msg.Message.Content[0].Type != "thinking" {
+			t.Fatalf("expected single thinking content block, got %+v", msg.Message.Content)
+		}
+		return msg.Message.Content[0].Thinking
+	}
+
+	t.Run("multiple deltas coalesce into one assistant message on completed", func(t *testing.T) {
+		p := NewCursorProvider("")
+		inputs := []string{
+			`{"type":"thinking","subtype":"delta","text":"Hello ","session_id":"sess1"}`,
+			`{"type":"thinking","subtype":"delta","text":"world","session_id":"sess1"}`,
+			`{"type":"thinking","subtype":"delta","text":"!","session_id":"sess1"}`,
+		}
+		for _, in := range inputs {
+			if out := p.NormalizeStreamLine([]byte(in)); len(out) != 0 {
+				t.Fatalf("expected delta to be buffered (no output), got %d lines: %v", len(out), bytesSliceToStrings(out))
+			}
+		}
+
+		completed := []byte(`{"type":"thinking","subtype":"completed","session_id":"sess1"}`)
+		out := p.NormalizeStreamLine(completed)
+		if len(out) != 1 {
+			t.Fatalf("expected 1 flushed thinking message, got %d: %v", len(out), bytesSliceToStrings(out))
+		}
+		got := parseThinking(t, out[0])
+		if got != "Hello world!" {
+			t.Errorf("thinking text = %q, want %q", got, "Hello world!")
+		}
+	})
+
+	t.Run("tool_call interrupt flushes buffered thinking before tool message", func(t *testing.T) {
+		p := NewCursorProvider("")
+		// First chunk of thinking
+		buffered := []string{
+			`{"type":"thinking","subtype":"delta","text":"think1-a ","session_id":"sess1"}`,
+			`{"type":"thinking","subtype":"delta","text":"think1-b","session_id":"sess1"}`,
+		}
+		for _, in := range buffered {
+			if out := p.NormalizeStreamLine([]byte(in)); len(out) != 0 {
+				t.Fatalf("expected delta to be buffered, got %v", bytesSliceToStrings(out))
+			}
+		}
+
+		// tool_call completed should flush thinking1 first, then emit the tool message.
+		toolCompleted := []byte(`{"type":"tool_call","subtype":"completed","call_id":"tool_r1","session_id":"sess1","tool_call":{"readToolCall":{"args":{"path":"/x.md"},"result":{"success":{"content":"x"}}}}}`)
+		out := p.NormalizeStreamLine(toolCompleted)
+		if len(out) != 2 {
+			t.Fatalf("expected 2 output lines (thinking flush + tool), got %d: %v", len(out), bytesSliceToStrings(out))
+		}
+		if got := parseThinking(t, out[0]); got != "think1-a think1-b" {
+			t.Errorf("thinking flush text = %q, want %q", got, "think1-a think1-b")
+		}
+		// Second line should be the tool message (an assistant with tool_use/tool_result blocks).
+		var env struct {
+			Type    string `json:"type"`
+			Message struct {
+				Content []map[string]interface{} `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal(out[1], &env); err != nil {
+			t.Fatalf("failed to parse tool message: %v\n%s", err, string(out[1]))
+		}
+		if env.Type != "assistant" || len(env.Message.Content) == 0 {
+			t.Errorf("expected assistant tool message with content, got %s", string(out[1]))
+		}
+		if got, _ := env.Message.Content[0]["type"].(string); got != "tool_use" {
+			t.Errorf("expected first block tool_use, got %q", got)
+		}
+
+		// Second chunk of thinking after the tool — should buffer fresh.
+		buffered2 := []string{
+			`{"type":"thinking","subtype":"delta","text":"think2-x ","session_id":"sess1"}`,
+			`{"type":"thinking","subtype":"delta","text":"think2-y","session_id":"sess1"}`,
+		}
+		for _, in := range buffered2 {
+			if out := p.NormalizeStreamLine([]byte(in)); len(out) != 0 {
+				t.Fatalf("expected delta to be buffered, got %v", bytesSliceToStrings(out))
+			}
+		}
+
+		completed := p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"completed","session_id":"sess1"}`))
+		if len(completed) != 1 {
+			t.Fatalf("expected 1 flushed thinking message, got %d: %v", len(completed), bytesSliceToStrings(completed))
+		}
+		if got := parseThinking(t, completed[0]); got != "think2-x think2-y" {
+			t.Errorf("second thinking text = %q, want %q", got, "think2-x think2-y")
+		}
+	})
+
+	t.Run("assistant text interrupt flushes buffered thinking first", func(t *testing.T) {
+		p := NewCursorProvider("")
+		if out := p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"delta","text":"pre","session_id":"s1"}`)); len(out) != 0 {
+			t.Fatalf("expected buffered, got %v", bytesSliceToStrings(out))
+		}
+		assistantLine := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]},"session_id":"s1"}`
+		out := p.NormalizeStreamLine([]byte(assistantLine))
+		if len(out) != 2 {
+			t.Fatalf("expected thinking flush + assistant passthrough, got %d: %v", len(out), bytesSliceToStrings(out))
+		}
+		if got := parseThinking(t, out[0]); got != "pre" {
+			t.Errorf("thinking flush = %q, want %q", got, "pre")
+		}
+		if string(out[1]) != assistantLine {
+			t.Errorf("assistant line not passed through unchanged\ngot:  %s\nwant: %s", string(out[1]), assistantLine)
+		}
+	})
+
+	t.Run("buffers are isolated per session_id", func(t *testing.T) {
+		p := NewCursorProvider("")
+		_ = p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"delta","text":"A","session_id":"sA"}`))
+		_ = p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"delta","text":"B","session_id":"sB"}`))
+
+		outA := p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"completed","session_id":"sA"}`))
+		if len(outA) != 1 {
+			t.Fatalf("session A: expected 1 flushed message, got %d", len(outA))
+		}
+		if got := parseThinking(t, outA[0]); got != "A" {
+			t.Errorf("session A thinking = %q, want %q", got, "A")
+		}
+
+		outB := p.NormalizeStreamLine([]byte(`{"type":"thinking","subtype":"completed","session_id":"sB"}`))
+		if len(outB) != 1 {
+			t.Fatalf("session B: expected 1 flushed message, got %d", len(outB))
+		}
+		if got := parseThinking(t, outB[0]); got != "B" {
+			t.Errorf("session B thinking = %q, want %q", got, "B")
+		}
+	})
 }

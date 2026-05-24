@@ -148,24 +148,27 @@ func (p *CodexProvider) AppendOTelEnv(env []string, port int) []string {
 
 // NormalizeStreamLine converts a Codex JSONL event into Claude-compatible
 // stream-json format so the frontend can render it uniformly.
-func (p *CodexProvider) NormalizeStreamLine(line []byte) []byte {
+func (p *CodexProvider) NormalizeStreamLine(line []byte) [][]byte {
 	var envelope struct {
 		Type string          `json:"type"`
 		Item json.RawMessage `json:"item"`
 	}
 	if json.Unmarshal(line, &envelope) != nil {
-		return line
+		return [][]byte{line}
 	}
 
 	switch envelope.Type {
 	case "item.completed":
-		return p.normalizeItemCompleted(envelope.Item, line)
+		if out := p.normalizeItemCompleted(envelope.Item, line); out != nil {
+			return [][]byte{out}
+		}
+		return nil
 	case "item.started":
 		// Skip in-progress events; they have no useful content yet.
 		return nil
 	default:
 		// thread.started, turn.started, turn.completed, etc. – keep as-is.
-		return line
+		return [][]byte{line}
 	}
 }
 

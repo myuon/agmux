@@ -187,8 +187,8 @@ func (p *ClaudeProvider) AppendOTelEnv(env []string, port int) []string {
 	return env
 }
 
-func (p *ClaudeProvider) NormalizeStreamLine(line []byte) []byte {
+func (p *ClaudeProvider) NormalizeStreamLine(line []byte) [][]byte {
 	// Claude lines are already in the expected format; return as-is.
-	return line
+	return [][]byte{line}
 }
 

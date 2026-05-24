@@ -50,10 +50,18 @@ type Provider interface {
 	// and must be re-spawned with --resume to continue the conversation.
 	IsOneShot() bool
 	// NormalizeStreamLine converts a provider-specific JSONL line into
-	// Claude-compatible stream-json format. If the line should be kept as-is,
-	// it returns the original bytes unchanged. If the line should be dropped,
-	// it returns nil.
-	NormalizeStreamLine(line []byte) []byte
+	// zero or more Claude-compatible stream-json lines.
+	//
+	// Most providers return a single-element slice (line kept as-is or
+	// converted in place). Providers that buffer multiple input events into
+	// one logical output (e.g. cursor coalescing thinking/delta) may return:
+	//   - nil or empty slice: drop this input line
+	//   - one entry: a single output line
+	//   - multiple entries: e.g. flush a buffered thinking message AND emit
+	//     the current event (preserving original ordering).
+	//
+	// Callers must iterate the returned slice in order.
+	NormalizeStreamLine(line []byte) [][]byte
 }
 
 // GetProvider returns a Provider instance for the given name.

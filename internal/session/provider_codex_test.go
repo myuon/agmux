@@ -461,18 +461,19 @@ func TestCodexProvider_NormalizeStreamLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := p.NormalizeStreamLine([]byte(tt.input))
+			results := p.NormalizeStreamLine([]byte(tt.input))
 
 			if tt.wantNil {
-				if result != nil {
-					t.Errorf("expected nil, got %s", string(result))
+				if len(results) != 0 {
+					t.Errorf("expected no output, got %d lines", len(results))
 				}
 				return
 			}
 
-			if result == nil {
-				t.Fatal("expected non-nil result")
+			if len(results) != 1 {
+				t.Fatalf("expected exactly 1 output line, got %d", len(results))
 			}
+			result := results[0]
 
 			if tt.wantJSON != "" {
 				// Compare as parsed JSON for stable comparison
@@ -638,8 +639,11 @@ func TestClaudeProvider_ParseModel(t *testing.T) {
 func TestClaudeProvider_NormalizeStreamLine(t *testing.T) {
 	p := NewClaudeProvider("", "")
 	input := `{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}}`
-	result := p.NormalizeStreamLine([]byte(input))
-	if string(result) != input {
-		t.Errorf("ClaudeProvider should pass through unchanged\ngot:  %s\nwant: %s", string(result), input)
+	results := p.NormalizeStreamLine([]byte(input))
+	if len(results) != 1 {
+		t.Fatalf("expected exactly 1 output line, got %d", len(results))
+	}
+	if string(results[0]) != input {
+		t.Errorf("ClaudeProvider should pass through unchanged\ngot:  %s\nwant: %s", string(results[0]), input)
 	}
 }
