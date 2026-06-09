@@ -1690,6 +1690,59 @@ func (m *Manager) UpdateModel(id string, model string) error {
 	return err
 }
 
+// SwitchModel updates the session's model and applies it to any running CLI
+// process. For resident providers (claude), the holder is restarted with
+// --resume so the new model takes effect immediately while preserving the
+// conversation history. For one-shot providers (codex/cursor), the in-memory
+// stream options are updated so the next turn re-spawns with the new model.
+func (m *Manager) SwitchModel(id string, model string) error {
+	s, err := m.Get(id)
+	if err != nil {
+		return err
+	}
+
+	if s.Status == StatusWorking {
+		return fmt.Errorf("session %s is working; cannot switch model while a turn is in progress", id)
+	}
+
+	if err := m.UpdateModel(id, model); err != nil {
+		return fmt.Errorf("update model: %w", err)
+	}
+
+	// If no conversation has started yet, the next spawn reads the model
+	// from the DB, so updating the DB is sufficient.
+	if !s.ConversationStarted {
+		return nil
+	}
+
+	if m.getProvider(s.Provider).IsOneShot() {
+		// One-shot providers re-spawn the CLI on every turn. Spawning a
+		// prompt-less resume process here would exit immediately (#643), so
+		// only update the in-memory stream options that restartForCodex
+		// reuses for the next turn.
+		m.streamMu.Lock()
+		sp, ok := m.streamProcesses[id]
+		m.streamMu.Unlock()
+		if ok {
+			sp.SetModel(model)
+		}
+		return nil
+	}
+
+	// Resident provider (claude): restart the holder with --resume and the
+	// new model only if one is active. Without an active holder, the next
+	// spawn (reconnect / auto-recovery) picks up the new model from the DB.
+	m.streamMu.Lock()
+	_, hasProcess := m.streamProcesses[id]
+	m.streamMu.Unlock()
+	if !hasProcess && !IsHolderAlive(s.HolderPID) {
+		return nil
+	}
+
+	m.logger.Info("switching model via holder restart", "sessionId", id, "model", model)
+	return m.Restart(id)
+}
+
 func (m *Manager) UpdateContext(id string, currentTask, goal string) error {
 	_, err := m.db.Exec("UPDATE sessions SET current_task = ?, goal = ?, updated_at = ? WHERE id = ?", currentTask, goal, time.Now(), id)
 	return err

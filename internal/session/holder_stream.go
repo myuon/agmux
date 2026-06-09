@@ -504,6 +504,23 @@ func (sp *HolderStreamProcess) HolderPID() int {
 	return sp.holderPID
 }
 
+// SetModel updates the model used when re-spawning the CLI process.
+// One-shot providers (codex/cursor) reuse streamOpts on every followup turn
+// (see restartForCodex), so updating it here makes the next turn use the
+// new model.
+func (sp *HolderStreamProcess) SetModel(model string) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.streamOpts.Model = model
+}
+
+// Model returns the model currently set in the stream options.
+func (sp *HolderStreamProcess) Model() string {
+	sp.mu.RLock()
+	defer sp.mu.RUnlock()
+	return sp.streamOpts.Model
+}
+
 // SetOnSessionID sets a callback for CLI session ID capture.
 func (sp *HolderStreamProcess) SetOnSessionID(fn func(cliSessionID string)) {
 	sp.mu.Lock()

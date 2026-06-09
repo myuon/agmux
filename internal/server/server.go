@@ -137,6 +137,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/stop", s.stopSession)
 		r.Post("/sessions/{id}/send", s.sendToSession)
 		r.Put("/sessions/{id}/context", s.updateSessionContext)
+		r.Put("/sessions/{id}/model", s.updateSessionModel)
 		r.Get("/sessions/{id}/goals", s.getGoals)
 		r.Post("/sessions/{id}/goals", s.createGoal)
 		r.Post("/sessions/{id}/goals/complete", s.completeGoal)
@@ -540,6 +541,29 @@ func (s *Server) updateSessionContext(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+type updateModelRequest struct {
+	Model string `json:"model"`
+}
+
+func (s *Server) updateSessionModel(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req updateModelRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Model == "" {
+		writeError(w, http.StatusBadRequest, "model is required")
+		return
+	}
+	if err := s.sessions.SwitchModel(id, req.Model); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordSessionAction(id, "model_switch", req.Model)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
