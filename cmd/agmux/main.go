@@ -23,6 +23,7 @@ import (
 	"time"
 
 	agmux "github.com/myuon/agmux"
+	"github.com/myuon/agmux/internal/automation"
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/daemon"
 	"github.com/myuon/agmux/internal/db"
@@ -240,6 +241,17 @@ func serveCmd() *cobra.Command {
 				logger.Info("controller session ready", "id", controllerSess.ID)
 			}
 
+			// Start automation scheduler (fires enabled automations on
+			// interval / cron triggers and creates sessions via the manager).
+			autoStore := automation.NewStore(database)
+			autoRunner := automation.NewRunner(autoStore, mgr, logger)
+			autoScheduler := automation.NewScheduler(autoStore, autoRunner, logger)
+			autoScheduler.Start()
+			// Stop is idempotent; the defer covers error-return paths (frontend
+			// load / listen / Serve errors) that bypass the graceful-shutdown
+			// branch below.
+			defer autoScheduler.Stop()
+
 			if !devMode {
 				// Resolve frontend directory: CLI flag > config > embedded
 				if frontendDir == "" {
@@ -300,6 +312,7 @@ func serveCmd() *cobra.Command {
 				return err
 			case sig := <-shutdownCh:
 				logger.Info(fmt.Sprintf("Received %s, shutting down gracefully...", sig))
+				autoScheduler.Stop()
 				mgr.StopAllStreamProcesses()
 				if extDet := srv.ExternalDetector(); extDet != nil {
 					extDet.Stop()
