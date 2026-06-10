@@ -369,6 +369,53 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add automation_id column to sessions (marks sessions created by an automation)
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN automation_id TEXT`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
+	// Migration: create automations table
+	// trigger_type is 'interval' (trigger_value = Go duration, e.g. "30m")
+	// or 'cron' (trigger_value = standard 5-field cron expression).
+	// project_path is NULL/'' for automations that run in the controller area.
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS automations (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			prompt TEXT NOT NULL,
+			trigger_type TEXT NOT NULL,
+			trigger_value TEXT NOT NULL,
+			project_path TEXT,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	// Migration: create automation_runs table (execution history)
+	// status: 'success' | 'skipped' | 'error'. session_id is set on success.
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS automation_runs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			automation_id TEXT NOT NULL,
+			fired_at DATETIME NOT NULL,
+			session_id TEXT,
+			status TEXT NOT NULL,
+			message TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_automation_runs_automation ON automation_runs(automation_id)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_automation_runs_fired ON automation_runs(fired_at)`)
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_automation ON sessions(automation_id)`)
+
 	return nil
 }
 

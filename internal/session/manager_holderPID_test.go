@@ -32,6 +32,7 @@ func newTestDB(t *testing.T) *sql.DB {
 			system_prompt TEXT,
 			parent_session_id TEXT,
 			role_template TEXT,
+			automation_id TEXT,
 			holder_pid INTEGER NOT NULL DEFAULT 0,
 			clear_offset INTEGER NOT NULL DEFAULT 0,
 			cli_session_id TEXT NOT NULL DEFAULT '',
