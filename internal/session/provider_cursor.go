@@ -317,6 +317,7 @@ func (p *CursorProvider) normalizeToolCall(line []byte, subtype string) []byte {
 		// Always emit an object so the frontend can render an empty input.
 		args = json.RawMessage(`{}`)
 	}
+	args = cursorToolArgsToClaudeInput(name, args)
 
 	tu := toolUseBlock{Type: "tool_use", ID: msg.CallID, Name: name, Input: args}
 
@@ -336,6 +337,37 @@ func (p *CursorProvider) normalizeToolCall(line []byte, subtype string) []byte {
 	wrapper.Message.Role = "assistant"
 	wrapper.Message.Content = []json.RawMessage{tuJSON, trJSON}
 	b, _ := json.Marshal(wrapper)
+	return b
+}
+
+// cursorToolArgsToClaudeInput converts Cursor tool args into the
+// Claude-compatible tool_use input shape. Cursor's read/edit/write tools put
+// the target file in args.path, while the Claude format (which the frontend
+// renders) expects input.file_path. The key is renamed for those tools so the
+// frontend shows the file path next to the tool name; other tools pass
+// through unchanged.
+func cursorToolArgsToClaudeInput(name string, args json.RawMessage) json.RawMessage {
+	switch name {
+	case "Read", "Edit", "Write":
+	default:
+		return args
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(args, &obj) != nil {
+		return args
+	}
+	path, ok := obj["path"]
+	if !ok {
+		return args
+	}
+	if _, exists := obj["file_path"]; !exists {
+		obj["file_path"] = path
+	}
+	delete(obj, "path")
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return args
+	}
 	return b
 }
 

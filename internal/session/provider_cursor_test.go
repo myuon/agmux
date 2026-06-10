@@ -332,6 +332,76 @@ func TestCursorProvider_cursorToolKindToName(t *testing.T) {
 	}
 }
 
+func TestCursorToolArgsToClaudeInput(t *testing.T) {
+	tests := []struct {
+		name     string
+		toolName string
+		args     string
+		want     string
+	}{
+		{
+			name:     "read renames path to file_path",
+			toolName: "Read",
+			args:     `{"path":"/x.md"}`,
+			want:     `{"file_path":"/x.md"}`,
+		},
+		{
+			name:     "edit renames path and keeps other keys",
+			toolName: "Edit",
+			args:     `{"path":"a.go","streamContent":"x"}`,
+			want:     `{"file_path":"a.go","streamContent":"x"}`,
+		},
+		{
+			name:     "write renames path to file_path",
+			toolName: "Write",
+			args:     `{"path":"b.go"}`,
+			want:     `{"file_path":"b.go"}`,
+		},
+		{
+			name:     "non-file tool passes through unchanged",
+			toolName: "Bash",
+			args:     `{"path":"/tmp","command":"ls"}`,
+			want:     `{"path":"/tmp","command":"ls"}`,
+		},
+		{
+			name:     "args without path pass through unchanged",
+			toolName: "Read",
+			args:     `{"offset":1}`,
+			want:     `{"offset":1}`,
+		},
+		{
+			name:     "existing file_path is not overwritten",
+			toolName: "Read",
+			args:     `{"path":"/a","file_path":"/b"}`,
+			want:     `{"file_path":"/b"}`,
+		},
+		{
+			name:     "non-object args pass through unchanged",
+			toolName: "Read",
+			args:     `"not an object"`,
+			want:     `"not an object"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cursorToolArgsToClaudeInput(tt.toolName, json.RawMessage(tt.args))
+			var gotV, wantV interface{}
+			if err := json.Unmarshal(got, &gotV); err != nil {
+				t.Fatalf("failed to parse result JSON: %v\nresult: %s", err, string(got))
+			}
+			if err := json.Unmarshal([]byte(tt.want), &wantV); err != nil {
+				t.Fatalf("failed to parse expected JSON: %v", err)
+			}
+			gotBytes, _ := json.Marshal(gotV)
+			wantBytes, _ := json.Marshal(wantV)
+			if string(gotBytes) != string(wantBytes) {
+				t.Errorf("got %s, want %s", string(gotBytes), string(wantBytes))
+			}
+		})
+	}
+}
+
 func TestCursorProvider_NormalizeToolCall_MoreKinds(t *testing.T) {
 	p := NewCursorProvider("")
 
@@ -460,7 +530,12 @@ func TestCursorProvider_NormalizeStreamLine(t *testing.T) {
 		{
 			name:     "tool_call completed (read) becomes assistant tool_use+tool_result",
 			input:    `{"type":"tool_call","subtype":"completed","call_id":"tool_r1","tool_call":{"readToolCall":{"args":{"path":"/x.md"},"result":{"success":{"content":"hello","path":"/x.md","fileSize":5}}}}}`,
-			wantJSON: `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tool_r1","name":"Read","input":{"path":"/x.md"}},{"type":"tool_result","tool_use_id":"tool_r1","content":"{\"content\":\"hello\",\"path\":\"/x.md\",\"fileSize\":5}"}]}}`,
+			wantJSON: `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tool_r1","name":"Read","input":{"file_path":"/x.md"}},{"type":"tool_result","tool_use_id":"tool_r1","content":"{\"content\":\"hello\",\"path\":\"/x.md\",\"fileSize\":5}"}]}}`,
+		},
+		{
+			name:     "tool_call completed (edit) renames path to file_path",
+			input:    `{"type":"tool_call","subtype":"completed","call_id":"tool_e1","tool_call":{"editToolCall":{"args":{"path":"a.go","streamContent":"x"},"result":{"success":{"path":"a.go","linesAdded":1,"linesRemoved":0,"diffString":"--- a/a.go"}}}}}`,
+			wantJSON: `{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"tool_e1","name":"Edit","input":{"file_path":"a.go","streamContent":"x"}},{"type":"tool_result","tool_use_id":"tool_e1","content":"{\"path\":\"a.go\",\"linesAdded\":1,\"linesRemoved\":0,\"diffString\":\"--- a/a.go\"}"}]}}`,
 		},
 		{
 			name:     "tool_call completed (shell) maps to Bash",
