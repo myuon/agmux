@@ -55,6 +55,7 @@ func main() {
 	rootCmd.AddCommand(daemonCmd())
 	rootCmd.AddCommand(holderCmd())
 	rootCmd.AddCommand(templateCmd())
+	rootCmd.AddCommand(automationCmd())
 	rootCmd.AddCommand(updateCmd())
 	rootCmd.AddCommand(versionCmd())
 
