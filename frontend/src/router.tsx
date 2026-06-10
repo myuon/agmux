@@ -5,6 +5,8 @@ import { ConfigPage } from "./pages/ConfigPage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { PreviewPage } from "./pages/PreviewPage";
 import { ScenarioTestPage } from "./pages/ScenarioTestPage";
+import { AutomationsPage } from "./pages/AutomationsPage";
+import { AutomationDetailPage } from "./pages/AutomationDetailPage";
 import { api } from "./api/client";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 
@@ -55,6 +57,26 @@ export const router = createBrowserRouter([
             },
           },
         ],
+      },
+      {
+        path: "automations",
+        element: <AutomationsPage />,
+        loader: async () => {
+          const automations = await api.listAutomations();
+          return { automations };
+        },
+      },
+      {
+        path: "automations/:id",
+        element: <AutomationDetailPage />,
+        loader: async ({ params }: LoaderFunctionArgs) => {
+          const id = params.id!;
+          const [automation, runs] = await Promise.all([
+            api.getAutomation(id),
+            api.listAutomationRuns(id),
+          ]);
+          return { automation, runs };
+        },
       },
       {
         path: "config",

@@ -9,6 +9,7 @@ export interface Session {
   model?: string;
   parentSessionId?: string;
   roleTemplate?: string;
+  automationId?: string;
   currentTask?: string;
   goal?: string;
   goals?: { currentTask: string; goal: string }[];
