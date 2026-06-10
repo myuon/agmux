@@ -14,6 +14,7 @@ import (
 type SessionCreator interface {
 	Create(name, projectPath, prompt string, worktree bool, opts ...session.CreateOpts) (*session.Session, error)
 	Get(id string) (*session.Session, error)
+	UpdateStatus(id string, status session.Status) error
 }
 
 // Runner executes a fired automation: it creates a new session and sends the
@@ -79,6 +80,16 @@ func (r *Runner) Run(a Automation, firedAt time.Time) *Run {
 		r.logger.Error("automation failed: create session",
 			"automationId", a.ID, "name", a.Name, "error", err)
 		return r.record(run)
+	}
+
+	// Manager.Create inserts the session with status idle; promote it to
+	// working so the multi-run guard above can detect it as still active
+	// (same pattern as the send endpoint after SendKeys). The turn-complete
+	// callback wired in Manager.Create sets it back to idle when the CLI
+	// finishes the turn.
+	if err := r.sessions.UpdateStatus(sess.ID, session.StatusWorking); err != nil {
+		r.logger.Warn("automation: failed to mark session as working; the multi-run guard may not engage for this run",
+			"automationId", a.ID, "sessionId", sess.ID, "error", err)
 	}
 
 	run.Status = RunSuccess

@@ -1,6 +1,7 @@
 package automation
 
 import (
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -105,7 +106,9 @@ func (s *Scheduler) Tick(now time.Time) {
 	for _, a := range automations {
 		due, err := s.isDue(a, now)
 		if err != nil {
-			s.logger.Warn("automation scheduler: invalid trigger, skipping",
+			// The wrapped error explains the cause (query latest run failed
+			// vs. invalid trigger definition).
+			s.logger.Warn("automation scheduler: due check failed, skipping",
 				"automationId", a.ID, "name", a.Name,
 				"triggerType", a.TriggerType, "triggerValue", a.TriggerValue, "error", err)
 			continue
@@ -123,11 +126,15 @@ func (s *Scheduler) Tick(now time.Time) {
 func (s *Scheduler) isDue(a Automation, now time.Time) (bool, error) {
 	last, err := s.store.LatestRun(a.ID)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("query latest run: %w", err)
 	}
 	var lastFiredAt time.Time
 	if last != nil {
 		lastFiredAt = last.FiredAt
 	}
-	return IsDue(a, lastFiredAt, now)
+	due, err := IsDue(a, lastFiredAt, now)
+	if err != nil {
+		return false, fmt.Errorf("invalid trigger: %w", err)
+	}
+	return due, nil
 }

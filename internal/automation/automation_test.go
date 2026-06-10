@@ -55,8 +55,11 @@ func (f *fakeSessions) Create(name, projectPath, prompt string, worktree bool, o
 	}
 	f.created = append(f.created, fakeCreateCall{name: name, projectPath: projectPath, prompt: prompt, opts: o})
 	id := fmt.Sprintf("sess-%d", len(f.created))
-	f.statuses[id] = session.StatusWorking
-	return &session.Session{ID: id, Name: name, ProjectPath: projectPath, Status: session.StatusWorking}, nil
+	// Mirror session.Manager.Create: sessions are INSERTed with StatusIdle.
+	// The runner is responsible for promoting them to working via
+	// UpdateStatus — otherwise the multi-run guard never engages.
+	f.statuses[id] = session.StatusIdle
+	return &session.Session{ID: id, Name: name, ProjectPath: projectPath, Status: session.StatusIdle}, nil
 }
 
 func (f *fakeSessions) Get(id string) (*session.Session, error) {
@@ -67,6 +70,16 @@ func (f *fakeSessions) Get(id string) (*session.Session, error) {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
 	return &session.Session{ID: id, Status: st}, nil
+}
+
+func (f *fakeSessions) UpdateStatus(id string, st session.Status) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.statuses[id]; !ok {
+		return fmt.Errorf("session not found: %s", id)
+	}
+	f.statuses[id] = st
+	return nil
 }
 
 func (f *fakeSessions) setStatus(id string, st session.Status) {
@@ -248,6 +261,12 @@ func TestRunner_CreatesSessionAndRecordsSuccess(t *testing.T) {
 	assert.Equal(t, "/tmp/proj", sessions.created[0].projectPath)
 	assert.Equal(t, "do the thing", sessions.created[0].prompt)
 	assert.Equal(t, a.ID, sessions.created[0].opts.AutomationID)
+
+	// The runner must promote the created session to working (Manager.Create
+	// inserts idle); without this the multi-run guard can never engage.
+	sess, err := sessions.Get("sess-1")
+	require.NoError(t, err)
+	assert.Equal(t, session.StatusWorking, sess.Status)
 
 	runs, err := store.ListRuns(a.ID, 10)
 	require.NoError(t, err)

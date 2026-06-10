@@ -247,6 +247,10 @@ func serveCmd() *cobra.Command {
 			autoRunner := automation.NewRunner(autoStore, mgr, logger)
 			autoScheduler := automation.NewScheduler(autoStore, autoRunner, logger)
 			autoScheduler.Start()
+			// Stop is idempotent; the defer covers error-return paths (frontend
+			// load / listen / Serve errors) that bypass the graceful-shutdown
+			// branch below.
+			defer autoScheduler.Stop()
 
 			if !devMode {
 				// Resolve frontend directory: CLI flag > config > embedded
