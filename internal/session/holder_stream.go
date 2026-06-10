@@ -758,7 +758,10 @@ func (sp *HolderStreamProcess) sendCodex(message string) error {
 
 // restartForCodex spawns a new holder for a Codex followup message.
 func (sp *HolderStreamProcess) restartForCodex(message, cliSessionID string) error {
+	// Copy under lock: SetModel mutates streamOpts.Model concurrently.
+	sp.mu.RLock()
 	opts := sp.streamOpts
+	sp.mu.RUnlock()
 	opts.Resume = true
 	opts.CLISessionID = cliSessionID
 	opts.InitialPrompt = message
