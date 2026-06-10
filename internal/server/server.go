@@ -22,6 +22,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/gorilla/websocket"
+	"github.com/myuon/agmux/internal/automation"
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/mcp"
@@ -40,6 +41,7 @@ type Server struct {
 	permissions      *PermissionStore
 	otelReceiver     *otel.Receiver
 	sqlDB            *sql.DB
+	automations      *automation.Store
 	externalDetector *session.ExternalDetector
 	version          string
 	commit           string
@@ -60,6 +62,7 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 		permissions:      NewPermissionStore(),
 		otelReceiver:     otel.NewReceiver(sqlDB, logger),
 		sqlDB:            sqlDB,
+		automations:      automation.NewStore(sqlDB),
 		externalDetector: extDetector,
 		startTime:        time.Now(),
 	}
@@ -162,6 +165,13 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/notify", s.sendNotification)
 		r.Post("/sessions/broadcast", s.broadcastToSessions)
 		r.Post("/sessions/controller/restart", s.restartController)
+		r.Get("/automations", s.listAutomations)
+		r.Post("/automations", s.createAutomation)
+		r.Get("/automations/{id}", s.getAutomation)
+		r.Put("/automations/{id}", s.updateAutomation)
+		r.Delete("/automations/{id}", s.deleteAutomation)
+		r.Put("/automations/{id}/enabled", s.setAutomationEnabled)
+		r.Get("/automations/{id}/runs", s.listAutomationRuns)
 		r.Get("/projects/recent", s.getRecentProjects)
 		r.Get("/claude/models", s.getClaudeModels)
 		r.Get("/claude/version", s.getClaudeVersion)
@@ -260,9 +270,7 @@ func (s *Server) broadcastSessionUpdate() {
 		s.logger.Error("broadcastSessionUpdate: failed to list sessions", "error", err)
 		return
 	}
-	if sessions == nil {
-		sessions = []session.Session{}
-	}
+	sessions = filterAutomationSessions(sessions)
 	if s.externalDetector != nil {
 		external := s.externalDetector.Sessions()
 		sessions = append(sessions, external...)
@@ -273,15 +281,28 @@ func (s *Server) broadcastSessionUpdate() {
 	})
 }
 
+// filterAutomationSessions removes sessions created by automations from the
+// default session list; they are reachable via the automation run history
+// instead. Manual sessions may have automation_id stored as either NULL or ''
+// (see #671 review), but both deserialize to an empty string, so a non-empty
+// check covers both. Always returns a non-nil slice.
+func filterAutomationSessions(sessions []session.Session) []session.Session {
+	filtered := make([]session.Session, 0, len(sessions))
+	for _, sess := range sessions {
+		if sess.AutomationID == "" {
+			filtered = append(filtered, sess)
+		}
+	}
+	return filtered
+}
+
 func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	sessions, err := s.sessions.List()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if sessions == nil {
-		sessions = []session.Session{}
-	}
+	sessions = filterAutomationSessions(sessions)
 
 	// Merge external (non-agmux) Claude sessions
 	if s.externalDetector != nil {

@@ -200,7 +200,66 @@ export const api = {
       `/sessions/${sessionId}/background-tasks`
     ),
 
+  listAutomations: () => request<Automation[]>("/automations"),
+
+  getAutomation: (id: string) => request<Automation>(`/automations/${id}`),
+
+  createAutomation: (data: AutomationInput) =>
+    request<Automation>("/automations", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateAutomation: (id: string, data: AutomationInput) =>
+    request<Automation>(`/automations/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteAutomation: (id: string) =>
+    request<{ status: string }>(`/automations/${id}`, { method: "DELETE" }),
+
+  setAutomationEnabled: (id: string, enabled: boolean) =>
+    request<Automation>(`/automations/${id}/enabled`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    }),
+
+  listAutomationRuns: (id: string, limit = 50) =>
+    request<AutomationRun[]>(`/automations/${id}/runs?limit=${limit}`),
+
 };
+
+export interface Automation {
+  id: string;
+  name: string;
+  prompt: string;
+  triggerType: "interval" | "cron";
+  triggerValue: string;
+  projectPath?: string;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AutomationInput {
+  name: string;
+  prompt: string;
+  triggerType: "interval" | "cron";
+  triggerValue: string;
+  projectPath?: string;
+  enabled: boolean;
+}
+
+export interface AutomationRun {
+  id: number;
+  automationId: string;
+  firedAt: string;
+  sessionId?: string;
+  status: "success" | "skipped" | "error";
+  message?: string;
+  createdAt: string;
+}
 
 // BackgroundTaskDTO mirrors `internal/session.BackgroundTask` (Go).
 export interface BackgroundTaskDTO {
