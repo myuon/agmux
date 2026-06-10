@@ -6,7 +6,7 @@ import {
   Square, RefreshCw, Trash2, ArrowLeft, GitBranch, FolderOpen,
   Sparkles, Settings, Copy,
   RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
-  Code, Eye, X, AlertTriangle, LayoutTemplate,
+  Code, Eye, X, AlertTriangle, LayoutTemplate, ChevronDown,
 } from "lucide-react";
 import { useDesktopPane } from "../App";
 import { Modal } from "../components/ui/Modal";
@@ -65,6 +65,114 @@ function ParentSessionLink({ parentId }: { parentId: string }) {
       <Link to={`/sessions/${parentId}`} className="underline hover:text-blue-700">
         {parentName ?? parentId}
       </Link>
+    </div>
+  );
+}
+
+// ModelSwitcher renders the model Chip in the session header. For providers
+// with a model list API (claude / codex), the Chip becomes clickable and shows
+// a dropdown to switch the session's model. Cursor has no model list API, so
+// its Chip stays non-clickable. Switching is disabled while a turn is in
+// progress (status = working).
+function ModelSwitcher({ session, onSwitched, onError }: {
+  session: Session;
+  onSwitched: (model: string) => void;
+  onError: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [models, setModels] = useState<{ id: string; name: string }[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const switchable =
+    (session.provider === "claude" || session.provider === "codex") &&
+    session.status !== "working";
+
+  // Close the dropdown on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  if (!switchable) {
+    return (
+      <span className="inline-flex items-center"><Chip color="purple">{session.model}</Chip></span>
+    );
+  }
+
+  const toggleOpen = () => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setOpen(true);
+    if (models === null && !loading) {
+      setLoading(true);
+      const fetchModels = session.provider === "codex"
+        ? api.getCodexModels().then((ms) => ms.map((m) => ({ id: m.id, name: m.name || m.id })))
+        : api.getClaudeModels().then((ms) => ms.map((m) => ({ id: m.id, name: m.name })));
+      fetchModels
+        .then(setModels)
+        .catch(() => setModels([]))
+        .finally(() => setLoading(false));
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative inline-flex items-center">
+      <button
+        type="button"
+        onClick={toggleOpen}
+        disabled={switching}
+        title="クリックでモデルを切替"
+        className={`inline-flex items-center ${switching ? "opacity-60 cursor-not-allowed" : "hover:opacity-80 cursor-pointer"}`}
+      >
+        <Chip color="purple">
+          {session.model}
+          <ChevronDown className="w-3 h-3 ml-0.5" />
+        </Chip>
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto z-50 min-w-44">
+          {loading ? (
+            <div className="px-3 py-2 text-xs text-gray-400">Loading models...</div>
+          ) : models && models.length > 0 ? (
+            models.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                className={`w-full text-left px-3 py-2 text-xs hover:bg-purple-50 ${
+                  m.id === session.model ? "bg-purple-100 text-purple-800" : "text-gray-700"
+                }`}
+                onClick={async () => {
+                  setOpen(false);
+                  if (m.id === session.model || switching) return;
+                  setSwitching(true);
+                  try {
+                    await api.updateSessionModel(session.id, m.id);
+                    onSwitched(m.id);
+                  } catch {
+                    onError();
+                  } finally {
+                    setSwitching(false);
+                  }
+                }}
+              >
+                {m.name}
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-xs text-gray-400">No models available</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -139,6 +247,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [restartToast, setRestartToast] = useState<"success" | "error" | null>(null);
   const [disconnectToast, setDisconnectToast] = useState(false);
   const [clearToast, setClearToast] = useState<"success" | "error" | null>(null);
+  const [modelToast, setModelToast] = useState<"success" | "error" | null>(null);
   const [copiedToast, setCopiedToast] = useState(false);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
@@ -702,6 +811,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       {restartToast === "error" && <Toast message="再起動に失敗しました" variant="error" />}
       {clearToast === "success" && <Toast message="セッションをクリアしました" />}
       {clearToast === "error" && <Toast message="クリアに失敗しました" variant="error" />}
+      {modelToast === "success" && <Toast message="モデルを切り替えました" />}
+      {modelToast === "error" && <Toast message="モデルの切替に失敗しました" variant="error" />}
       {copiedToast && <Toast message="セッション名をコピーしました" />}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 shrink-0">
         {!isDesktopPane && (
@@ -756,7 +867,19 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               return chip;
             })()}
             {session.model && (
-              <span className="inline-flex items-center"><Chip color="purple">{session.model}</Chip></span>
+              <ModelSwitcher
+                session={session}
+                onSwitched={(model) => {
+                  setSession((prev) => (prev ? { ...prev, model } : prev));
+                  api.getSession(session.id).then(setSession).catch(() => {});
+                  setModelToast("success");
+                  setTimeout(() => setModelToast(null), 3000);
+                }}
+                onError={() => {
+                  setModelToast("error");
+                  setTimeout(() => setModelToast(null), 3000);
+                }}
+              />
             )}
             {session.roleTemplate && (
               <span className="inline-flex items-center" style={{ viewTransitionName: `session-role-${session.id}` }}><Chip color="orange">{session.roleTemplate}</Chip></span>

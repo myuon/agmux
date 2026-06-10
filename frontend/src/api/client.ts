@@ -99,6 +99,12 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  updateSessionModel: (id: string, model: string) =>
+    request<{ status: string }>(`/sessions/${id}/model`, {
+      method: "PUT",
+      body: JSON.stringify({ model }),
+    }),
+
   reconnectSession: (id: string) =>
     request<{ status: string }>(`/sessions/${id}/reconnect`, { method: "POST" }),
 

@@ -36,6 +36,9 @@ type SessionService interface {
 	UpdateStatus(id string, status Status) error
 	// UpdateContext updates the session's current task and goal.
 	UpdateContext(id string, currentTask, goal string) error
+	// SwitchModel updates the session's model and applies it to any running
+	// CLI process.
+	SwitchModel(id string, model string) error
 
 	// CreateGoal creates a new goal for a session.
 	CreateGoal(id string, currentTask, goal string, subgoal bool) error
