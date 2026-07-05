@@ -13,6 +13,7 @@ import (
 
 	"github.com/myuon/agmux/internal/automation"
 	"github.com/myuon/agmux/internal/db"
+	"github.com/myuon/agmux/internal/mcp"
 	"github.com/myuon/agmux/internal/session"
 )
 
@@ -249,5 +250,100 @@ func TestFilterAutomationSessions(t *testing.T) {
 	// nil input yields a non-nil empty slice (serializes as []).
 	if got := filterAutomationSessions(nil); got == nil || len(got) != 0 {
 		t.Errorf("filterAutomationSessions(nil) = %+v, want empty non-nil slice", got)
+	}
+}
+
+// TestMCPCreateAutomationPersists exercises the full path used by the
+// create_automation MCP tool: MCP server -> HTTP API -> SQLite-backed store.
+// It guarantees that an automation created from within a session is persisted
+// and therefore visible on the settings screen (which reads the same store).
+func TestMCPCreateAutomationPersists(t *testing.T) {
+	s := newAutomationTestServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	mcpServer := mcp.NewServerForHTTP("sess-1", ts.URL)
+	req := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_automation","arguments":{"name":"nightly cleanup","prompt":"clean up stale branches","triggerType":"cron","triggerValue":"0 3 * * *","projectPath":"/tmp/proj"}}}`
+	out := mcpServer.HandleJSONRPC([]byte(req))
+
+	var resp struct {
+		Result *struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			IsError bool `json:"isError"`
+		} `json:"result"`
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("unmarshal MCP response: %v (body: %s)", err, string(out))
+	}
+	if resp.Error != nil {
+		t.Fatalf("MCP error: %+v", resp.Error)
+	}
+	if resp.Result == nil || resp.Result.IsError {
+		t.Fatalf("unexpected MCP result: %s", string(out))
+	}
+
+	// The automation is persisted in the store.
+	list, err := s.automations.List()
+	if err != nil {
+		t.Fatalf("list automations: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("len(automations) = %d, want 1", len(list))
+	}
+	a := list[0]
+	if a.Name != "nightly cleanup" || a.Prompt != "clean up stale branches" ||
+		a.TriggerType != automation.TriggerCron || a.TriggerValue != "0 3 * * *" ||
+		a.ProjectPath != "/tmp/proj" || !a.Enabled {
+		t.Errorf("unexpected persisted automation: %+v", a)
+	}
+	if len(resp.Result.Content) == 0 || !strings.Contains(resp.Result.Content[0].Text, a.ID) {
+		t.Errorf("MCP result should contain the created automation id %q: %s", a.ID, string(out))
+	}
+
+	// The automation is visible via the same API the settings screen uses.
+	rec := doJSON(t, s, http.MethodGet, "/api/automations/"+a.ID, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want %d", rec.Code, http.StatusOK)
+	}
+}
+
+// TestMCPCreateAutomationInvalidTrigger verifies that server-side validation
+// errors surface as tool errors and nothing is persisted.
+func TestMCPCreateAutomationInvalidTrigger(t *testing.T) {
+	s := newAutomationTestServer(t)
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	mcpServer := mcp.NewServerForHTTP("sess-1", ts.URL)
+	req := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"create_automation","arguments":{"name":"bad","prompt":"p","triggerType":"cron","triggerValue":"not a cron"}}}`
+	out := mcpServer.HandleJSONRPC([]byte(req))
+
+	var resp struct {
+		Result *struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+			IsError bool `json:"isError"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("unmarshal MCP response: %v (body: %s)", err, string(out))
+	}
+	if resp.Result == nil || !resp.Result.IsError {
+		t.Fatalf("expected tool error result, got: %s", string(out))
+	}
+
+	list, err := s.automations.List()
+	if err != nil {
+		t.Fatalf("list automations: %v", err)
+	}
+	if len(list) != 0 {
+		t.Errorf("len(automations) = %d, want 0 (nothing should be persisted)", len(list))
 	}
 }
