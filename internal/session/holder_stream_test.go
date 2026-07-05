@@ -138,6 +138,78 @@ func TestLoadExistingLines_ClaudeProviderResetBuffers_NoOp(t *testing.T) {
 	}
 }
 
+// TestLoadExistingLines_ThinkingTokensNotPersisted verifies that
+// system/thinking_tokens progress events (emitted by the claude provider for
+// models with redacted thinking, 100+ lines per session) are treated as
+// transient during replay: they must NOT be loaded into sp.lines, while
+// surrounding non-transient lines are preserved.
+//
+// Regression for issue #675.
+func TestLoadExistingLines_ThinkingTokensNotPersisted(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sessionID := "test-thinking-tokens"
+	jsonlPath := filepath.Join(streamsDir, sessionID+".jsonl")
+
+	content := `{"type":"system","subtype":"init","session_id":"c-1"}
+{"type":"system","subtype":"thinking_tokens","estimated_tokens":50,"estimated_tokens_delta":50,"session_id":"c-1"}
+{"type":"system","subtype":"thinking_tokens","estimated_tokens":128,"estimated_tokens_delta":78,"session_id":"c-1"}
+{"type":"system","subtype":"thinking_tokens","estimated_tokens":250,"estimated_tokens_delta":122,"session_id":"c-1"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}
+{"type":"result","subtype":"success","is_error":false,"result":"ok","session_id":"c-1"}
+`
+	if err := os.WriteFile(jsonlPath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sp := &HolderStreamProcess{
+		provider: NewClaudeProvider("", ""),
+	}
+
+	sp.loadExistingLines(sessionID, 0)
+
+	if len(sp.lines) != 3 {
+		t.Errorf("expected 3 replayed lines (init, assistant, result), got %d: %v", len(sp.lines), sp.lines)
+	}
+	for _, l := range sp.lines {
+		if strings.Contains(l, "thinking_tokens") {
+			t.Errorf("thinking_tokens event leaked into replayed history: %s", l)
+		}
+	}
+}
+
+// TestIsTransientStreamLine covers the transient-line classification used by
+// both replay and live processing.
+func TestIsTransientStreamLine(t *testing.T) {
+	cases := []struct {
+		name string
+		line string
+		want bool
+	}{
+		{"stream_event", `{"type":"stream_event","event":{"type":"content_block_delta"}}`, true},
+		{"thinking_tokens", `{"type":"system","subtype":"thinking_tokens","estimated_tokens":50}`, true},
+		{"system_init", `{"type":"system","subtype":"init","session_id":"c-1"}`, false},
+		{"assistant", `{"type":"assistant","message":{"content":[]}}`, false},
+		{"result", `{"type":"result","subtype":"success"}`, false},
+		{"non_json", `plain text`, false},
+		{"empty", ``, false},
+		{"invalid_json", `{broken`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isTransientStreamLine([]byte(tc.line)); got != tc.want {
+				t.Errorf("isTransientStreamLine(%q) = %v, want %v", tc.line, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestReadLoop_EOFTriggersOnProcessExit verifies the follow-up fix: when the
 // holder socket reaches EOF (= the holder process died unexpectedly without
 // sending a control "exited" event), the readLoop must fire the
