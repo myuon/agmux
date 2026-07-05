@@ -216,6 +216,43 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 					},
 				},
 				map[string]interface{}{
+					"name":        "create_automation",
+					"description": "定期実行のAutomation（スケジュールに従って新しいセッションを起動しプロンプトを実行する自動化）を作成します。ユーザーから定期実行タスクの設定を頼まれたとき、または会話の流れでAutomation化に合意できたときに呼んでください。作成前に名前・トリガー・プロンプト内容をユーザーと確認し、判断に迷う場合は escalate ツールで確認してから呼ぶこと。作成されたAutomationは設定画面（Settings > Automations）に表示されます。",
+					"inputSchema": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"session_id": sessionIDProperty,
+							"name": map[string]interface{}{
+								"type":        "string",
+								"description": "Automationの名前（例: 「毎朝のイシュー整理」）",
+							},
+							"prompt": map[string]interface{}{
+								"type":        "string",
+								"description": "発動時にエージェントへ渡す指示文（例: 「openなissueを確認し、優先度順に並べてレポートしてください」）",
+							},
+							"triggerType": map[string]interface{}{
+								"type":        "string",
+								"enum":        []string{"interval", "cron"},
+								"description": "トリガー種別。interval: 固定間隔、cron: cron式スケジュール。",
+							},
+							"triggerValue": map[string]interface{}{
+								"type":        "string",
+								"description": "トリガーの値。interval の場合はGoのduration文字列（例: \"30m\", \"1h\"）、cron の場合は5フィールドのcron式（例: \"0 9 * * 1-5\"）。",
+							},
+							"projectPath": map[string]interface{}{
+								"type":        "string",
+								"description": "セッションを起動するプロジェクトの作業ディレクトリ（絶対パス）。省略時はcontroller領域で実行されます。",
+							},
+							"enabled": map[string]interface{}{
+								"type":        "boolean",
+								"description": "作成時に有効化するかどうか。省略時は true。",
+								"default":     true,
+							},
+						},
+						"required": []string{"name", "prompt", "triggerType", "triggerValue"},
+					},
+				},
+				map[string]interface{}{
 					"name":        "permission_prompt",
 					"description": "Handle permission prompts from Claude Code CLI",
 					"inputSchema": map[string]interface{}{
@@ -289,6 +326,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 		return s.handleSendNotification(args)
 	case "escalate":
 		return s.handleEscalate(args)
+	case "create_automation":
+		return s.handleCreateAutomation(args)
 	case "permission_prompt":
 		return s.handlePermissionPrompt(args)
 	default:
@@ -427,6 +466,87 @@ func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCErro
 	return toolResult(fmt.Sprintf("User responded: %s", response), false), nil
 }
 
+func (s *Server) handleCreateAutomation(args json.RawMessage) (interface{}, *jsonRPCError) {
+	var input struct {
+		Name         string `json:"name"`
+		Prompt       string `json:"prompt"`
+		TriggerType  string `json:"triggerType"`
+		TriggerValue string `json:"triggerValue"`
+		ProjectPath  string `json:"projectPath"`
+		Enabled      *bool  `json:"enabled"`
+	}
+	if err := json.Unmarshal(args, &input); err != nil {
+		return nil, &jsonRPCError{Code: -32602, Message: "invalid arguments"}
+	}
+	if input.Name == "" {
+		return nil, &jsonRPCError{Code: -32602, Message: "name is required"}
+	}
+	if input.Prompt == "" {
+		return nil, &jsonRPCError{Code: -32602, Message: "prompt is required"}
+	}
+	if input.TriggerType != "interval" && input.TriggerType != "cron" {
+		return nil, &jsonRPCError{Code: -32602, Message: `triggerType must be "interval" or "cron"`}
+	}
+	if input.TriggerValue == "" {
+		return nil, &jsonRPCError{Code: -32602, Message: "triggerValue is required"}
+	}
+
+	enabled := true
+	if input.Enabled != nil {
+		enabled = *input.Enabled
+	}
+
+	created, err := s.apiCreateAutomation(input.Name, input.Prompt, input.TriggerType, input.TriggerValue, input.ProjectPath, enabled)
+	if err != nil {
+		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
+	}
+
+	target := created.ProjectPath
+	if target == "" {
+		target = "controller"
+	}
+	msg := fmt.Sprintf("Automation created successfully: %s (id: %s, trigger: %s %s, project: %s, enabled: %t)",
+		created.Name, created.ID, created.TriggerType, created.TriggerValue, target, created.Enabled)
+	return toolResult(msg, false), nil
+}
+
+type automationResponse struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	TriggerType  string `json:"triggerType"`
+	TriggerValue string `json:"triggerValue"`
+	ProjectPath  string `json:"projectPath"`
+	Enabled      bool   `json:"enabled"`
+}
+
+func (s *Server) apiCreateAutomation(name, prompt, triggerType, triggerValue, projectPath string, enabled bool) (*automationResponse, error) {
+	url := fmt.Sprintf("%s/api/automations", s.apiURL)
+	body := fmt.Sprintf(`{"name":%s,"prompt":%s,"triggerType":%s,"triggerValue":%s,"projectPath":%s,"enabled":%t}`,
+		jsonString(name), jsonString(prompt), jsonString(triggerType), jsonString(triggerValue), jsonString(projectPath), enabled)
+
+	req, err := http.NewRequest("POST", url, strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	var result automationResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	return &result, nil
+}
 
 func (s *Server) handlePermissionPrompt(args json.RawMessage) (interface{}, *jsonRPCError) {
 	sessionID, rpcErr := s.resolveSessionID(args)
