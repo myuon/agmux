@@ -97,6 +97,7 @@ function ModelSwitcher({ session, onSwitched, onError }: {
     const handler = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
+        setCustomModel("");
       }
     };
     document.addEventListener("mousedown", handler);
@@ -112,6 +113,7 @@ function ModelSwitcher({ session, onSwitched, onError }: {
   const toggleOpen = () => {
     if (open) {
       setOpen(false);
+      setCustomModel("");
       return;
     }
     setOpen(true);
@@ -164,7 +166,7 @@ function ModelSwitcher({ session, onSwitched, onError }: {
               value={customModel}
               onChange={(e) => setCustomModel(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && customModel.trim()) {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing && customModel.trim()) {
                   void switchTo(customModel.trim());
                 }
               }}
