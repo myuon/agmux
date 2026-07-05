@@ -71,9 +71,10 @@ function ParentSessionLink({ parentId }: { parentId: string }) {
 
 // ModelSwitcher renders the model Chip in the session header. For providers
 // with a model list API (claude / codex), the Chip becomes clickable and shows
-// a dropdown to switch the session's model. Cursor has no model list API, so
-// its Chip stays non-clickable. Switching is disabled while a turn is in
-// progress (status = working).
+// a dropdown to switch the session's model. The dropdown also has a free-text
+// input so any model name can be entered (the candidate list may be outdated).
+// Cursor has no model list API, so its Chip stays non-clickable. Switching is
+// disabled while a turn is in progress (status = working).
 function ModelSwitcher({ session, onSwitched, onError }: {
   session: Session;
   onSwitched: (model: string) => void;
@@ -83,6 +84,7 @@ function ModelSwitcher({ session, onSwitched, onError }: {
   const [models, setModels] = useState<{ id: string; name: string }[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [customModel, setCustomModel] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
 
   const switchable =
@@ -95,6 +97,7 @@ function ModelSwitcher({ session, onSwitched, onError }: {
     const handler = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
+        setCustomModel("");
       }
     };
     document.addEventListener("mousedown", handler);
@@ -110,6 +113,7 @@ function ModelSwitcher({ session, onSwitched, onError }: {
   const toggleOpen = () => {
     if (open) {
       setOpen(false);
+      setCustomModel("");
       return;
     }
     setOpen(true);
@@ -122,6 +126,21 @@ function ModelSwitcher({ session, onSwitched, onError }: {
         .then(setModels)
         .catch(() => setModels([]))
         .finally(() => setLoading(false));
+    }
+  };
+
+  const switchTo = async (modelId: string) => {
+    setOpen(false);
+    setCustomModel("");
+    if (modelId === session.model || switching) return;
+    setSwitching(true);
+    try {
+      await api.updateSessionModel(session.id, modelId);
+      onSwitched(modelId);
+    } catch {
+      onError();
+    } finally {
+      setSwitching(false);
     }
   };
 
@@ -141,6 +160,21 @@ function ModelSwitcher({ session, onSwitched, onError }: {
       </button>
       {open && (
         <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto z-50 min-w-44">
+          <div className="px-2 py-2 border-b border-gray-100">
+            <input
+              type="text"
+              value={customModel}
+              onChange={(e) => setCustomModel(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.nativeEvent.isComposing && customModel.trim()) {
+                  void switchTo(customModel.trim());
+                }
+              }}
+              placeholder="モデル名を入力してEnter"
+              className="w-full px-2 py-1 text-xs border border-gray-200 rounded focus:outline-none focus:border-purple-400"
+              autoFocus
+            />
+          </div>
           {loading ? (
             <div className="px-3 py-2 text-xs text-gray-400">Loading models...</div>
           ) : models && models.length > 0 ? (
@@ -151,19 +185,7 @@ function ModelSwitcher({ session, onSwitched, onError }: {
                 className={`w-full text-left px-3 py-2 text-xs hover:bg-purple-50 ${
                   m.id === session.model ? "bg-purple-100 text-purple-800" : "text-gray-700"
                 }`}
-                onClick={async () => {
-                  setOpen(false);
-                  if (m.id === session.model || switching) return;
-                  setSwitching(true);
-                  try {
-                    await api.updateSessionModel(session.id, m.id);
-                    onSwitched(m.id);
-                  } catch {
-                    onError();
-                  } finally {
-                    setSwitching(false);
-                  }
-                }}
+                onClick={() => void switchTo(m.id)}
               >
                 {m.name}
               </button>
