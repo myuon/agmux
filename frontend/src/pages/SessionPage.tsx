@@ -343,6 +343,11 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       const data = msg.data as { sessionId: string; status: Session["status"]; lastError?: string };
       if (data.sessionId === sessionId) {
         setSession(prev => prev ? { ...prev, status: data.status, ...(data.lastError !== undefined ? { lastError: data.lastError } : {}) } : prev);
+        // Clear the thinking indicator when the turn ends without an
+        // assistant/result event (e.g. the CLI process died mid-thinking)
+        if (data.status !== "working") {
+          setThinkingTokens(null);
+        }
       }
     }
     if (msg.type === "stream_update") {
@@ -393,6 +398,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       api.getStreamOutput(sessionId).then((resp) => {
         setStreamLines(resp.lines);
         setPartialText("");
+        setThinkingTokens(null);
         streamCursorRef.current = resp.total;
       }).catch(() => {});
       api.getSession(sessionId).then(setSession).catch(() => {});
