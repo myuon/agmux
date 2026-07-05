@@ -7,7 +7,7 @@ import { StreamDisplayItemView } from "./StreamDisplayItemView";
 import { toolIcon, toolDescription } from "../../models/tool";
 import { Modal } from "../ui/Modal";
 import { ToolInputView } from "./ToolInputView";
-import { RefreshCw } from "lucide-react";
+import { Brain, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
 import { api } from "../../api/client";
 
@@ -48,8 +48,11 @@ function summarizeEntry(line: unknown): { type: string; subtype?: string; summar
           const c = block.content;
           if (typeof c === "string") parts.push(`[tool_result: ${c.slice(0, 40)}]`);
           else parts.push("[tool_result]");
-        } else if (bt === "thinking" && typeof block.thinking === "string") {
-          parts.push(`[thinking: ${block.thinking}]`);
+        } else if (bt === "thinking") {
+          // Suppress empty thinking (signature-only blocks from redacted-thinking models)
+          if (typeof block.thinking === "string" && block.thinking) {
+            parts.push(`[thinking: ${block.thinking}]`);
+          }
         } else if (bt === "image") {
           parts.push("[image]");
         } else if (typeof bt === "string") {
@@ -68,6 +71,10 @@ function summarizeEntry(line: unknown): { type: string; subtype?: string; summar
     if (typeof raw.status === "string") extras.push(`status=${raw.status}`);
     if (typeof raw.task_id === "string") extras.push(`task_id=${(raw.task_id as string).slice(0, 8)}`);
     if (typeof raw.task_type === "string") extras.push(`task_type=${raw.task_type}`);
+    if (typeof raw.estimated_tokens === "number") {
+      const delta = typeof raw.estimated_tokens_delta === "number" ? ` (+${raw.estimated_tokens_delta})` : "";
+      extras.push(`estimated_tokens=${raw.estimated_tokens}${delta}`);
+    }
     return { type, subtype, summary: extras.join(" "), isUnknown };
   }
 
@@ -101,9 +108,10 @@ function summarizeEntry(line: unknown): { type: string; subtype?: string; summar
   return { type, summary: hintParts.join(" "), isUnknown };
 }
 
-export function StreamOutputView({ lines, partialText, className, onAnswer, sessionId, pendingPermission, onPermissionResponded, provider }: {
+export function StreamOutputView({ lines, partialText, thinkingTokens, className, onAnswer, sessionId, pendingPermission, onPermissionResponded, provider }: {
   lines: unknown[];
   partialText?: string;
+  thinkingTokens?: number | null;
   className?: string;
   onAnswer?: (text: string) => void;
   sessionId?: string;
@@ -250,6 +258,13 @@ export function StreamOutputView({ lines, partialText, className, onAnswer, sess
               </motion.div>
             );
           })
+        )}
+        {thinkingTokens != null && (
+          <div className="flex items-center gap-2 py-1.5 px-3 text-xs text-purple-600 bg-purple-50 border-y border-dashed border-purple-200">
+            <Brain className="w-3.5 h-3.5 shrink-0 animate-pulse" />
+            <span className="font-medium shrink-0">思考中...</span>
+            <span className="shrink-0 text-purple-400 ml-auto">~{thinkingTokens.toLocaleString()} tokens</span>
+          </div>
         )}
         {trailingRetry && (
           <div className="flex items-center gap-2 py-1.5 px-3 text-xs text-amber-600 bg-amber-50 border-y border-dashed border-amber-200">

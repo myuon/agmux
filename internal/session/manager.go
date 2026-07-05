@@ -1482,6 +1482,12 @@ func (m *Manager) readStreamFile(id string, limit int, clearOffset int64) ([]str
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 	for scanner.Scan() {
+		// Skip transient lines (stream_event, thinking_tokens): the raw JSONL
+		// file contains everything the holder wrote, but history readers must
+		// apply the same filter as the live path (HolderStreamProcess).
+		if isTransientStreamLine(scanner.Bytes()) {
+			continue
+		}
 		lines = append(lines, scanner.Text())
 	}
 
@@ -1542,6 +1548,11 @@ func (m *Manager) readStreamFileAfter(id string, after int, clearOffset int64) (
 	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 	lineIdx := 0
 	for scanner.Scan() {
+		// Skip transient lines so the `after` cursor counts the same filtered
+		// history as the live path (HolderStreamProcess.lines).
+		if isTransientStreamLine(scanner.Bytes()) {
+			continue
+		}
 		if lineIdx >= after {
 			lines = append(lines, scanner.Text())
 		}

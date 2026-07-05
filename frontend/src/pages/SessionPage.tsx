@@ -253,6 +253,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [message, setMessage] = useState("");
   const [streamLines, setStreamLines] = useState<unknown[]>(deferred.streamOutput.lines);
   const [partialText, setPartialText] = useState("");
+  // Latest estimated thinking tokens (system:thinking_tokens live events); null when not thinking
+  const [thinkingTokens, setThinkingTokens] = useState<number | null>(null);
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>(deferred.diff.files);
 
 
@@ -363,6 +365,11 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       const data = msg.data as { sessionId: string; status: Session["status"]; lastError?: string };
       if (data.sessionId === sessionId) {
         setSession(prev => prev ? { ...prev, status: data.status, ...(data.lastError !== undefined ? { lastError: data.lastError } : {}) } : prev);
+        // Clear the thinking indicator when the turn ends without an
+        // assistant/result event (e.g. the CLI process died mid-thinking)
+        if (data.status !== "working") {
+          setThinkingTokens(null);
+        }
       }
     }
     if (msg.type === "stream_update") {
@@ -377,10 +384,21 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             if (evt?.type === "content_block_delta" && evt.delta?.type === "text_delta" && evt.delta.text) {
               setPartialText((prev) => prev + evt.delta!.text!);
             }
+          } else if (entry.type === "system" && entry.subtype === "thinking_tokens") {
+            // Transient thinking progress meter: keep only the latest count,
+            // never push to streamLines (see issue #675)
+            if (typeof entry.estimated_tokens === "number") {
+              setThinkingTokens(entry.estimated_tokens);
+            }
           } else {
-            // Clear partial text when a complete assistant message arrives
+            // Clear partial text and thinking indicator when a complete assistant message arrives
             if (entry.type === "assistant") {
               setPartialText("");
+              setThinkingTokens(null);
+            }
+            // Also clear the thinking indicator at turn end
+            if (entry.type === "result") {
+              setThinkingTokens(null);
             }
             regular.push(line);
           }
@@ -402,6 +420,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       api.getStreamOutput(sessionId).then((resp) => {
         setStreamLines(resp.lines);
         setPartialText("");
+        setThinkingTokens(null);
         streamCursorRef.current = resp.total;
       }).catch(() => {});
       api.getSession(sessionId).then(setSession).catch(() => {});
@@ -1034,7 +1053,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         </div>
       ) : (
         <div className="flex flex-col flex-1 min-h-0">
-          <StreamOutputView lines={streamLines} partialText={partialText} className="flex-1 min-h-0" sessionId={sessionId} pendingPermission={pendingPermission ?? undefined} onPermissionResponded={() => { setPendingPermission(null); }} provider={session?.provider ?? undefined} onAnswer={async (text) => {
+          <StreamOutputView lines={streamLines} partialText={partialText} thinkingTokens={thinkingTokens} className="flex-1 min-h-0" sessionId={sessionId} pendingPermission={pendingPermission ?? undefined} onPermissionResponded={() => { setPendingPermission(null); }} provider={session?.provider ?? undefined} onAnswer={async (text) => {
             if (!sessionId) return;
             await api.sendToSession(sessionId, text);
           }} />

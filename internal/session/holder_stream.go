@@ -262,14 +262,9 @@ func (sp *HolderStreamProcess) loadExistingLines(sessionID string, clearOffset i
 			}
 			normalizedStr := string(normalized)
 
-			// Skip stream_events (transient, not for history)
-			if len(normalized) > 0 && normalized[0] == '{' {
-				var peek struct {
-					Type string `json:"type"`
-				}
-				if json.Unmarshal(normalized, &peek) == nil && peek.Type == "stream_event" {
-					continue
-				}
+			// Skip transient lines (stream_event, thinking_tokens): not for history
+			if isTransientStreamLine(normalized) {
+				continue
 			}
 
 			sp.lines = append(sp.lines, normalizedStr)
@@ -454,19 +449,11 @@ func (sp *HolderStreamProcess) readLoop() {
 			}
 			normalizedStr := string(normalized)
 
-			// Check for stream_event (real-time only, not persisted)
-			isStreamEvent := false
-			if len(normalized) > 0 && normalized[0] == '{' {
-				var peek struct {
-					Type string `json:"type"`
-				}
-				if json.Unmarshal(normalized, &peek) == nil && peek.Type == "stream_event" {
-					isStreamEvent = true
-				}
-			}
+			// Check for transient lines (real-time only, not persisted)
+			isTransient := isTransientStreamLine(normalized)
 
 			sp.mu.Lock()
-			if !isStreamEvent {
+			if !isTransient {
 				sp.lines = append(sp.lines, normalizedStr)
 				// Note: holder already writes to JSONL file, so we don't write here
 			}
@@ -479,6 +466,30 @@ func (sp *HolderStreamProcess) readLoop() {
 			}
 		}
 	}
+}
+
+// isTransientStreamLine reports whether a normalized stream line is
+// real-time only and should not be persisted to history (sp.lines):
+//   - type == "stream_event" (partial text deltas etc.)
+//   - type == "system" && subtype == "thinking_tokens" (thinking progress
+//     meter emitted by the claude provider; 100+ lines per session)
+//
+// These lines are still broadcast to live subscribers.
+func isTransientStreamLine(normalized []byte) bool {
+	if len(normalized) == 0 || normalized[0] != '{' {
+		return false
+	}
+	var peek struct {
+		Type    string `json:"type"`
+		Subtype string `json:"subtype"`
+	}
+	if json.Unmarshal(normalized, &peek) != nil {
+		return false
+	}
+	if peek.Type == "stream_event" {
+		return true
+	}
+	return peek.Type == "system" && peek.Subtype == "thinking_tokens"
 }
 
 // SessionID returns the CLI session ID.
