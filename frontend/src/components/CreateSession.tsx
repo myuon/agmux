@@ -152,15 +152,14 @@ export function CreateSession({ onClose, onCreate }: Props) {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Project Path
+              Project Path (optional)
             </label>
             <input
               type="text"
               value={projectPath}
               onChange={(e) => setProjectPath(e.target.value)}
-              required
               className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-              placeholder="/path/to/project"
+              placeholder="Leave empty to use a temporary workspace"
             />
             {recentProjects.length > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-1.5">

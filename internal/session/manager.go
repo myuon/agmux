@@ -531,6 +531,15 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		return nil, fmt.Errorf("generate session id: %w", err)
 	}
 
+	// If no projectPath was supplied, create a workspace directory for this session
+	if projectPath == "" {
+		workspaceDir, err := db.WorkspaceDir(id)
+		if err != nil {
+			return nil, fmt.Errorf("create workspace dir: %w", err)
+		}
+		projectPath = workspaceDir
+	}
+
 	// Generate MCP config for this session
 	mcpConfigPath, err := provider.SetupMCP(id, m.apiPort)
 	if err != nil {
@@ -1887,6 +1896,7 @@ func (m *Manager) ListRecentProjects(limit int) ([]RecentProject, error) {
 		`SELECT project_path, MAX(updated_at) AS last_used_at, COUNT(*) AS session_count
 		 FROM sessions
 		 WHERE type != 'controller'
+		   AND project_path NOT LIKE '%/.agmux/workspaces/%'
 		 GROUP BY project_path
 		 ORDER BY last_used_at DESC
 		 LIMIT ?`, limit,
