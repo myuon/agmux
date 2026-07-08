@@ -1999,6 +1999,17 @@ func (m *Manager) Restart(id string) error {
 
 	provider := m.getProvider(s.Provider)
 
+	// Hold spawnMu across the kill -> spawn -> DB update sequence so that the
+	// SendKeysWithImages auto-recovery path (which also takes spawnMu before
+	// spawning) cannot spawn a second holder for the same session while we are
+	// waiting for the old holder to exit. Without this, the DB holder_pid gets
+	// overwritten and the losing holder leaks as an orphan (#681).
+	//
+	// Lock order: spawnMu is the outermost lock; streamMu is only taken inside
+	// via helpers (stopStreamProcess etc.), matching SendKeysWithImages.
+	m.spawnMu.Lock()
+	defer m.spawnMu.Unlock()
+
 	// Stop existing stream process
 	m.stopStreamProcess(id)
 

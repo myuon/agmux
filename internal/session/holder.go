@@ -360,8 +360,15 @@ func SpawnHolder(sessionID string, cmdArgs []string, projectPath string, env []s
 		return 0, fmt.Errorf("get executable path: %w", err)
 	}
 
-	// Build holder command arguments
-	holderArgs := []string{"holder", "--session-id", sessionID, "--project-path", projectPath, "--"}
+	// Build holder command arguments.
+	// --agmux-dir is an identification marker so that a reaper of one agmux
+	// instance does not kill holders belonging to another instance (e.g. an
+	// isolated dev server running with a different HOME). See ReapOrphanHolders.
+	holderArgs := []string{"holder", "--session-id", sessionID, "--project-path", projectPath}
+	if agmuxDir, err := db.AgmuxDir(); err == nil {
+		holderArgs = append(holderArgs, "--agmux-dir", agmuxDir)
+	}
+	holderArgs = append(holderArgs, "--")
 	holderArgs = append(holderArgs, cmdArgs...)
 
 	cmd := exec.Command(agmuxBin, holderArgs...)

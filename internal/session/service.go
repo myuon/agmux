@@ -68,6 +68,9 @@ type SessionService interface {
 
 	// RecoverStreamProcesses restarts stream processes for all working sessions.
 	RecoverStreamProcesses()
+	// ReapOrphanHolders terminates holder processes that are no longer
+	// referenced by this instance (see #681). Call after RecoverStreamProcesses.
+	ReapOrphanHolders()
 	// StopAllStreamProcesses gracefully stops all running stream processes.
 	StopAllStreamProcesses()
 	// SetCodexCommand sets the codex command for the manager.
