@@ -67,3 +67,15 @@ agent-browser close                # ブラウザ終了
 chmod -R +w /tmp/agmux-dev-home && rm -rf /tmp/agmux-dev-home /tmp/agmux-dev
 lsof -ti :4321 >/dev/null && echo "本番は無事"
 ```
+
+## 補足: holder の socket と TMPDIR（#685 以降）
+
+holder の Unix socket は `$TMPDIR/agmux/socks/` に置かれる。サーバー起動時の孤児 holder reaper は
+「自分の SocketDir に socket があるレガシー holder」を自インスタンス帰属とみなすため、
+**隔離バックエンドを起動するときは HOME に加えて TMPDIR も差し替えること**:
+
+```bash
+HOME=/tmp/agmux-dev-home TMPDIR=/tmp/agmux-dev-tmp /tmp/agmux-dev serve --dev --port 4322
+```
+
+TMPDIR を共有すると帰属判定が混ざり、隔離環境の reaper が本番の holder を回収してしまう恐れがある。
