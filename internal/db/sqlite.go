@@ -68,6 +68,18 @@ func ControllerDir() (string, error) {
 	return controllerDir, nil
 }
 
+func WorkspaceDir(sessionID string) (string, error) {
+	dir, err := AgmuxDir()
+	if err != nil {
+		return "", err
+	}
+	workspaceDir := filepath.Join(dir, "workspaces", sessionID)
+	if err := os.MkdirAll(workspaceDir, 0o755); err != nil {
+		return "", fmt.Errorf("create workspace dir: %w", err)
+	}
+	return workspaceDir, nil
+}
+
 func Open(dbPath string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL")
 	if err != nil {

@@ -319,8 +319,8 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.Name == "" || req.ProjectPath == "" {
-		writeError(w, http.StatusBadRequest, "name and projectPath are required")
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
 	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model, FullAuto: req.AutoApprove, SystemPrompt: req.SystemPrompt, ParentSessionID: req.ParentSessionID, RoleTemplate: req.RoleTemplate, Ephemeral: req.Ephemeral, EphemeralTimeoutSeconds: req.EphemeralTimeoutSeconds})

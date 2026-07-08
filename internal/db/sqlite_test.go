@@ -52,6 +52,30 @@ func TestDBPathForPort(t *testing.T) {
 	}
 }
 
+func TestWorkspaceDir(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	sessionID := "sess-abc123"
+	dir, err := WorkspaceDir(sessionID)
+	require.NoError(t, err)
+
+	// Should be under ~/.agmux/workspaces/<sessionID>
+	wantSuffix := filepath.Join(".agmux", "workspaces", sessionID)
+	assert.True(t, filepath.IsAbs(dir), "path should be absolute")
+	assert.Contains(t, dir, wantSuffix)
+
+	// Directory should actually exist
+	info, err := os.Stat(dir)
+	require.NoError(t, err)
+	assert.True(t, info.IsDir())
+
+	// Calling again should be idempotent (MkdirAll on existing dir)
+	dir2, err := WorkspaceDir(sessionID)
+	require.NoError(t, err)
+	assert.Equal(t, dir, dir2)
+}
+
 func TestMigrateIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "test.db")

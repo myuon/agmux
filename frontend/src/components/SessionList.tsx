@@ -1,9 +1,7 @@
 import { useMemo } from "react";
 import { useNavigate, useMatch } from "react-router-dom";
-import { TerminalSquare } from "lucide-react";
 import { motion } from "motion/react";
 import type { Session } from "../types/session";
-import { GroupSectionHeader } from "./ui/GroupSectionHeader";
 import { SecondaryButton } from "./ui/SecondaryButton";
 import { ExternalProcessRow } from "./ui/ExternalProcessRow";
 import { SessionCard } from "./ui/SessionCard";
@@ -16,26 +14,6 @@ function timeAgo(dateStr: string): string {
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
-}
-
-function projectDisplayName(projectPath: string): string {
-  if (!projectPath) return "Unknown Project";
-  const parts = projectPath.replace(/\/+$/, "").split("/");
-  return parts[parts.length - 1] || projectPath;
-}
-
-function groupSessionsByProject(sessions: Session[]): Map<string, Session[]> {
-  const groups = new Map<string, Session[]>();
-  for (const session of sessions) {
-    const key = session.projectPath || "";
-    const group = groups.get(key);
-    if (group) {
-      group.push(session);
-    } else {
-      groups.set(key, [session]);
-    }
-  }
-  return groups;
 }
 
 /** Build a map from parent session ID to its child sessions */
@@ -65,17 +43,18 @@ export function SessionList({ sessions, onRestartController }: Props) {
   const selectedSessionId = sessionMatch?.params.id ?? null;
   const childrenMap = useMemo(() => buildChildrenMap(sessions), [sessions]);
 
-  const groupedSessions = useMemo(() => {
-    const groups = groupSessionsByProject(sessions);
-    // Sort: controller group first
-    const entries = [...groups.entries()].sort(([, a], [, b]) => {
-      const aHasController = a.some(s => s.type === "controller");
-      const bHasController = b.some(s => s.type === "controller");
-      if (aHasController && !bHasController) return -1;
-      if (!aHasController && bHasController) return 1;
-      return 0;
-    });
-    return entries;
+  const topLevelSessions = useMemo(() => {
+    return sessions
+      .filter((s) => !s.parentSessionId)
+      .sort((a, b) => {
+        // Controller pinned first, external processes last,
+        // threads by most recent activity (last message) first
+        if (a.type === "controller" && b.type !== "controller") return -1;
+        if (a.type !== "controller" && b.type === "controller") return 1;
+        if (a.type === "external" && b.type !== "external") return 1;
+        if (a.type !== "external" && b.type === "external") return -1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
   }, [sessions]);
 
   if (sessions.length === 0) {
@@ -114,9 +93,8 @@ export function SessionList({ sessions, onRestartController }: Props) {
               provider={s.provider}
               roleTemplate={s.roleTemplate}
               currentTask={s.currentTask}
-              lastError={s.lastError}
               projectPath={s.projectPath}
-              timeAgo={timeAgo(s.createdAt)}
+              timeAgo={timeAgo(s.updatedAt)}
               isSubSession={depth > 0}
               isSelected={s.id === selectedSessionId}
               completionReport={s.completionReport}
@@ -139,24 +117,8 @@ export function SessionList({ sessions, onRestartController }: Props) {
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      {groupedSessions.map(([projectPath, groupSessions]) => {
-        const isController = groupSessions.some(s => s.type === "controller");
-        // Only show top-level sessions (those without a parent, or whose parent is not in this group)
-        const topLevelSessions = groupSessions.filter(s => !s.parentSessionId);
-        return (
-        <div key={projectPath}>
-          <GroupSectionHeader
-            icon={isController ? <TerminalSquare className="w-3.5 h-3.5 text-purple-500" /> : undefined}
-            title={projectDisplayName(projectPath)}
-            count={groupSessions.length}
-          />
-          <div className="flex flex-col gap-2">
-            {topLevelSessions.map((s) => renderSession(s, 0))}
-          </div>
-        </div>
-        );
-      })}
+    <div className="flex flex-col gap-1.5">
+      {topLevelSessions.map((s) => renderSession(s, 0))}
     </div>
   );
 }

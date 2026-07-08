@@ -703,7 +703,6 @@ function SessionCardPreview() {
           status="exited"
           type="worker"
           provider="claude"
-          lastError="exit status 1"
           projectPath="/Users/dev/projects/my-app"
           timeAgo="5m ago"
           onClick={() => {}}
