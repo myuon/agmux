@@ -47,12 +47,13 @@ export function SessionList({ sessions, onRestartController }: Props) {
     return sessions
       .filter((s) => !s.parentSessionId)
       .sort((a, b) => {
-        // Controller pinned first, external processes last, threads newest first
+        // Controller pinned first, external processes last,
+        // threads by most recent activity (last message) first
         if (a.type === "controller" && b.type !== "controller") return -1;
         if (a.type !== "controller" && b.type === "controller") return 1;
         if (a.type === "external" && b.type !== "external") return 1;
         if (a.type !== "external" && b.type === "external") return -1;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
       });
   }, [sessions]);
 
@@ -93,7 +94,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
               roleTemplate={s.roleTemplate}
               currentTask={s.currentTask}
               projectPath={s.projectPath}
-              timeAgo={timeAgo(s.createdAt)}
+              timeAgo={timeAgo(s.updatedAt)}
               isSubSession={depth > 0}
               isSelected={s.id === selectedSessionId}
               completionReport={s.completionReport}
