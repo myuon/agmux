@@ -3,6 +3,7 @@ package session
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"syscall"
 	"testing"
@@ -29,11 +30,13 @@ func setupReaperTest(t *testing.T, psLines string, alive func(pid int) bool) (se
 	origPS := reaperPSOutput
 	origKill := reaperKill
 	origAlive := reaperIsAlive
+	origSock := reaperSocketExists
 	origWait := reaperTermWait
 	t.Cleanup(func() {
 		reaperPSOutput = origPS
 		reaperKill = origKill
 		reaperIsAlive = origAlive
+		reaperSocketExists = origSock
 		reaperTermWait = origWait
 	})
 
@@ -51,6 +54,9 @@ func setupReaperTest(t *testing.T, psLines string, alive func(pid int) bool) (se
 		alive = func(pid int) bool { return false }
 	}
 	reaperIsAlive = alive
+	// Default: every legacy holder has a socket in our socket dir, i.e. it
+	// belongs to this instance. Tests for foreign legacy holders override this.
+	reaperSocketExists = func(sessionID string) bool { return true }
 	reaperTermWait = 200 * time.Millisecond
 
 	return selfDir, calls
@@ -193,6 +199,59 @@ func TestReapOrphanHolders_ReapsOwnInstanceAndLegacy(t *testing.T) {
 	}
 	if !termed[90031] {
 		t.Errorf("legacy orphan holder without --agmux-dir must be reaped; calls %v", *calls)
+	}
+}
+
+// TestReapOrphanHolders_ReapsLegacyWithSocket: a legacy holder (no --agmux-dir)
+// whose Unix socket file exists in THIS instance's SocketDir belongs to this
+// instance and is reaped when orphaned. Uses the real (os.Stat based) socket
+// check against an actual file, with TMPDIR isolated to a temp dir.
+func TestReapOrphanHolders_ReapsLegacyWithSocket(t *testing.T) {
+	ps := holderPSLine(90060, "leg02", "")
+	_, calls := setupReaperTest(t, ps, nil)
+
+	// Isolate SocketDir (os.TempDir()/agmux/socks) and place a real socket file.
+	t.Setenv("TMPDIR", t.TempDir())
+	reaperSocketExists = defaultReaperSocketExists
+	if err := os.MkdirAll(SocketDir(), 0700); err != nil {
+		t.Fatalf("mkdir socket dir: %v", err)
+	}
+	if err := os.WriteFile(SocketPath("leg02"), nil, 0600); err != nil {
+		t.Fatalf("create socket file: %v", err)
+	}
+
+	db := newTestDB(t)
+	defer db.Close()
+
+	m := newTestManager(t, db)
+	m.ReapOrphanHolders()
+
+	if !sigtermedPIDs(*calls)[90060] {
+		t.Errorf("legacy orphan holder with socket in our SocketDir must be reaped; calls %v", *calls)
+	}
+}
+
+// TestReapOrphanHolders_SkipsLegacyWithoutSocket: a legacy holder with no
+// socket file in THIS instance's SocketDir cannot be attributed to this
+// instance (it may belong to an isolated dev server with a different
+// HOME/TMPDIR) and must be skipped. Uses the real socket check against an
+// isolated, empty SocketDir.
+func TestReapOrphanHolders_SkipsLegacyWithoutSocket(t *testing.T) {
+	ps := holderPSLine(90061, "leg03", "")
+	_, calls := setupReaperTest(t, ps, nil)
+
+	// Isolated SocketDir with NO socket file for leg03.
+	t.Setenv("TMPDIR", t.TempDir())
+	reaperSocketExists = defaultReaperSocketExists
+
+	db := newTestDB(t)
+	defer db.Close()
+
+	m := newTestManager(t, db)
+	m.ReapOrphanHolders()
+
+	if len(*calls) != 0 {
+		t.Errorf("legacy holder without a socket in our SocketDir must not be killed, got %v", *calls)
 	}
 }
 

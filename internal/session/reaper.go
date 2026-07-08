@@ -27,10 +27,26 @@ var (
 	// reaperIsAlive reports whether a PID is still running.
 	reaperIsAlive = IsHolderAlive
 
+	// reaperSocketExists reports whether this instance's socket dir contains a
+	// holder socket for the session. Used to attribute legacy holders (spawned
+	// before --agmux-dir existed) to an instance.
+	reaperSocketExists = defaultReaperSocketExists
+
 	// reaperTermWait is how long to wait for SIGTERM'd holders to exit
 	// before falling back to SIGKILL.
 	reaperTermWait = 5 * time.Second
 )
+
+// defaultReaperSocketExists checks for the holder's Unix socket file on disk.
+// A live holder listens on SocketPath(sessionID) for its whole lifetime (the
+// file is only removed by a newer holder's startup cleanup), so for a process
+// already confirmed alive via ps, the socket's presence in OUR SocketDir means
+// the holder was started by an instance sharing this socket dir. No stale-file
+// concern: only ps-confirmed-alive PIDs reach this check.
+func defaultReaperSocketExists(sessionID string) bool {
+	_, err := os.Stat(SocketPath(sessionID))
+	return err == nil
+}
 
 // orphanCandidate is a holder process found in the ps listing.
 type orphanCandidate struct {
@@ -143,11 +159,22 @@ func (m *Manager) ReapOrphanHolders() {
 			skipped++
 			continue
 		}
-		// Holders of another agmux instance must not be touched. Legacy holders
-		// without --agmux-dir are treated as belonging to this instance.
+		// Holders of another agmux instance must not be touched.
 		if c.agmuxDir != "" && c.agmuxDir != selfDir {
 			m.logger.Info("reaper: skipping holder of another agmux instance",
 				"sessionId", c.sessionID, "pid", c.pid, "agmuxDir", c.agmuxDir)
+			skipped++
+			continue
+		}
+		// Legacy holders (no --agmux-dir flag) carry no instance marker, so
+		// attribute them via their Unix socket: a live holder keeps listening on
+		// SocketPath(sessionID) in the SocketDir of the instance that spawned it.
+		// If OUR SocketDir has no socket for this session, the holder may belong
+		// to another instance (e.g. an isolated dev server with a different
+		// HOME/TMPDIR) — skip it rather than risk killing a foreign holder.
+		if c.agmuxDir == "" && !reaperSocketExists(c.sessionID) {
+			m.logger.Info("reaper: skipping legacy holder without a socket in this instance's socket dir (possibly another instance)",
+				"sessionId", c.sessionID, "pid", c.pid, "socketPath", SocketPath(c.sessionID))
 			skipped++
 			continue
 		}
