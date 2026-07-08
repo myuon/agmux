@@ -15,8 +15,10 @@ frontend/node_modules/
 .claude/worktrees/
 
 # Installed skills (build artifacts from skill-lock)
+# 手書きのプロジェクトskillは ! で個別に追跡する
 .agents/
-.claude/skills/
+.claude/skills/*
+!.claude/skills/dev-verify/
 
 # Terraform
 terraform/.terraform/
