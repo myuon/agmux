@@ -10,7 +10,6 @@ interface SessionCardProps {
   provider?: string;
   roleTemplate?: string;
   currentTask?: string;
-  lastError?: string;
   projectPath: string;
   timeAgo: string;
   isSubSession?: boolean;
@@ -39,7 +38,6 @@ export function SessionCard({
   provider,
   roleTemplate,
   currentTask,
-  lastError,
   projectPath,
   timeAgo,
   isSubSession,
@@ -49,7 +47,9 @@ export function SessionCard({
   completionReport,
 }: SessionCardProps) {
   const vtn = (suffix: string) => id ? { viewTransitionName: `session-${suffix}-${id}` } : undefined;
-  const project = type === "controller" ? null : projectLabel(projectPath);
+  const label = type === "controller" ? null : projectLabel(projectPath);
+  // Skip the project label when it adds nothing over the title
+  const project = label && label !== name ? label : null;
   return (
     <div
       role="button"
@@ -60,8 +60,15 @@ export function SessionCard({
     >
       <div className="flex items-center gap-2">
         <span className="inline-flex shrink-0" style={vtn("dot")}><StatusDot status={status} /></span>
-        <span className="font-medium text-sm truncate" style={vtn("name")}>
-          {name}
+        <span className="min-w-0 flex items-baseline gap-1.5">
+          <span className="font-medium text-sm truncate" style={vtn("name")}>
+            {name}
+          </span>
+          {project && (
+            <span className="text-xs text-gray-400 truncate shrink-[3]" title={projectPath}>
+              {project}
+            </span>
+          )}
         </span>
         {type === "controller" && (
           <Chip color="purple">Controller</Chip>
@@ -83,19 +90,8 @@ export function SessionCard({
           <span>{timeAgo}</span>
         </span>
       </div>
-      {(project || currentTask) && (
-        <p className="text-xs truncate mt-0.5">
-          {project && (
-            <span className="text-gray-400" title={projectPath}>{project}</span>
-          )}
-          {project && currentTask && <span className="text-gray-300"> · </span>}
-          {currentTask && <span className="text-indigo-600">{currentTask}</span>}
-        </p>
-      )}
-      {status === "exited" && lastError && (
-        <p className="text-xs text-red-600 truncate mt-0.5" title={lastError}>
-          Error: {lastError}
-        </p>
+      {currentTask && (
+        <p className="text-xs text-indigo-600 truncate mt-0.5">{currentTask}</p>
       )}
       {status === "archived" && completionReport && (
         <p className="text-xs text-green-700 truncate mt-0.5" title={completionReport}>

@@ -92,7 +92,6 @@ export function SessionList({ sessions, onRestartController }: Props) {
               provider={s.provider}
               roleTemplate={s.roleTemplate}
               currentTask={s.currentTask}
-              lastError={s.lastError}
               projectPath={s.projectPath}
               timeAgo={timeAgo(s.createdAt)}
               isSubSession={depth > 0}
