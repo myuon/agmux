@@ -229,6 +229,12 @@ func serveCmd() *cobra.Command {
 			// SetOnNewLines callback is already registered on the manager.
 			mgr.RecoverStreamProcesses()
 
+			// Reap orphan holders AFTER recovery: RecoverStreamProcesses first
+			// reconnects to (and re-references in the DB) every holder that is
+			// still usable; whatever holder remains unreferenced afterwards is
+			// a true orphan (#681) and can be terminated safely.
+			mgr.ReapOrphanHolders()
+
 			// Create controller session (singleton) AFTER recovery so that
 			// a surviving controller holder can be reconnected first.
 			controllerDir, err := db.ControllerDir()
@@ -1305,6 +1311,7 @@ func daemonCmd() *cobra.Command {
 func holderCmd() *cobra.Command {
 	var sessionID string
 	var projectPath string
+	var agmuxDir string
 
 	cmd := &cobra.Command{
 		Use:    "holder",
@@ -1333,6 +1340,10 @@ func holderCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&sessionID, "session-id", "", "Session ID")
 	cmd.Flags().StringVar(&projectPath, "project-path", "", "Project directory path")
+	// --agmux-dir is an identification marker only: it lets the orphan-holder
+	// reaper (ReapOrphanHolders) distinguish holders belonging to this agmux
+	// instance from those of another instance. The holder itself does not use it.
+	cmd.Flags().StringVar(&agmuxDir, "agmux-dir", "", "Agmux data directory of the owning instance (identification marker)")
 	// Allow passing arbitrary args after "--"
 	cmd.Flags().SetInterspersed(false)
 
