@@ -1288,16 +1288,12 @@ func (m *Manager) Clear(id string) error {
 		}
 	}
 
-	// Clear in-memory lines in the stream process
-	m.streamMu.Lock()
-	sp, ok := m.streamProcesses[id]
-	m.streamMu.Unlock()
-	if ok {
-		sp.ClearLines()
-	}
+	// Stop the holder process so that the next SendKeys starts a fresh CLI session
+	// without the old context (fixes: clear command does not reset Claude's context).
+	m.stopStreamProcess(id)
 
-	// Store clear_offset and reset task/goal but keep the existing process and CLI session running.
-	_, err = m.db.Exec("UPDATE sessions SET last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', clear_offset = ?, updated_at = ? WHERE id = ?", clearOffset, time.Now(), id)
+	// Store clear_offset and reset all session state
+	_, err = m.db.Exec("UPDATE sessions SET last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', clear_offset = ?, cli_session_id = NULL, conversation_started = 0, holder_pid = 0, updated_at = ? WHERE id = ?", clearOffset, time.Now(), id)
 	if err != nil {
 		return err
 	}
