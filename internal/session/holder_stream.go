@@ -301,6 +301,11 @@ func (sp *HolderStreamProcess) loadExistingLines(sessionID string, clearOffset i
 func (sp *HolderStreamProcess) readLoop() {
 	defer close(sp.done)
 
+	// completedTaskIDs tracks task IDs that have already been decremented from
+	// runningTasks, preventing double-decrement when both task_notification and
+	// task_updated fire for the same task.
+	completedTaskIDs := make(map[string]struct{})
+
 	reader := bufio.NewReader(sp.conn)
 	for {
 		line, err := reader.ReadString('\n')
@@ -418,15 +423,9 @@ func (sp *HolderStreamProcess) readLoop() {
 					sp.startPeriodicNotification()
 				}
 			case "task_notification":
-				sp.mu.Lock()
-				if sp.runningTasks > 0 {
-					sp.runningTasks--
-				}
-				remaining := sp.runningTasks
-				sp.mu.Unlock()
-				// Stop periodic notification when all background tasks complete
-				if remaining == 0 {
-					sp.stopPeriodicNotification()
+				if _, done := completedTaskIDs[ev.TaskID]; !done {
+					completedTaskIDs[ev.TaskID] = struct{}{}
+					sp.DecrementRunningTasks()
 				}
 			case "task_updated":
 				// task_updated with patch.status == "completed" or "failed" signals
@@ -439,14 +438,9 @@ func (sp *HolderStreamProcess) readLoop() {
 				if len(ev.Patch) > 0 {
 					if err := json.Unmarshal(ev.Patch, &patch); err == nil {
 						if patch.Status == "completed" || patch.Status == "failed" {
-							sp.mu.Lock()
-							if sp.runningTasks > 0 {
-								sp.runningTasks--
-							}
-							remaining := sp.runningTasks
-							sp.mu.Unlock()
-							if remaining == 0 {
-								sp.stopPeriodicNotification()
+							if _, done := completedTaskIDs[ev.TaskID]; !done {
+								completedTaskIDs[ev.TaskID] = struct{}{}
+								sp.DecrementRunningTasks()
 							}
 						}
 					}
