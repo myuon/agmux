@@ -1296,8 +1296,13 @@ func (m *Manager) Clear(id string) error {
 		sp.ClearLines()
 	}
 
-	// Store clear_offset and reset task/goal but keep the existing process and CLI session running.
-	_, err = m.db.Exec("UPDATE sessions SET last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', clear_offset = ?, updated_at = ? WHERE id = ?", clearOffset, time.Now(), id)
+	// Stop the holder process so that the next SendKeys starts a fresh CLI session
+	// without the old context (fixes: clear command does not reset Claude's context).
+	m.stopStreamProcess(id)
+
+	// Store clear_offset and reset task/goal, cli_session_id, and conversation_started
+	// so the next SendKeys spawns a brand-new CLI session with no prior conversation.
+	_, err = m.db.Exec("UPDATE sessions SET last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', clear_offset = ?, cli_session_id = NULL, conversation_started = 0, updated_at = ? WHERE id = ?", clearOffset, time.Now(), id)
 	if err != nil {
 		return err
 	}
