@@ -1,6 +1,7 @@
 import { createBrowserRouter, type LoaderFunctionArgs } from "react-router-dom";
 import App, { AppShell, HomePage } from "./App";
 import { SessionPage } from "./pages/SessionPage";
+import { NewSessionPage } from "./pages/NewSessionPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { PreviewPage } from "./pages/PreviewPage";
@@ -36,6 +37,10 @@ export const router = createBrowserRouter([
             index: true,
             // Desktop: empty center state; Mobile: full Dashboard
             element: <HomePage />,
+          },
+          {
+            path: "sessions/new",
+            element: <NewSessionPage />,
           },
           {
             path: "sessions/:id",
