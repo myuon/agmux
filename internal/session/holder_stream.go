@@ -25,8 +25,10 @@ type ImageData struct {
 
 // streamEvent is a minimal struct for parsing event type and subtype from JSONL lines.
 type streamEvent struct {
-	Type    string `json:"type"`
-	Subtype string `json:"subtype"`
+	Type    string          `json:"type"`
+	Subtype string          `json:"subtype"`
+	TaskID  string          `json:"task_id"`
+	Patch   json.RawMessage `json:"patch"`
 }
 
 // parseStreamEvent parses the type and subtype from a JSONL line.
@@ -176,10 +178,19 @@ func StartHolderStreamProcess(opts StreamOpts, provider Provider) (*HolderStream
 	// Load existing lines from JSONL file (respecting clear offset)
 	sp.loadExistingLines(opts.SessionID, opts.ClearOffset)
 
-	// Start reading from the socket
-	go sp.readLoop()
+	// NOTE: readLoop is NOT started here. The caller must call sp.StartReadLoop()
+	// after wiring all callbacks (e.g. wireSessionIDCallback) to avoid a race
+	// window where events arrive before onNewLines is set.
 
 	return sp, nil
+}
+
+// StartReadLoop starts the background goroutine that reads lines from the
+// holder socket and dispatches them via onNewLines. It must be called after
+// all callbacks (onNewLines, onSessionID, etc.) have been wired, so that no
+// event is dropped between process start and callback registration.
+func (sp *HolderStreamProcess) StartReadLoop() {
+	go sp.readLoop()
 }
 
 // ReconnectHolderStreamProcess reconnects to an existing holder process.
@@ -225,8 +236,9 @@ func ReconnectHolderStreamProcess(opts StreamOpts, provider Provider, holderPID 
 	// Load all existing lines from JSONL file (respecting clear offset)
 	sp.loadExistingLines(opts.SessionID, opts.ClearOffset)
 
-	// Start reading from the socket
-	go sp.readLoop()
+	// NOTE: readLoop is NOT started here. The caller must call sp.StartReadLoop()
+	// after wiring all callbacks (e.g. wireSessionIDCallback) to avoid a race
+	// window where events arrive before onNewLines is set.
 
 	return sp, nil
 }
@@ -415,6 +427,29 @@ func (sp *HolderStreamProcess) readLoop() {
 				// Stop periodic notification when all background tasks complete
 				if remaining == 0 {
 					sp.stopPeriodicNotification()
+				}
+			case "task_updated":
+				// task_updated with patch.status == "completed" or "failed" signals
+				// that the task is done (used by local_bash and interrupted/failed
+				// local_agent tasks). Decrement runningTasks the same way
+				// task_notification does.
+				var patch struct {
+					Status string `json:"status"`
+				}
+				if len(ev.Patch) > 0 {
+					if err := json.Unmarshal(ev.Patch, &patch); err == nil {
+						if patch.Status == "completed" || patch.Status == "failed" {
+							sp.mu.Lock()
+							if sp.runningTasks > 0 {
+								sp.runningTasks--
+							}
+							remaining := sp.runningTasks
+							sp.mu.Unlock()
+							if remaining == 0 {
+								sp.stopPeriodicNotification()
+							}
+						}
+					}
 				}
 			}
 		}

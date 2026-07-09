@@ -309,6 +309,7 @@ func (m *Manager) RecoverStreamProcesses() {
 				m.killStaleHolder(id)
 			} else {
 				m.wireSessionIDCallback(id, sp)
+				sp.StartReadLoop()
 				m.streamMu.Lock()
 				m.streamProcesses[id] = sp
 				m.streamMu.Unlock()
@@ -324,6 +325,7 @@ func (m *Manager) RecoverStreamProcesses() {
 			continue
 		}
 		m.wireSessionIDCallback(id, sp)
+		sp.StartReadLoop()
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
 		m.streamMu.Unlock()
@@ -598,6 +600,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	}
 	if sp != nil {
 		m.wireSessionIDCallback(id, sp)
+		sp.StartReadLoop()
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
 		m.streamMu.Unlock()
@@ -971,6 +974,7 @@ func (m *Manager) Fork(id string, preserveContext bool, initialPrompt string) (*
 	}
 
 	m.wireSessionIDCallback(newID, sp)
+	sp.StartReadLoop()
 	m.streamMu.Lock()
 	m.streamProcesses[newID] = sp
 	m.streamMu.Unlock()
@@ -1380,6 +1384,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			hsp.recordUserMessage(text)
 			sp = hsp
 			m.wireSessionIDCallback(id, sp)
+			sp.StartReadLoop()
 			m.streamMu.Lock()
 			m.streamProcesses[id] = sp
 			m.streamMu.Unlock()
@@ -1404,6 +1409,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 			hsp.recordUserMessage(text)
 			sp = hsp
 			m.wireSessionIDCallback(id, sp)
+			sp.StartReadLoop()
 			m.streamMu.Lock()
 			m.streamProcesses[id] = sp
 			m.streamMu.Unlock()
@@ -1428,6 +1434,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 		}
 		sp = hsp
 		m.wireSessionIDCallback(id, sp)
+		sp.StartReadLoop()
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
 		m.streamMu.Unlock()
@@ -1656,6 +1663,7 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 		return nil, fmt.Errorf("start stream process for controller: %w", err)
 	}
 	m.wireSessionIDCallback(id, sp)
+	sp.StartReadLoop()
 	m.streamMu.Lock()
 	m.streamProcesses[id] = sp
 	m.streamMu.Unlock()
@@ -1966,6 +1974,7 @@ func (m *Manager) Reconnect(id string) error {
 		return fmt.Errorf("start stream process: %w", err)
 	}
 	m.wireSessionIDCallback(id, sp)
+	sp.StartReadLoop()
 	m.streamMu.Lock()
 	m.streamProcesses[id] = sp
 	m.streamMu.Unlock()
@@ -2042,6 +2051,7 @@ func (m *Manager) Restart(id string) error {
 		return fmt.Errorf("start stream process: %w", err)
 	}
 	m.wireSessionIDCallback(id, sp)
+	sp.StartReadLoop()
 	m.streamMu.Lock()
 	m.streamProcesses[id] = sp
 	m.streamMu.Unlock()

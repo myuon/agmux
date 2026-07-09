@@ -166,6 +166,13 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
       if (taskId) {
         tasks.delete(taskId);
       }
+    } else if (subtype === "task_updated") {
+      const taskId = raw.task_id as string;
+      const patch = raw.patch as Record<string, unknown> | undefined;
+      const patchStatus = patch?.status as string | undefined;
+      if (taskId && (patchStatus === "completed" || patchStatus === "failed")) {
+        tasks.delete(taskId);
+      }
     }
   }
   // Remove tasks that were explicitly stopped via TaskStop
