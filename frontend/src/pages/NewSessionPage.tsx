@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, FolderOpen, SendHorizonal } from "lucide-react";
+import { ArrowLeft, FolderOpen, SendHorizonal, X } from "lucide-react";
 import { api, type CodexModel, type RoleTemplate } from "../api/client";
 import { IconButton } from "../components/ui/IconButton";
 import { IconText } from "../components/ui/IconText";
@@ -30,6 +30,8 @@ export function NewSessionPage() {
   const [selectedTemplate, setSelectedTemplate] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [ephemeral, setEphemeral] = useState(false);
+  const [ephemeralTimeout, setEphemeralTimeout] = useState("");
 
   useEffect(() => {
     api.getRecentProjects()
@@ -85,24 +87,35 @@ export function NewSessionPage() {
     }
   }, [provider]);
 
+  const textareaRef = useCallback((el: HTMLTextAreaElement | null) => {
+    if (el) {
+      el.style.height = "36px";
+      el.style.height = el.scrollHeight + "px";
+    }
+  }, [prompt]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSending || !prompt.trim()) return;
+    if (isSending) return;
 
     setIsSending(true);
     setError(null);
     try {
+      const timeoutSecs = ephemeralTimeout ? Math.max(1, Math.floor(parseInt(ephemeralTimeout, 10))) : undefined;
       const created = await api.createSession({
         name: projectPath ? (projectPath.split("/").pop() || projectPath) : "New Session",
         projectPath: projectPath || "",
-        prompt: prompt.trim(),
+        prompt: prompt.trim() || undefined,
         provider,
         model: (provider === "codex" || provider === "claude") && model ? model : undefined,
         autoApprove: provider === "codex" && autoApprove ? true : undefined,
         systemPrompt: systemPrompt || undefined,
         roleTemplate: selectedTemplate || undefined,
+        ephemeral: ephemeral || undefined,
+        ephemeralTimeoutSeconds: ephemeral && timeoutSecs && timeoutSecs > 0 ? timeoutSecs : undefined,
       });
       navigate(`/sessions/${created.id}`);
+      setIsSending(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "セッション作成に失敗しました");
       setIsSending(false);
@@ -118,7 +131,12 @@ export function NewSessionPage() {
             <ArrowLeft className="w-4 h-4" />
           </IconButton>
         )}
-        <h2 className="text-xl sm:text-2xl font-bold">新規セッション</h2>
+        <h2 className="text-xl sm:text-2xl font-bold flex-1">新規セッション</h2>
+        {isDesktopPane && (
+          <IconButton onClick={() => navigate(-1)} title="閉じる">
+            <X className="w-4 h-4" />
+          </IconButton>
+        )}
       </div>
 
       {/* Path row */}
@@ -232,6 +250,33 @@ export function NewSessionPage() {
             className="w-full border border-gray-200 rounded px-3 py-2 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-blue-400 text-gray-700 placeholder-gray-400"
           />
         </div>
+
+        {/* Ephemeral settings */}
+        <div className="mb-3">
+          <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={ephemeral}
+              onChange={(e) => setEphemeral(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            Ephemeral（完了後に自動アーカイブ）
+          </label>
+        </div>
+        {ephemeral && (
+          <div className="mb-3">
+            <label className="block text-xs text-gray-400 mb-1">タイムアウト（秒、省略可）</label>
+            <input
+              type="number"
+              value={ephemeralTimeout}
+              onChange={(e) => setEphemeralTimeout(e.target.value)}
+              min="1"
+              step="1"
+              placeholder="例: 3600"
+              className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 text-gray-700 placeholder-gray-400"
+            />
+          </div>
+        )}
       </div>
 
       {/* Error */}
@@ -245,12 +290,7 @@ export function NewSessionPage() {
           <div className="flex gap-2 items-center">
             <div className="relative flex-1">
               <textarea
-                ref={(el) => {
-                  if (el) {
-                    el.style.height = "36px";
-                    el.style.height = Math.max(36, Math.min(el.scrollHeight, 120)) + "px";
-                  }
-                }}
+                ref={textareaRef}
                 value={prompt}
                 rows={1}
                 onChange={(e) => setPrompt(e.target.value)}
@@ -261,7 +301,7 @@ export function NewSessionPage() {
                   }
                 }}
                 disabled={isSending}
-                placeholder="最初のプロンプトを入力..."
+                placeholder="最初のプロンプトを入力（省略可）..."
                 className="block w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none h-9 overflow-auto disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
                 autoFocus
               />
@@ -270,8 +310,8 @@ export function NewSessionPage() {
               shape="circle"
               variant="primary"
               type="submit"
-              disabled={isSending || !prompt.trim()}
-              title={isSending ? "作成中..." : prompt.trim() ? "セッションを作成" : "プロンプトを入力してください"}
+              disabled={isSending}
+              title={isSending ? "作成中..." : "セッションを作成"}
               className={isSending ? "opacity-60 cursor-not-allowed" : ""}
             >
               <SendHorizonal className="w-4 h-4" />
