@@ -89,6 +89,7 @@ type rawStreamLine struct {
 	LastIn   json.RawMessage        `json:"last_tool_input"`
 	Output   string                 `json:"output"`
 	Usage    map[string]json.Number `json:"usage"`
+	Patch    json.RawMessage        `json:"patch"`
 	Message  *struct {
 		Role    string          `json:"role"`
 		Content json.RawMessage `json:"content"`
@@ -246,6 +247,21 @@ func (s *BackgroundTaskStore) ApplyLine(sessionID string, line []byte) error {
 			return nil
 		}
 		return s.deleteTask(sessionID, ev.TaskID)
+
+	case "task_updated":
+		if ev.TaskID == "" {
+			return nil
+		}
+		var patch struct {
+			Status string `json:"status"`
+		}
+		if len(ev.Patch) > 0 {
+			if err := json.Unmarshal(ev.Patch, &patch); err == nil {
+				if patch.Status == "completed" || patch.Status == "failed" {
+					return s.deleteTask(sessionID, ev.TaskID)
+				}
+			}
+		}
 	}
 
 	return nil
@@ -607,14 +623,10 @@ func (s *BackgroundTaskStore) upsertTask(sessionID string, t BackgroundTask) err
 }
 
 func (s *BackgroundTaskStore) deleteTask(sessionID, taskID string) error {
-	_, err := s.db.Exec(
-		`DELETE FROM background_tasks WHERE session_id = ? AND task_id = ?`,
-		sessionID, taskID,
-	)
-	if err != nil {
-		return fmt.Errorf("delete background task: %w", err)
-	}
-	return nil
+	// Use tombstone (logical delete) instead of physical DELETE so that a
+	// delayed task_progress arriving after task_notification cannot resurrect
+	// the task via upsertTask's INSERT path (which guards on dismissed_at IS NULL).
+	return s.Dismiss(sessionID, taskID)
 }
 
 func nullableString(s string) sql.NullString {
