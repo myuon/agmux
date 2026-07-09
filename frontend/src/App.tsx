@@ -7,7 +7,6 @@ import { SessionList } from "./components/SessionList";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { getActiveSessionName } from "./activeSession";
 import { IconButton } from "./components/ui/IconButton";
-import { CreateSession } from "./components/CreateSession";
 import { BroadcastModal } from "./components/BroadcastModal";
 
 // Register service worker for mobile notifications
@@ -250,7 +249,6 @@ function useSessions() {
 export function DesktopLayout() {
   const { sessions, loadSessions } = useSessions();
   const [error, setError] = useState<string | null>(null);
-  const [showCreateModal, setShowCreateModal] = useState(false);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [devMode, setDevMode] = useState(false);
   const [leftCollapsed, setLeftCollapsed] = useState(() => {
@@ -298,7 +296,7 @@ export function DesktopLayout() {
         <AppHeaderButtons
           sessions={sessions}
           devMode={devMode}
-          onCreateSession={() => setShowCreateModal(true)}
+          onCreateSession={() => navigate("/sessions/new")}
           onBroadcast={() => setBroadcastOpen(true)}
         />
       </header>
@@ -383,20 +381,6 @@ export function DesktopLayout() {
         )}
       </div>
 
-      {showCreateModal && (
-        <CreateSession
-          onClose={() => setShowCreateModal(false)}
-          onCreate={async (data) => {
-            try {
-              const created = await api.createSession(data);
-              setShowCreateModal(false);
-              navigate(`/sessions/${created.id}`);
-            } catch (e: unknown) {
-              setError(e instanceof Error ? e.message : "Failed to create session");
-            }
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -405,7 +389,6 @@ export function DesktopLayout() {
 export function Dashboard() {
   const { sessions, loadSessions } = useSessions();
   const [error, setError] = useState<string | null>(null);
-  const [showCreateModal, setShowCreateModal] = useState(false);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [devMode, setDevMode] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -433,7 +416,7 @@ export function Dashboard() {
         <AppHeaderButtons
           sessions={sessions}
           devMode={devMode}
-          onCreateSession={() => setShowCreateModal(true)}
+          onCreateSession={() => navigate("/sessions/new")}
           onBroadcast={() => setBroadcastOpen(true)}
         />
       </header>
@@ -479,20 +462,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {showCreateModal && (
-        <CreateSession
-          onClose={() => setShowCreateModal(false)}
-          onCreate={async (data) => {
-            try {
-              const created = await api.createSession(data);
-              setShowCreateModal(false);
-              navigate(`/sessions/${created.id}`);
-            } catch (e: unknown) {
-              setError(e instanceof Error ? e.message : "Failed to create session");
-            }
-          }}
-        />
-      )}
     </div>
   );
 }
