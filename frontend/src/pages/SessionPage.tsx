@@ -199,6 +199,28 @@ function ModelSwitcher({ session, onSwitched, onError }: {
   );
 }
 
+function formatTokenCount(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K`;
+  return String(n);
+}
+
+// ContextUsageChip shows the current context window consumption (e.g. "84K / 200K · 42%")
+// next to the model chip, similar to Claude Desktop. Color escalates from
+// neutral to amber (>=75%) to red (>=90%) as the context fills up.
+function ContextUsageChip({ contextTokens, contextWindow }: { contextTokens: number; contextWindow: number }) {
+  if (contextTokens <= 0) return null;
+  const pct = contextWindow > 0 ? Math.round((contextTokens / contextWindow) * 100) : null;
+  const color = pct === null ? "gray" : pct >= 90 ? "red" : pct >= 75 ? "orange" : "gray";
+  const label = pct !== null
+    ? `${formatTokenCount(contextTokens)} / ${formatTokenCount(contextWindow)} · ${pct}%`
+    : formatTokenCount(contextTokens);
+  return (
+    <span className="inline-flex items-center" title="Context window usage">
+      <Chip color={color}>{label}</Chip>
+    </span>
+  );
+}
+
 function SessionPageSkeleton({ sessionId }: { sessionId?: string }) {
   const isDesktopPane = useDesktopPane();
   return (
@@ -255,6 +277,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [partialText, setPartialText] = useState("");
   // Latest estimated thinking tokens (system:thinking_tokens live events); null when not thinking
   const [thinkingTokens, setThinkingTokens] = useState<number | null>(null);
+  const [contextUsage, setContextUsage] = useState<{ contextTokens: number; contextWindow: number } | null>(null);
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>(deferred.diff.files);
 
 
@@ -370,6 +393,12 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         if (data.status !== "working") {
           setThinkingTokens(null);
         }
+      }
+    }
+    if (msg.type === "context_usage") {
+      const data = msg.data as { sessionId: string; contextTokens: number; contextWindow: number };
+      if (data.sessionId === sessionId) {
+        setContextUsage({ contextTokens: data.contextTokens, contextWindow: data.contextWindow });
       }
     }
     if (msg.type === "stream_update") {
@@ -636,6 +665,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                     await api.clearSession(session.id);
                     setStreamLines([]);
                     setPartialText("");
+                    setContextUsage(null);
                     streamCursorRef.current = 0;
                     api.getSession(session.id).then(setSession);
                     setClearToast("success");
@@ -921,6 +951,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   setTimeout(() => setModelToast(null), 3000);
                 }}
               />
+            )}
+            {contextUsage && (
+              <ContextUsageChip contextTokens={contextUsage.contextTokens} contextWindow={contextUsage.contextWindow} />
             )}
             {session.roleTemplate && (
               <span className="inline-flex items-center" style={{ viewTransitionName: `session-role-${session.id}` }}><Chip color="orange">{session.roleTemplate}</Chip></span>
