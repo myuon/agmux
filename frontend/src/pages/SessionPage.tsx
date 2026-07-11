@@ -204,38 +204,26 @@ function formatTokenCount(n: number): string {
   return String(n);
 }
 
-function useContextUsageProps(contextTokens: number, contextWindow: number) {
+function ContextUsageRing({ contextTokens, contextWindow }: { contextTokens: number; contextWindow: number }) {
+  if (contextTokens <= 0) return null;
   const pct = contextWindow > 0 ? Math.round((contextTokens / contextWindow) * 100) : null;
-  const barColor = pct === null ? "bg-gray-400" : pct >= 90 ? "bg-red-500" : pct >= 75 ? "bg-orange-400" : "bg-blue-400";
+  const stroke = pct === null ? "#9ca3af" : pct >= 90 ? "#ef4444" : pct >= 75 ? "#f59e0b" : "#60a5fa";
   const tooltip = pct !== null
     ? `${formatTokenCount(contextTokens)} / ${formatTokenCount(contextWindow)} (${pct}%)`
     : formatTokenCount(contextTokens);
-  return { pct, barColor, tooltip };
-}
-
-function ContextUsageInline({ contextTokens, contextWindow }: { contextTokens: number; contextWindow: number }) {
-  if (contextTokens <= 0) return null;
-  const { pct, barColor, tooltip } = useContextUsageProps(contextTokens, contextWindow);
+  const r = 6;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (circ * Math.min(pct ?? 0, 100)) / 100;
   return (
-    <span className="hidden sm:inline-flex items-center gap-1 text-[10px] text-gray-500" title={tooltip}>
-      <span className="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-        <span className={`block h-full rounded-full ${barColor}`} style={{ width: `${Math.min(pct ?? 0, 100)}%` }} />
-      </span>
+    <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-500" title={tooltip}>
+      <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">
+        <circle cx="8" cy="8" r={r} fill="none" stroke="#e5e7eb" strokeWidth="2" />
+        <circle cx="8" cy="8" r={r} fill="none" stroke={stroke} strokeWidth="2"
+          strokeDasharray={circ} strokeDashoffset={offset}
+          strokeLinecap="round" transform="rotate(-90 8 8)" />
+      </svg>
       {pct !== null && <span>{pct}%</span>}
     </span>
-  );
-}
-
-function ContextUsageBar({ contextTokens, contextWindow }: { contextTokens: number; contextWindow: number }) {
-  if (contextTokens <= 0) return null;
-  const { pct, barColor, tooltip } = useContextUsageProps(contextTokens, contextWindow);
-  return (
-    <div className="sm:hidden flex items-center gap-2 px-4 py-1 text-[10px] text-gray-500" title={tooltip}>
-      <span className="flex-1 h-1 bg-gray-200 rounded-full overflow-hidden">
-        <span className={`block h-full rounded-full ${barColor}`} style={{ width: `${Math.min(pct ?? 0, 100)}%` }} />
-      </span>
-      {pct !== null && <span className="shrink-0">{pct}%</span>}
-    </div>
   );
 }
 
@@ -579,9 +567,6 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
 
   const sendForm = session ? (
     <div className="shrink-0 sticky bottom-0 bg-white -mx-4 sm:-mx-8">
-    {contextUsage && (
-      <ContextUsageBar contextTokens={contextUsage.contextTokens} contextWindow={contextUsage.contextWindow} />
-    )}
     <form onSubmit={handleSend} className="pt-2 pb-4 px-4 sm:px-8">
       {pendingImages.length > 0 && (
         <div className="flex gap-2 mb-2 flex-wrap">
@@ -974,7 +959,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               />
             )}
             {contextUsage && (
-              <ContextUsageInline contextTokens={contextUsage.contextTokens} contextWindow={contextUsage.contextWindow} />
+              <ContextUsageRing contextTokens={contextUsage.contextTokens} contextWindow={contextUsage.contextWindow} />
             )}
             {session.roleTemplate && (
               <span className="inline-flex items-center" style={{ viewTransitionName: `session-role-${session.id}` }}><Chip color="orange">{session.roleTemplate}</Chip></span>
