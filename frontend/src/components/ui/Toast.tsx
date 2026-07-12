@@ -13,7 +13,7 @@ export function ToastBar({ message, variant = "success", onClose }: { message: s
   const Icon = variant === "success" ? CheckCircle2 : AlertTriangle;
 
   return (
-    <div className={`${styles} text-white px-4 py-2 rounded shadow-lg text-sm flex items-center gap-2 w-fit max-w-full`}>
+    <div className={`${styles} text-white px-4 py-2 rounded shadow-lg text-sm flex items-center gap-2 w-fit max-w-full wrap-anywhere`}>
       <Icon className="w-4 h-4 shrink-0" />
       {message}
       {onClose && (
