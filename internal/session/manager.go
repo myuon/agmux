@@ -1297,7 +1297,7 @@ func (m *Manager) Clear(id string) error {
 	m.stopStreamProcess(id)
 
 	// Store clear_offset and reset all session state
-	_, err = m.db.Exec("UPDATE sessions SET last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', clear_offset = ?, cli_session_id = NULL, conversation_started = 0, holder_pid = 0, updated_at = ? WHERE id = ?", clearOffset, time.Now(), id)
+	_, err = m.db.Exec("UPDATE sessions SET last_error = NULL, current_task = NULL, goal = NULL, goals = '[]', clear_offset = ?, cli_session_id = '', conversation_started = 0, holder_pid = 0, updated_at = ? WHERE id = ?", clearOffset, time.Now(), id)
 	if err != nil {
 		return err
 	}
