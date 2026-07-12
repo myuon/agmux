@@ -306,7 +306,7 @@ export function DesktopLayout() {
       {/* Error banner */}
       {error && (
         <div className="bg-red-50 border-b border-red-200 text-red-700 px-4 py-2 text-sm shrink-0 flex items-center justify-between">
-          <span>{error}</span>
+          <span className="wrap-anywhere">{error}</span>
           <button onClick={() => setError(null)} className="ml-2 text-red-500 hover:text-red-800">x</button>
         </div>
       )}
@@ -425,7 +425,7 @@ export function Dashboard() {
       {/* Error banner */}
       {error && (
         <div className="bg-red-50 border-b border-red-200 text-red-700 px-4 py-2 text-sm shrink-0 flex items-center justify-between">
-          <span>{error}</span>
+          <span className="wrap-anywhere">{error}</span>
           <button onClick={() => setError(null)} className="ml-2 text-red-500 hover:text-red-800">x</button>
         </div>
       )}

@@ -15,7 +15,7 @@ export function AlertBanner({
   variant?: AlertBannerVariant;
 }) {
   return (
-    <div className={`rounded-lg px-4 py-3 text-sm border ${variantStyles[variant]}`}>
+    <div className={`rounded-lg px-4 py-3 text-sm border wrap-anywhere ${variantStyles[variant]}`}>
       {children}
     </div>
   );
