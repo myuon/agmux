@@ -99,6 +99,18 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 		})
 	})
 
+	// Wire real-time context usage updates via WebSocket
+	sessions.SetOnContextUsage(func(sessionID string, contextTokens, contextWindow int64) {
+		hub.Broadcast(Message{
+			Type: "context_usage",
+			Data: map[string]interface{}{
+				"sessionId":     sessionID,
+				"contextTokens": contextTokens,
+				"contextWindow": contextWindow,
+			},
+		})
+	})
+
 	s.setupRoutes()
 	return s
 }

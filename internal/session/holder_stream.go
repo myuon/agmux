@@ -124,6 +124,11 @@ type HolderStreamProcess struct {
 	// modelCaptured is true once the model has been captured
 	modelCaptured bool
 
+	// contextTokens and contextWindow track context usage parsed from
+	// assistant/result stream events.
+	contextTokens int64
+	contextWindow int64
+
 	// Periodic notification fields
 	notifyInterval time.Duration              // notification interval for background tasks
 	notifyCancel   context.CancelFunc         // stops the periodic notification goroutine
@@ -136,7 +141,36 @@ type HolderStreamProcess struct {
 	onProcessExit    func(sessionID string, exitErr error)
 	onTurnComplete   func(sessionID string)
 	onHolderRestart  func(sessionID string, newPID int)
+	onContextUsage   func(sessionID string, contextTokens, contextWindow int64)
 	runningTasks     int
+}
+
+// usageInfo is a minimal struct for parsing token usage from an assistant
+// message's "usage" field.
+type usageInfo struct {
+	InputTokens              int64 `json:"input_tokens"`
+	CacheCreationInputTokens int64 `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int64 `json:"cache_read_input_tokens"`
+}
+
+// assistantUsage is a minimal struct for parsing usage data from an
+// assistant stream event.
+type assistantUsage struct {
+	Type  string    `json:"type"`
+	Usage usageInfo `json:"usage"`
+}
+
+// modelUsageEntry is a minimal struct for parsing per-model usage data from
+// a result stream event.
+type modelUsageEntry struct {
+	ContextWindow int64 `json:"contextWindow"`
+}
+
+// resultModelUsage is a minimal struct for parsing the modelUsage field from
+// a result stream event.
+type resultModelUsage struct {
+	Type       string                     `json:"type"`
+	ModelUsage map[string]modelUsageEntry `json:"modelUsage"`
 }
 
 // StartHolderStreamProcess starts a CLI process via a holder subprocess.
@@ -448,7 +482,40 @@ func (sp *HolderStreamProcess) readLoop() {
 			}
 		}
 		switch ev.Type {
+		case "assistant":
+			var au assistantUsage
+			if json.Unmarshal([]byte(line), &au) == nil {
+				tokens := au.Usage.InputTokens + au.Usage.CacheCreationInputTokens + au.Usage.CacheReadInputTokens
+				if tokens > 0 {
+					sp.mu.Lock()
+					changed := sp.contextTokens != tokens
+					sp.contextTokens = tokens
+					cb := sp.onContextUsage
+					ct, cw := sp.contextTokens, sp.contextWindow
+					sp.mu.Unlock()
+					if changed && cb != nil {
+						cb(sp.streamOpts.SessionID, ct, cw)
+					}
+				}
+			}
 		case "result":
+			var rmu resultModelUsage
+			if json.Unmarshal([]byte(line), &rmu) == nil {
+				for _, entry := range rmu.ModelUsage {
+					if entry.ContextWindow > 0 {
+						sp.mu.Lock()
+						changed := sp.contextWindow != entry.ContextWindow
+						sp.contextWindow = entry.ContextWindow
+						cb := sp.onContextUsage
+						ct, cw := sp.contextTokens, sp.contextWindow
+						sp.mu.Unlock()
+						if changed && cb != nil {
+							cb(sp.streamOpts.SessionID, ct, cw)
+						}
+						break
+					}
+				}
+			}
 			if ev.Subtype == "success" {
 				sp.mu.RLock()
 				idle := sp.runningTasks == 0
@@ -573,6 +640,13 @@ func (sp *HolderStreamProcess) SetOnModel(fn func(model string)) {
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.onModel = fn
+}
+
+// SetOnContextUsage sets a callback for context token usage updates.
+func (sp *HolderStreamProcess) SetOnContextUsage(fn func(sessionID string, contextTokens, contextWindow int64)) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.onContextUsage = fn
 }
 
 // SetOnNewLines sets a callback for new stream lines.

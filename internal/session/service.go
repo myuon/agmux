@@ -63,6 +63,9 @@ type SessionService interface {
 	// SetOnStatusChange sets a callback for real-time session status changes.
 	SetOnStatusChange(fn func(sessionID string, status Status, lastError string))
 
+	// SetOnContextUsage sets a callback for real-time context token usage updates.
+	SetOnContextUsage(fn func(sessionID string, contextTokens, contextWindow int64))
+
 	// IsStreamProcessAlive returns true if a stream process exists and has not exited.
 	IsStreamProcessAlive(id string) bool
 

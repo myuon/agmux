@@ -199,6 +199,34 @@ function ModelSwitcher({ session, onSwitched, onError }: {
   );
 }
 
+function formatTokenCount(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K`;
+  return String(n);
+}
+
+function ContextUsageRing({ contextTokens, contextWindow }: { contextTokens: number; contextWindow: number }) {
+  if (contextTokens <= 0) return null;
+  const pct = contextWindow > 0 ? Math.round((contextTokens / contextWindow) * 100) : null;
+  const stroke = pct === null ? "#9ca3af" : pct >= 90 ? "#ef4444" : pct >= 75 ? "#f59e0b" : "#60a5fa";
+  const tooltip = pct !== null
+    ? `${formatTokenCount(contextTokens)} / ${formatTokenCount(contextWindow)} (${pct}%)`
+    : formatTokenCount(contextTokens);
+  const r = 6;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - (circ * Math.min(pct ?? 0, 100)) / 100;
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-500" title={tooltip}>
+      <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">
+        <circle cx="8" cy="8" r={r} fill="none" stroke="#e5e7eb" strokeWidth="2" />
+        <circle cx="8" cy="8" r={r} fill="none" stroke={stroke} strokeWidth="2"
+          strokeDasharray={circ} strokeDashoffset={offset}
+          strokeLinecap="round" transform="rotate(-90 8 8)" />
+      </svg>
+      {pct !== null && <span>{pct}%</span>}
+    </span>
+  );
+}
+
 function SessionPageSkeleton({ sessionId }: { sessionId?: string }) {
   const isDesktopPane = useDesktopPane();
   return (
@@ -255,6 +283,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [partialText, setPartialText] = useState("");
   // Latest estimated thinking tokens (system:thinking_tokens live events); null when not thinking
   const [thinkingTokens, setThinkingTokens] = useState<number | null>(null);
+  const [contextUsage, setContextUsage] = useState<{ contextTokens: number; contextWindow: number } | null>(null);
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>(deferred.diff.files);
 
 
@@ -370,6 +399,12 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         if (data.status !== "working") {
           setThinkingTokens(null);
         }
+      }
+    }
+    if (msg.type === "context_usage") {
+      const data = msg.data as { sessionId: string; contextTokens: number; contextWindow: number };
+      if (data.sessionId === sessionId) {
+        setContextUsage({ contextTokens: data.contextTokens, contextWindow: data.contextWindow });
       }
     }
     if (msg.type === "stream_update") {
@@ -636,6 +671,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                     await api.clearSession(session.id);
                     setStreamLines([]);
                     setPartialText("");
+                    setContextUsage(null);
                     streamCursorRef.current = 0;
                     api.getSession(session.id).then(setSession);
                     setClearToast("success");
@@ -921,6 +957,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   setTimeout(() => setModelToast(null), 3000);
                 }}
               />
+            )}
+            {contextUsage && (
+              <ContextUsageRing contextTokens={contextUsage.contextTokens} contextWindow={contextUsage.contextWindow} />
             )}
             {session.roleTemplate && (
               <span className="inline-flex items-center" style={{ viewTransitionName: `session-role-${session.id}` }}><Chip color="orange">{session.roleTemplate}</Chip></span>

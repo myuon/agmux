@@ -49,6 +49,7 @@ type Manager struct {
 	logger             *slog.Logger
 	onNewLines         func(sessionID string, newLines []string, total int)
 	onStatusChange     func(sessionID string, status Status, lastError string)
+	onContextUsage     func(sessionID string, contextTokens, contextWindow int64)
 	backgroundTasks    *BackgroundTaskStore
 }
 
@@ -153,6 +154,11 @@ func (m *Manager) SetOnNewLines(fn func(sessionID string, newLines []string, tot
 // SetOnStatusChange sets a callback that fires when a session status changes.
 func (m *Manager) SetOnStatusChange(fn func(sessionID string, status Status, lastError string)) {
 	m.onStatusChange = fn
+}
+
+// SetOnContextUsage sets a callback that fires when a session's context token usage changes.
+func (m *Manager) SetOnContextUsage(fn func(sessionID string, contextTokens, contextWindow int64)) {
+	m.onContextUsage = fn
 }
 
 // getProvider returns a Provider for the given provider name.
@@ -1135,6 +1141,12 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProces
 			m.logger.Error("failed to persist model name", "sessionId", sessionID, "model", model, "error", err)
 		} else {
 			m.logger.Info("model name captured from stream", "sessionId", sessionID, "model", model)
+		}
+	})
+	contextUsageUpstream := m.onContextUsage
+	sp.SetOnContextUsage(func(sid string, contextTokens, contextWindow int64) {
+		if contextUsageUpstream != nil {
+			contextUsageUpstream(sid, contextTokens, contextWindow)
 		}
 	})
 	// Wrap onNewLines so we can update the background_tasks DB table per line.
