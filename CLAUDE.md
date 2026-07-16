@@ -37,7 +37,7 @@ agmux update
 - 動作確認するときは、agmux CLI を利用し、Webアプリの画面を見る必要があるときは **agent-browser** を利用する。どちらもskillがあるので利用する際には参照すること
 - **本番(4321)に影響させずに動作確認する手順は `/dev-verify` skill を参照**（Vite devサーバー、HOME差し替えの隔離バックエンド、uishotでのスクショ添付）
 - 動作確認や画面に対する変更がある時は、**uishot**（`mcp__ui-shot__upload_screenshot` 等）で画面をキャプチャし、なるべくそのスクショをPRやissueに貼ること
-- **フロントエンドのみの変更の場合**: configによりfrontendの `dist` ディレクトリを直接配信する設定になっているため、PRブランチをチェックアウトして `make build` するだけで画面に反映される（サーバー再起動不要）
+- **フロントエンドの変更も embedded 配信**: 以前は config の `frontend_dir` で `dist` を直接配信していたが、副作用が大きいため廃止した（2026-07-14）。フロントエンドのみの変更でも反映にはリリース + `agmux update` が必要
 
 ## エージェントの自律性ルール
 
