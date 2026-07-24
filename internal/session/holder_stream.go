@@ -173,8 +173,38 @@ type resultModelUsage struct {
 	ModelUsage map[string]modelUsageEntry `json:"modelUsage"`
 }
 
+// credentialRepairer is implemented by providers whose CLI can be wedged by
+// broken credential storage that agmux is able to repair before spawning.
+type credentialRepairer interface {
+	RepairCredentials() (ClaudeCredentialState, error)
+}
+
+// repairProviderCredentials gives the provider a chance to clear out
+// credential state that would make the CLI fail to authenticate. Failures are
+// logged and swallowed: a spawn that might work is better than one refused
+// over a diagnostic that could not run.
+func repairProviderCredentials(sessionID string, provider Provider) {
+	r, ok := provider.(credentialRepairer)
+	if !ok {
+		return
+	}
+	state, err := r.RepairCredentials()
+	if err != nil {
+		slog.Warn("credential repair failed", "component", "session_manager", "sessionId", sessionID, "provider", provider.Name(), "error", err)
+		return
+	}
+	switch state {
+	case ClaudeCredsRepaired:
+		slog.Info("removed expired keychain credentials; CLI will use ~/.claude/.credentials.json", "component", "session_manager", "sessionId", sessionID, "provider", provider.Name())
+	case ClaudeCredsUnrecoverable:
+		slog.Warn("keychain credentials are expired and ~/.claude/.credentials.json cannot replace them; run `claude` and re-login", "component", "session_manager", "sessionId", sessionID, "provider", provider.Name())
+	}
+}
+
 // StartHolderStreamProcess starts a CLI process via a holder subprocess.
 func StartHolderStreamProcess(opts StreamOpts, provider Provider) (*HolderStreamProcess, error) {
+	repairProviderCredentials(opts.SessionID, provider)
+
 	// Build the command that the holder will execute
 	cmd := provider.BuildStreamCommand(opts)
 	cmd.Env = provider.AppendOTelEnv(cmd.Env, 0)

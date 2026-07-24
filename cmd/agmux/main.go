@@ -235,6 +235,12 @@ func serveCmd() *cobra.Command {
 			// a true orphan (#681) and can be terminated safely.
 			mgr.ReapOrphanHolders()
 
+			// Clear out Claude Code credential storage that would otherwise
+			// wedge sessions with "OAuth session expired and could not be
+			// refreshed". Sessions also repair before spawning; this watch
+			// covers the gap for sessions that are already running. See #701.
+			go session.WatchClaudeCredentials(context.Background(), session.DefaultCredentialWatchInterval)
+
 			// Create controller session (singleton) AFTER recovery so that
 			// a surviving controller holder can be reconnected first.
 			controllerDir, err := db.ControllerDir()
