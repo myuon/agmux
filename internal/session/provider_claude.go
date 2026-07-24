@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/myuon/agmux/internal/config"
@@ -101,6 +102,13 @@ func (p *ClaudeProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 	// Prevent git from hanging on interactive auth prompts (e.g. HTTPS push)
 	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0")
 	return cmd
+}
+
+// RepairCredentials clears a Keychain entry holding expired OAuth credentials
+// when the on-disk credential file can take over, so the CLI does not fail
+// with "OAuth session expired and could not be refreshed". See #701.
+func (p *ClaudeProvider) RepairCredentials() (ClaudeCredentialState, error) {
+	return RepairClaudeCredentials(time.Now())
 }
 
 func (p *ClaudeProvider) ParseSessionID(jsonlLine []byte) (string, bool) {
