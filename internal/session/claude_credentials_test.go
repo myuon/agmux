@@ -227,6 +227,56 @@ func TestWatchClaudeCredentialsRepairsThenStops(t *testing.T) {
 	}
 }
 
+// recordingProvider is a Provider that reports a canned repair outcome and
+// remembers whether the pre-spawn hook asked for one. It borrows the rest of
+// the Provider surface from ClaudeProvider.
+type recordingProvider struct {
+	*ClaudeProvider
+	state  ClaudeCredentialState
+	err    error
+	called int
+}
+
+func (p *recordingProvider) RepairCredentials() (ClaudeCredentialState, error) {
+	p.called++
+	return p.state, p.err
+}
+
+func TestRepairProviderCredentialsInvokesRepairer(t *testing.T) {
+	// Every outcome must leave the spawn free to proceed, so the only
+	// observable difference between them is what gets logged.
+	for _, tc := range []struct {
+		name  string
+		state ClaudeCredentialState
+		err   error
+	}{
+		{name: "healthy", state: ClaudeCredsHealthy},
+		{name: "repaired", state: ClaudeCredsRepaired},
+		{name: "unrecoverable", state: ClaudeCredsUnrecoverable},
+		{name: "error", err: errors.New("security unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &recordingProvider{
+				ClaudeProvider: NewClaudeProvider("claude", "bypassPermissions"),
+				state:          tc.state,
+				err:            tc.err,
+			}
+
+			repairProviderCredentials("sess-1", p)
+
+			if p.called != 1 {
+				t.Errorf("RepairCredentials called %d times, want 1", p.called)
+			}
+		})
+	}
+}
+
+func TestRepairProviderCredentialsSkipsNonRepairers(t *testing.T) {
+	// Codex manages its own credentials; the hook must leave it alone rather
+	// than block the spawn.
+	repairProviderCredentials("sess-1", NewCodexProvider("codex"))
+}
+
 // TestClaudeProviderImplementsCredentialRepairer keeps the provider wired into
 // the pre-spawn repair hook.
 func TestClaudeProviderImplementsCredentialRepairer(t *testing.T) {
