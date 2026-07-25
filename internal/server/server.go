@@ -1,8 +1,11 @@
 package server
 
 import (
+	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -151,6 +154,7 @@ func (s *Server) setupRoutes() {
 		r.Delete("/sessions/{id}", s.deleteSession)
 		r.Post("/sessions/{id}/stop", s.stopSession)
 		r.Post("/sessions/{id}/send", s.sendToSession)
+		r.Post("/sessions/{id}/exec", s.execInSession)
 		r.Put("/sessions/{id}/context", s.updateSessionContext)
 		r.Put("/sessions/{id}/model", s.updateSessionModel)
 		r.Get("/sessions/{id}/goals", s.getGoals)
@@ -255,6 +259,14 @@ type sendImageData struct {
 type sendRequest struct {
 	Text   string          `json:"text"`
 	Images []sendImageData `json:"images,omitempty"`
+}
+
+type execRequest struct {
+	Command string `json:"command"`
+}
+
+type execResponse struct {
+	ExitCode int `json:"exitCode"`
 }
 
 type updateContextRequest struct {
@@ -491,6 +503,86 @@ func (s *Server) sendToSession(w http.ResponseWriter, r *http.Request) {
 	_ = s.sessions.UpdateStatus(id, session.StatusWorking)
 	s.recordSessionAction(id, "session_send_keys", req.Text)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+}
+
+// maxExecOutputBytes is the maximum number of bytes captured from stdout/stderr
+// before the output is truncated when running a command via execInSession.
+const maxExecOutputBytes = 65536
+
+// truncateExecOutput truncates s to at most maxExecOutputBytes bytes, appending
+// a truncation marker when the input was cut short.
+func truncateExecOutput(s string) string {
+	if len(s) <= maxExecOutputBytes {
+		return s
+	}
+	return s[:maxExecOutputBytes] + "\n...(truncated)"
+}
+
+func (s *Server) execInSession(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req execRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	sess, err := s.sessions.Get(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if sess.ProjectPath == "" {
+		writeError(w, http.StatusBadRequest, "session has no project path")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "bash", "-c", req.Command)
+	cmd.Dir = sess.ProjectPath
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	runErr := cmd.Run()
+
+	exitCode := 0
+	if runErr != nil {
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = -1
+		}
+	}
+
+	var msg strings.Builder
+	msg.WriteString("<bash-input>")
+	msg.WriteString(req.Command)
+	msg.WriteString("</bash-input>\n")
+	msg.WriteString("<bash-stdout>")
+	msg.WriteString(truncateExecOutput(stdout.String()))
+	msg.WriteString("</bash-stdout>")
+	if stderrOut := truncateExecOutput(stderr.String()); stderrOut != "" {
+		msg.WriteString("\n<bash-stderr>")
+		msg.WriteString(stderrOut)
+		msg.WriteString("</bash-stderr>")
+	}
+	if exitCode != 0 {
+		msg.WriteString("\n<bash-error>exit code: ")
+		msg.WriteString(strconv.Itoa(exitCode))
+		msg.WriteString("</bash-error>")
+	}
+
+	if err := s.sessions.SendKeysWithImages(id, msg.String(), nil); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	_ = s.sessions.UpdateStatus(id, session.StatusWorking)
+	s.recordSessionAction(id, "session_exec_command", req.Command)
+	writeJSON(w, http.StatusOK, execResponse{ExitCode: exitCode})
 }
 
 type broadcastRequest struct {
