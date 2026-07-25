@@ -7,7 +7,7 @@ import {
   Sparkles, Settings, Copy,
   RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
   Code, Eye, X, AlertTriangle, LayoutTemplate, ChevronDown,
-  MessageSquare, Terminal,
+  Terminal,
 } from "lucide-react";
 import { useDesktopPane } from "../App";
 import { Modal } from "../components/ui/Modal";
@@ -595,32 +595,22 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           ))}
         </div>
       )}
-      <div className="flex items-center gap-1 mb-1.5">
-        <div className="inline-flex items-center rounded-lg bg-gray-100 p-0.5">
-          <button
-            type="button"
-            onClick={() => setInputMode("chat")}
-            title="Chat mode"
-            className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
-              inputMode === "chat" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            Chat
-          </button>
-          <button
-            type="button"
-            onClick={() => { setInputMode("command"); setShowSlashMenu(false); }}
-            title="Command mode"
-            className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
-              inputMode === "command" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
-            }`}
-          >
+      {inputMode === "command" && (
+        <div className="flex items-center mb-1.5">
+          <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 text-amber-800 px-2 py-0.5 text-xs font-medium">
             <Terminal className="w-3.5 h-3.5" />
-            Command
-          </button>
+            Command mode
+            <button
+              type="button"
+              onClick={() => setInputMode("chat")}
+              title="Exit command mode"
+              className="ml-0.5 -mr-0.5 rounded hover:bg-amber-200 p-0.5"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </span>
         </div>
-      </div>
+      )}
       <div className="flex gap-2 items-center">
         {/* Left action menu */}
         <div className="relative">
@@ -643,6 +633,17 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   setShowActionMenu(false);
                 }}
               />
+              {session.type !== "controller" && (
+                <ActionMenuItem
+                  icon={<Terminal className="w-4 h-4" />}
+                  label="Command mode"
+                  onClick={() => {
+                    setInputMode("command");
+                    setShowSlashMenu(false);
+                    setShowActionMenu(false);
+                  }}
+                />
+              )}
               {slashCommands.length > 0 && (
                 <ActionMenuItem
                   icon={<Slash className="w-4 h-4" />}
