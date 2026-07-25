@@ -87,6 +87,12 @@ export const api = {
       body: JSON.stringify({ text, ...(images && images.length > 0 ? { images } : {}) }),
     }),
 
+  execInSession: (id: string, command: string) =>
+    request<{ exitCode: number }>(`/sessions/${id}/exec`, {
+      method: "POST",
+      body: JSON.stringify({ command }),
+    }),
+
   getStreamOutput: (id: string, limit = 200) =>
     request<{ lines: unknown[]; total: number }>(`/sessions/${id}/stream?limit=${limit}`),
 

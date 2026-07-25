@@ -7,6 +7,7 @@ import {
   Sparkles, Settings, Copy,
   RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
   Code, Eye, X, AlertTriangle, LayoutTemplate, ChevronDown,
+  MessageSquare, Terminal,
 } from "lucide-react";
 import { useDesktopPane } from "../App";
 import { Modal } from "../components/ui/Modal";
@@ -279,6 +280,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
 
   const [session, setSession] = useState<Session | null>(initialSession);
   const [message, setMessage] = useState("");
+  const [inputMode, setInputMode] = useState<"chat" | "command">("chat");
   const [streamLines, setStreamLines] = useState<unknown[]>(deferred.streamOutput.lines);
   const [partialText, setPartialText] = useState("");
   // Latest estimated thinking tokens (system:thinking_tokens live events); null when not thinking
@@ -550,7 +552,11 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     setSendError(null);
     setIsSending(true);
     try {
-      await api.sendToSession(sessionId, text, images);
+      if (inputMode === "command") {
+        await api.execInSession(sessionId, text);
+      } else {
+        await api.sendToSession(sessionId, text, images);
+      }
       // Stream mode updates arrive via WebSocket automatically
     } catch (err) {
       console.error("Failed to send message:", err);
@@ -589,6 +595,32 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           ))}
         </div>
       )}
+      <div className="flex items-center gap-1 mb-1.5">
+        <div className="inline-flex items-center rounded-lg bg-gray-100 p-0.5">
+          <button
+            type="button"
+            onClick={() => setInputMode("chat")}
+            title="Chat mode"
+            className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+              inputMode === "chat" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            Chat
+          </button>
+          <button
+            type="button"
+            onClick={() => { setInputMode("command"); setShowSlashMenu(false); }}
+            title="Command mode"
+            className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors ${
+              inputMode === "command" ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <Terminal className="w-3.5 h-3.5" />
+            Command
+          </button>
+        </div>
+      </div>
       <div className="flex gap-2 items-center">
         {/* Left action menu */}
         <div className="relative">
@@ -758,7 +790,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         />
         {/* Message input with slash command popup */}
         <div className="relative flex-1">
-          {showSlashMenu && (() => {
+          {inputMode === "chat" && showSlashMenu && (() => {
             const filtered = slashCommands.filter((cmd) =>
               slashFilter === "" || cmd.toLowerCase().includes(slashFilter.toLowerCase())
             );
@@ -796,7 +828,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             onChange={(e) => {
               const val = e.target.value;
               setMessage(val);
-              if (val.startsWith("/") && slashCommands.length > 0) {
+              if (inputMode === "chat" && val.startsWith("/") && slashCommands.length > 0) {
                 const filter = val.slice(1).split(" ")[0];
                 if (!val.includes(" ") || val === "/") {
                   setSlashFilter(filter);
@@ -819,7 +851,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                 // Allow default newline behavior; do not submit
                 return;
               }
-              if (!showSlashMenu) return;
+              if (inputMode !== "chat" || !showSlashMenu) return;
               const filtered = slashCommands.filter((cmd) =>
                 slashFilter === "" || cmd.toLowerCase().includes(slashFilter.toLowerCase())
               );
@@ -855,8 +887,16 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               }
             }}
             disabled={isSending}
-            placeholder="Send a message..."
-            className="block w-full border border-gray-300 rounded px-3 py-2 text-sm resize-none h-9 overflow-auto disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed"
+            placeholder={
+              inputMode === "command"
+                ? `Run a shell command in ${session.projectPath}…`
+                : "Send a message..."
+            }
+            className={`block w-full rounded px-3 py-2 text-sm resize-none h-9 overflow-auto disabled:bg-gray-50 disabled:text-gray-500 disabled:cursor-not-allowed ${
+              inputMode === "command"
+                ? "border border-amber-400 bg-amber-50 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                : "border border-gray-300"
+            }`}
           />
         </div>
         {/* Send button */}

@@ -264,6 +264,28 @@ function isProviderCoLocatedTools(provider?: string): boolean {
 
 // Merge assistant/user entries into display items, pairing tool_use with tool_result by id
 // partialText: incremental text from stream_event deltas (shown as "typing" in the last assistant group)
+// Parse the `<bash-input>...</bash-input><bash-stdout>...</bash-stdout><bash-stderr>...</bash-stderr><bash-error>...</bash-error>`
+// text produced by Command mode exec results, and turn it into a Bash tool_call display item.
+// Returns null if the text does not look like a bash exec result.
+function parseBashExecText(text: string): StreamDisplayItem | null {
+  const inputMatch = text.match(/^<bash-input>([\s\S]*?)<\/bash-input>/);
+  if (!inputMatch) return null;
+  const command = inputMatch[1];
+  const stdoutMatch = text.match(/<bash-stdout>([\s\S]*?)<\/bash-stdout>/);
+  const stderrMatch = text.match(/<bash-stderr>([\s\S]*?)<\/bash-stderr>/);
+  const errorMatch = text.match(/<bash-error>([\s\S]*?)<\/bash-error>/);
+  const resultParts: string[] = [];
+  if (stdoutMatch) resultParts.push(stdoutMatch[1]);
+  if (stderrMatch) resultParts.push(stderrMatch[1]);
+  if (errorMatch) resultParts.push(errorMatch[1]);
+  return {
+    kind: "tool_call",
+    name: "Bash",
+    input: { command },
+    result: resultParts.length > 0 ? resultParts.join("\n") : undefined,
+  };
+}
+
 export function mergeStreamEntries(entries: StreamEntry[], partialText?: string, provider?: string): DisplayGroup[] {
   // First pass: collect all tool_results keyed by tool_use_id, and track Skill tool IDs
   const resultMap = new Map<string, string>();
@@ -568,14 +590,15 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
       // Only show user text/image content (tool_results are merged into assistant tool_call items)
       for (const b of blocks) {
         if (b.type === "text" && b.text) {
-          items.push({ kind: "text", text: b.text });
+          items.push(parseBashExecText(b.text) ?? { kind: "text", text: b.text });
         } else if (b.type === "image" && b.source) {
           items.push({ kind: "image", mediaType: b.source.media_type, data: b.source.data });
         }
       }
       // user entries with content as plain string
       if (items.length === 0 && typeof entry.message?.content === "string" && entry.message.content) {
-        items.push({ kind: "text", text: entry.message.content });
+        const content = entry.message.content;
+        items.push(parseBashExecText(content) ?? { kind: "text", text: content });
       }
     }
 
