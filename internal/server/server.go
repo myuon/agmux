@@ -30,6 +30,7 @@ import (
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/mcp"
 	"github.com/myuon/agmux/internal/otel"
+	"github.com/myuon/agmux/internal/redact"
 	"github.com/myuon/agmux/internal/session"
 )
 
@@ -560,14 +561,14 @@ func (s *Server) execInSession(w http.ResponseWriter, r *http.Request) {
 
 	var msg strings.Builder
 	msg.WriteString("<bash-input>")
-	msg.WriteString(req.Command)
+	msg.WriteString(redact.Redact(req.Command))
 	msg.WriteString("</bash-input>\n")
 	msg.WriteString("<bash-stdout>")
-	msg.WriteString(truncateExecOutput(stdout.String()))
+	msg.WriteString(redact.Redact(truncateExecOutput(stdout.String())))
 	msg.WriteString("</bash-stdout>")
 	if stderrOut := truncateExecOutput(stderr.String()); stderrOut != "" {
 		msg.WriteString("\n<bash-stderr>")
-		msg.WriteString(stderrOut)
+		msg.WriteString(redact.Redact(stderrOut))
 		msg.WriteString("</bash-stderr>")
 	}
 	if exitCode != 0 {
@@ -581,7 +582,7 @@ func (s *Server) execInSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = s.sessions.UpdateStatus(id, session.StatusWorking)
-	s.recordSessionAction(id, "session_exec_command", req.Command)
+	s.recordSessionAction(id, "session_exec_command", redact.Redact(req.Command))
 	writeJSON(w, http.StatusOK, execResponse{ExitCode: exitCode})
 }
 
