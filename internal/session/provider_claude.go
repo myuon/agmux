@@ -47,12 +47,13 @@ func (p *ClaudeProvider) IsOneShot() bool {
 func (p *ClaudeProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 	sessionFlag := "--session-id"
 	resumeID := opts.SessionID
-	if opts.Resume {
-		if opts.CLISessionID != "" {
-			sessionFlag = "--resume"
-			resumeID = opts.CLISessionID
-		}
-	} else if opts.CLISessionID != "" {
+	if opts.Resume && opts.CLISessionID != "" {
+		// Only reuse an existing CLI session ID when explicitly resuming.
+		// If Resume is false, CLISessionID may be a stale/already-used UUID
+		// (e.g. left over from before a Clear()); passing it to --session-id
+		// would collide with the CLI's existing transcript for that ID and
+		// cause "Session ID ... is already in use" (see issue #704).
+		sessionFlag = "--resume"
 		resumeID = opts.CLISessionID
 	}
 

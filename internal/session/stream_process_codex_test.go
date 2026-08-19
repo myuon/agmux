@@ -30,7 +30,7 @@ func TestReadCLISessionID_Codex(t *testing.T) {
 	defer os.Remove(streamPath)
 
 	// ReadCLISessionID should extract the thread_id
-	got := ReadCLISessionID(sessionID, provider)
+	got := ReadCLISessionID(sessionID, provider, 0)
 	want := "019cdd95-78da-7f33-8521-ae4ca1eb40d7"
 	if got != want {
 		t.Errorf("ReadCLISessionID() = %q, want %q", got, want)
@@ -56,7 +56,7 @@ func TestReadCLISessionID_Codex_NoThreadStarted(t *testing.T) {
 	}
 	defer os.Remove(streamPath)
 
-	got := ReadCLISessionID(sessionID, provider)
+	got := ReadCLISessionID(sessionID, provider, 0)
 	if got != "" {
 		t.Errorf("ReadCLISessionID() = %q, want empty string", got)
 	}
@@ -83,7 +83,7 @@ func TestReadCLISessionID_Codex_MultipleThreads(t *testing.T) {
 	defer os.Remove(streamPath)
 
 	// Should return the LAST thread_id
-	got := ReadCLISessionID(sessionID, provider)
+	got := ReadCLISessionID(sessionID, provider, 0)
 	want := "second-thread-id"
 	if got != want {
 		t.Errorf("ReadCLISessionID() = %q, want %q", got, want)
@@ -92,7 +92,7 @@ func TestReadCLISessionID_Codex_MultipleThreads(t *testing.T) {
 
 func TestReadCLISessionID_Codex_FileNotFound(t *testing.T) {
 	provider := NewCodexProvider("")
-	got := ReadCLISessionID("nonexistent-session-id-xyz", provider)
+	got := ReadCLISessionID("nonexistent-session-id-xyz", provider, 0)
 	if got != "" {
 		t.Errorf("ReadCLISessionID() = %q, want empty string", got)
 	}
@@ -115,10 +115,62 @@ func TestReadCLISessionID_Codex_WithHelperJSON(t *testing.T) {
 	}
 	defer os.Remove(streamPath)
 
-	got := ReadCLISessionID(sessionID, provider)
+	got := ReadCLISessionID(sessionID, provider, 0)
 	want := "thr_helper_test"
 	if got != want {
 		t.Errorf("ReadCLISessionID() = %q, want %q", got, want)
+	}
+}
+
+func TestReadCLISessionID_IgnoresLinesBeforeClearOffset(t *testing.T) {
+	// Regression test for issue #704: after Clear(), ReadCLISessionID must not
+	// resurrect a CLI session ID that was only present before clearOffset.
+	streamsDir, err := db.StreamsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	provider := NewCodexProvider("")
+	sessionID := "test-codex-clear-offset-" + t.Name()
+
+	preClear := `{"type":"thread.started","thread_id":"old-cleared-thread-id"}
+{"type":"turn.started"}
+`
+	streamPath := filepath.Join(streamsDir, sessionID+".jsonl")
+	if err := os.WriteFile(streamPath, []byte(preClear), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(streamPath)
+
+	// clearOffset marks the file size at the moment of Clear(): everything
+	// written so far (the stale thread id) must be treated as hidden.
+	clearOffset := int64(len(preClear))
+
+	// No new lines have been appended after the clear yet.
+	got := ReadCLISessionID(sessionID, provider, clearOffset)
+	if got != "" {
+		t.Errorf("ReadCLISessionID() after clear = %q, want empty string (stale id must be ignored)", got)
+	}
+
+	// Sanity check: without the offset, the stale id would still be picked up.
+	if got := ReadCLISessionID(sessionID, provider, 0); got != "old-cleared-thread-id" {
+		t.Errorf("ReadCLISessionID() without offset = %q, want %q", got, "old-cleared-thread-id")
+	}
+
+	// A new thread started after the clear should be picked up normally.
+	f, err := os.OpenFile(streamPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(`{"type":"thread.started","thread_id":"new-thread-after-clear"}` + "\n"); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	got = ReadCLISessionID(sessionID, provider, clearOffset)
+	want := "new-thread-after-clear"
+	if got != want {
+		t.Errorf("ReadCLISessionID() after clear+new turn = %q, want %q", got, want)
 	}
 }
 

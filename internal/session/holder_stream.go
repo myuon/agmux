@@ -46,8 +46,12 @@ func parseStreamEvent(line []byte) streamEvent {
 
 // ReadCLISessionID reads the CLI-assigned session ID from a stream JSONL file.
 // It delegates parsing to the given provider.
-// Returns empty string if no successful session was found.
-func ReadCLISessionID(agmuxSessionID string, provider Provider) string {
+// clearOffset is the byte offset recorded by the most recent Clear() call;
+// lines before this offset belong to a cleared (and possibly already-consumed)
+// conversation and must be ignored, otherwise a stale CLI session ID can be
+// resurrected after Clear() and passed back to the CLI as if it were still valid.
+// Returns empty string if no successful session was found after clearOffset.
+func ReadCLISessionID(agmuxSessionID string, provider Provider, clearOffset int64) string {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
 		return ""
@@ -58,6 +62,13 @@ func ReadCLISessionID(agmuxSessionID string, provider Provider) string {
 		return ""
 	}
 	defer f.Close()
+
+	// Seek past the clear offset so only post-clear content is scanned.
+	if clearOffset > 0 {
+		if _, err := f.Seek(clearOffset, io.SeekStart); err != nil {
+			return ""
+		}
+	}
 
 	var lastSessionID string
 	scanner := bufio.NewScanner(f)
