@@ -272,7 +272,7 @@ func (m *Manager) RecoverStreamProcesses() {
 		// Prefer DB-stored cli_session_id; fall back to JSONL file scan
 		cliSessionID := dbCliSessionID
 		if cliSessionID == "" {
-			cliSessionID = ReadCLISessionID(id, provider)
+			cliSessionID = ReadCLISessionID(id, provider, clearOffset)
 		}
 		// Backfill model from JSONL if not stored in DB
 		if dbModel == "" {
@@ -921,7 +921,7 @@ func (m *Manager) Fork(id string, preserveContext bool, initialPrompt string) (*
 		// Read the CLI session ID from the source session's stream file
 		cliSessionID = src.CliSessionID
 		if cliSessionID == "" {
-			cliSessionID = ReadCLISessionID(id, provider)
+			cliSessionID = ReadCLISessionID(id, provider, src.ClearOffset)
 		}
 		if cliSessionID == "" {
 			return nil, fmt.Errorf("cannot fork: source session has no CLI session ID")
@@ -1365,7 +1365,7 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 		// Prefer DB-stored cli_session_id; fall back to JSONL file scan
 		cliSessionID := s.CliSessionID
 		if cliSessionID == "" {
-			cliSessionID = ReadCLISessionID(s.ID, provider)
+			cliSessionID = ReadCLISessionID(s.ID, provider, s.ClearOffset)
 		}
 
 		// Only resume if a conversation turn has actually completed. A CLI
@@ -1958,7 +1958,7 @@ func (m *Manager) Reconnect(id string) error {
 	// Prefer DB-stored cli_session_id; fall back to JSONL file scan.
 	cliSessionID := s.CliSessionID
 	if cliSessionID == "" {
-		cliSessionID = ReadCLISessionID(id, provider)
+		cliSessionID = ReadCLISessionID(id, provider, s.ClearOffset)
 	}
 
 	// Only resume if a conversation turn has been completed before.
@@ -2008,7 +2008,7 @@ func (m *Manager) Restart(id string) error {
 
 	cliSessionID := s.CliSessionID
 	if cliSessionID == "" {
-		cliSessionID = ReadCLISessionID(id, m.getProvider(s.Provider))
+		cliSessionID = ReadCLISessionID(id, m.getProvider(s.Provider), s.ClearOffset)
 	}
 	if cliSessionID == "" {
 		return fmt.Errorf("session %s has no CLI session ID; cannot resume conversation", id)
