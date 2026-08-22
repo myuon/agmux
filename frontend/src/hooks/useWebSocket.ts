@@ -16,6 +16,7 @@ export function useWebSocket(onMessage: (msg: WSMessage) => void) {
   const connect = useCallback(() => {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+    wsRef.current = ws;
 
     setConnectionState("connecting");
 
@@ -35,6 +36,14 @@ export function useWebSocket(onMessage: (msg: WSMessage) => void) {
     };
 
     ws.onclose = () => {
+      // Only the socket we currently own may schedule a reconnect. When the
+      // effect cleanup closes a socket it clears the reconnect timer *before*
+      // close() and onclose fires afterwards, so an unguarded reconnect here
+      // would open an extra connection that nobody cleans up. That extra
+      // socket stays live next to the one the current effect created and
+      // delivers every message a second time to the same handler, which is
+      // how live stream lines ended up rendered twice (issue #709).
+      if (wsRef.current !== ws) return;
       setConnectionState("disconnected");
       const delay = backoffRef.current;
       console.log(`WebSocket disconnected, reconnecting in ${delay}ms...`);
@@ -42,15 +51,15 @@ export function useWebSocket(onMessage: (msg: WSMessage) => void) {
       // Exponential backoff: 1s -> 2s -> 4s -> 8s -> 16s -> 30s (max)
       backoffRef.current = Math.min(backoffRef.current * 2, 30000);
     };
-
-    wsRef.current = ws;
   }, [onMessage]);
 
   useEffect(() => {
     connect();
     return () => {
       clearTimeout(reconnectTimer.current);
-      wsRef.current?.close();
+      const ws = wsRef.current;
+      wsRef.current = null;
+      ws?.close();
     };
   }, [connect]);
 

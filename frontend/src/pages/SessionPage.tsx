@@ -454,10 +454,28 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             regular.push(line);
           }
         }
-        if (regular.length > 0) {
-          setStreamLines((prev) => [...prev, ...regular]);
+        // Cursor-based dedupe. `total` is the number of persisted lines after
+        // this update, so the persisted lines it carries occupy the indices
+        // [total - regular.length, total - 1]. Anything below the cursor was
+        // already applied (the initial snapshot, or the very same broadcast
+        // delivered twice) and must be dropped, otherwise the line renders
+        // twice (issue #709). Content-based dedupe is not usable here: the
+        // same line legitimately repeats (e.g. running the same command twice).
+        // A shrinking `total` means the persisted stream was reset (context
+        // cleared from another tab or the CLI). Drop the stale cursor instead
+        // of silently discarding every line that follows.
+        const cursorRaw = streamCursorRef.current;
+        const cursor = cursorRaw !== null && data.total >= cursorRaw ? cursorRaw : null;
+        let fresh = regular;
+        if (cursor !== null && regular.length > 0) {
+          const firstIndex = data.total - regular.length;
+          const skip = Math.min(Math.max(cursor - firstIndex, 0), regular.length);
+          if (skip > 0) fresh = regular.slice(skip);
         }
-        streamCursorRef.current = data.total;
+        if (fresh.length > 0) {
+          setStreamLines((prev) => [...prev, ...fresh]);
+        }
+        streamCursorRef.current = cursor === null ? data.total : Math.max(cursor, data.total);
       }
     }
   }, [sessionId]);
