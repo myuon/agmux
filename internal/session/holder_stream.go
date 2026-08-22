@@ -610,6 +610,7 @@ func (sp *HolderStreamProcess) readLoop() {
 //   - type == "stream_event" (partial text deltas etc.)
 //   - type == "system" && subtype == "thinking_tokens" (thinking progress
 //     meter emitted by the claude provider; 100+ lines per session)
+//   - type == "tool_progress"（実行中ツールの30秒ごとのハートビート）
 //
 // These lines are still broadcast to live subscribers.
 func isTransientStreamLine(normalized []byte) bool {
@@ -624,6 +625,9 @@ func isTransientStreamLine(normalized []byte) bool {
 		return false
 	}
 	if peek.Type == "stream_event" {
+		return true
+	}
+	if peek.Type == "tool_progress" {
 		return true
 	}
 	return peek.Type == "system" && peek.Subtype == "thinking_tokens"

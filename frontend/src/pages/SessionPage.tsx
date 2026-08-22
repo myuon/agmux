@@ -285,6 +285,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [partialText, setPartialText] = useState("");
   // Latest estimated thinking tokens (system:thinking_tokens live events); null when not thinking
   const [thinkingTokens, setThinkingTokens] = useState<number | null>(null);
+  // CLI-reported elapsed seconds for in-progress tool calls (tool_progress heartbeats),
+  // keyed by parent_tool_use_id (the id of the tool_use actually running)
+  const [toolProgress, setToolProgress] = useState<Record<string, number>>({});
   const [contextUsage, setContextUsage] = useState<{ contextTokens: number; contextWindow: number } | null>(null);
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>(deferred.diff.files);
 
@@ -427,6 +430,16 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             if (typeof entry.estimated_tokens === "number") {
               setThinkingTokens(entry.estimated_tokens);
             }
+          } else if (entry.type === "tool_progress") {
+            // Transient heartbeat for a long-running tool: keep only the latest
+            // elapsed_time_seconds per running tool_use, never push to streamLines
+            const parentId = typeof entry.parent_tool_use_id === "string"
+              ? entry.parent_tool_use_id
+              : typeof entry.tool_use_id === "string" ? entry.tool_use_id : undefined;
+            if (parentId && typeof entry.elapsed_time_seconds === "number") {
+              const elapsed = entry.elapsed_time_seconds;
+              setToolProgress((prev) => ({ ...prev, [parentId]: elapsed }));
+            }
           } else {
             // Clear partial text and thinking indicator when a complete assistant message arrives
             if (entry.type === "assistant") {
@@ -436,14 +449,33 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             // Also clear the thinking indicator at turn end
             if (entry.type === "result") {
               setThinkingTokens(null);
+              setToolProgress({});
             }
             regular.push(line);
           }
         }
-        if (regular.length > 0) {
-          setStreamLines((prev) => [...prev, ...regular]);
+        // Cursor-based dedupe. `total` is the number of persisted lines after
+        // this update, so the persisted lines it carries occupy the indices
+        // [total - regular.length, total - 1]. Anything below the cursor was
+        // already applied (the initial snapshot, or the very same broadcast
+        // delivered twice) and must be dropped, otherwise the line renders
+        // twice (issue #709). Content-based dedupe is not usable here: the
+        // same line legitimately repeats (e.g. running the same command twice).
+        // A shrinking `total` means the persisted stream was reset (context
+        // cleared from another tab or the CLI). Drop the stale cursor instead
+        // of silently discarding every line that follows.
+        const cursorRaw = streamCursorRef.current;
+        const cursor = cursorRaw !== null && data.total >= cursorRaw ? cursorRaw : null;
+        let fresh = regular;
+        if (cursor !== null && regular.length > 0) {
+          const firstIndex = data.total - regular.length;
+          const skip = Math.min(Math.max(cursor - firstIndex, 0), regular.length);
+          if (skip > 0) fresh = regular.slice(skip);
         }
-        streamCursorRef.current = data.total;
+        if (fresh.length > 0) {
+          setStreamLines((prev) => [...prev, ...fresh]);
+        }
+        streamCursorRef.current = cursor === null ? data.total : Math.max(cursor, data.total);
       }
     }
   }, [sessionId]);
@@ -1133,7 +1165,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         </div>
       ) : (
         <div className="flex flex-col flex-1 min-h-0">
-          <StreamOutputView lines={streamLines} partialText={partialText} thinkingTokens={thinkingTokens} className="flex-1 min-h-0" sessionId={sessionId} pendingPermission={pendingPermission ?? undefined} onPermissionResponded={() => { setPendingPermission(null); }} provider={session?.provider ?? undefined} onAnswer={async (text) => {
+          <StreamOutputView lines={streamLines} partialText={partialText} thinkingTokens={thinkingTokens} className="flex-1 min-h-0" sessionId={sessionId} pendingPermission={pendingPermission ?? undefined} onPermissionResponded={() => { setPendingPermission(null); }} provider={session?.provider ?? undefined} sessionActive={session?.status === "working"} toolProgress={toolProgress} onAnswer={async (text) => {
             if (!sessionId) return;
             await api.sendToSession(sessionId, text);
           }} />
