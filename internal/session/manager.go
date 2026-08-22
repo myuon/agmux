@@ -485,6 +485,30 @@ type CreateOpts struct {
 	AutomationID            string // ID of the automation that created this session (empty for manual sessions)
 }
 
+// initialCreateStatus returns the status a freshly created session must be
+// INSERTed with. It is shared by Create and Fork.
+//
+// When a holder was spawned AND an initial prompt was handed to the CLI, that
+// first turn is already running, so the session must start as "working" — the
+// same transition the send endpoint performs after SendKeysWithImages. The
+// turn-complete callback wired in Create (SetOnTurnComplete) sets it back to
+// idle once the CLI emits its result event. Without this, a session started
+// via POST /api/sessions with a prompt stayed "idle" for the whole first turn
+// and UI that keys off "working" (e.g. the running-tool spinner) never
+// engaged. See issue #708.
+//
+// Sessions created without a prompt — and one-shot providers whose holder
+// spawn is deferred to the first send (holderSpawned = false, see #643) — have
+// nothing running yet and start idle. Fork always satisfies both conditions
+// (it rejects an empty initialPrompt and fails if the holder cannot start), so
+// a forked session always starts working.
+func initialCreateStatus(holderSpawned bool, prompt string) Status {
+	if holderSpawned && prompt != "" {
+		return StatusWorking
+	}
+	return StatusIdle
+}
+
 func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts ...CreateOpts) (*Session, error) {
 	pn := ProviderClaude
 	model := ""
@@ -604,14 +628,6 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		}
 		sp = hsp
 	}
-	if sp != nil {
-		m.wireSessionIDCallback(id, sp)
-		sp.StartReadLoop()
-		m.streamMu.Lock()
-		m.streamProcesses[id] = sp
-		m.streamMu.Unlock()
-	}
-
 	now := time.Now()
 	sessionType := TypeWorker
 	if ephemeral {
@@ -623,7 +639,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		ProjectPath:             projectPath,
 		InitialPrompt:           prompt,
 		SystemPrompt:            customSystemPrompt,
-		Status:                  StatusIdle,
+		Status:                  initialCreateStatus(sp != nil, prompt),
 		Type:                    sessionType,
 		Provider:                pn,
 		Model:                   model,
@@ -645,6 +661,18 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, s.AutomationID, holderPID, s.EphemeralTimeoutSeconds, s.CompletionReport, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
+	}
+
+	// Wire callbacks and start the read loop only after the session row exists.
+	// The turn-complete callback writes status = idle via UpdateStatus, which
+	// would silently affect zero rows (leaving the session stuck in "working")
+	// if the CLI finished its first turn before the INSERT landed. See #708.
+	if sp != nil {
+		m.wireSessionIDCallback(id, sp)
+		sp.StartReadLoop()
+		m.streamMu.Lock()
+		m.streamProcesses[id] = sp
+		m.streamMu.Unlock()
 	}
 
 	// Start ephemeral timeout goroutine if applicable
@@ -979,12 +1007,6 @@ func (m *Manager) Fork(id string, preserveContext bool, initialPrompt string) (*
 		}
 	}
 
-	m.wireSessionIDCallback(newID, sp)
-	sp.StartReadLoop()
-	m.streamMu.Lock()
-	m.streamProcesses[newID] = sp
-	m.streamMu.Unlock()
-
 	now := time.Now()
 	newName := src.Name + " (fork)"
 	s := &Session{
@@ -993,7 +1015,7 @@ func (m *Manager) Fork(id string, preserveContext bool, initialPrompt string) (*
 		ProjectPath:     src.ProjectPath,
 		InitialPrompt:   initialPrompt,
 		SystemPrompt:    src.SystemPrompt,
-		Status:          StatusIdle,
+		Status:          initialCreateStatus(sp != nil, initialPrompt),
 		Type:            TypeWorker,
 		Provider:        src.Provider,
 		Model:           src.Model,
@@ -1009,6 +1031,15 @@ func (m *Manager) Fork(id string, preserveContext bool, initialPrompt string) (*
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
+
+	// Wire callbacks and start the read loop only after the session row exists,
+	// so the turn-complete callback's UPDATE cannot race the INSERT. Same
+	// ordering as Create. See #708.
+	m.wireSessionIDCallback(newID, sp)
+	sp.StartReadLoop()
+	m.streamMu.Lock()
+	m.streamProcesses[newID] = sp
+	m.streamMu.Unlock()
 
 	return s, nil
 }

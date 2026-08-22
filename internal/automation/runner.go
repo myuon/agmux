@@ -82,11 +82,12 @@ func (r *Runner) Run(a Automation, firedAt time.Time) *Run {
 		return r.record(run)
 	}
 
-	// Manager.Create inserts the session with status idle; promote it to
-	// working so the multi-run guard above can detect it as still active
-	// (same pattern as the send endpoint after SendKeys). The turn-complete
-	// callback wired in Manager.Create sets it back to idle when the CLI
-	// finishes the turn.
+	// Manager.Create already inserts the session as working when it hands an
+	// initial prompt to the CLI (see #708); this call keeps the multi-run
+	// guard above working for the remaining cases (empty prompt, or a
+	// SessionService implementation that starts sessions idle). The
+	// turn-complete callback wired in Manager.Create sets it back to idle when
+	// the CLI finishes the turn.
 	if err := r.sessions.UpdateStatus(sess.ID, session.StatusWorking); err != nil {
 		r.logger.Warn("automation: failed to mark session as working; the multi-run guard may not engage for this run",
 			"automationId", a.ID, "sessionId", sess.ID, "error", err)
