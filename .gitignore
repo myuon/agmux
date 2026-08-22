@@ -24,3 +24,6 @@ frontend/node_modules/
 terraform/.terraform/
 terraform/terraform.tfstate
 terraform/terraform.tfstate.backup
+
+# wrangler local cache
+.wrangler/
