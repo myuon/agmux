@@ -10,12 +10,14 @@ function SystemEventView({ item }: { item: Extract<StreamDisplayItem, { kind: "s
   return <SystemEventRow label={item.label} detail={item.detail} />;
 }
 
-export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermission, onPermissionResponded }: {
+export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermission, onPermissionResponded, sessionActive, toolProgress }: {
   item: StreamDisplayItem;
   onAnswer?: (text: string) => void;
   sessionId?: string;
   pendingPermission?: { id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number };
   onPermissionResponded?: () => void;
+  sessionActive?: boolean;
+  toolProgress?: Record<string, number>;
 }) {
   if (item.kind === "text") {
     return <CollapsibleText text={item.text} />;
@@ -38,7 +40,7 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermis
     );
   }
   if (item.kind === "tool_call") {
-    return <ToolCallView item={item} onAnswer={onAnswer} sessionId={sessionId} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} />;
+    return <ToolCallView item={item} onAnswer={onAnswer} sessionId={sessionId} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} sessionActive={sessionActive} toolProgress={toolProgress} />;
   }
   if (item.kind === "system_event") {
     return <SystemEventView item={item} />;

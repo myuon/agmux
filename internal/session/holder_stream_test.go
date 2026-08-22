@@ -194,6 +194,7 @@ func TestIsTransientStreamLine(t *testing.T) {
 	}{
 		{"stream_event", `{"type":"stream_event","event":{"type":"content_block_delta"}}`, true},
 		{"thinking_tokens", `{"type":"system","subtype":"thinking_tokens","estimated_tokens":50}`, true},
+		{"tool_progress", `{"type":"tool_progress","tool_use_id":"toolu_01-heartbeat-0","tool_name":"Bash","parent_tool_use_id":"toolu_01","elapsed_time_seconds":30,"heartbeat":true,"session_id":"c-1","uuid":"u-1"}`, true},
 		{"system_init", `{"type":"system","subtype":"init","session_id":"c-1"}`, false},
 		{"assistant", `{"type":"assistant","message":{"content":[]}}`, false},
 		{"result", `{"type":"result","subtype":"success"}`, false},

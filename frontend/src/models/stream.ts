@@ -51,7 +51,7 @@ export interface AskUserQuestionItem {
 export type StreamDisplayItem =
   | { kind: "text"; text: string }
   | { kind: "image"; mediaType: string; data: string }
-  | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; children?: StreamDisplayItem[] }
+  | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; children?: StreamDisplayItem[]; running?: boolean }
   | { kind: "thinking"; text: string }
   | { kind: "system_event"; eventType: string; label: string; detail?: string }
   | { kind: "rate_limit"; rateLimitType: string; status: string; resetsAt: number; utilization?: number; isUsingOverage?: boolean; overageStatus?: string }
@@ -350,6 +350,13 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
     }
   }
 
+  // Helper: whether a tool_use block is still awaiting its tool_result.
+  // AskUserQuestion tool_results are intentionally skipped elsewhere, so exclude
+  // those ids to avoid marking them as permanently running.
+  function isRunning(id?: string): true | undefined {
+    return id && !resultMap.has(id) && !askUserToolIds.has(id) ? true : undefined;
+  }
+
   // Helper: build child tool_call items from child entries of an Agent
   function buildChildItems(parentToolUseId: string): StreamDisplayItem[] {
     const childEntries = childEntriesMap.get(parentToolUseId) || [];
@@ -372,6 +379,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
             resultImages,
             toolUseId: b.id,
             children: children && children.length > 0 ? children : undefined,
+            running: isRunning(b.id),
           });
         } else if (b.type === "thinking" && b.thinking) {
           items.push({ kind: "thinking", text: b.thinking });
@@ -521,6 +529,8 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               input: b.input,
               result: skillContent || undefined,
               resultImages,
+              toolUseId: b.id,
+              running: isRunning(b.id),
             });
           } else if (b.name === "ToolSearch" && b.id && toolSearchToolIds.has(b.id)) {
             // Skip the "Tool loaded." user text after ToolSearch
@@ -542,6 +552,8 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               input: b.input,
               result,
               resultImages,
+              toolUseId: b.id,
+              running: isRunning(b.id),
             });
           } else if (b.name === "Agent" && b.id && agentToolIds.has(b.id)) {
             // Skip the subagent prompt user text after Agent tool call
@@ -569,6 +581,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               resultImages,
               toolUseId: b.id,
               children: children.length > 0 ? children : undefined,
+              running: isRunning(b.id),
             });
           } else {
             items.push({
@@ -577,6 +590,8 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               input: b.input,
               result,
               resultImages,
+              toolUseId: b.id,
+              running: isRunning(b.id),
             });
           }
         }

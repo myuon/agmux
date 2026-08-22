@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  CheckCircle2, ListTodo, Circle, AlertTriangle,
+  CheckCircle2, ListTodo, Circle, AlertTriangle, Loader2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Modal } from "../ui/Modal";
@@ -297,12 +297,41 @@ function PermissionPromptCallView({ item, sessionId, pendingPermission, onRespon
   );
 }
 
-export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onPermissionResponded }: {
+// Shows a spinner and an elapsed-seconds counter, starting from mount time.
+// The stream JSONL has no timestamp for when a tool_use started, so mount time
+// is used as a stand-in (resets to 0 on page reload). When the CLI reports its
+// own elapsed time via tool_progress heartbeats (reportedSeconds), we take the
+// max of the two: the heartbeat only ticks every 30s (coarse), and the local
+// timer resets to 0 on reload, so neither alone is reliably accurate.
+function RunningBadge({ reportedSeconds }: { reportedSeconds?: number }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const start = Date.now();
+    const id = setInterval(() => {
+      setElapsed(Math.floor((Date.now() - start) / 1000));
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const displaySeconds = Math.max(elapsed, reportedSeconds ?? 0);
+
+  return (
+    <span className="ml-auto shrink-0 flex items-center gap-1">
+      <Loader2 className="w-3 h-3 animate-spin text-blue-500" />
+      <span className="text-[11px] text-blue-500 tabular-nums">{displaySeconds}s</span>
+    </span>
+  );
+}
+
+export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onPermissionResponded, sessionActive, toolProgress }: {
   item: Extract<StreamDisplayItem, { kind: "tool_call" }>;
   onAnswer?: (text: string) => void;
   sessionId?: string;
   pendingPermission?: { id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number };
   onPermissionResponded?: () => void;
+  sessionActive?: boolean;
+  toolProgress?: Record<string, number>;
 }) {
   // Hooks must be called before any conditional returns (React Rules of Hooks)
   const [open, setOpen] = useState(false);
@@ -339,7 +368,11 @@ export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onP
           {desc && (
             <span className="text-xs text-gray-500 truncate min-w-0">{desc}</span>
           )}
-          {done && <CheckCircle2 className="w-3 h-3 text-green-500 ml-auto shrink-0" />}
+          {done ? (
+            <CheckCircle2 className="w-3 h-3 text-green-500 ml-auto shrink-0" />
+          ) : item.running && sessionActive ? (
+            <RunningBadge reportedSeconds={item.toolUseId ? toolProgress?.[item.toolUseId] : undefined} />
+          ) : null}
         </div>
         {subDetail && (
           <div className="mt-0.5 ml-[22px] font-mono text-[11px] text-gray-400 truncate">{subDetail}</div>
@@ -404,7 +437,7 @@ export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onP
             {visibleChildren.map((child, i) => (
               <div key={hasHidden ? i + hiddenCount : i}>
                 {child.kind === "tool_call" ? (
-                  <ToolCallView item={child} />
+                  <ToolCallView item={child} sessionActive={sessionActive} toolProgress={toolProgress} />
                 ) : child.kind === "text" ? (
                   <CollapsibleText text={child.text} />
                 ) : null}

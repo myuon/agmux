@@ -19,7 +19,7 @@ const roleStyles: Record<string, { bg: string; label: string; text: string }> = 
 type StreamViewMode = "markdown" | "json";
 
 // Known top-level entry types that the markdown view supports
-const KNOWN_ENTRY_TYPES = new Set(["user", "assistant", "system", "rate_limit_event", "result"]);
+const KNOWN_ENTRY_TYPES = new Set(["user", "assistant", "system", "rate_limit_event", "result", "tool_progress"]);
 
 // Build a one-line summary for a stream entry (used in JSON view)
 function summarizeEntry(line: unknown): { type: string; subtype?: string; summary: string; isUnknown: boolean } {
@@ -85,6 +85,14 @@ function summarizeEntry(line: unknown): { type: string; subtype?: string; summar
     return { type, subtype, summary: `${isError ? "error " : ""}${result}`.trim(), isUnknown };
   }
 
+  if (type === "tool_progress") {
+    const toolName = typeof raw.tool_name === "string" ? raw.tool_name : "";
+    const elapsed = typeof raw.elapsed_time_seconds === "number" ? `${raw.elapsed_time_seconds}s` : "";
+    const parentId = typeof raw.parent_tool_use_id === "string" ? raw.parent_tool_use_id.slice(0, 12) : "";
+    const parts = [toolName, elapsed, parentId].filter((p) => p.length > 0);
+    return { type, summary: parts.join(" "), isUnknown };
+  }
+
   if (type === "rate_limit_event") {
     const info = raw.rate_limit_info as Record<string, unknown> | undefined;
     const parts: string[] = [];
@@ -108,7 +116,7 @@ function summarizeEntry(line: unknown): { type: string; subtype?: string; summar
   return { type, summary: hintParts.join(" "), isUnknown };
 }
 
-export function StreamOutputView({ lines, partialText, thinkingTokens, className, onAnswer, sessionId, pendingPermission, onPermissionResponded, provider }: {
+export function StreamOutputView({ lines, partialText, thinkingTokens, className, onAnswer, sessionId, pendingPermission, onPermissionResponded, provider, sessionActive, toolProgress }: {
   lines: unknown[];
   partialText?: string;
   thinkingTokens?: number | null;
@@ -118,6 +126,8 @@ export function StreamOutputView({ lines, partialText, thinkingTokens, className
   pendingPermission?: { id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number };
   onPermissionResponded?: () => void;
   provider?: string;
+  sessionActive?: boolean;
+  toolProgress?: Record<string, number>;
 }) {
   const { ref, onScroll } = useAutoScroll(lines);
   const [viewMode, setViewMode] = useState<StreamViewMode>("markdown");
@@ -231,7 +241,7 @@ export function StreamOutputView({ lines, partialText, thinkingTokens, className
                   transition={{ type: "spring", damping: 25, stiffness: 300 }}
                 >
                   {group.items.map((item, j) => (
-                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} />
+                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} sessionActive={sessionActive} toolProgress={toolProgress} />
                   ))}
                 </motion.div>
               );
@@ -252,7 +262,7 @@ export function StreamOutputView({ lines, partialText, thinkingTokens, className
                 </div>
                 <div className="text-gray-800 break-words text-xs space-y-2">
                   {group.items.map((item, j) => (
-                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} />
+                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} sessionActive={sessionActive} toolProgress={toolProgress} />
                   ))}
                 </div>
               </motion.div>
