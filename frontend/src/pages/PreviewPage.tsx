@@ -1187,6 +1187,10 @@ function SystemEventRowPreview() {
         <SystemEventRow label="タスク完了" detail="Extract IconLink from App header" />
         <SystemEventRow label="セッション開始" />
         <SystemEventRow label="エラー発生" detail="Connection timeout" />
+        <SystemEventRow
+          label="タスク完了"
+          detail="Refactored the session detail stream to extract a reusable SystemEventRow component, updated the ExternalProcessRow to share the same layout primitives, added unit tests for the new truncation behavior, and verified the mobile viewport no longer overflows when a long summary is rendered from task_notification events."
+        />
       </div>
     </PreviewSection>
   );
