@@ -7,6 +7,8 @@ export interface Session {
   type: "worker" | "controller" | "external" | "ephemeral";
   provider: string;
   model?: string;
+  /** Model switch reserved during a running turn; applied from the next turn. */
+  pendingModel?: string;
   parentSessionId?: string;
   roleTemplate?: string;
   automationId?: string;

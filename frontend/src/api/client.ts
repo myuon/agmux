@@ -106,7 +106,9 @@ export const api = {
     }),
 
   updateSessionModel: (id: string, model: string) =>
-    request<{ status: string }>(`/sessions/${id}/model`, {
+    // While a turn is running the switch is only reserved: pendingModel is
+    // then set and model stays unchanged until the turn completes.
+    request<{ status: string; model?: string; pendingModel?: string }>(`/sessions/${id}/model`, {
       method: "PUT",
       body: JSON.stringify({ model }),
     }),

@@ -387,6 +387,14 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add pending_model column to sessions.
+	// Holds a model switch requested while a turn was in progress; it is
+	// applied (and cleared) once the turn completes. Empty means no reservation.
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN pending_model TEXT NOT NULL DEFAULT ''`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: create automations table
 	// trigger_type is 'interval' (trigger_value = Go duration, e.g. "30m")
 	// or 'cron' (trigger_value = standard 5-field cron expression).

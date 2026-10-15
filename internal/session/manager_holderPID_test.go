@@ -29,6 +29,7 @@ func newTestDB(t *testing.T) *sql.DB {
 			output_mode TEXT NOT NULL DEFAULT 'stream',
 			provider TEXT NOT NULL DEFAULT 'claude',
 			model TEXT NOT NULL DEFAULT '',
+			pending_model TEXT NOT NULL DEFAULT '',
 			system_prompt TEXT,
 			parent_session_id TEXT,
 			role_template TEXT,
