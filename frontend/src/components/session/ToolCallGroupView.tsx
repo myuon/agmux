@@ -1,6 +1,6 @@
 import { createElement, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, CheckCircle2, ChevronRight, Layers, Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Layers, Clock, Loader2 } from "lucide-react";
 import type { StreamDisplayItem } from "../../models/stream";
 import { toolDescription, toolIcon, summarizeToolCategories } from "../../models/tool";
 import { RunningBadge } from "./ToolCallView";
@@ -73,8 +73,8 @@ export function ToolCallGroupView({ items, toolCalls, sessionActive, toolProgres
               className={`flex items-center gap-1 text-[11px] text-blue-500 shrink-0 ${running || errorCount > 0 ? "" : "ml-auto"}`}
               title={`${bgRunningCount}件のバックグラウンドタスクが実行中`}
             >
-              {sessionActive && <Loader2 className="w-3 h-3 animate-spin" />}
-              BG {bgRunningCount}
+              {sessionActive ? <Loader2 className="w-3 h-3 animate-spin" /> : <Clock className="w-3 h-3" />}
+              {bgRunningCount}
             </span>
           )}
           {running ? (

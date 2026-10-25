@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  CheckCircle2, ListTodo, Circle, AlertTriangle, Loader2,
+  CheckCircle2, ListTodo, Circle, AlertTriangle, Loader2, CheckCheck, Clock, CircleSlash,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Modal } from "../ui/Modal";
@@ -343,16 +343,30 @@ export function backgroundTaskStatusLabel(status: string): { label: string; clas
   }
 }
 
+// Compact icon-only indicator for the background task state; the full label
+// is available as a tooltip and in the tool call modal.
 export function BackgroundTaskBadge({ task, sessionActive }: { task: BackgroundTaskInfo; sessionActive?: boolean }) {
-  const { label, className } = backgroundTaskStatusLabel(task.status);
+  const { label } = backgroundTaskStatusLabel(task.status);
+  const title = task.taskId ? `${label} (task ${task.taskId})` : label;
+  let icon;
+  switch (task.status) {
+    case "running":
+      icon = sessionActive
+        ? <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+        : <Clock className="w-3.5 h-3.5 text-blue-500" />;
+      break;
+    case "completed":
+      icon = <CheckCheck className="w-3.5 h-3.5 text-green-600" />;
+      break;
+    case "failed":
+      icon = <AlertTriangle className="w-3.5 h-3.5 text-red-500" />;
+      break;
+    default:
+      icon = <CircleSlash className="w-3.5 h-3.5 text-gray-400" />;
+  }
   return (
-    <span
-      className={`shrink-0 flex items-center gap-1 text-[10px] leading-none border rounded px-1.5 py-0.5 ${className}`}
-      title={task.taskId ? `task ${task.taskId}` : undefined}
-    >
-      {task.status === "running" && sessionActive && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
-      {task.status === "failed" && <AlertTriangle className="w-2.5 h-2.5" />}
-      {label}
+    <span className="shrink-0 flex items-center" title={title} aria-label={title}>
+      {icon}
     </span>
   );
 }
