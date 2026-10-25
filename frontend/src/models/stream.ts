@@ -52,12 +52,25 @@ export interface AskUserQuestionItem {
 export type StreamDisplayItem =
   | { kind: "text"; text: string }
   | { kind: "image"; mediaType: string; data: string }
-  | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; running?: boolean; isError?: boolean }
+  | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; running?: boolean; isError?: boolean; backgroundTask?: BackgroundTaskInfo }
   | { kind: "thinking"; text: string }
   | { kind: "system_event"; eventType: string; label: string; detail?: string }
   | { kind: "rate_limit"; rateLimitType: string; status: string; resetsAt: number; utilization?: number; isUsingOverage?: boolean; overageStatus?: string }
   | { kind: "api_retry"; attempt: number; maxRetries: number; retryDelayMs: number; errorStatus?: number; error?: string }
   | { kind: "result"; isError: boolean; result: string; subtype: string; numTurns?: number; durationMs?: number; costUsd?: number };
+
+// State of a background task (run_in_background Bash, a Bash moved to the
+// background on timeout, or a backgrounded Agent) attached to the tool call
+// that launched it. status is "running" until a task_updated/task_notification
+// reports a terminal status (completed / failed / killed / stopped / ...).
+export interface BackgroundTaskInfo {
+  taskId?: string;
+  status: string;
+  taskType?: string;
+  description?: string;
+  summary?: string;
+  outputFile?: string;
+}
 
 // Tool call history entry for tracking sub-agent activity
 export interface ToolCallHistoryEntry {
@@ -268,6 +281,80 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
   return null;
 }
 
+// --- Task (task_started / task_updated / task_notification) folding ---
+
+interface TaskInfo {
+  taskId?: string;
+  isBackgrounded: boolean;
+  status: string;
+  taskType?: string;
+  description?: string;
+  summary?: string;
+  outputFile?: string;
+}
+
+// Map of tool_use_id -> task info, built from all task_* lines in `entries`
+// (the notification may arrive long after the tool call). task_updated carries
+// only task_id, so it is resolved via the task_started line (taskToToolUse).
+interface TaskInfoMap {
+  byToolUse: Map<string, TaskInfo>;
+  taskToToolUse: Map<string, string>;
+}
+
+function collectTaskInfo(entries: StreamEntry[]): TaskInfoMap {
+  const byToolUse = new Map<string, TaskInfo>();
+  const taskToToolUse = new Map<string, string>();
+  const map: TaskInfoMap = { byToolUse, taskToToolUse };
+  for (const entry of entries) {
+    if (entry.type !== "system") continue;
+    const raw = entry as unknown as Record<string, unknown>;
+    const subtype = raw.subtype;
+    if (subtype !== "task_started" && subtype !== "task_updated" && subtype !== "task_notification") continue;
+    const taskId = typeof raw.task_id === "string" ? raw.task_id : undefined;
+    if (subtype === "task_started" && taskId && typeof raw.tool_use_id === "string") {
+      taskToToolUse.set(taskId, raw.tool_use_id);
+    }
+    const toolUseId = resolveTaskToolUseId(raw, map);
+    if (!toolUseId) continue;
+    const info: TaskInfo = byToolUse.get(toolUseId) ?? { taskId, isBackgrounded: false, status: "running" };
+    if (!info.taskId) info.taskId = taskId;
+    if (subtype === "task_started") {
+      if (raw.is_backgrounded === true) info.isBackgrounded = true;
+      if (typeof raw.task_type === "string") info.taskType = raw.task_type;
+      if (typeof raw.description === "string") info.description = raw.description;
+    } else if (subtype === "task_updated") {
+      const patch = raw.patch as Record<string, unknown> | undefined;
+      if (patch?.is_backgrounded === true) info.isBackgrounded = true;
+      if (typeof patch?.status === "string") info.status = patch.status;
+    } else {
+      if (typeof raw.status === "string") info.status = raw.status;
+      if (typeof raw.summary === "string" && raw.summary) info.summary = raw.summary;
+      if (typeof raw.output_file === "string" && raw.output_file) info.outputFile = raw.output_file;
+    }
+    byToolUse.set(toolUseId, info);
+  }
+  return map;
+}
+
+function resolveTaskToolUseId(raw: Record<string, unknown>, map: TaskInfoMap): string | undefined {
+  if (typeof raw.tool_use_id === "string" && raw.tool_use_id) return raw.tool_use_id;
+  if (typeof raw.task_id === "string") return map.taskToToolUse.get(raw.task_id);
+  return undefined;
+}
+
+// Bash tool_result text when the command runs (or was moved) in the background.
+function isBackgroundLaunchResult(result: string): boolean {
+  return /^Command running in background with ID:/.test(result) || /was moved to the background/.test(result);
+}
+
+function extractBackgroundTaskId(result: string): string | undefined {
+  return result.match(/background with ID: ([\w-]+)/)?.[1] ?? result.match(/\(ID: ([\w-]+)\)/)?.[1];
+}
+
+function extractBackgroundOutputFile(result: string): string | undefined {
+  return result.match(/Output is being written to: (\S+?)\.?(?:\s|$)/)?.[1];
+}
+
 export type DisplayGroup =
   | { role: "user" | "assistant"; items: StreamDisplayItem[] }
   | { role: "system"; items: StreamDisplayItem[] };
@@ -341,9 +428,15 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
   const toolSearchToolIds = new Set<string>();
   const askUserToolIds = new Set<string>();
   const agentToolIds = new Set<string>();
+  // All tool_use ids in the loaded lines (any thread). task_* events whose
+  // tool_use_id is among them are folded into that tool call instead of being
+  // rendered as standalone rows.
+  const allToolUseIds = new Set<string>();
+  const taskInfoMap = collectTaskInfo(entries);
   for (const entry of entries) {
     if (entry.type === "assistant") {
       for (const block of parseStreamContentBlocks(entry)) {
+        if (block.type === "tool_use" && block.id) allToolUseIds.add(block.id);
         if (block.type === "tool_use" && block.name === "Skill" && block.id) {
           skillToolIds.add(block.id);
         }
@@ -397,6 +490,24 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
     return id && !resultMap.has(id) && !askUserToolIds.has(id) ? true : undefined;
   }
 
+  // Background task info for a tool call, or undefined for synchronous calls
+  // (whose task_* events are simply hidden).
+  function backgroundTaskFor(id?: string): BackgroundTaskInfo | undefined {
+    if (!id) return undefined;
+    const info = taskInfoMap.byToolUse.get(id);
+    const result = resultMap.get(id);
+    const backgrounded = info?.isBackgrounded || (result !== undefined && isBackgroundLaunchResult(result));
+    if (!backgrounded) return undefined;
+    return {
+      taskId: info?.taskId ?? (result ? extractBackgroundTaskId(result) : undefined),
+      status: info?.status ?? "running",
+      taskType: info?.taskType,
+      description: info?.description,
+      summary: info?.summary,
+      outputFile: info?.outputFile ?? (result ? extractBackgroundOutputFile(result) : undefined),
+    };
+  }
+
   // Second pass: build display groups
   const groups: DisplayGroup[] = [];
   const skillSkipIndices = new Set<number>();
@@ -423,6 +534,15 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
           rawSys.subtype.startsWith("task_")
         ) {
           continue;
+        }
+      }
+      // task_* events of a tool call in the loaded lines are shown on that
+      // tool call (background badge) instead of as a standalone row.
+      {
+        const rawSys = entry as unknown as Record<string, unknown>;
+        if (typeof rawSys.subtype === "string" && rawSys.subtype.startsWith("task_")) {
+          const toolUseId = resolveTaskToolUseId(rawSys, taskInfoMap);
+          if (toolUseId && allToolUseIds.has(toolUseId)) continue;
         }
       }
       const sysItem = parseSystemEvent(entry);
@@ -553,6 +673,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               toolUseId: b.id,
               running: isRunning(b.id),
               isError: b.id && errorResultIds.has(b.id) ? true : undefined,
+              backgroundTask: backgroundTaskFor(b.id),
             });
           } else if (b.name === "ToolSearch" && b.id && toolSearchToolIds.has(b.id)) {
             // Skip the "Tool loaded." user text after ToolSearch
@@ -577,6 +698,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               toolUseId: b.id,
               running: isRunning(b.id),
               isError: b.id && errorResultIds.has(b.id) ? true : undefined,
+              backgroundTask: backgroundTaskFor(b.id),
             });
           } else if (isAgentToolName(b.name) && b.id && agentToolIds.has(b.id)) {
             // Skip the subagent prompt user text after Agent tool call
@@ -604,6 +726,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               toolUseId: b.id,
               running: isRunning(b.id),
               isError: b.id && errorResultIds.has(b.id) ? true : undefined,
+              backgroundTask: backgroundTaskFor(b.id),
             });
           } else {
             items.push({
@@ -615,6 +738,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               toolUseId: b.id,
               running: isRunning(b.id),
               isError: b.id && errorResultIds.has(b.id) ? true : undefined,
+              backgroundTask: backgroundTaskFor(b.id),
             });
           }
         }

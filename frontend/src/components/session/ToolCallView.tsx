@@ -2,11 +2,11 @@ import { useState, useEffect } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  CheckCircle2, ListTodo, Circle, AlertTriangle, Loader2,
+  CheckCircle2, ListTodo, Circle, AlertTriangle, Loader2, CheckCheck, Clock, CircleSlash,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Modal } from "../ui/Modal";
-import type { StreamDisplayItem, AskUserQuestionItem } from "../../models/stream";
+import type { StreamDisplayItem, AskUserQuestionItem, BackgroundTaskInfo } from "../../models/stream";
 import { isAgentToolName } from "../../models/stream";
 import { toolIcon, toolDescription, toolSubDetail, parseTodoInput } from "../../models/tool";
 import { api } from "../../api/client";
@@ -325,6 +325,77 @@ export function RunningBadge({ reportedSeconds }: { reportedSeconds?: number }) 
   );
 }
 
+// Labels/colors for a background task status. The tool call itself has
+// already finished (it only launched the task); this conveys the task state.
+export function backgroundTaskStatusLabel(status: string): { label: string; className: string } {
+  switch (status) {
+    case "running":
+      return { label: "バックグラウンド実行中", className: "text-blue-600 bg-blue-50 border-blue-200" };
+    case "completed":
+      return { label: "バックグラウンド完了", className: "text-green-700 bg-green-50 border-green-200" };
+    case "failed":
+      return { label: "バックグラウンド失敗", className: "text-red-600 bg-red-50 border-red-200" };
+    case "killed":
+    case "stopped":
+      return { label: "バックグラウンド停止", className: "text-gray-600 bg-gray-100 border-gray-300" };
+    default:
+      return { label: `バックグラウンド ${status}`, className: "text-gray-600 bg-gray-100 border-gray-300" };
+  }
+}
+
+// Compact icon-only indicator for the background task state; the full label
+// is available as a tooltip and in the tool call modal.
+export function BackgroundTaskBadge({ task, sessionActive }: { task: BackgroundTaskInfo; sessionActive?: boolean }) {
+  const { label } = backgroundTaskStatusLabel(task.status);
+  const title = task.taskId ? `${label} (task ${task.taskId})` : label;
+  let icon;
+  switch (task.status) {
+    case "running":
+      icon = sessionActive
+        ? <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+        : <Clock className="w-3.5 h-3.5 text-blue-500" />;
+      break;
+    case "completed":
+      icon = <CheckCheck className="w-3.5 h-3.5 text-green-600" />;
+      break;
+    case "failed":
+      icon = <AlertTriangle className="w-3.5 h-3.5 text-red-500" />;
+      break;
+    default:
+      icon = <CircleSlash className="w-3.5 h-3.5 text-gray-400" />;
+  }
+  return (
+    <span className="shrink-0 flex items-center" title={title} aria-label={title}>
+      {icon}
+    </span>
+  );
+}
+
+function BackgroundTaskSection({ task }: { task: BackgroundTaskInfo }) {
+  const { label, className } = backgroundTaskStatusLabel(task.status);
+  return (
+    <div>
+      <span className="text-gray-400 text-[10px] uppercase tracking-wide">バックグラウンドタスク</span>
+      <div className="mt-1 space-y-1.5 text-xs">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`border rounded px-1.5 py-0.5 text-[11px] ${className}`}>{label}</span>
+          {task.taskId && <span className="font-mono text-gray-500">ID: {task.taskId}</span>}
+          {task.taskType && <span className="text-gray-400">{task.taskType}</span>}
+        </div>
+        {task.outputFile && (
+          <div className="text-gray-500">
+            <span className="text-gray-400">Output file: </span>
+            <span className="font-mono break-all">{task.outputFile}</span>
+          </div>
+        )}
+        {task.summary && (
+          <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap">{task.summary.slice(0, 4000)}</pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onPermissionResponded, sessionActive, toolProgress }: {
   item: Extract<StreamDisplayItem, { kind: "tool_call" }>;
   onAnswer?: (text: string) => void;
@@ -374,6 +445,7 @@ export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onP
           ) : item.running && sessionActive ? (
             <RunningBadge reportedSeconds={item.toolUseId ? toolProgress?.[item.toolUseId] : undefined} />
           ) : null}
+          {item.backgroundTask && <BackgroundTaskBadge task={item.backgroundTask} sessionActive={sessionActive} />}
         </div>
         {subDetail && (
           <div className="mt-0.5 ml-[22px] font-mono text-[11px] text-gray-400 truncate">{subDetail}</div>
@@ -407,6 +479,7 @@ export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onP
               <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap mt-0.5">{item.result.slice(0, 2000)}</pre>
             </div>
           )}
+          {item.backgroundTask && <BackgroundTaskSection task={item.backgroundTask} />}
           {isAgent && (
             <div>
               <span className="text-gray-400 text-[10px] uppercase tracking-wide">Subagent Thread</span>
@@ -414,7 +487,7 @@ export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onP
                 <SubagentThreadView
                   sessionId={sessionId}
                   parentToolUseId={item.toolUseId!}
-                  live={!done}
+                  live={!done || item.backgroundTask?.status === "running"}
                   sessionActive={sessionActive}
                   toolProgress={toolProgress}
                 />
