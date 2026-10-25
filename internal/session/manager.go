@@ -1319,10 +1319,26 @@ func (m *Manager) StopAllStreamProcesses() {
 	m.streamProcesses = make(map[string]*HolderStreamProcess)
 	m.streamMu.Unlock()
 
+	dones := make([]<-chan struct{}, 0, len(processes))
 	for id, sp := range processes {
-		// Just close the socket connection; don't kill the holder
+		// Just close the socket connection; don't kill the holder. Disconnect
+		// marks the close as intentional so the read loop does not fire the
+		// process exit callback (which would write status=exited /
+		// holder_pid=0 and get the live holder reaped on next startup, #717).
 		m.logger.Info("disconnecting from holder (holder stays alive)", "sessionId", id, "holderPid", sp.HolderPID())
-		sp.conn.Close()
+		dones = append(dones, sp.Disconnect())
+	}
+
+	// Wait briefly for read loops to wind down so nothing touches the DB
+	// after shutdown proceeds to close it.
+	deadline := time.After(3 * time.Second)
+	for _, done := range dones {
+		select {
+		case <-done:
+		case <-deadline:
+			m.logger.Warn("timed out waiting for holder read loops to finish on shutdown")
+			return
+		}
 	}
 }
 
