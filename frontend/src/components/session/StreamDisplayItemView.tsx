@@ -1,4 +1,4 @@
-import { CollapsibleText } from "../ui/CollapsibleText";
+import { MarkdownText } from "../ui/MarkdownText";
 import { SystemEventRow } from "../ui/SystemEventRow";
 import { RateLimitEventRow } from "../ui/RateLimitEventRow";
 import { ApiRetryEventRow } from "../ui/ApiRetryEventRow";
@@ -22,7 +22,7 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermis
   toolProgress?: Record<string, number>;
 }) {
   if (item.kind === "text") {
-    return <CollapsibleText text={item.text} />;
+    return <MarkdownText text={item.text} />;
   }
   if (item.kind === "thinking") {
     return (
