@@ -129,6 +129,12 @@ type HolderStreamProcess struct {
 	// stopped is true when Stop() was called explicitly
 	stopped bool
 
+	// disconnected is true when Disconnect() was called: the daemon closed
+	// its socket on purpose (server shutdown) while the holder stays alive.
+	// Unlike stopped it is never reset, so a concurrent Codex restart cannot
+	// re-enable the exit callback. See #717.
+	disconnected bool
+
 	// holderError stores the last error reported by the holder via "error" control message
 	holderError string
 
@@ -394,9 +400,11 @@ func (sp *HolderStreamProcess) readLoop() {
 			// "exited" control event (the holder process is already gone)
 			// and the session status would stay stuck on "running" forever.
 			// We skip the callback when stopped == true so that intentional
-			// shutdowns (Stop / sendCodex) keep their existing flow.
+			// shutdowns (Stop / sendCodex) keep their existing flow, and when
+			// disconnected == true because the holder is still alive and the
+			// next server must be able to reconnect to it (#717).
 			sp.mu.RLock()
-			stopped := sp.stopped
+			stopped := sp.stopped || sp.disconnected
 			cb := sp.onProcessExit
 			sp.mu.RUnlock()
 			if !stopped && cb != nil {
@@ -432,7 +440,7 @@ func (sp *HolderStreamProcess) readLoop() {
 			if ctrlMsg.Event == "exited" {
 				slog.Info("holder stream: CLI process exited", "code", ctrlMsg.Code, "content", ctrlMsg.Content, "sessionId", sp.streamOpts.SessionID)
 				sp.mu.RLock()
-				stopped := sp.stopped
+				stopped := sp.stopped || sp.disconnected
 				cb := sp.onProcessExit
 				holderErr := sp.holderError
 				sp.mu.RUnlock()
@@ -905,7 +913,13 @@ func (sp *HolderStreamProcess) sendCodex(message string) error {
 	// Get CLI session ID for resume
 	sp.mu.RLock()
 	cliSessionID := sp.sessionID
+	disconnected := sp.disconnected
 	sp.mu.RUnlock()
+
+	// The server is shutting down (Disconnect): don't spawn a new holder.
+	if disconnected {
+		return fmt.Errorf("stream process disconnected (server shutting down)")
+	}
 
 	if cliSessionID == "" {
 		return fmt.Errorf("no CLI session ID available for %s resume", sp.provider.Name())
@@ -1125,6 +1139,25 @@ func (sp *HolderStreamProcess) Stop() {
 	}
 
 	sp.conn.Close()
+}
+
+// Disconnect closes the daemon's socket to the holder without stopping it.
+// It is used on server shutdown: the holder keeps running and the next server
+// reconnects to it, so the read loop must not report the resulting read error
+// as a process exit (which would mark the session exited and clear
+// holder_pid, making the reaper kill the holder as an orphan; see #717).
+// The returned channel is closed once the read loop has finished.
+func (sp *HolderStreamProcess) Disconnect() <-chan struct{} {
+	sp.stopPeriodicNotification()
+
+	sp.mu.Lock()
+	sp.disconnected = true
+	conn := sp.conn
+	done := sp.done
+	sp.mu.Unlock()
+
+	conn.Close()
+	return done
 }
 
 // Done returns a channel that is closed when the holder's CLI process exits.
