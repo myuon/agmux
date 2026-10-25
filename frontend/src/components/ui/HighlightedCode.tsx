@@ -42,8 +42,10 @@ function renderTokens(tokens: ThemedToken[] | undefined, fallback: string): Reac
   ));
 }
 
-const preClass = "bg-gray-50 border border-gray-200 rounded text-xs font-mono text-gray-800 overflow-x-auto py-1.5";
-const gutterClass = "select-none sticky left-0 bg-gray-50 text-right pr-3 pl-2 shrink-0 text-gray-300 tabular-nums";
+const preClass = "bg-gray-50 border border-gray-200 rounded text-xs font-mono text-gray-800 py-1.5";
+// Long lines wrap (like the rest of the modal) instead of scrolling sideways.
+const codeClass = "flex-1 min-w-0 pr-2 whitespace-pre-wrap [overflow-wrap:anywhere]";
+const gutterClass = "select-none text-right pr-3 pl-2 shrink-0 text-gray-300 tabular-nums";
 
 /**
  * Syntax highlighted code block with an optional line-number gutter.
@@ -62,15 +64,15 @@ export function HighlightedCode({ code, lang, lineNumbers }: {
 
   return (
     <pre className={preClass}>
-      <div className="inline-block min-w-full">
+      <div>
         {lines.map((line, i) => (
-          <div key={i} className="flex whitespace-pre">
+          <div key={i} className="flex">
             {nums && (
               <span className={gutterClass} style={{ width: gutterWidth, boxSizing: "content-box" }}>
                 {nums[i] ?? ""}
               </span>
             )}
-            <span className={`flex-1 ${nums ? "" : "pl-2"} pr-2`}>{renderTokens(tokens?.[i], line)}</span>
+            <span className={`${codeClass} ${nums ? "" : "pl-2"}`}>{renderTokens(tokens?.[i], line)}</span>
           </div>
         ))}
       </div>
@@ -94,17 +96,17 @@ export function HighlightedDiff({ oldText, newText, lang }: {
 
   return (
     <pre className={preClass}>
-      <div className="inline-block min-w-full">
+      <div>
         {diff.map((d, i) => {
           const tokens = d.type === "add" ? newTokens?.[d.newIdx!] : oldTokens?.[d.oldIdx!];
           const rowClass = d.type === "add" ? "bg-green-50" : d.type === "del" ? "bg-red-50" : "";
           const markClass = d.type === "add" ? "text-green-600 bg-green-100" : d.type === "del" ? "text-red-500 bg-red-100" : "text-gray-300 bg-gray-50";
           return (
-            <div key={i} className={`flex whitespace-pre ${rowClass}`}>
-              <span className={`select-none sticky left-0 w-5 text-center shrink-0 ${markClass}`}>
+            <div key={i} className={`flex ${rowClass}`}>
+              <span className={`select-none w-5 text-center shrink-0 ${markClass}`}>
                 {d.type === "add" ? "+" : d.type === "del" ? "-" : " "}
               </span>
-              <span className="flex-1 pl-1 pr-2">{renderTokens(tokens, d.text)}</span>
+              <span className={`${codeClass} pl-1`}>{renderTokens(tokens, d.text)}</span>
             </div>
           );
         })}
