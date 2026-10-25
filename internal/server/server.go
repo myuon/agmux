@@ -73,6 +73,9 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 
 	// Wire real-time stream updates via WebSocket
 	sessions.SetOnNewLines(func(sessionID string, newLines []string, total int) {
+		// ApplyLine has already run for these lines, so subagent-owned tasks
+		// started in this batch are known.
+		newLines = sessions.AnnotateSubagentOwnedTaskLines(sessionID, newLines)
 		// Convert lines to json.RawMessage for proper JSON encoding
 		rawLines := make([]json.RawMessage, len(newLines))
 		for i, line := range newLines {
@@ -167,6 +170,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/restart", s.restartSession)
 		r.Post("/sessions/{id}/clear", s.clearSession)
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
+		r.Get("/sessions/{id}/stream/subagent", s.getSubagentStream)
 		r.Get("/sessions/{id}/diff", s.getSessionDiff)
 		r.Get("/sessions/{id}/claude-md", s.getClaudeMD)
 		r.Get("/sessions/{id}/settings-json", s.getSettingsJSON)
@@ -1120,6 +1124,35 @@ func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
+// getSubagentStream returns the full (non-truncated) set of stream lines that
+// belong to the subagent thread spawned by the given Agent/Task tool_use id,
+// including nested subagents.
+func (s *Server) getSubagentStream(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	parentToolUseID := r.URL.Query().Get("parentToolUseId")
+	if parentToolUseID == "" {
+		writeError(w, http.StatusBadRequest, "parentToolUseId is required")
+		return
+	}
+
+	// limit=0 returns all lines (transient lines are already excluded).
+	lines, _, err := s.sessions.GetStreamLines(id, 0)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	filtered := session.FilterSubagentLines(lines, parentToolUseID)
+
+	result := make([]json.RawMessage, 0, len(filtered))
+	for _, line := range filtered {
+		result = append(result, json.RawMessage(line))
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"lines": result,
+		"total": len(result),
+	})
+}
+
 func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -1135,6 +1168,7 @@ func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		lines = s.sessions.AnnotateSubagentOwnedTaskLines(id, lines)
 		var result []json.RawMessage
 		for _, line := range lines {
 			result = append(result, json.RawMessage(line))
@@ -1162,6 +1196,7 @@ func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	lines = s.sessions.AnnotateSubagentOwnedTaskLines(id, lines)
 
 	var result []json.RawMessage
 	for _, line := range lines {

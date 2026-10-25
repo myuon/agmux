@@ -10,6 +10,8 @@ import { ToolInputView } from "./ToolInputView";
 import { Brain, RefreshCw } from "lucide-react";
 import { motion } from "motion/react";
 import { api } from "../../api/client";
+import { SubagentThreadView } from "./SubagentThreadView";
+import { StreamLinesContext } from "./StreamLinesContext";
 
 const roleStyles: Record<string, { bg: string; label: string; text: string }> = {
   user: { bg: "bg-blue-50", label: "User", text: "text-blue-700" },
@@ -185,6 +187,7 @@ export function StreamOutputView({ lines, partialText, thinkingTokens, className
   }, [entries]);
 
   return (
+    <StreamLinesContext.Provider value={lines}>
     <div className={`flex flex-col ${className || ""}`}>
       <div className="flex justify-end mb-1 shrink-0">
         <button
@@ -310,6 +313,7 @@ export function StreamOutputView({ lines, partialText, thinkingTokens, className
         )}
       </Modal>
     </div>
+    </StreamLinesContext.Provider>
   );
 }
 
@@ -344,11 +348,40 @@ function ToolCallHistoryItem({ entry, index, isLatest }: { entry: ToolCallHistor
   );
 }
 
-function ActiveTaskItem({ task, onDismiss }: { task: ActiveTask; onDismiss?: (taskId: string) => void }) {
+function ActiveTaskItem({ task, onDismiss, sessionId, sessionActive, toolProgress }: {
+  task: ActiveTask;
+  onDismiss?: (taskId: string) => void;
+  sessionId?: string;
+  sessionActive?: boolean;
+  toolProgress?: Record<string, number>;
+}) {
   const [open, setOpen] = useState(false);
   const taskTypeLabel = task.taskType === "local_agent" ? "Agent" : task.taskType === "local_bash" ? "Bash" : task.taskType;
   const Icon = toolIcon(taskTypeLabel);
   const desc = task.description || (task.lastToolInput ? toolDescription(taskTypeLabel, task.lastToolInput) : null);
+
+  const toolCallHistoryView = (
+    <>
+      {task.toolCallHistory.length > 0 && (
+        <div>
+          <span className="text-gray-400 text-[10px] uppercase tracking-wide">Tool Call History ({task.toolCallHistory.length})</span>
+          <div className="mt-1 space-y-1">
+            {task.toolCallHistory.map((entry, i) => (
+              <ToolCallHistoryItem key={i} entry={entry} index={i} isLatest={i === task.toolCallHistory.length - 1} />
+            ))}
+          </div>
+        </div>
+      )}
+      {task.toolCallHistory.length === 0 && task.lastToolInput != null && (
+        <div>
+          <span className="text-gray-400 text-[10px] uppercase tracking-wide">Input</span>
+          <div className="mt-0.5">
+            <ToolInputView input={task.lastToolInput} />
+          </div>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <>
@@ -427,24 +460,21 @@ function ActiveTaskItem({ task, onDismiss }: { task: ActiveTask; onDismiss?: (ta
               <div className="text-gray-700 text-xs mt-0.5">{task.description}</div>
             </div>
           )}
-          {task.toolCallHistory.length > 0 && (
+          {task.taskType === "local_agent" && task.toolUseId ? (
             <div>
-              <span className="text-gray-400 text-[10px] uppercase tracking-wide">Tool Call History ({task.toolCallHistory.length})</span>
-              <div className="mt-1 space-y-1">
-                {task.toolCallHistory.map((entry, i) => (
-                  <ToolCallHistoryItem key={i} entry={entry} index={i} isLatest={i === task.toolCallHistory.length - 1} />
-                ))}
+              <span className="text-gray-400 text-[10px] uppercase tracking-wide">Subagent Thread</span>
+              <div className="mt-1">
+                <SubagentThreadView
+                  sessionId={sessionId}
+                  parentToolUseId={task.toolUseId}
+                  live
+                  sessionActive={sessionActive}
+                  toolProgress={toolProgress}
+                  emptyFallback={toolCallHistoryView}
+                />
               </div>
             </div>
-          )}
-          {task.toolCallHistory.length === 0 && task.lastToolInput != null && (
-            <div>
-              <span className="text-gray-400 text-[10px] uppercase tracking-wide">Input</span>
-              <div className="mt-0.5">
-                <ToolInputView input={task.lastToolInput} />
-              </div>
-            </div>
-          )}
+          ) : toolCallHistoryView}
           {task.output && (
             <div>
               <span className="text-gray-400 text-[10px] uppercase tracking-wide">Output</span>
@@ -470,7 +500,14 @@ function ActiveTaskItem({ task, onDismiss }: { task: ActiveTask; onDismiss?: (ta
 const COLLAPSE_THRESHOLD = 4;
 const VISIBLE_WHEN_COLLAPSED = 3;
 
-export function ActiveTasksPanel({ tasks, sessionId }: { tasks: ActiveTask[]; sessionId?: string }) {
+export function ActiveTasksPanel({ tasks, sessionId, lines, sessionActive, toolProgress }: {
+  tasks: ActiveTask[];
+  sessionId?: string;
+  // Live stream lines of the session; used to refresh open subagent threads
+  lines?: unknown[];
+  sessionActive?: boolean;
+  toolProgress?: Record<string, number>;
+}) {
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
   // Track previous task snapshots to detect task_progress updates for hidden tasks
   const prevTasksRef = useRef<Map<string, ActiveTask>>(new Map());
@@ -530,13 +567,14 @@ export function ActiveTasksPanel({ tasks, sessionId }: { tasks: ActiveTask[]; se
 
 
   return (
+    <StreamLinesContext.Provider value={lines ?? null}>
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-700">
         <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
         Running Tasks ({visibleTasks.length})
       </div>
       {displayedTasks.map((task) => (
-        <ActiveTaskItem key={task.taskId} task={task} onDismiss={handleDismiss} />
+        <ActiveTaskItem key={task.taskId} task={task} onDismiss={handleDismiss} sessionId={sessionId} sessionActive={sessionActive} toolProgress={toolProgress} />
       ))}
       {collapsible && (
         <button
@@ -550,5 +588,6 @@ export function ActiveTasksPanel({ tasks, sessionId }: { tasks: ActiveTask[]; se
         </button>
       )}
     </div>
+    </StreamLinesContext.Provider>
   );
 }

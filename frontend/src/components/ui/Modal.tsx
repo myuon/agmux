@@ -1,8 +1,12 @@
 import { X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import { createPortal } from "react-dom";
 
 export function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: React.ReactNode; children: React.ReactNode }) {
-  return (
+  // Rendered into document.body so that modals opened from inside another
+  // modal (e.g. a tool call inside a subagent thread) are not clipped by the
+  // outer modal's transformed / scrolling container.
+  return createPortal(
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
@@ -31,6 +35,7 @@ export function Modal({ open, onClose, title, children }: { open: boolean; onClo
           </motion.div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   );
 }

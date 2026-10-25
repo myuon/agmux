@@ -95,6 +95,9 @@ type SessionService interface {
 
 	// ListBackgroundTasks returns the persisted background tasks for the session.
 	ListBackgroundTasks(sessionID string) ([]BackgroundTask, error)
+	// AnnotateSubagentOwnedTaskLines marks task_* system lines of
+	// subagent-owned tasks with "owned_by_subagent":true.
+	AnnotateSubagentOwnedTaskLines(sessionID string, lines []string) []string
 }
 
 // Verify Manager implements SessionService at compile time.

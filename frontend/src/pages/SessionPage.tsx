@@ -37,6 +37,7 @@ function dtoToActiveTask(dto: BackgroundTaskDTO): ActiveTask {
     taskId: dto.taskId,
     taskType: dto.taskType,
     agentId: dto.agentId,
+    toolUseId: dto.toolUseId,
     description: dto.description,
     startedAt: dto.startedAt,
     lastToolName: dto.lastToolName,
@@ -1190,7 +1191,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           }} />
           {activeTasks.length > 0 && (
             <div className="shrink-0 pt-2 px-4 sm:px-8 -mx-4 sm:-mx-8">
-              <ActiveTasksPanel tasks={activeTasks} sessionId={sessionId} />
+              <ActiveTasksPanel tasks={activeTasks} sessionId={sessionId} lines={streamLines} sessionActive={session?.status === "working"} toolProgress={toolProgress} />
             </div>
           )}
           {sessionId && <ForkPanel sessionId={sessionId} />}

@@ -231,7 +231,7 @@ export function ScenarioTestPage() {
             {/* Active tasks panel */}
             {activeTasks.length > 0 && (
               <div className="px-4 sm:px-8 pb-2">
-                <ActiveTasksPanel tasks={activeTasks} />
+                <ActiveTasksPanel tasks={activeTasks} lines={activeLines as unknown[]} />
               </div>
             )}
 

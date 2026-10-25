@@ -96,6 +96,13 @@ export const api = {
   getStreamOutput: (id: string, limit = 200) =>
     request<{ lines: unknown[]; total: number }>(`/sessions/${id}/stream?limit=${limit}`),
 
+  // Full (non-truncated) stream lines of the subagent thread spawned by the
+  // given Agent/Task tool_use id, including nested subagents.
+  getSubagentStream: (id: string, parentToolUseId: string) =>
+    request<{ lines: unknown[]; total: number }>(
+      `/sessions/${id}/stream/subagent?parentToolUseId=${encodeURIComponent(parentToolUseId)}`
+    ),
+
   getStreamOutputDelta: (id: string, after: number) =>
     request<{ lines: unknown[]; total: number }>(`/sessions/${id}/stream?after=${after}`),
 
@@ -274,6 +281,7 @@ export interface BackgroundTaskDTO {
   taskId: string;
   taskType: string;
   agentId?: string;
+  toolUseId?: string;
   description?: string;
   startedAt?: string;
   lastToolName?: string;
