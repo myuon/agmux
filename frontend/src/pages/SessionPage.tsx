@@ -49,11 +49,19 @@ function dtoToActiveTask(dto: BackgroundTaskDTO): ActiveTask {
 }
 
 type DeferredData = {
-  streamOutput: { lines: unknown[]; total: number };
+  streamOutput: { lines: unknown[]; total: number; start?: number };
   diff: { files: DiffFile[] };
   providerVersion: string | null;
   promptTemplates: PromptTemplate[];
 };
+
+// Page size for loading older history (scroll-to-top / auto-fill).
+const HISTORY_PAGE_SIZE = 300;
+
+function initialHistoryStart(resp: { lines: unknown[]; total: number; start?: number }): number {
+  if (typeof resp.start === "number") return resp.start;
+  return Math.max(0, resp.total - resp.lines.length);
+}
 
 function ParentSessionLink({ parentId }: { parentId: string }) {
   const [parentName, setParentName] = useState<string | null>(null);
@@ -341,6 +349,38 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const providerVersion = deferred.providerVersion;
   const streamCursorRef = useRef<number | null>(null);
 
+  // Index of streamLines[0] within the full persisted history. > 0 means older
+  // lines exist on the server and can be paged in with getStreamOutputBefore.
+  const [historyStart, setHistoryStart] = useState<number>(() => initialHistoryStart(deferred.streamOutput));
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const loadingOlderRef = useRef(false);
+  // Bumped whenever streamLines is replaced wholesale (reconnect reload,
+  // clear) so an in-flight older-page response for the old snapshot is dropped.
+  const historyGenRef = useRef(0);
+  const historyStartRef = useRef(historyStart);
+  historyStartRef.current = historyStart;
+
+  const loadOlderHistory = useCallback(async () => {
+    const before = historyStartRef.current;
+    if (!sessionId || loadingOlderRef.current || before <= 0) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    const gen = historyGenRef.current;
+    try {
+      const resp = await api.getStreamOutputBefore(sessionId, before, HISTORY_PAGE_SIZE);
+      if (gen !== historyGenRef.current) return;
+      // Older lines are prepended; the live cursor (streamCursorRef) tracks the
+      // tail of the history and is unaffected.
+      setStreamLines((prev) => [...resp.lines, ...prev]);
+      setHistoryStart(Math.min(resp.start, before));
+    } catch {
+      // ignore; user can retry by scrolling to the top again
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [sessionId]);
+
   // Active tasks (background-running agent / tool calls). Fetched from the
   // backend so the source of truth is the DB. Refetched when new stream
   // lines arrive (the backend updates the table on each line).
@@ -483,6 +523,11 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         // of silently discarding every line that follows.
         const cursorRaw = streamCursorRef.current;
         const cursor = cursorRaw !== null && data.total >= cursorRaw ? cursorRaw : null;
+        if (cursorRaw !== null && cursor === null) {
+          // History was reset; the old start index no longer applies.
+          historyGenRef.current++;
+          setHistoryStart(0);
+        }
         let fresh = regular;
         if (cursor !== null && regular.length > 0) {
           const firstIndex = data.total - regular.length;
@@ -504,7 +549,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     if (prevConnectionState.current === "disconnected" && connectionState === "connected" && sessionId) {
       // Re-fetch full stream data to ensure no gaps from disconnection
       api.getStreamOutput(sessionId).then((resp) => {
+        historyGenRef.current++;
         setStreamLines(resp.lines);
+        setHistoryStart(initialHistoryStart(resp));
         setPartialText("");
         setThinkingTokens(null);
         streamCursorRef.current = resp.total;
@@ -751,7 +798,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   if (!confirm("Clear session context? This will start a fresh conversation.")) return;
                   try {
                     await api.clearSession(session.id);
+                    historyGenRef.current++;
                     setStreamLines([]);
+                    setHistoryStart(0);
                     setPartialText("");
                     setContextUsage(null);
                     streamCursorRef.current = 0;
@@ -1185,7 +1234,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         </div>
       ) : (
         <div className="flex flex-col flex-1 min-h-0">
-          <StreamOutputView lines={streamLines} partialText={partialText} thinkingTokens={thinkingTokens} className="flex-1 min-h-0" sessionId={sessionId} pendingPermission={pendingPermission ?? undefined} onPermissionResponded={() => { setPendingPermission(null); }} provider={session?.provider ?? undefined} sessionActive={session?.status === "working"} toolProgress={toolProgress} onAnswer={async (text) => {
+          <StreamOutputView lines={streamLines} partialText={partialText} thinkingTokens={thinkingTokens} className="flex-1 min-h-0" sessionId={sessionId} pendingPermission={pendingPermission ?? undefined} onPermissionResponded={() => { setPendingPermission(null); }} provider={session?.provider ?? undefined} sessionActive={session?.status === "working"} toolProgress={toolProgress} hasOlderHistory={historyStart > 0} loadingOlderHistory={loadingOlder} onLoadOlderHistory={loadOlderHistory} onAnswer={async (text) => {
             if (!sessionId) return;
             await api.sendToSession(sessionId, text);
           }} />

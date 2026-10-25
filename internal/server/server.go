@@ -1191,12 +1191,41 @@ func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Paging older history: "before" returns lines in [before-limit, before).
+	if q := r.URL.Query().Get("before"); q != "" {
+		before, err := strconv.Atoi(q)
+		if err != nil || before < 0 {
+			writeError(w, http.StatusBadRequest, "invalid before parameter")
+			return
+		}
+		lines, start, total, err := s.sessions.GetStreamLinesBefore(id, before, limit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		lines = s.sessions.AnnotateSubagentOwnedTaskLines(id, lines)
+		result := make([]json.RawMessage, 0, len(lines))
+		for _, line := range lines {
+			result = append(result, json.RawMessage(line))
+		}
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"lines": result,
+			"total": total,
+			"start": start,
+		})
+		return
+	}
+
 	lines, total, err := s.sessions.GetStreamLines(id, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	lines = s.sessions.AnnotateSubagentOwnedTaskLines(id, lines)
+	start := total - len(lines)
+	if start < 0 {
+		start = 0
+	}
 
 	var result []json.RawMessage
 	for _, line := range lines {
@@ -1209,6 +1238,7 @@ func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"lines": result,
 		"total": total,
+		"start": start,
 	})
 }
 

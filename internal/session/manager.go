@@ -1647,6 +1647,49 @@ func (m *Manager) GetStreamLinesAfter(id string, after int) ([]string, int, erro
 	return lines, total, nil
 }
 
+// PageLinesBefore returns the slice of lines in [max(0, before-limit), before)
+// and the start index of that page. before is clamped to [0, len(lines)];
+// limit <= 0 means "everything before the cursor". The returned slice aliases
+// lines, so callers that hold locks must copy it.
+func PageLinesBefore(lines []string, before, limit int) ([]string, int) {
+	if before > len(lines) {
+		before = len(lines)
+	}
+	if before < 0 {
+		before = 0
+	}
+	start := 0
+	if limit > 0 && before-limit > 0 {
+		start = before - limit
+	}
+	return lines[start:before], start
+}
+
+// GetStreamLinesBefore returns up to limit lines preceding the given index
+// (used for paging older history), the start index of the returned page and
+// the current total line count.
+func (m *Manager) GetStreamLinesBefore(id string, before, limit int) ([]string, int, int, error) {
+	m.streamMu.Lock()
+	sp, ok := m.streamProcesses[id]
+	m.streamMu.Unlock()
+
+	if ok {
+		lines, start, total := sp.GetLinesBefore(before, limit)
+		return lines, start, total, nil
+	}
+
+	s, err := m.Get(id)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	allLines, err := m.readStreamFile(id, 0, s.ClearOffset)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	page, start := PageLinesBefore(allLines, before, limit)
+	return page, start, len(allLines), nil
+}
+
 func (m *Manager) readStreamFileAfter(id string, after int, clearOffset int64) ([]string, error) {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {

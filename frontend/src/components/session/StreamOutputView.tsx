@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import type { StreamEntry } from "../../models/stream";
 import { mergeStreamEntries } from "../../models/stream";
 import type { ActiveTask, ToolCallHistoryEntry } from "../../models/stream";
@@ -118,7 +118,16 @@ function summarizeEntry(line: unknown): { type: string; subtype?: string; summar
   return { type, summary: hintParts.join(" "), isUnknown };
 }
 
-export function StreamOutputView({ lines, partialText, thinkingTokens, className, onAnswer, sessionId, pendingPermission, onPermissionResponded, provider, sessionActive, toolProgress }: {
+// Auto-fill: keep paging in older history while the rendered timeline is
+// shorter than this multiple of the viewport height (subagent-internal and
+// grouped tool lines can make a raw page render almost nothing).
+const AUTO_FILL_VIEWPORT_RATIO = 1.5;
+// Hard cap on lines loaded by auto-fill (scroll-to-top is not capped).
+const AUTO_FILL_MAX_LINES = 5000;
+// Distance from the top (px) at which scrolling up loads the previous page.
+const LOAD_OLDER_SCROLL_THRESHOLD = 200;
+
+export function StreamOutputView({ lines, partialText, thinkingTokens, className, onAnswer, sessionId, pendingPermission, onPermissionResponded, provider, sessionActive, toolProgress, hasOlderHistory, loadingOlderHistory, onLoadOlderHistory }: {
   lines: unknown[];
   partialText?: string;
   thinkingTokens?: number | null;
@@ -130,8 +139,17 @@ export function StreamOutputView({ lines, partialText, thinkingTokens, className
   provider?: string;
   sessionActive?: boolean;
   toolProgress?: Record<string, number>;
+  // Older-history paging (provided by SessionPage). When hasOlderHistory is
+  // true, scrolling near the top or a too-short timeline calls onLoadOlderHistory,
+  // which prepends older lines to `lines`.
+  hasOlderHistory?: boolean;
+  loadingOlderHistory?: boolean;
+  onLoadOlderHistory?: () => void;
 }) {
   const { ref, onScroll } = useAutoScroll(lines);
+  // Scroll anchor captured before a user-triggered (scroll-to-top) load so the
+  // prepended content does not move what the user is looking at.
+  const prependAnchorRef = useRef<{ scrollHeight: number; scrollTop: number; firstLine: unknown } | null>(null);
   const [viewMode, setViewMode] = useState<StreamViewMode>("markdown");
   const [selectedJsonEntry, setSelectedJsonEntry] = useState<{ index: number; line: unknown } | null>(null);
   // Persist scroll ratio across view-mode switches so position is roughly preserved
@@ -144,9 +162,45 @@ export function StreamOutputView({ lines, partialText, thinkingTokens, className
       const el = ref.current;
       const denom = el.scrollHeight - el.clientHeight;
       scrollRatioRef.current = denom > 0 ? el.scrollTop / denom : 0;
+      if (
+        hasOlderHistory && !loadingOlderHistory && onLoadOlderHistory &&
+        el.scrollTop < LOAD_OLDER_SCROLL_THRESHOLD && el.scrollHeight > el.clientHeight
+      ) {
+        prependAnchorRef.current = { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, firstLine: lines[0] };
+        onLoadOlderHistory();
+      }
     }
     onScroll();
-  }, [ref, onScroll]);
+  }, [ref, onScroll, hasOlderHistory, loadingOlderHistory, onLoadOlderHistory, lines]);
+
+  // After older lines are prepended, shift scrollTop by the added height so
+  // the viewport keeps showing the same content. Runs before paint.
+  useLayoutEffect(() => {
+    const anchor = prependAnchorRef.current;
+    const el = ref.current;
+    if (!anchor || !el) return;
+    if (lines[0] === anchor.firstLine) return; // not prepended yet (e.g. live append)
+    prependAnchorRef.current = null;
+    el.scrollTop = anchor.scrollTop + (el.scrollHeight - anchor.scrollHeight);
+  }, [lines, ref]);
+
+  // Drop a stale anchor when the load finished without prepending anything.
+  useEffect(() => {
+    if (!loadingOlderHistory && prependAnchorRef.current && lines[0] === prependAnchorRef.current.firstLine) {
+      prependAnchorRef.current = null;
+    }
+  }, [loadingOlderHistory, lines]);
+
+  // Auto-fill: page in older history until the timeline overflows the viewport.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !hasOlderHistory || loadingOlderHistory || !onLoadOlderHistory) return;
+    if (viewMode !== "markdown" || lines.length >= AUTO_FILL_MAX_LINES) return;
+    if (el.clientHeight === 0) return; // hidden / not laid out
+    if (el.scrollHeight < el.clientHeight * AUTO_FILL_VIEWPORT_RATIO) {
+      onLoadOlderHistory();
+    }
+  }, [lines, hasOlderHistory, loadingOlderHistory, onLoadOlderHistory, viewMode, ref]);
 
   // Restore scroll ratio after view-mode switches
   useEffect(() => {
@@ -198,6 +252,29 @@ export function StreamOutputView({ lines, partialText, thinkingTokens, className
         </button>
       </div>
       <div ref={ref} onScroll={handleScroll} className={`bg-white border border-gray-200 rounded-lg p-3 text-sm flex-1 min-h-0 overflow-y-auto ${viewMode === "json" ? "" : "space-y-3"}`}>
+        {loadingOlderHistory && (
+          <div className="flex items-center justify-center gap-1.5 py-1 text-xs text-gray-400">
+            <RefreshCw className="w-3 h-3 animate-spin" />
+            <span>読み込み中…</span>
+          </div>
+        )}
+        {!loadingOlderHistory && hasOlderHistory && onLoadOlderHistory && (
+          // Fallback for when scroll-to-top cannot fire (e.g. auto-fill hit its cap
+          // while the content still does not overflow).
+          <div className="flex justify-center py-1">
+            <button
+              type="button"
+              onClick={() => {
+                const el = ref.current;
+                if (el) prependAnchorRef.current = { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, firstLine: lines[0] };
+                onLoadOlderHistory();
+              }}
+              className="text-xs text-gray-400 hover:text-gray-600"
+            >
+              以前の履歴を読み込む
+            </button>
+          </div>
+        )}
         {viewMode === "json" ? (
           lines.length === 0 ? (
             <p className="text-gray-400">No stream output yet</p>
