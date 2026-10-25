@@ -6,6 +6,7 @@ import { SummaryCard } from "../components/ui/SummaryCard";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
 import { StatusBadge, StatusDot, statusDots } from "../components/StatusBadge";
 import { ToolCallView } from "../components/session/ToolCallView";
+import { codeToolSamples } from "../fixtures/toolCodeSamples";
 import { ToolInputView } from "../components/session/ToolInputView";
 import { DiffDropdown } from "../components/session/DiffDropdown";
 import { Chip } from "../components/ui/Chip";
@@ -337,6 +338,12 @@ function ToolCallViewPreview() {
           <p className="text-xs text-gray-500 mb-1">Escalate (回答済み)</p>
           <ToolCallView item={escalateResolvedItem} />
         </div>
+        {codeToolSamples.map((s) => (
+          <div key={s.item.toolUseId}>
+            <p className="text-xs text-gray-500 mb-1">{s.label}</p>
+            <ToolCallView item={s.item} />
+          </div>
+        ))}
       </div>
     </PreviewSection>
   );

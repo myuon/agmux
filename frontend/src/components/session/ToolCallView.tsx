@@ -10,7 +10,7 @@ import type { StreamDisplayItem, AskUserQuestionItem, BackgroundTaskInfo } from 
 import { isAgentToolName } from "../../models/stream";
 import { toolIcon, toolDescription, toolSubDetail, parseTodoInput } from "../../models/tool";
 import { api } from "../../api/client";
-import { ToolInputView } from "./ToolInputView";
+import { ToolInputView, ToolResultView } from "./ToolInputView";
 import { SubagentThreadView } from "./SubagentThreadView";
 
 const expandTransition = { type: "spring" as const, damping: 25, stiffness: 300 };
@@ -457,7 +457,7 @@ export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onP
         title={<span className="flex items-center gap-2"><Icon className="w-4 h-4 text-gray-500" />{item.name} {desc && <span className="text-gray-400 font-normal">{desc}</span>}</span>}
       >
         <div className="space-y-3">
-          <ToolInputView input={item.input} />
+          <ToolInputView input={item.input} toolName={item.name} />
           {item.resultImages && item.resultImages.length > 0 && (
             <div>
               <span className="text-gray-400 text-[10px] uppercase tracking-wide">Images</span>
@@ -476,7 +476,9 @@ export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onP
           {done && item.result && (
             <div>
               <span className="text-gray-400 text-[10px] uppercase tracking-wide">Output</span>
-              <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap mt-0.5">{item.result.slice(0, 2000)}</pre>
+              <div className="mt-0.5">
+                <ToolResultView toolName={item.name} input={item.input} result={item.result} isError={item.isError} />
+              </div>
             </div>
           )}
           {item.backgroundTask && <BackgroundTaskSection task={item.backgroundTask} />}
