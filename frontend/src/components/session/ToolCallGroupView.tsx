@@ -1,6 +1,6 @@
 import { createElement, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertTriangle, CheckCircle2, ChevronRight, Layers } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Layers, Loader2 } from "lucide-react";
 import type { StreamDisplayItem } from "../../models/stream";
 import { toolDescription, toolIcon, summarizeToolCategories } from "../../models/tool";
 import { RunningBadge } from "./ToolCallView";
@@ -21,7 +21,9 @@ export function ToolCallGroupView({ items, toolCalls, sessionActive, toolProgres
   const [expanded, setExpanded] = useState(false);
   const last = toolCalls[toolCalls.length - 1];
   const running = last.result === undefined && !!last.running && !!sessionActive;
-  const errorCount = toolCalls.filter((t) => t.isError).length;
+  // A failed background task counts as an error of its (launching) tool call.
+  const errorCount = toolCalls.filter((t) => t.isError || t.backgroundTask?.status === "failed").length;
+  const bgRunningCount = toolCalls.filter((t) => t.backgroundTask?.status === "running").length;
   const count = toolCalls.length;
 
   let content: ReactNode;
@@ -66,12 +68,21 @@ export function ToolCallGroupView({ items, toolCalls, sessionActive, toolProgres
               {errorCount}
             </span>
           )}
+          {bgRunningCount > 0 && (
+            <span
+              className={`flex items-center gap-1 text-[11px] text-blue-500 shrink-0 ${running || errorCount > 0 ? "" : "ml-auto"}`}
+              title={`${bgRunningCount}件のバックグラウンドタスクが実行中`}
+            >
+              {sessionActive && <Loader2 className="w-3 h-3 animate-spin" />}
+              BG {bgRunningCount}
+            </span>
+          )}
           {running ? (
             <RunningBadge
               key={last.toolUseId}
               reportedSeconds={last.toolUseId ? toolProgress?.[last.toolUseId] : undefined}
             />
-          ) : errorCount === 0 && toolCalls.every((t) => t.result !== undefined) ? (
+          ) : errorCount === 0 && bgRunningCount === 0 && toolCalls.every((t) => t.result !== undefined) ? (
             <CheckCircle2 className="w-3 h-3 text-green-500 ml-auto shrink-0" />
           ) : null}
         </div>
