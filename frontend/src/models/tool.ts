@@ -59,6 +59,39 @@ export function toolDescription(name: string, input: unknown): string | null {
   return null;
 }
 
+// Category label used to summarize a group of tool calls.
+export function toolCategoryLabel(name: string): string {
+  switch (name) {
+    case "Bash": return "コマンド実行";
+    case "Read": return "ファイル読み込み";
+    case "Grep":
+    case "Glob": return "検索";
+    case "Edit":
+    case "Write":
+    case "NotebookEdit": return "ファイル編集";
+    case "WebFetch":
+    case "WebSearch": return "Web";
+    case "Agent":
+    case "Task": return "サブエージェント";
+  }
+  // mcp__<server>__<tool> -> <tool>
+  if (name.startsWith("mcp__")) {
+    const parts = name.split("__");
+    return parts[parts.length - 1] || name;
+  }
+  return name;
+}
+
+// "コマンド実行 3 · ファイル読み込み 4" (in order of first appearance)
+export function summarizeToolCategories(names: string[]): string {
+  const counts = new Map<string, number>();
+  for (const n of names) {
+    const label = toolCategoryLabel(n);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  return Array.from(counts, ([label, count]) => `${label} ${count}`).join(" · ");
+}
+
 export function toolSubDetail(name: string, input: unknown): string | null {
   const inp = input && typeof input === "object" ? (input as Record<string, unknown>) : null;
   if (name === "Bash" && inp && "command" in inp) {

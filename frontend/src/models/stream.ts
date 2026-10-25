@@ -18,6 +18,7 @@ export interface StreamContentBlock {
   input?: unknown;
   content?: unknown;
   thinking?: string;
+  is_error?: boolean;
   source?: { type: string; media_type: string; data: string };
 }
 
@@ -51,7 +52,7 @@ export interface AskUserQuestionItem {
 export type StreamDisplayItem =
   | { kind: "text"; text: string }
   | { kind: "image"; mediaType: string; data: string }
-  | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; running?: boolean }
+  | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; running?: boolean; isError?: boolean }
   | { kind: "thinking"; text: string }
   | { kind: "system_event"; eventType: string; label: string; detail?: string }
   | { kind: "rate_limit"; rateLimitType: string; status: string; resetsAt: number; utilization?: number; isUsingOverage?: boolean; overageStatus?: string }
@@ -335,6 +336,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
   // First pass: collect all tool_results keyed by tool_use_id, and track Skill tool IDs
   const resultMap = new Map<string, string>();
   const resultImageMap = new Map<string, Array<{ mediaType: string; data: string }>>();
+  const errorResultIds = new Set<string>();
   const skillToolIds = new Set<string>();
   const toolSearchToolIds = new Set<string>();
   const askUserToolIds = new Set<string>();
@@ -363,6 +365,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
         continue;
       }
       if (block.type === "tool_result" && block.tool_use_id) {
+        if (block.is_error === true) errorResultIds.add(block.tool_use_id);
         if (Array.isArray(block.content)) {
           const texts: string[] = [];
           const images: Array<{ mediaType: string; data: string }> = [];
@@ -549,6 +552,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               resultImages,
               toolUseId: b.id,
               running: isRunning(b.id),
+              isError: b.id && errorResultIds.has(b.id) ? true : undefined,
             });
           } else if (b.name === "ToolSearch" && b.id && toolSearchToolIds.has(b.id)) {
             // Skip the "Tool loaded." user text after ToolSearch
@@ -572,6 +576,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               resultImages,
               toolUseId: b.id,
               running: isRunning(b.id),
+              isError: b.id && errorResultIds.has(b.id) ? true : undefined,
             });
           } else if (isAgentToolName(b.name) && b.id && agentToolIds.has(b.id)) {
             // Skip the subagent prompt user text after Agent tool call
@@ -598,6 +603,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               resultImages,
               toolUseId: b.id,
               running: isRunning(b.id),
+              isError: b.id && errorResultIds.has(b.id) ? true : undefined,
             });
           } else {
             items.push({
@@ -608,6 +614,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               resultImages,
               toolUseId: b.id,
               running: isRunning(b.id),
+              isError: b.id && errorResultIds.has(b.id) ? true : undefined,
             });
           }
         }
@@ -656,4 +663,80 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
   }
 
   return groups;
+}
+
+// --- Consecutive tool call grouping (render-time) ---
+
+type ToolCallItem = Extract<StreamDisplayItem, { kind: "tool_call" }>;
+
+// Tool calls that always get their own row: subagents are important, and the
+// interactive/special views (todo list, questions, escalation, permission)
+// must stay visible.
+const UNGROUPABLE_TOOL_NAMES = new Set([
+  "TodoWrite",
+  "AskUserQuestion",
+  "mcp__agmux__escalate",
+  "mcp__agmux__permission_prompt",
+]);
+
+export function isGroupableToolCall(item: StreamDisplayItem): item is ToolCallItem {
+  return item.kind === "tool_call" && !isAgentToolName(item.name) && !UNGROUPABLE_TOOL_NAMES.has(item.name);
+}
+
+export type StreamRenderChunk =
+  | { kind: "item"; key: string; item: StreamDisplayItem }
+  // items: the tool calls plus any thinking blocks between them (in order)
+  | { kind: "tool_group"; key: string; items: StreamDisplayItem[]; toolCalls: ToolCallItem[] };
+
+// Splits a group's items into render chunks, collapsing runs of 2+ consecutive
+// groupable tool calls into a single tool_group chunk. Thinking blocks between
+// tool calls of a run are absorbed into the run; anything else breaks it.
+// Keys are stable while items stream in (a group is keyed by its first tool
+// call, which never changes as the run grows).
+export function chunkToolCallRuns(items: StreamDisplayItem[]): StreamRenderChunk[] {
+  const chunks: StreamRenderChunk[] = [];
+  let run: { start: number; items: StreamDisplayItem[]; toolCalls: ToolCallItem[] } | null = null;
+  let pending: Array<{ index: number; item: StreamDisplayItem }> = [];
+
+  const flush = () => {
+    if (run) {
+      if (run.toolCalls.length >= 2) {
+        const first = run.toolCalls[0];
+        chunks.push({
+          kind: "tool_group",
+          key: `tg-${first.toolUseId ?? run.start}`,
+          items: run.items,
+          toolCalls: run.toolCalls,
+        });
+      } else {
+        chunks.push({ kind: "item", key: `i-${run.start}`, item: run.items[0] });
+      }
+      run = null;
+    }
+    for (const p of pending) chunks.push({ kind: "item", key: `i-${p.index}`, item: p.item });
+    pending = [];
+  };
+
+  items.forEach((item, index) => {
+    if (isGroupableToolCall(item)) {
+      if (run) {
+        for (const p of pending) run.items.push(p.item);
+        pending = [];
+        run.items.push(item);
+        run.toolCalls.push(item);
+      } else {
+        flush();
+        run = { start: index, items: [item], toolCalls: [item] };
+      }
+      return;
+    }
+    if (item.kind === "thinking" && run) {
+      pending.push({ index, item });
+      return;
+    }
+    flush();
+    chunks.push({ kind: "item", key: `i-${index}`, item });
+  });
+  flush();
+  return chunks;
 }

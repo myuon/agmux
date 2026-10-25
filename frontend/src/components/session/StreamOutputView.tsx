@@ -3,7 +3,7 @@ import type { StreamEntry } from "../../models/stream";
 import { mergeStreamEntries } from "../../models/stream";
 import type { ActiveTask, ToolCallHistoryEntry } from "../../models/stream";
 import { useAutoScroll } from "../../hooks/useAutoScroll";
-import { StreamDisplayItemView } from "./StreamDisplayItemView";
+import { StreamDisplayItemView, StreamDisplayItemsView } from "./StreamDisplayItemView";
 import { toolIcon, toolDescription } from "../../models/tool";
 import { Modal } from "../ui/Modal";
 import { ToolInputView } from "./ToolInputView";
@@ -264,9 +264,7 @@ export function StreamOutputView({ lines, partialText, thinkingTokens, className
                   </span>
                 </div>
                 <div className="text-gray-800 break-words text-xs space-y-2">
-                  {group.items.map((item, j) => (
-                    <StreamDisplayItemView key={j} item={item} onAnswer={onAnswer} sessionId={sessionId} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} sessionActive={sessionActive} toolProgress={toolProgress} />
-                  ))}
+                  <StreamDisplayItemsView items={group.items} onAnswer={onAnswer} sessionId={sessionId} pendingPermission={pendingPermission} onPermissionResponded={onPermissionResponded} sessionActive={sessionActive} toolProgress={toolProgress} />
                 </div>
               </motion.div>
             );
