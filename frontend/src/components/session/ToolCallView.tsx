@@ -6,11 +6,12 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { Modal } from "../ui/Modal";
-import { CollapsibleText } from "../ui/CollapsibleText";
 import type { StreamDisplayItem, AskUserQuestionItem } from "../../models/stream";
+import { isAgentToolName } from "../../models/stream";
 import { toolIcon, toolDescription, toolSubDetail, parseTodoInput } from "../../models/tool";
 import { api } from "../../api/client";
 import { ToolInputView } from "./ToolInputView";
+import { SubagentThreadView } from "./SubagentThreadView";
 
 const expandTransition = { type: "spring" as const, damping: 25, stiffness: 300 };
 
@@ -335,7 +336,6 @@ export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onP
 }) {
   // Hooks must be called before any conditional returns (React Rules of Hooks)
   const [open, setOpen] = useState(false);
-  const [childrenExpanded, setChildrenExpanded] = useState(false);
 
   if (item.name === "TodoWrite") {
     return <TodoCallView item={item} />;
@@ -353,8 +353,7 @@ export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onP
   const desc = toolDescription(item.name, item.input);
   const subDetail = toolSubDetail(item.name, item.input);
   const done = item.result !== undefined;
-  const hasChildren = item.children && item.children.length > 0;
-  const CHILD_DISPLAY_LIMIT = 5;
+  const isAgent = isAgentToolName(item.name) && !!item.toolUseId;
 
   return (
     <>
@@ -406,46 +405,22 @@ export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onP
               <pre className="text-gray-600 text-xs overflow-x-auto whitespace-pre-wrap mt-0.5">{item.result.slice(0, 2000)}</pre>
             </div>
           )}
+          {isAgent && (
+            <div>
+              <span className="text-gray-400 text-[10px] uppercase tracking-wide">Subagent Thread</span>
+              <div className="mt-1">
+                <SubagentThreadView
+                  sessionId={sessionId}
+                  parentToolUseId={item.toolUseId!}
+                  live={!done}
+                  sessionActive={sessionActive}
+                  toolProgress={toolProgress}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
-      {hasChildren && (() => {
-        const allChildren = item.children!;
-        const totalCount = allChildren.length;
-        const hasHidden = totalCount > CHILD_DISPLAY_LIMIT && !childrenExpanded;
-        const hiddenCount = totalCount - CHILD_DISPLAY_LIMIT;
-        const visibleChildren = hasHidden
-          ? allChildren.slice(totalCount - CHILD_DISPLAY_LIMIT)
-          : allChildren;
-        return (
-          <div className="ml-4 border-l-2 border-indigo-200 pl-3 space-y-1.5">
-            {hasHidden && (
-              <button
-                onClick={() => setChildrenExpanded(true)}
-                className="text-xs text-blue-500 hover:text-blue-700 py-0.5"
-              >
-                他 {hiddenCount} 件を表示
-              </button>
-            )}
-            {childrenExpanded && totalCount > CHILD_DISPLAY_LIMIT && (
-              <button
-                onClick={() => setChildrenExpanded(false)}
-                className="text-xs text-blue-500 hover:text-blue-700 py-0.5"
-              >
-                折りたたむ
-              </button>
-            )}
-            {visibleChildren.map((child, i) => (
-              <div key={hasHidden ? i + hiddenCount : i}>
-                {child.kind === "tool_call" ? (
-                  <ToolCallView item={child} sessionActive={sessionActive} toolProgress={toolProgress} />
-                ) : child.kind === "text" ? (
-                  <CollapsibleText text={child.text} />
-                ) : null}
-              </div>
-            ))}
-          </div>
-        );
-      })()}
     </>
   );
 }

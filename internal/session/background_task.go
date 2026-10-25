@@ -19,6 +19,7 @@ type BackgroundTask struct {
 	TaskID            string                  `json:"taskId"`
 	TaskType          string                  `json:"taskType"`
 	AgentID           string                  `json:"agentId,omitempty"`
+	ToolUseID         string                  `json:"toolUseId,omitempty"`
 	Description       string                  `json:"description,omitempty"`
 	StartedAt         string                  `json:"startedAt,omitempty"`
 	LastToolName      string                  `json:"lastToolName,omitempty"`
@@ -169,6 +170,7 @@ func (s *BackgroundTaskStore) ApplyLine(sessionID string, line []byte) error {
 			TaskID:          ev.TaskID,
 			TaskType:        taskType,
 			AgentID:         ev.AgentID,
+			ToolUseID:       ev.ToolUse,
 			Description:     ev.Desc,
 			StartedAt:       ev.Time,
 			ToolCallHistory: []BackgroundTaskToolCall{},
@@ -203,6 +205,9 @@ func (s *BackgroundTaskStore) ApplyLine(sessionID string, line []byte) error {
 		}
 		if ev.Desc != "" {
 			existing.Description = ev.Desc
+		}
+		if ev.ToolUse != "" {
+			existing.ToolUseID = ev.ToolUse
 		}
 		if ev.LastTool != "" {
 			last := lastToolCall(existing.ToolCallHistory)
@@ -304,7 +309,7 @@ func (s *BackgroundTaskStore) List(sessionID string) ([]BackgroundTask, error) {
 		`SELECT task_id, task_type, agent_id, description, started_at,
 		        last_tool_name, last_tool_input, output,
 		        usage_input_tokens, usage_output_tokens,
-		        tool_call_history
+		        tool_call_history, tool_use_id
 		 FROM background_tasks
 		 WHERE session_id = ? AND dismissed_at IS NULL
 		 ORDER BY started_at ASC, task_id ASC`,
@@ -321,16 +326,20 @@ func (s *BackgroundTaskStore) List(sessionID string) ([]BackgroundTask, error) {
 		var agentID, desc, startedAt, lastToolName, lastToolInput, output sql.NullString
 		var inTok, outTok sql.NullInt64
 		var history string
+		var toolUseID sql.NullString
 		if err := rows.Scan(
 			&t.TaskID, &t.TaskType, &agentID, &desc, &startedAt,
 			&lastToolName, &lastToolInput, &output,
 			&inTok, &outTok,
-			&history,
+			&history, &toolUseID,
 		); err != nil {
 			return nil, fmt.Errorf("scan background task: %w", err)
 		}
 		if agentID.Valid {
 			t.AgentID = agentID.String
+		}
+		if toolUseID.Valid {
+			t.ToolUseID = toolUseID.String
 		}
 		if desc.Valid {
 			t.Description = desc.String
@@ -502,7 +511,7 @@ func (s *BackgroundTaskStore) getTask(sessionID, taskID string) (*BackgroundTask
 		`SELECT task_id, task_type, agent_id, description, started_at,
 		        last_tool_name, last_tool_input, output,
 		        usage_input_tokens, usage_output_tokens,
-		        tool_call_history
+		        tool_call_history, tool_use_id
 		 FROM background_tasks
 		 WHERE session_id = ? AND task_id = ? AND dismissed_at IS NULL`,
 		sessionID, taskID,
@@ -511,11 +520,12 @@ func (s *BackgroundTaskStore) getTask(sessionID, taskID string) (*BackgroundTask
 	var agentID, desc, startedAt, lastToolName, lastToolInput, output sql.NullString
 	var inTok, outTok sql.NullInt64
 	var history string
+	var toolUseID sql.NullString
 	err := row.Scan(
 		&t.TaskID, &t.TaskType, &agentID, &desc, &startedAt,
 		&lastToolName, &lastToolInput, &output,
 		&inTok, &outTok,
-		&history,
+		&history, &toolUseID,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -525,6 +535,9 @@ func (s *BackgroundTaskStore) getTask(sessionID, taskID string) (*BackgroundTask
 	}
 	if agentID.Valid {
 		t.AgentID = agentID.String
+	}
+	if toolUseID.Valid {
+		t.ToolUseID = toolUseID.String
 	}
 	if desc.Valid {
 		t.Description = desc.String
@@ -596,8 +609,8 @@ func (s *BackgroundTaskStore) upsertTask(sessionID string, t BackgroundTask) err
 			session_id, task_id, task_type, agent_id, description, started_at,
 			last_tool_name, last_tool_input, output,
 			usage_input_tokens, usage_output_tokens, tool_call_history,
-			updated_at
-		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			tool_use_id, updated_at
+		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		 ON CONFLICT(session_id, task_id) DO UPDATE SET
 			task_type = excluded.task_type,
 			agent_id = excluded.agent_id,
@@ -609,12 +622,14 @@ func (s *BackgroundTaskStore) upsertTask(sessionID string, t BackgroundTask) err
 			usage_input_tokens = excluded.usage_input_tokens,
 			usage_output_tokens = excluded.usage_output_tokens,
 			tool_call_history = excluded.tool_call_history,
+			tool_use_id = COALESCE(NULLIF(excluded.tool_use_id, ''), background_tasks.tool_use_id),
 			updated_at = CURRENT_TIMESTAMP
 		 WHERE background_tasks.dismissed_at IS NULL`,
 		sessionID, t.TaskID, t.TaskType,
 		nullableString(t.AgentID), nullableString(t.Description), nullableString(t.StartedAt),
 		nullableString(t.LastToolName), lastInputJSON, nullableString(t.Output),
 		inTok, outTok, string(historyJSON),
+		nullableString(t.ToolUseID),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert background task: %w", err)

@@ -167,6 +167,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/restart", s.restartSession)
 		r.Post("/sessions/{id}/clear", s.clearSession)
 		r.Get("/sessions/{id}/stream", s.getSessionStream)
+		r.Get("/sessions/{id}/stream/subagent", s.getSubagentStream)
 		r.Get("/sessions/{id}/diff", s.getSessionDiff)
 		r.Get("/sessions/{id}/claude-md", s.getClaudeMD)
 		r.Get("/sessions/{id}/settings-json", s.getSettingsJSON)
@@ -1118,6 +1119,35 @@ func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordSessionAction(id, "session_clear", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+// getSubagentStream returns the full (non-truncated) set of stream lines that
+// belong to the subagent thread spawned by the given Agent/Task tool_use id,
+// including nested subagents.
+func (s *Server) getSubagentStream(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	parentToolUseID := r.URL.Query().Get("parentToolUseId")
+	if parentToolUseID == "" {
+		writeError(w, http.StatusBadRequest, "parentToolUseId is required")
+		return
+	}
+
+	// limit=0 returns all lines (transient lines are already excluded).
+	lines, _, err := s.sessions.GetStreamLines(id, 0)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	filtered := session.FilterSubagentLines(lines, parentToolUseID)
+
+	result := make([]json.RawMessage, 0, len(filtered))
+	for _, line := range filtered {
+		result = append(result, json.RawMessage(line))
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"lines": result,
+		"total": len(result),
+	})
 }
 
 func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {

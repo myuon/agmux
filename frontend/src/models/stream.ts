@@ -51,7 +51,7 @@ export interface AskUserQuestionItem {
 export type StreamDisplayItem =
   | { kind: "text"; text: string }
   | { kind: "image"; mediaType: string; data: string }
-  | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; children?: StreamDisplayItem[]; running?: boolean }
+  | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; running?: boolean }
   | { kind: "thinking"; text: string }
   | { kind: "system_event"; eventType: string; label: string; detail?: string }
   | { kind: "rate_limit"; rateLimitType: string; status: string; resetsAt: number; utilization?: number; isUsingOverage?: boolean; overageStatus?: string }
@@ -71,6 +71,9 @@ export interface ActiveTask {
   taskId: string;
   taskType: string; // "local_agent" | "local_bash"
   agentId?: string;
+  // tool_use id of the Agent/Task call that spawned this task (from task_started).
+  // Used to open the subagent thread (lines with parent_tool_use_id = toolUseId).
+  toolUseId?: string;
   description?: string;
   startedAt?: string;
   lastToolName?: string;
@@ -116,6 +119,7 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
       if (taskId) {
         const task: ActiveTask = { taskId, taskType: taskType || "unknown", toolCallHistory: [] };
         if (raw.agent_id) task.agentId = raw.agent_id as string;
+        if (toolUseId) task.toolUseId = toolUseId;
         if (raw.description) task.description = raw.description as string;
         if (raw.timestamp) task.startedAt = raw.timestamp as string;
         // Resolve tool input from the corresponding tool_use block
@@ -286,7 +290,36 @@ function parseBashExecText(text: string): StreamDisplayItem | null {
   };
 }
 
-export function mergeStreamEntries(entries: StreamEntry[], partialText?: string, provider?: string): DisplayGroup[] {
+// Tool names that spawn a subagent (Claude CLI renamed "Task" to "Agent").
+export function isAgentToolName(name?: string): name is string {
+  return name === "Agent" || name === "Task";
+}
+
+// Client-side equivalent of the backend FilterSubagentLines
+// (internal/session/subagent_stream.go): returns lines belonging to the
+// subagent thread spawned by parentToolUseId, including nested subagents.
+export function filterSubagentLines(lines: unknown[], parentToolUseId: string): unknown[] {
+  const ids = new Set<string>([parentToolUseId]);
+  const result: unknown[] = [];
+  for (const line of lines) {
+    const entry = line as StreamEntry;
+    if (!entry || !entry.parent_tool_use_id || !ids.has(entry.parent_tool_use_id)) continue;
+    result.push(line);
+    if (entry.type !== "assistant") continue;
+    for (const b of parseStreamContentBlocks(entry)) {
+      if (b.type === "tool_use" && b.id && isAgentToolName(b.name)) ids.add(b.id);
+    }
+  }
+  return result;
+}
+
+// rootParentToolUseId selects which thread is rendered at the top level:
+// - null (default): the main agent thread. Every entry with a non-null
+//   parent_tool_use_id belongs to some subagent and is excluded, regardless of
+//   whether the parent Agent tool_use is part of `entries`.
+// - "<tool_use_id>": the subagent thread spawned by that Agent tool_use.
+//   Entries of nested subagents are excluded the same way.
+export function mergeStreamEntries(entries: StreamEntry[], partialText?: string, provider?: string, rootParentToolUseId: string | null = null): DisplayGroup[] {
   // First pass: collect all tool_results keyed by tool_use_id, and track Skill tool IDs
   const resultMap = new Map<string, string>();
   const resultImageMap = new Map<string, Array<{ mediaType: string; data: string }>>();
@@ -294,15 +327,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
   const toolSearchToolIds = new Set<string>();
   const askUserToolIds = new Set<string>();
   const agentToolIds = new Set<string>();
-  // Collect child entries grouped by parent_tool_use_id
-  const childEntriesMap = new Map<string, StreamEntry[]>();
   for (const entry of entries) {
-    // Track entries with parent_tool_use_id
-    if (entry.parent_tool_use_id) {
-      const children = childEntriesMap.get(entry.parent_tool_use_id) || [];
-      children.push(entry);
-      childEntriesMap.set(entry.parent_tool_use_id, children);
-    }
     if (entry.type === "assistant") {
       for (const block of parseStreamContentBlocks(entry)) {
         if (block.type === "tool_use" && block.name === "Skill" && block.id) {
@@ -314,7 +339,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
         if (block.type === "tool_use" && block.name === "AskUserQuestion" && block.id) {
           askUserToolIds.add(block.id);
         }
-        if (block.type === "tool_use" && block.name === "Agent" && block.id) {
+        if (block.type === "tool_use" && isAgentToolName(block.name) && block.id) {
           agentToolIds.add(block.id);
         }
       }
@@ -357,48 +382,16 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
     return id && !resultMap.has(id) && !askUserToolIds.has(id) ? true : undefined;
   }
 
-  // Helper: build child tool_call items from child entries of an Agent
-  function buildChildItems(parentToolUseId: string): StreamDisplayItem[] {
-    const childEntries = childEntriesMap.get(parentToolUseId) || [];
-    const items: StreamDisplayItem[] = [];
-    for (const entry of childEntries) {
-      if (entry.type !== "assistant") continue;
-      for (const b of parseStreamContentBlocks(entry)) {
-        if (b.type === "tool_use" && b.name) {
-          const result = b.id ? resultMap.get(b.id) : undefined;
-          const resultImages = b.id ? resultImageMap.get(b.id) : undefined;
-          // Recursively build children if this is also an Agent
-          const children = (b.name === "Agent" && b.id && childEntriesMap.has(b.id))
-            ? buildChildItems(b.id)
-            : undefined;
-          items.push({
-            kind: "tool_call",
-            name: b.name,
-            input: b.input,
-            result,
-            resultImages,
-            toolUseId: b.id,
-            children: children && children.length > 0 ? children : undefined,
-            running: isRunning(b.id),
-          });
-        } else if (b.type === "thinking" && b.thinking) {
-          items.push({ kind: "thinking", text: b.thinking });
-        } else if (b.type === "text" && b.text) {
-          items.push({ kind: "text", text: b.text });
-        }
-      }
-    }
-    return items;
-  }
-
   // Second pass: build display groups
   const groups: DisplayGroup[] = [];
   const skillSkipIndices = new Set<number>();
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx];
 
-    // Skip entries that belong to a parent Agent that is present in the current data
-    if (entry.parent_tool_use_id && agentToolIds.has(entry.parent_tool_use_id)) {
+    // Only entries of the selected thread are shown at the top level. Subagent
+    // internals (prompt, assistant turns, tool_results) carry the Agent
+    // tool_use id as parent_tool_use_id and are viewed via SubagentThreadView.
+    if ((entry.parent_tool_use_id ?? null) !== rootParentToolUseId) {
       continue;
     }
 
@@ -555,7 +548,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               toolUseId: b.id,
               running: isRunning(b.id),
             });
-          } else if (b.name === "Agent" && b.id && agentToolIds.has(b.id)) {
+          } else if (isAgentToolName(b.name) && b.id && agentToolIds.has(b.id)) {
             // Skip the subagent prompt user text after Agent tool call
             // System entries (task_started, task_progress) may appear between the tool call and the user prompt
             for (let j = idx + 1; j < entries.length && j <= idx + 8; j++) {
@@ -571,8 +564,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
                 break;
               }
             }
-            // Build child items from entries with parent_tool_use_id matching this Agent
-            const children = buildChildItems(b.id);
+            // Subagent internals are not inlined; they are shown in SubagentThreadView.
             items.push({
               kind: "tool_call",
               name: b.name,
@@ -580,7 +572,6 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               result,
               resultImages,
               toolUseId: b.id,
-              children: children.length > 0 ? children : undefined,
               running: isRunning(b.id),
             });
           } else {

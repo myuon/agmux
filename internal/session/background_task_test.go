@@ -116,6 +116,15 @@ func TestBackgroundTaskStore_TaskStartedResolvesToolUseInput(t *testing.T) {
 	require.Len(t, tasks, 1)
 	assert.Equal(t, "Agent", tasks[0].LastToolName)
 	require.NotNil(t, tasks[0].LastToolInput)
+	assert.Equal(t, "tu1", tasks[0].ToolUseID)
+
+	// A later task_progress without tool_use_id must keep the stored id
+	progress := `{"type":"system","subtype":"task_progress","task_id":"t","last_tool_name":"Bash"}`
+	require.NoError(t, store.ApplyLine("s", []byte(progress)))
+	tasks, err = store.List("s")
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "tu1", tasks[0].ToolUseID)
 }
 
 func TestBackgroundTaskStore_TaskStopRemovesTask(t *testing.T) {

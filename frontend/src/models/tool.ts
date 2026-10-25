@@ -15,7 +15,8 @@ export function toolIcon(name: string) {
     case "Skill": return Sparkles;
     case "WebFetch":
     case "WebSearch": return Globe;
-    case "Agent": return Bot;
+    case "Agent":
+    case "Task": return Bot;
     case "mcp__agmux__escalate": return AlertTriangle;
     default: return Wrench;
   }
@@ -45,7 +46,7 @@ export function toolDescription(name: string, input: unknown): string | null {
   if (name === "WebSearch" && inp && "query" in inp) {
     return String(inp.query);
   }
-  if (name === "Agent" && inp && "description" in inp) {
+  if ((name === "Agent" || name === "Task") && inp && "description" in inp) {
     return String(inp.description);
   }
   if (name === "AskUserQuestion" && inp && "questions" in inp && Array.isArray(inp.questions)) {

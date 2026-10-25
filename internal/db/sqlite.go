@@ -381,6 +381,14 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add tool_use_id column to background_tasks.
+	// Links an agent task to the Agent/Task tool_use that spawned it so the
+	// UI can show the subagent thread (lines with parent_tool_use_id = id).
+	_, err = db.Exec(`ALTER TABLE background_tasks ADD COLUMN tool_use_id TEXT`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: add automation_id column to sessions (marks sessions created by an automation)
 	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN automation_id TEXT`)
 	if err != nil && !isAlterTableDuplicate(err) {
