@@ -349,3 +349,74 @@ func TestBackgroundTaskStore_NullToolUseInputIsIgnored(t *testing.T) {
 	assert.Empty(t, tasks[0].LastToolName, "null input must not resolve to a lastToolName")
 	assert.Nil(t, tasks[0].LastToolInput)
 }
+
+func TestBackgroundTaskStore_SubagentOwnedTaskExcludedFromList(t *testing.T) {
+	store := newTestBgStore(t)
+
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_started","task_id":"main","task_type":"local_bash","description":"main bash"}`)))
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_started","task_id":"agent","task_type":"local_agent","description":"agent"}`)))
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_started","task_id":"sub","owned_by_subagent":true,"tool_use_id":"toolu_sub","task_type":"local_bash","description":"npm run lint"}`)))
+	// task_progress for the subagent task lacks the flag; it must be kept.
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_progress","task_id":"sub","last_tool_name":"Bash","description":"step"}`)))
+
+	tasks, err := store.List("s")
+	require.NoError(t, err)
+	require.Len(t, tasks, 2)
+	ids := []string{tasks[0].TaskID, tasks[1].TaskID}
+	assert.ElementsMatch(t, []string{"main", "agent"}, ids)
+
+	owned, err := store.SubagentOwnedTaskIDs("s")
+	require.NoError(t, err)
+	assert.Equal(t, map[string]struct{}{"sub": {}}, owned)
+
+	// After completion (logical delete) the task must still be recognised as
+	// subagent-owned so the task_notification line can be annotated.
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_notification","task_id":"sub","tool_use_id":"toolu_sub","status":"completed"}`)))
+	owned, err = store.SubagentOwnedTaskIDs("s")
+	require.NoError(t, err)
+	assert.Contains(t, owned, "sub")
+}
+
+func TestBackgroundTaskStore_RebuildFromJSONLKeepsSubagentFlag(t *testing.T) {
+	store := newTestBgStore(t)
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+	streamsDir, err := db.StreamsDir()
+	require.NoError(t, err)
+	contents := `{"type":"system","subtype":"task_started","task_id":"sub","owned_by_subagent":true,"task_type":"local_bash"}` + "\n" +
+		`{"type":"system","subtype":"task_notification","task_id":"sub","status":"completed"}` + "\n" +
+		`{"type":"system","subtype":"task_started","task_id":"sub2","owned_by_subagent":true,"task_type":"local_bash"}` + "\n"
+	require.NoError(t, os.WriteFile(filepath.Join(streamsDir, "sess.jsonl"), []byte(contents), 0o644))
+
+	require.NoError(t, store.RebuildFromJSONL("sess", 0))
+	tasks, err := store.List("sess")
+	require.NoError(t, err)
+	assert.Len(t, tasks, 0)
+	owned, err := store.SubagentOwnedTaskIDs("sess")
+	require.NoError(t, err)
+	assert.Equal(t, map[string]struct{}{"sub": {}, "sub2": {}}, owned)
+}
+
+func TestAnnotateSubagentOwnedTaskLines(t *testing.T) {
+	owned := map[string]struct{}{"sub": {}}
+	lines := []string{
+		`{"type":"system","subtype":"task_notification","task_id":"sub","status":"completed"}`,
+		`{"type":"system","subtype":"task_notification","task_id":"main","status":"completed"}`,
+		`{"type":"system","subtype":"task_started","task_id":"sub","owned_by_subagent":true}`,
+		`{"type":"assistant","task_id":"sub"}`,
+		`not json`,
+	}
+	orig := append([]string(nil), lines...)
+	out := AnnotateSubagentOwnedTaskLines(lines, owned)
+
+	require.Len(t, out, len(lines))
+	assert.Equal(t, `{"owned_by_subagent":true,"type":"system","subtype":"task_notification","task_id":"sub","status":"completed"}`, out[0])
+	assert.Equal(t, lines[1], out[1])
+	assert.Equal(t, lines[2], out[2], "already-flagged line must not be duplicated")
+	assert.Equal(t, lines[3], out[3])
+	assert.Equal(t, lines[4], out[4])
+	assert.Equal(t, orig, lines, "input slice must not be modified")
+
+	// Empty set: returns input as-is.
+	assert.Equal(t, lines, AnnotateSubagentOwnedTaskLines(lines, nil))
+}

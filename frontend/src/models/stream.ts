@@ -88,7 +88,18 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
   // Also collect task_ids stopped via TaskStop
   const toolUseInputs = new Map<string, { name: string; input: unknown }>();
   const stoppedTaskIds = new Set<string>();
+  // Tasks started by a subagent (e.g. a Bash it ran) are not the main agent's
+  // tasks and must not be listed. CLI flags only task_started; the server
+  // annotates later task_* lines of such tasks too.
+  const subagentOwnedTaskIds = new Set<string>();
   for (const entry of entries) {
+    if (entry.type === "system") {
+      const raw = entry as unknown as Record<string, unknown>;
+      if (raw.owned_by_subagent === true && typeof raw.task_id === "string") {
+        subagentOwnedTaskIds.add(raw.task_id);
+      }
+      continue;
+    }
     if (entry.type !== "assistant") continue;
     const content = entry.message?.content;
     if (!Array.isArray(content)) continue;
@@ -111,6 +122,7 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
   for (const entry of entries) {
     const raw = entry as unknown as Record<string, unknown>;
     if (entry.type !== "system") continue;
+    if (typeof raw.task_id === "string" && subagentOwnedTaskIds.has(raw.task_id)) continue;
     const subtype = raw.subtype as string | undefined;
     if (subtype === "task_started") {
       const taskId = raw.task_id as string;
@@ -397,6 +409,19 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
 
     // Handle system events
     if (entry.type === "system") {
+      // task_* events of tasks owned by a subagent belong to that subagent,
+      // not to the main timeline. The server annotates them with
+      // owned_by_subagent (CLI only flags task_started).
+      if (rootParentToolUseId === null) {
+        const rawSys = entry as unknown as Record<string, unknown>;
+        if (
+          rawSys.owned_by_subagent === true &&
+          typeof rawSys.subtype === "string" &&
+          rawSys.subtype.startsWith("task_")
+        ) {
+          continue;
+        }
+      }
       const sysItem = parseSystemEvent(entry);
       if (sysItem) {
         groups.push({ role: "system", items: [sysItem] });

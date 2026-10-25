@@ -73,6 +73,9 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 
 	// Wire real-time stream updates via WebSocket
 	sessions.SetOnNewLines(func(sessionID string, newLines []string, total int) {
+		// ApplyLine has already run for these lines, so subagent-owned tasks
+		// started in this batch are known.
+		newLines = sessions.AnnotateSubagentOwnedTaskLines(sessionID, newLines)
 		// Convert lines to json.RawMessage for proper JSON encoding
 		rawLines := make([]json.RawMessage, len(newLines))
 		for i, line := range newLines {
@@ -1165,6 +1168,7 @@ func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+		lines = s.sessions.AnnotateSubagentOwnedTaskLines(id, lines)
 		var result []json.RawMessage
 		for _, line := range lines {
 			result = append(result, json.RawMessage(line))
@@ -1192,6 +1196,7 @@ func (s *Server) getSessionStream(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	lines = s.sessions.AnnotateSubagentOwnedTaskLines(id, lines)
 
 	var result []json.RawMessage
 	for _, line := range lines {

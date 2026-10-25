@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,17 +17,21 @@ import (
 // BackgroundTask mirrors the frontend ActiveTask shape and represents
 // a long-running agent / tool task detected from the JSONL stream.
 type BackgroundTask struct {
-	TaskID            string                  `json:"taskId"`
-	TaskType          string                  `json:"taskType"`
-	AgentID           string                  `json:"agentId,omitempty"`
-	ToolUseID         string                  `json:"toolUseId,omitempty"`
-	Description       string                  `json:"description,omitempty"`
-	StartedAt         string                  `json:"startedAt,omitempty"`
-	LastToolName      string                  `json:"lastToolName,omitempty"`
-	LastToolInput     interface{}             `json:"lastToolInput,omitempty"`
-	Output            string                  `json:"output,omitempty"`
-	Usage             *BackgroundTaskUsage    `json:"usage,omitempty"`
-	ToolCallHistory   []BackgroundTaskToolCall `json:"toolCallHistory"`
+	TaskID          string                   `json:"taskId"`
+	TaskType        string                   `json:"taskType"`
+	AgentID         string                   `json:"agentId,omitempty"`
+	ToolUseID       string                   `json:"toolUseId,omitempty"`
+	Description     string                   `json:"description,omitempty"`
+	StartedAt       string                   `json:"startedAt,omitempty"`
+	LastToolName    string                   `json:"lastToolName,omitempty"`
+	LastToolInput   interface{}              `json:"lastToolInput,omitempty"`
+	Output          string                   `json:"output,omitempty"`
+	Usage           *BackgroundTaskUsage     `json:"usage,omitempty"`
+	ToolCallHistory []BackgroundTaskToolCall `json:"toolCallHistory"`
+	// OwnedBySubagent is true when the task was started by a subagent rather
+	// than the main agent (task_started.owned_by_subagent). Such tasks are
+	// excluded from List.
+	OwnedBySubagent bool `json:"ownedBySubagent,omitempty"`
 }
 
 // BackgroundTaskUsage tracks token usage reported in task_progress events.
@@ -77,21 +82,22 @@ func NewBackgroundTaskStore(db *sql.DB) *BackgroundTaskStore {
 
 // rawStreamLine is the minimal shape we need from each JSONL line.
 type rawStreamLine struct {
-	Type     string                 `json:"type"`
-	Subtype  string                 `json:"subtype"`
-	TaskID   string                 `json:"task_id"`
-	TaskType string                 `json:"task_type"`
-	AgentID  string                 `json:"agent_id"`
-	ToolUse  string                 `json:"tool_use_id"`
-	Desc     string                 `json:"description"`
-	Status   string                 `json:"status"`
-	Time     string                 `json:"timestamp"`
-	LastTool string                 `json:"last_tool_name"`
-	LastIn   json.RawMessage        `json:"last_tool_input"`
-	Output   string                 `json:"output"`
-	Usage    map[string]json.Number `json:"usage"`
-	Patch    json.RawMessage        `json:"patch"`
-	Message  *struct {
+	Type            string                 `json:"type"`
+	Subtype         string                 `json:"subtype"`
+	TaskID          string                 `json:"task_id"`
+	TaskType        string                 `json:"task_type"`
+	OwnedBySubagent bool                   `json:"owned_by_subagent"`
+	AgentID         string                 `json:"agent_id"`
+	ToolUse         string                 `json:"tool_use_id"`
+	Desc            string                 `json:"description"`
+	Status          string                 `json:"status"`
+	Time            string                 `json:"timestamp"`
+	LastTool        string                 `json:"last_tool_name"`
+	LastIn          json.RawMessage        `json:"last_tool_input"`
+	Output          string                 `json:"output"`
+	Usage           map[string]json.Number `json:"usage"`
+	Patch           json.RawMessage        `json:"patch"`
+	Message         *struct {
 		Role    string          `json:"role"`
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
@@ -174,6 +180,7 @@ func (s *BackgroundTaskStore) ApplyLine(sessionID string, line []byte) error {
 			Description:     ev.Desc,
 			StartedAt:       ev.Time,
 			ToolCallHistory: []BackgroundTaskToolCall{},
+			OwnedBySubagent: ev.OwnedBySubagent,
 		}
 		if ev.ToolUse != "" {
 			if name, input, ok := s.lookupToolUse(sessionID, ev.ToolUse); ok {
@@ -201,7 +208,11 @@ func (s *BackgroundTaskStore) ApplyLine(sessionID string, line []byte) error {
 				TaskType:        taskType,
 				AgentID:         ev.AgentID,
 				ToolCallHistory: []BackgroundTaskToolCall{},
+				OwnedBySubagent: ev.OwnedBySubagent,
 			}
+		}
+		if ev.OwnedBySubagent {
+			existing.OwnedBySubagent = true
 		}
 		if ev.Desc != "" {
 			existing.Description = ev.Desc
@@ -312,6 +323,7 @@ func (s *BackgroundTaskStore) List(sessionID string) ([]BackgroundTask, error) {
 		        tool_call_history, tool_use_id
 		 FROM background_tasks
 		 WHERE session_id = ? AND dismissed_at IS NULL
+		   AND COALESCE(owned_by_subagent, 0) = 0
 		 ORDER BY started_at ASC, task_id ASC`,
 		sessionID,
 	)
@@ -511,7 +523,7 @@ func (s *BackgroundTaskStore) getTask(sessionID, taskID string) (*BackgroundTask
 		`SELECT task_id, task_type, agent_id, description, started_at,
 		        last_tool_name, last_tool_input, output,
 		        usage_input_tokens, usage_output_tokens,
-		        tool_call_history, tool_use_id
+		        tool_call_history, tool_use_id, COALESCE(owned_by_subagent, 0)
 		 FROM background_tasks
 		 WHERE session_id = ? AND task_id = ? AND dismissed_at IS NULL`,
 		sessionID, taskID,
@@ -525,7 +537,7 @@ func (s *BackgroundTaskStore) getTask(sessionID, taskID string) (*BackgroundTask
 		&t.TaskID, &t.TaskType, &agentID, &desc, &startedAt,
 		&lastToolName, &lastToolInput, &output,
 		&inTok, &outTok,
-		&history, &toolUseID,
+		&history, &toolUseID, &t.OwnedBySubagent,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -609,8 +621,8 @@ func (s *BackgroundTaskStore) upsertTask(sessionID string, t BackgroundTask) err
 			session_id, task_id, task_type, agent_id, description, started_at,
 			last_tool_name, last_tool_input, output,
 			usage_input_tokens, usage_output_tokens, tool_call_history,
-			tool_use_id, updated_at
-		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			tool_use_id, owned_by_subagent, updated_at
+		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		 ON CONFLICT(session_id, task_id) DO UPDATE SET
 			task_type = excluded.task_type,
 			agent_id = excluded.agent_id,
@@ -623,13 +635,14 @@ func (s *BackgroundTaskStore) upsertTask(sessionID string, t BackgroundTask) err
 			usage_output_tokens = excluded.usage_output_tokens,
 			tool_call_history = excluded.tool_call_history,
 			tool_use_id = COALESCE(NULLIF(excluded.tool_use_id, ''), background_tasks.tool_use_id),
+			owned_by_subagent = MAX(excluded.owned_by_subagent, COALESCE(background_tasks.owned_by_subagent, 0)),
 			updated_at = CURRENT_TIMESTAMP
 		 WHERE background_tasks.dismissed_at IS NULL`,
 		sessionID, t.TaskID, t.TaskType,
 		nullableString(t.AgentID), nullableString(t.Description), nullableString(t.StartedAt),
 		nullableString(t.LastToolName), lastInputJSON, nullableString(t.Output),
 		inTok, outTok, string(historyJSON),
-		nullableString(t.ToolUseID),
+		nullableString(t.ToolUseID), boolToInt(t.OwnedBySubagent),
 	)
 	if err != nil {
 		return fmt.Errorf("upsert background task: %w", err)
@@ -642,6 +655,87 @@ func (s *BackgroundTaskStore) deleteTask(sessionID, taskID string) error {
 	// delayed task_progress arriving after task_notification cannot resurrect
 	// the task via upsertTask's INSERT path (which guards on dismissed_at IS NULL).
 	return s.Dismiss(sessionID, taskID)
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// SubagentOwnedTaskIDs returns the set of task_ids in the session that were
+// started by a subagent. Dismissed / completed rows are included so that
+// task_notification lines arriving after the task finished can still be
+// recognised.
+func (s *BackgroundTaskStore) SubagentOwnedTaskIDs(sessionID string) (map[string]struct{}, error) {
+	rows, err := s.db.Query(
+		`SELECT task_id FROM background_tasks
+		 WHERE session_id = ? AND COALESCE(owned_by_subagent, 0) = 1`,
+		sessionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query subagent-owned tasks: %w", err)
+	}
+	defer rows.Close()
+	set := make(map[string]struct{})
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		set[id] = struct{}{}
+	}
+	return set, rows.Err()
+}
+
+// AnnotateSubagentOwnedTaskLines injects `"owned_by_subagent":true` into
+// system task_* lines whose task_id is in `owned`. CLI emits the flag only on
+// task_started; task_progress / task_notification / task_updated lack it, so
+// the frontend cannot otherwise tell them apart from main-agent tasks. The
+// input slice is not modified; a new slice is returned only when needed.
+func AnnotateSubagentOwnedTaskLines(lines []string, owned map[string]struct{}) []string {
+	if len(owned) == 0 {
+		return lines
+	}
+	var out []string
+	for i, line := range lines {
+		annotated, changed := annotateTaskLine(line, owned)
+		if !changed {
+			continue
+		}
+		if out == nil {
+			out = make([]string, len(lines))
+			copy(out, lines)
+		}
+		out[i] = annotated
+	}
+	if out == nil {
+		return lines
+	}
+	return out
+}
+
+func annotateTaskLine(line string, owned map[string]struct{}) (string, bool) {
+	if len(line) < 2 || line[0] != '{' || !strings.Contains(line, `"task_id"`) {
+		return line, false
+	}
+	var ev struct {
+		Type            string `json:"type"`
+		Subtype         string `json:"subtype"`
+		TaskID          string `json:"task_id"`
+		OwnedBySubagent bool   `json:"owned_by_subagent"`
+	}
+	if err := json.Unmarshal([]byte(line), &ev); err != nil {
+		return line, false
+	}
+	if ev.Type != "system" || !strings.HasPrefix(ev.Subtype, "task_") || ev.TaskID == "" || ev.OwnedBySubagent {
+		return line, false
+	}
+	if _, ok := owned[ev.TaskID]; !ok {
+		return line, false
+	}
+	return `{"owned_by_subagent":true,` + line[1:], true
 }
 
 func nullableString(s string) sql.NullString {

@@ -92,6 +92,32 @@ func (m *Manager) BackgroundTasks() *BackgroundTaskStore {
 	return m.backgroundTasks
 }
 
+// AnnotateSubagentOwnedTaskLines marks system task_* lines that belong to
+// subagent-owned tasks with `"owned_by_subagent":true` so the frontend can
+// hide them from the main timeline. Performs at most one DB query, and only
+// when some line looks task-related.
+func (m *Manager) AnnotateSubagentOwnedTaskLines(sessionID string, lines []string) []string {
+	if m.backgroundTasks == nil {
+		return lines
+	}
+	hasTask := false
+	for _, l := range lines {
+		if strings.Contains(l, `"task_id"`) {
+			hasTask = true
+			break
+		}
+	}
+	if !hasTask {
+		return lines
+	}
+	owned, err := m.backgroundTasks.SubagentOwnedTaskIDs(sessionID)
+	if err != nil {
+		m.logger.Warn("lookup subagent-owned tasks failed", "sessionId", sessionID, "error", err)
+		return lines
+	}
+	return AnnotateSubagentOwnedTaskLines(lines, owned)
+}
+
 // ListBackgroundTasks returns the persisted background tasks for the session.
 func (m *Manager) ListBackgroundTasks(sessionID string) ([]BackgroundTask, error) {
 	if m.backgroundTasks == nil {
