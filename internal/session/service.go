@@ -50,6 +50,9 @@ type SessionService interface {
 	GetStreamLines(id string, limit int) ([]string, int, error)
 	// GetStreamLinesAfter returns stream lines added after the given index.
 	GetStreamLinesAfter(id string, after int) ([]string, int, error)
+	// GetStreamLinesBefore returns up to limit lines preceding the given index,
+	// the start index of the returned page and the total line count.
+	GetStreamLinesBefore(id string, before, limit int) ([]string, int, int, error)
 
 	// SystemPrompt returns the system prompt used for sessions.
 	SystemPrompt() string

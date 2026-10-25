@@ -93,8 +93,16 @@ export const api = {
       body: JSON.stringify({ command }),
     }),
 
+  // `start` is the index of lines[0] within the full (non-transient) history;
+  // use it as the cursor for getStreamOutputBefore.
   getStreamOutput: (id: string, limit = 200) =>
-    request<{ lines: unknown[]; total: number }>(`/sessions/${id}/stream?limit=${limit}`),
+    request<{ lines: unknown[]; total: number; start?: number }>(`/sessions/${id}/stream?limit=${limit}`),
+
+  // Older history page: lines in [max(0, before - limit), before).
+  getStreamOutputBefore: (id: string, before: number, limit = 300) =>
+    request<{ lines: unknown[]; total: number; start: number }>(
+      `/sessions/${id}/stream?before=${before}&limit=${limit}`
+    ),
 
   // Full (non-truncated) stream lines of the subagent thread spawned by the
   // given Agent/Task tool_use id, including nested subagents.

@@ -1040,6 +1040,18 @@ func (sp *HolderStreamProcess) GetLinesAfter(after int) ([]string, int) {
 	return result, total
 }
 
+// GetLinesBefore returns up to limit lines that precede the given index,
+// along with the start index of the returned page and the current total.
+func (sp *HolderStreamProcess) GetLinesBefore(before, limit int) ([]string, int, int) {
+	sp.mu.RLock()
+	defer sp.mu.RUnlock()
+
+	page, start := PageLinesBefore(sp.lines, before, limit)
+	result := make([]string, len(page))
+	copy(result, page)
+	return result, start, len(sp.lines)
+}
+
 // TotalLines returns the total number of lines.
 func (sp *HolderStreamProcess) TotalLines() int {
 	sp.mu.RLock()
