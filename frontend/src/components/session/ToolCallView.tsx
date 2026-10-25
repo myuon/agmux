@@ -304,7 +304,7 @@ function PermissionPromptCallView({ item, sessionId, pendingPermission, onRespon
 // own elapsed time via tool_progress heartbeats (reportedSeconds), we take the
 // max of the two: the heartbeat only ticks every 30s (coarse), and the local
 // timer resets to 0 on reload, so neither alone is reliably accurate.
-function RunningBadge({ reportedSeconds }: { reportedSeconds?: number }) {
+export function RunningBadge({ reportedSeconds }: { reportedSeconds?: number }) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -367,7 +367,9 @@ export function ToolCallView({ item, onAnswer, sessionId, pendingPermission, onP
           {desc && (
             <span className="text-xs text-gray-500 truncate min-w-0">{desc}</span>
           )}
-          {done ? (
+          {done && item.isError ? (
+            <AlertTriangle className="w-3 h-3 text-red-500 ml-auto shrink-0" />
+          ) : done ? (
             <CheckCircle2 className="w-3 h-3 text-green-500 ml-auto shrink-0" />
           ) : item.running && sessionActive ? (
             <RunningBadge reportedSeconds={item.toolUseId ? toolProgress?.[item.toolUseId] : undefined} />

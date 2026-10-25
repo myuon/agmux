@@ -3,7 +3,9 @@ import { SystemEventRow } from "../ui/SystemEventRow";
 import { RateLimitEventRow } from "../ui/RateLimitEventRow";
 import { ApiRetryEventRow } from "../ui/ApiRetryEventRow";
 import type { StreamDisplayItem } from "../../models/stream";
+import { chunkToolCallRuns } from "../../models/stream";
 import { ToolCallView } from "./ToolCallView";
+import { ToolCallGroupView } from "./ToolCallGroupView";
 import { AlertTriangle, CheckCircle } from "lucide-react";
 
 function SystemEventView({ item }: { item: Extract<StreamDisplayItem, { kind: "system_event" }> }) {
@@ -82,4 +84,29 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermis
     );
   }
   return null;
+}
+
+type StreamDisplayItemViewProps = Omit<Parameters<typeof StreamDisplayItemView>[0], "item">;
+
+// Renders a group's items, collapsing runs of consecutive tool calls into a
+// single expandable summary row (ToolCallGroupView).
+export function StreamDisplayItemsView({ items, ...props }: StreamDisplayItemViewProps & { items: StreamDisplayItem[] }) {
+  return (
+    <>
+      {chunkToolCallRuns(items).map((chunk) =>
+        chunk.kind === "tool_group" ? (
+          <ToolCallGroupView
+            key={chunk.key}
+            items={chunk.items}
+            toolCalls={chunk.toolCalls}
+            sessionActive={props.sessionActive}
+            toolProgress={props.toolProgress}
+            renderItem={(item, i) => <StreamDisplayItemView key={i} item={item} {...props} />}
+          />
+        ) : (
+          <StreamDisplayItemView key={chunk.key} item={chunk.item} {...props} />
+        ),
+      )}
+    </>
+  );
 }

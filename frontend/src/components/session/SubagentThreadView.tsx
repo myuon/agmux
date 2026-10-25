@@ -2,7 +2,7 @@ import { useContext, useEffect, useMemo, useState } from "react";
 import type { StreamEntry } from "../../models/stream";
 import { filterSubagentLines, mergeStreamEntries } from "../../models/stream";
 import { api } from "../../api/client";
-import { StreamDisplayItemView } from "./StreamDisplayItemView";
+import { StreamDisplayItemView, StreamDisplayItemsView } from "./StreamDisplayItemView";
 import { StreamLinesContext } from "./StreamLinesContext";
 
 
@@ -95,9 +95,7 @@ export function SubagentThreadView({ sessionId, parentToolUseId, live, sessionAc
           <div key={i} className={`rounded-lg p-2 ${style.bg}`}>
             <div className={`font-semibold text-[11px] mb-1 ${style.text}`}>{style.label}</div>
             <div className="text-gray-800 break-words text-xs space-y-2">
-              {group.items.map((item, j) => (
-                <StreamDisplayItemView key={j} item={item} sessionId={sessionId} sessionActive={sessionActive} toolProgress={toolProgress} />
-              ))}
+              <StreamDisplayItemsView items={group.items} sessionId={sessionId} sessionActive={sessionActive} toolProgress={toolProgress} />
             </div>
           </div>
         );
