@@ -3,7 +3,6 @@ import { ToastBar } from "../components/ui/Toast";
 import { Modal } from "../components/ui/Modal";
 import { Section, Field } from "../components/ui/Section";
 import { SummaryCard } from "../components/ui/SummaryCard";
-import { CollapsibleText } from "../components/ui/CollapsibleText";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
 import { StatusBadge, StatusDot, statusDots } from "../components/StatusBadge";
 import { ToolCallView } from "../components/session/ToolCallView";
@@ -145,25 +144,6 @@ function StatusBadgePreview() {
         {statuses.map((s) => (
           <StatusDot key={s} status={s} />
         ))}
-      </div>
-    </PreviewSection>
-  );
-}
-
-function CollapsibleTextPreview() {
-  const shortText = "短いテキストは折りたたまれません。\n2行目です。";
-  const longText = Array.from({ length: 30 }, (_, i) => `行 ${i + 1}: これは長いテキストのサンプルです。`).join("\n");
-  return (
-    <PreviewSection title="CollapsibleText">
-      <div className="space-y-4">
-        <div>
-          <p className="text-xs text-gray-500 mb-1">短いテキスト (折りたたみなし)</p>
-          <CollapsibleText text={shortText} />
-        </div>
-        <div>
-          <p className="text-xs text-gray-500 mb-1">長いテキスト (折りたたみあり)</p>
-          <CollapsibleText text={longText} />
-        </div>
       </div>
     </PreviewSection>
   );
@@ -1085,7 +1065,6 @@ const categories = [
       { id: "chip", label: "Chip", el: <ChipPreview /> },
       { id: "statusbadge", label: "StatusBadge / StatusDot", el: <StatusBadgePreview /> },
       { id: "summarycard", label: "SummaryCard", el: <SummaryCardPreview /> },
-      { id: "collapsibletext", label: "CollapsibleText", el: <CollapsibleTextPreview /> },
       { id: "filecodeviwer", label: "FileCodeViewer", el: <FileCodeViewerPreview /> },
       { id: "icontext", label: "IconText", el: <IconTextPreview /> },
       { id: "connectionstatus", label: "ConnectionStatus", el: <ConnectionStatusPreview /> },
