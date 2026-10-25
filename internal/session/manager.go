@@ -51,6 +51,8 @@ type Manager struct {
 	onStatusChange     func(sessionID string, status Status, lastError string)
 	onContextUsage     func(sessionID string, contextTokens, contextWindow int64)
 	backgroundTasks    *BackgroundTaskStore
+	// startHolderFn overrides StartHolderStreamProcess in tests (nil = real spawn).
+	startHolderFn func(opts StreamOpts, provider Provider) (*HolderStreamProcess, error)
 }
 
 const nanoidAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
@@ -772,7 +774,7 @@ func (m *Manager) UpdateStatusWithHolderPIDClear(id string, status Status) error
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, automation_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -789,7 +791,7 @@ func (m *Manager) List() ([]Session, error) {
 		var prompt, systemPrompt, parentSessionID, roleTemplate, automationID, currentTask, goal, goalsJSON, lastError, completionReport sql.NullString
 		var conversationStartedInt int
 		var ephemeralTimeoutSeconds sql.NullInt64
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &automationID, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.ConversationStarted = conversationStartedInt != 0
@@ -849,9 +851,9 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var conversationStartedInt int
 	var ephemeralTimeoutSeconds sql.NullInt64
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, parent_session_id, role_template, automation_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
+		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &parentSessionID, &roleTemplate, &automationID, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -1213,6 +1215,14 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProces
 		if err := m.MarkConversationStarted(sid); err != nil {
 			m.logger.Error("failed to mark conversation started", "sessionId", sid, "error", err)
 		}
+		// Apply a model switch reserved during this turn (#715). This runs in
+		// a separate goroutine because it restarts the holder, which stops
+		// this very read loop. If the user sends the next message before it
+		// gets spawnMu, SendKeysWithImages applies the reservation first.
+		var pending string
+		if err := m.db.QueryRow("SELECT pending_model FROM sessions WHERE id = ?", sid).Scan(&pending); err == nil && pending != "" {
+			go m.applyPendingModel(sid)
+		}
 	})
 	sp.SetOnHolderRestart(func(sid string, newPID int) {
 		m.logger.Info("holder restarted (codex resume), updating holder_pid", "sessionId", sid, "newPid", newPID)
@@ -1384,6 +1394,23 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 	m.deletingMu.Unlock()
 	if isDeleting {
 		return fmt.Errorf("session %s is being deleted", id)
+	}
+
+	// Apply a model switch reserved during the previous turn before sending,
+	// in case the message arrives before the turn-complete callback's
+	// applyPendingModel got spawnMu (or the turn completed while the server
+	// was down). Re-read the session under spawnMu since the reservation may
+	// have been applied/changed after the Get above (#715).
+	if fresh, err := m.Get(id); err == nil {
+		s = fresh
+		if s.PendingModel != "" && !isTurnInProgress(s.Status) {
+			if err := m.applyPendingModelLocked(s); err != nil {
+				m.logger.Error("failed to apply pending model before send", "sessionId", id, "error", err)
+			}
+			if fresh, err := m.Get(id); err == nil {
+				s = fresh
+			}
+		}
 	}
 
 	m.streamMu.Lock()
@@ -1767,57 +1794,164 @@ func (m *Manager) UpdateModel(id string, model string) error {
 	return err
 }
 
+// isTurnInProgress reports whether a turn is currently running for a session
+// with the given status. waiting_input is a pause in the middle of a turn
+// (permission prompt / escalation), so restarting the holder then would kill
+// the turn just like during working.
+func isTurnInProgress(status Status) bool {
+	return status == StatusWorking || status == StatusWaitingInput
+}
+
+// SetPendingModel persists a model switch reservation. An empty model clears
+// the reservation.
+func (m *Manager) SetPendingModel(id string, model string) error {
+	_, err := m.db.Exec("UPDATE sessions SET pending_model = ?, updated_at = ? WHERE id = ?", model, time.Now(), id)
+	return err
+}
+
 // SwitchModel updates the session's model and applies it to any running CLI
 // process. For resident providers (claude), the holder is restarted with
 // --resume so the new model takes effect immediately while preserving the
-// conversation history. For one-shot providers (codex/cursor), the in-memory
-// stream options are updated so the next turn re-spawns with the new model.
+// conversation history (or started fresh when no conversation exists yet).
+// For one-shot providers (codex/cursor), the in-memory stream options are
+// updated so the next turn re-spawns with the new model.
+//
+// While a turn is in progress the switch cannot be applied without killing
+// the turn, so it is stored as a reservation (pending_model) instead and
+// applied when the turn completes (applyPendingModel) or, at the latest, right
+// before the next message is sent (SendKeysWithImages). Requesting the current
+// model while a reservation exists cancels it; requesting another model
+// overwrites it (#715).
 func (m *Manager) SwitchModel(id string, model string) error {
+	// spawnMu serializes this with the turn-complete apply path and
+	// SendKeysWithImages so that a switch is applied either before the next
+	// message is sent or not at all — never in the middle of a turn.
+	m.spawnMu.Lock()
+	defer m.spawnMu.Unlock()
+
 	s, err := m.Get(id)
 	if err != nil {
 		return err
 	}
 
-	if s.Status == StatusWorking {
-		return fmt.Errorf("session %s is working; cannot switch model while a turn is in progress", id)
+	if isTurnInProgress(s.Status) {
+		pending := model
+		if model == s.Model {
+			// Selecting the model that is already running cancels the reservation.
+			pending = ""
+		}
+		if err := m.SetPendingModel(id, pending); err != nil {
+			return fmt.Errorf("set pending model: %w", err)
+		}
+		m.logger.Info("model switch reserved until the current turn completes", "sessionId", id, "pendingModel", pending)
+		return nil
 	}
 
+	if s.PendingModel != "" {
+		if err := m.SetPendingModel(id, ""); err != nil {
+			return fmt.Errorf("clear pending model: %w", err)
+		}
+		s.PendingModel = ""
+	}
+	return m.applyModelLocked(s, model)
+}
+
+// applyPendingModel applies a reserved model switch once the turn that was in
+// progress has completed. It is a no-op when there is no reservation or when
+// a new turn has already started (the reservation then waits for that turn).
+func (m *Manager) applyPendingModel(id string) {
+	m.spawnMu.Lock()
+	defer m.spawnMu.Unlock()
+
+	m.deletingMu.Lock()
+	_, isDeleting := m.deletingSet[id]
+	m.deletingMu.Unlock()
+	if isDeleting {
+		return
+	}
+
+	s, err := m.Get(id)
+	if err != nil || s.PendingModel == "" || isTurnInProgress(s.Status) {
+		return
+	}
+	if err := m.applyPendingModelLocked(s); err != nil {
+		m.logger.Error("failed to apply pending model", "sessionId", id, "error", err)
+	}
+	// Re-broadcast the (unchanged) status so that clients refetch the session
+	// and see the new model / cleared reservation.
+	_ = m.UpdateStatus(id, s.Status)
+}
+
+// applyPendingModelLocked clears the reservation of s and switches to it.
+// The caller must hold spawnMu and must have checked that no turn is running.
+func (m *Manager) applyPendingModelLocked(s *Session) error {
+	model := s.PendingModel
+	if err := m.SetPendingModel(s.ID, ""); err != nil {
+		return fmt.Errorf("clear pending model: %w", err)
+	}
+	s.PendingModel = ""
+	m.logger.Info("applying reserved model switch", "sessionId", s.ID, "model", model)
+	return m.applyModelLocked(s, model)
+}
+
+// applyModelLocked persists the new model and applies it to the session's
+// running CLI process, if any. The caller must hold spawnMu.
+func (m *Manager) applyModelLocked(s *Session, model string) error {
+	id := s.ID
 	if err := m.UpdateModel(id, model); err != nil {
 		return fmt.Errorf("update model: %w", err)
 	}
+	s.Model = model
 
-	// If no conversation has started yet, the next spawn reads the model
-	// from the DB, so updating the DB is sufficient.
-	if !s.ConversationStarted {
-		return nil
-	}
+	m.streamMu.Lock()
+	sp, hasProcess := m.streamProcesses[id]
+	m.streamMu.Unlock()
 
 	if m.getProvider(s.Provider).IsOneShot() {
 		// One-shot providers re-spawn the CLI on every turn. Spawning a
 		// prompt-less resume process here would exit immediately (#643), so
 		// only update the in-memory stream options that restartForCodex
-		// reuses for the next turn.
-		m.streamMu.Lock()
-		sp, ok := m.streamProcesses[id]
-		m.streamMu.Unlock()
-		if ok {
+		// reuses for the next turn. Without a stream process the next spawn
+		// reads the model from the DB.
+		if hasProcess {
 			sp.SetModel(model)
 		}
 		return nil
 	}
 
-	// Resident provider (claude): restart the holder with --resume and the
-	// new model only if one is active. Without an active holder, the next
-	// spawn (reconnect / auto-recovery) picks up the new model from the DB.
-	m.streamMu.Lock()
-	_, hasProcess := m.streamProcesses[id]
-	m.streamMu.Unlock()
+	// Resident provider (claude): restart the holder with the new model only
+	// if one is active. Without an active holder, the next spawn (reconnect /
+	// auto-recovery) picks up the new model from the DB.
 	if !hasProcess && !IsHolderAlive(s.HolderPID) {
 		return nil
 	}
 
+	if !s.ConversationStarted {
+		// The holder was already spawned (Create / Duplicate) with the old
+		// model but no turn has completed, so there is no conversation to
+		// resume. Start a fresh CLI with the new model; otherwise the old
+		// process keeps running and its init event even overwrites the DB
+		// model back to the old one (#714).
+		m.logger.Info("switching model via fresh holder start (conversation not started)", "sessionId", id, "model", model)
+		var base *StreamOpts
+		if hasProcess {
+			sp.mu.RLock()
+			o := sp.streamOpts
+			sp.mu.RUnlock()
+			base = &o
+		}
+		return m.respawnHolderLocked(s, false, "", base)
+	}
+
+	cliSessionID := s.CliSessionID
+	if cliSessionID == "" {
+		cliSessionID = ReadCLISessionID(id, m.getProvider(s.Provider), s.ClearOffset)
+	}
+	if cliSessionID == "" {
+		return fmt.Errorf("session %s has no CLI session ID; cannot resume conversation", id)
+	}
 	m.logger.Info("switching model via holder restart", "sessionId", id, "model", model)
-	return m.Restart(id)
+	return m.respawnHolderLocked(s, true, cliSessionID, nil)
 }
 
 func (m *Manager) UpdateContext(id string, currentTask, goal string) error {
@@ -2045,8 +2179,6 @@ func (m *Manager) Restart(id string) error {
 		return fmt.Errorf("session %s has no CLI session ID; cannot resume conversation", id)
 	}
 
-	provider := m.getProvider(s.Provider)
-
 	// Hold spawnMu across the kill -> spawn -> DB update sequence so that the
 	// SendKeysWithImages auto-recovery path (which also takes spawnMu before
 	// spawning) cannot spawn a second holder for the same session while we are
@@ -2057,6 +2189,32 @@ func (m *Manager) Restart(id string) error {
 	// via helpers (stopStreamProcess etc.), matching SendKeysWithImages.
 	m.spawnMu.Lock()
 	defer m.spawnMu.Unlock()
+
+	// Reset status to idle before spawning new holder
+	if _, err := m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, updated_at = ? WHERE id = ?", string(StatusIdle), time.Now(), id); err != nil {
+		return fmt.Errorf("reset session status: %w", err)
+	}
+
+	if err := m.respawnHolderLocked(s, true, cliSessionID, nil); err != nil {
+		return err
+	}
+
+	_, err = m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
+	return err
+}
+
+// respawnHolderLocked stops the session's current holder/CLI and spawns a new
+// one with the session's current settings (model etc.). When resume is true
+// the CLI resumes cliSessionID; otherwise a fresh CLI session is started and
+// the stored cli_session_id is reset so the UUID of the discarded process is
+// never reused (#704). base, when non-nil, is the in-memory StreamOpts of the
+// process being replaced and carries over options that are not persisted in
+// the DB (e.g. Worktree, FullAuto).
+//
+// The session status is left untouched. The caller must hold spawnMu (#681).
+func (m *Manager) respawnHolderLocked(s *Session, resume bool, cliSessionID string, base *StreamOpts) error {
+	id := s.ID
+	provider := m.getProvider(s.Provider)
 
 	// Stop existing stream process
 	m.stopStreamProcess(id)
@@ -2070,22 +2228,29 @@ func (m *Manager) Restart(id string) error {
 	// Kill any stale holder process
 	m.killStaleHolder(id)
 
-	// Reset status to idle before spawning new holder
-	if _, err := m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, updated_at = ? WHERE id = ?", string(StatusIdle), time.Now(), id); err != nil {
-		return fmt.Errorf("reset session status: %w", err)
+	if !resume {
+		cliSessionID = ""
+		if err := m.UpdateCliSessionID(id, ""); err != nil {
+			return fmt.Errorf("reset cli session id: %w", err)
+		}
 	}
 
-	sp, err := StartHolderStreamProcess(StreamOpts{
-		SessionID:     id,
-		ProjectPath:   s.ProjectPath,
-		MCPConfigPath: mcpConfigPath,
-		SystemPrompt:  m.buildEffectiveSystemPrompt(s.SystemPrompt),
-		Resume:        true,
-		CLISessionID:  cliSessionID,
-		Model:         s.Model,
-		APIPort:       m.apiPort,
-		ClearOffset:   s.ClearOffset,
-	}, provider)
+	var opts StreamOpts
+	if base != nil {
+		opts = *base
+	}
+	opts.SessionID = id
+	opts.ProjectPath = s.ProjectPath
+	opts.MCPConfigPath = mcpConfigPath
+	opts.SystemPrompt = m.buildEffectiveSystemPrompt(s.SystemPrompt)
+	opts.Resume = resume
+	opts.CLISessionID = cliSessionID
+	opts.Model = s.Model
+	opts.APIPort = m.apiPort
+	opts.ClearOffset = s.ClearOffset
+	opts.InitialPrompt = ""
+
+	sp, err := m.startHolder(opts, provider)
 	if err != nil {
 		return fmt.Errorf("start stream process: %w", err)
 	}
@@ -2095,9 +2260,16 @@ func (m *Manager) Restart(id string) error {
 	m.streamProcesses[id] = sp
 	m.streamMu.Unlock()
 	m.updateHolderPID(id, sp.HolderPID())
+	return nil
+}
 
-	_, err = m.db.Exec("UPDATE sessions SET status = ?, last_error = NULL, updated_at = ? WHERE id = ?", string(StatusWorking), time.Now(), id)
-	return err
+// startHolder spawns a holder stream process. Tests can override it via
+// startHolderFn to avoid launching real holder/CLI processes.
+func (m *Manager) startHolder(opts StreamOpts, provider Provider) (*HolderStreamProcess, error) {
+	if m.startHolderFn != nil {
+		return m.startHolderFn(opts, provider)
+	}
+	return StartHolderStreamProcess(opts, provider)
 }
 
 // waitForProcessExit polls until the given PID no longer exists or the timeout expires.

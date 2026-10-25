@@ -74,11 +74,12 @@ function ParentSessionLink({ parentId }: { parentId: string }) {
 // with a model list API (claude / codex), the Chip becomes clickable and shows
 // a dropdown to switch the session's model. The dropdown also has a free-text
 // input so any model name can be entered (the candidate list may be outdated).
-// Cursor has no model list API, so its Chip stays non-clickable. Switching is
-// disabled while a turn is in progress (status = working).
+// Cursor has no model list API, so its Chip stays non-clickable. While a turn
+// is in progress the switch is reserved by the backend and applied from the
+// next turn; the reservation is shown next to the Chip (session.pendingModel).
 function ModelSwitcher({ session, onSwitched, onError }: {
   session: Session;
-  onSwitched: (model: string) => void;
+  onSwitched: (result: { model?: string; pendingModel?: string }) => void;
   onError: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -88,9 +89,8 @@ function ModelSwitcher({ session, onSwitched, onError }: {
   const [customModel, setCustomModel] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const switchable =
-    (session.provider === "claude" || session.provider === "codex") &&
-    session.status !== "working";
+  const switchable = session.provider === "claude" || session.provider === "codex";
+  const pendingModel = session.pendingModel || "";
 
   // Close the dropdown on outside click
   useEffect(() => {
@@ -133,11 +133,14 @@ function ModelSwitcher({ session, onSwitched, onError }: {
   const switchTo = async (modelId: string) => {
     setOpen(false);
     setCustomModel("");
-    if (modelId === session.model || switching) return;
+    // Re-selecting the current model is a no-op, except while a reservation
+    // exists: then it cancels the reservation.
+    if (switching || modelId === pendingModel) return;
+    if (modelId === session.model && !pendingModel) return;
     setSwitching(true);
     try {
-      await api.updateSessionModel(session.id, modelId);
-      onSwitched(modelId);
+      const res = await api.updateSessionModel(session.id, modelId);
+      onSwitched({ model: res.model ?? modelId, pendingModel: res.pendingModel ?? "" });
     } catch {
       onError();
     } finally {
@@ -159,6 +162,14 @@ function ModelSwitcher({ session, onSwitched, onError }: {
           <ChevronDown className="w-3 h-3 ml-0.5" />
         </Chip>
       </button>
+      {pendingModel && (
+        <span
+          className="ml-1 text-[10px] sm:text-xs text-purple-600 whitespace-nowrap"
+          title="現在のターンが終わると切り替わります"
+        >
+          → 次のターンから {pendingModel} に切替予定
+        </span>
+      )}
       {open && (
         <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto z-50 min-w-44">
           <div className="px-2 py-2 border-b border-gray-100">
@@ -189,6 +200,8 @@ function ModelSwitcher({ session, onSwitched, onError }: {
                 onClick={() => void switchTo(m.id)}
               >
                 {m.name}
+                {m.id === pendingModel && <span className="ml-1 text-purple-600">(予約中)</span>}
+                {m.id === session.model && pendingModel && <span className="ml-1 text-gray-400">(選ぶと予約取消)</span>}
               </button>
             ))
           ) : (
@@ -305,7 +318,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [restartToast, setRestartToast] = useState<"success" | "error" | null>(null);
   const [disconnectToast, setDisconnectToast] = useState(false);
   const [clearToast, setClearToast] = useState<"success" | "error" | null>(null);
-  const [modelToast, setModelToast] = useState<"success" | "error" | null>(null);
+  const [modelToast, setModelToast] = useState<"success" | "reserved" | "cancelled" | "error" | null>(null);
   const [copiedToast, setCopiedToast] = useState(false);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
@@ -403,6 +416,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         // assistant/result event (e.g. the CLI process died mid-thinking)
         if (data.status !== "working") {
           setThinkingTokens(null);
+          // A model switch reserved during the turn is applied when it ends;
+          // refetch so the model Chip / reservation label stay in sync.
+          api.getSession(sessionId).then(setSession).catch(() => {});
         }
       }
     }
@@ -962,6 +978,8 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       {clearToast === "success" && <Toast message="セッションをクリアしました" />}
       {clearToast === "error" && <Toast message="クリアに失敗しました" variant="error" />}
       {modelToast === "success" && <Toast message="モデルを切り替えました" />}
+      {modelToast === "reserved" && <Toast message="ターン終了後、次のターンからモデルを切り替えます" />}
+      {modelToast === "cancelled" && <Toast message="モデル切替の予約を取り消しました" />}
       {modelToast === "error" && <Toast message="モデルの切替に失敗しました" variant="error" />}
       {copiedToast && <Toast message="セッション名をコピーしました" />}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 shrink-0">
@@ -1019,10 +1037,11 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
             {session.model && (
               <ModelSwitcher
                 session={session}
-                onSwitched={(model) => {
-                  setSession((prev) => (prev ? { ...prev, model } : prev));
+                onSwitched={({ model, pendingModel }) => {
+                  const hadPending = !!session.pendingModel;
+                  setSession((prev) => (prev ? { ...prev, model, pendingModel } : prev));
                   api.getSession(session.id).then(setSession).catch(() => {});
-                  setModelToast("success");
+                  setModelToast(pendingModel ? "reserved" : hadPending && model === session.model ? "cancelled" : "success");
                   setTimeout(() => setModelToast(null), 3000);
                 }}
                 onError={() => {

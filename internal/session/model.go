@@ -43,6 +43,9 @@ type Session struct {
 	Provider        ProviderName `json:"provider"`
 	CliSessionID    string       `json:"cliSessionId,omitempty"`
 	Model           string       `json:"model,omitempty"`
+	// PendingModel is a model switch reserved while a turn was in progress.
+	// It is applied when the current turn completes (see SwitchModel).
+	PendingModel    string       `json:"pendingModel,omitempty"`
 	ParentSessionID string       `json:"parentSessionId,omitempty"`
 	RoleTemplate    string       `json:"roleTemplate,omitempty"`
 	AutomationID    string       `json:"automationId,omitempty"`

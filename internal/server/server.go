@@ -690,7 +690,14 @@ func (s *Server) updateSessionModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordSessionAction(id, "model_switch", req.Model)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	// While a turn is in progress the switch is only reserved (#715); return
+	// the resulting model / pendingModel so the client can tell which happened.
+	resp := map[string]string{"status": "ok"}
+	if sess, err := s.sessions.Get(id); err == nil {
+		resp["model"] = sess.Model
+		resp["pendingModel"] = sess.PendingModel
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 type createGoalRequest struct {
