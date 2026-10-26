@@ -553,20 +553,37 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
     }
 
     // Handle rate_limit_event
+    // The CLI emits one per request; "allowed" means no warning at all, so only
+    // non-allowed statuses (allowed_warning / rejected / unknown) are shown.
+    // Consecutive events of the same window collapse into one row (latest wins).
     if (entry.type === "rate_limit_event") {
       const raw = entry as unknown as Record<string, unknown>;
       const info = raw.rate_limit_info as Record<string, unknown> | undefined;
       if (info) {
+        const status = (info.status as string) || "unknown";
+        if (status === "allowed") continue;
+        const rateLimitType = (info.rateLimitType as string) || "unknown";
+        const windows = info.unifiedWindows as Record<string, Record<string, unknown> | undefined> | undefined;
+        const windowUtil = windows?.[rateLimitType]?.utilization;
+        const utilization = typeof windowUtil === "number"
+          ? windowUtil
+          : typeof info.utilization === "number" ? info.utilization : undefined;
         const item: StreamDisplayItem = {
           kind: "rate_limit",
-          rateLimitType: (info.rateLimitType as string) || "unknown",
-          status: (info.status as string) || "unknown",
+          rateLimitType,
+          status,
           resetsAt: (info.resetsAt as number) || 0,
-          utilization: info.utilization as number | undefined,
+          utilization,
           isUsingOverage: info.isUsingOverage as boolean | undefined,
           overageStatus: info.overageStatus as string | undefined,
         };
-        groups.push({ role: "system", items: [item] });
+        const last = groups[groups.length - 1];
+        const lastItem = last && last.role === "system" && last.items.length === 1 ? last.items[0] : undefined;
+        if (lastItem && lastItem.kind === "rate_limit" && lastItem.rateLimitType === rateLimitType) {
+          groups[groups.length - 1] = { role: "system", items: [item] };
+        } else {
+          groups.push({ role: "system", items: [item] });
+        }
       }
       continue;
     }

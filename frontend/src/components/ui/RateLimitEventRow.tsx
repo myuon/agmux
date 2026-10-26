@@ -51,17 +51,17 @@ export function RateLimitEventRow({ item }: { item: RateLimitItem }) {
       : "text-gray-400";
 
   const statusLabel = isRejected
-    ? "レート制限超過"
+    ? "レート制限中"
     : isWarning
       ? "レート制限警告"
-      : "レート制限";
+      : `レート制限 (${item.status})`;
 
   const utilizationPercent = item.utilization != null
     ? Math.round(item.utilization * 100)
     : null;
 
   return (
-    <div className={`flex items-center gap-2 py-1.5 px-3 text-xs ${textColor} border-y border-dashed ${borderColor} ${bgColor} overflow-hidden`}>
+    <div className={`flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1.5 px-3 text-xs ${textColor} border-y border-dashed ${borderColor} ${bgColor}`}>
       <span className={`shrink-0 ${iconColor}`}>{isRejected ? "\u26D4" : "\u26A0"}</span>
       <span className="font-medium shrink-0">{statusLabel}</span>
       <span className="text-gray-400 shrink-0">({windowLabel})</span>
@@ -82,8 +82,8 @@ export function RateLimitEventRow({ item }: { item: RateLimitItem }) {
           <span>{utilizationPercent}%</span>
         </span>
       )}
-      {item.overageStatus && (
-        <span className="shrink-0 text-gray-400">{item.overageStatus === "allowed" ? "許可" : item.overageStatus === "rejected" ? "拒否" : item.overageStatus}</span>
+      {isRejected && item.overageStatus && (
+        <span className="shrink-0 text-gray-400">超過枠: {item.overageStatus === "allowed" ? "利用可" : item.overageStatus === "rejected" ? "利用不可" : item.overageStatus}</span>
       )}
       {resetLabel && <span className="shrink-0 text-gray-400 ml-auto">{resetLabel}</span>}
     </div>
