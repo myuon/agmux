@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -22,11 +23,29 @@ type RemoteBrowser interface {
 	Status(ctx context.Context) browser.Status
 	Stop(ctx context.Context) (browser.Status, browser.StopResult, error)
 	UserTab(ctx context.Context) (*browser.UserTab, error)
+	AgentTab(ctx context.Context, key string) (browser.AgentTab, error)
+	CloseAgentTab(ctx context.Context, key string) error
+	ServeAgentCDP(ctx context.Context, key string, client *websocket.Conn) error
 	Shutdown(ctx context.Context)
 }
 
 // SetRemoteBrowser wires the remote browser manager (nil leaves it disabled).
-func (s *Server) SetRemoteBrowser(rb RemoteBrowser) { s.remoteBrowser = rb }
+func (s *Server) SetRemoteBrowser(rb RemoteBrowser) {
+	s.remoteBrowser = rb
+	if rb == nil {
+		return
+	}
+	// A session's dedicated tab is closed when the session ends.
+	s.sessions.SetOnSessionEnd(func(sessionID string) {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := rb.CloseAgentTab(ctx, sessionID); err != nil {
+				s.logger.Warn("close agent tab failed", "sessionId", sessionID, "error", err)
+			}
+		}()
+	})
+}
 
 // ShutdownRemoteBrowser gracefully closes Chrome on server shutdown.
 func (s *Server) ShutdownRemoteBrowser(ctx context.Context) {
@@ -99,6 +118,8 @@ func (s *Server) mountRemoteBrowser(r chi.Router) {
 		r.Get("/status", s.remoteBrowserStatus)
 		r.Post("/start", s.remoteBrowserStart)
 		r.Post("/stop", s.remoteBrowserStop)
+		r.Post("/agent-tabs/{sessionID}", s.remoteBrowserAgentTab)
+		r.Get("/agent-cdp/{sessionID}", s.remoteBrowserAgentCDP)
 		r.Get("/ws", s.remoteBrowserWS)
 	})
 }
@@ -146,6 +167,67 @@ func (s *Server) remoteBrowserStop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"status": st, "graceful": res.Graceful})
+}
+
+// remoteBrowserAgentTab allocates (or returns) the tab dedicated to one agmux
+// session, starting Chrome if needed. Called by the MCP tool.
+func (s *Server) remoteBrowserAgentTab(w http.ResponseWriter, r *http.Request) {
+	if !s.remoteBrowserReady(w) {
+		return
+	}
+	id := chi.URLParam(r, "sessionID")
+	if _, err := s.sessions.Get(id); err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	tab, err := s.remoteBrowser.AgentTab(r.Context(), id)
+	if err != nil {
+		code := http.StatusInternalServerError
+		if errors.Is(err, browser.ErrChromeNotFound) {
+			code = http.StatusUnprocessableEntity
+		}
+		s.logger.Warn("remote browser agent tab failed", "sessionId", id, "error", err)
+		writeError(w, code, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"targetId": tab.TargetID,
+		"reused":   tab.Reused,
+		// Per-session CDP endpoint that only exposes this session's tabs.
+		"cdpUrl": fmt.Sprintf("ws://127.0.0.1:%d/api/remote-browser/agent-cdp/%s", s.port, id),
+	})
+}
+
+// remoteBrowserAgentCDP is the filtered DevTools endpoint agent-browser
+// connects to (--cdp). It exposes only the tabs owned by the session.
+func (s *Server) remoteBrowserAgentCDP(w http.ResponseWriter, r *http.Request) {
+	if !s.remoteBrowserReady(w) {
+		return
+	}
+	id := chi.URLParam(r, "sessionID")
+	if _, err := s.sessions.Get(id); err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	up := websocket.Upgrader{
+		// CLI clients send no Origin; a browser page (any Origin that is not
+		// same-site) must not reach the logged-in Chrome through here.
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			return origin == "" || s.originAllowed(r, origin)
+		},
+		ReadBufferSize:  32 * 1024,
+		WriteBufferSize: 32 * 1024,
+	}
+	conn, err := up.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+	if err := s.remoteBrowser.ServeAgentCDP(r.Context(), id, conn); err != nil &&
+		!websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+		s.logger.Debug("agent cdp closed", "sessionId", id, "error", err.Error())
+	}
 }
 
 // remoteBrowserWS relays screencast frames to the client and client input to

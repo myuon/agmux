@@ -78,6 +78,10 @@ type Manager struct {
 	mu   sync.Mutex
 	proc Process
 	tab  *UserTab
+
+	// agents tracks the tabs owned by each agmux session. In memory only:
+	// see agent_tab.go.
+	agents agentRegistry
 }
 
 // New creates a Manager. launcher may be nil to use the real exec launcher.
@@ -154,7 +158,10 @@ func (c Config) Args() []string {
 func (m *Manager) Start(ctx context.Context) (Status, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.startLocked(ctx)
+}
 
+func (m *Manager) startLocked(ctx context.Context) (Status, error) {
 	if ver, err := m.probe(ctx); err == nil {
 		// Something is already listening: reattach only if it is *our* profile.
 		if err := m.verifyProfile(ctx, ver); err != nil {
@@ -419,6 +426,7 @@ func (m *Manager) Stop(ctx context.Context) (Status, StopResult, error) {
 	ver, err := m.probe(ctx)
 	if err != nil {
 		m.closeTabLocked()
+		m.closeAllAgentTabsLocked(ctx, nil)
 		m.proc = nil
 		return m.statusLocked(ctx), StopResult{Graceful: true}, nil
 	}
@@ -429,14 +437,18 @@ func (m *Manager) Stop(ctx context.Context) (Status, StopResult, error) {
 		}
 	}
 
-	// Close the user tab first so it is not restored on the next start.
-	if m.tab != nil {
-		if bc, err := dialCDP(ctx, ver.WebSocketDebuggerURL, nil); err == nil {
+	// Close the user tab and the agent tabs first so they are not restored on
+	// the next start.
+	if bc, err := dialCDP(ctx, ver.WebSocketDebuggerURL, nil); err == nil {
+		if m.tab != nil {
 			cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			bc.Call(cctx, "Target.closeTarget", map[string]any{"targetId": m.tab.TargetID()})
 			cancel()
-			bc.Close()
 		}
+		m.closeAllAgentTabsLocked(ctx, bc)
+		bc.Close()
+	} else {
+		m.closeAllAgentTabsLocked(ctx, nil)
 	}
 	m.closeTabLocked()
 

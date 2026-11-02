@@ -35,6 +35,13 @@ func (f *fakeRB) Stop(ctx context.Context) (browser.Status, browser.StopResult, 
 func (f *fakeRB) UserTab(ctx context.Context) (*browser.UserTab, error) {
 	return nil, context.Canceled
 }
+func (f *fakeRB) AgentTab(ctx context.Context, key string) (browser.AgentTab, error) {
+	return browser.AgentTab{}, context.Canceled
+}
+func (f *fakeRB) CloseAgentTab(ctx context.Context, key string) error { return nil }
+func (f *fakeRB) ServeAgentCDP(ctx context.Context, key string, c *websocket.Conn) error {
+	return nil
+}
 func (f *fakeRB) Shutdown(ctx context.Context) {}
 
 func newRBHandler(dev bool, rb RemoteBrowser) http.Handler {
@@ -60,6 +67,7 @@ func TestRemoteBrowserRejectsNonLoopback(t *testing.T) {
 	paths := [][2]string{
 		{"GET", "/api/remote-browser/status"}, {"POST", "/api/remote-browser/start"},
 		{"POST", "/api/remote-browser/stop"}, {"GET", "/api/remote-browser/ws"},
+		{"POST", "/api/remote-browser/agent-tabs/s1"}, {"GET", "/api/remote-browser/agent-cdp/s1"},
 		{"GET", "/api/remote-browser/unknown"},
 	}
 	for _, remote := range []string{"192.168.1.20:5555", "10.0.0.1:1", "[2001:db8::1]:80", "garbage"} {
