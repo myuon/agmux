@@ -1,7 +1,6 @@
 package session
 
 import (
-	"bufio"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -1632,16 +1631,21 @@ func (m *Manager) readStreamFile(id string, limit int, clearOffset int64) ([]str
 	}
 
 	var lines []string
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	for scanner.Scan() {
+	// Oversized lines become the holder's replacement line (one line per
+	// original line, so cursors stay consistent with the live path).
+	reader := NewStreamLineReader(f, id, "stream-file:history")
+	for {
+		b, _, err := reader.Next()
+		if err != nil {
+			break
+		}
 		// Skip transient lines (stream_event, thinking_tokens): the raw JSONL
 		// file contains everything the holder wrote, but history readers must
 		// apply the same filter as the live path (HolderStreamProcess).
-		if isTransientStreamLine(scanner.Bytes()) {
+		if isTransientStreamLine(b) {
 			continue
 		}
-		lines = append(lines, scanner.Text())
+		lines = append(lines, string(b))
 	}
 
 	if limit > 0 && len(lines) > limit {
@@ -1740,17 +1744,20 @@ func (m *Manager) readStreamFileAfter(id string, after int, clearOffset int64) (
 	}
 
 	var lines []string
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	reader := NewStreamLineReader(f, id, "stream-file:after")
 	lineIdx := 0
-	for scanner.Scan() {
+	for {
+		b, _, err := reader.Next()
+		if err != nil {
+			break
+		}
 		// Skip transient lines so the `after` cursor counts the same filtered
 		// history as the live path (HolderStreamProcess.lines).
-		if isTransientStreamLine(scanner.Bytes()) {
+		if isTransientStreamLine(b) {
 			continue
 		}
 		if lineIdx >= after {
-			lines = append(lines, scanner.Text())
+			lines = append(lines, string(b))
 		}
 		lineIdx++
 	}

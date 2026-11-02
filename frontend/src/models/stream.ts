@@ -267,6 +267,17 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
     return null;
   }
 
+  // The holder replaces a stdout line that is too large to keep (or an input
+  // line too large to deliver) by this event; `message` holds the notice.
+  if (subtype === "oversized_output" || subtype === "oversized_input") {
+    const message = typeof raw.message === "string" && raw.message ? raw.message : "出力が大きすぎるため省略しました";
+    return {
+      kind: "system_event",
+      eventType: subtype,
+      label: message,
+    };
+  }
+
   if (subtype === "task_notification") {
     const status = raw.status as string;
     const summary = (raw.summary as string) || "";

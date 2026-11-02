@@ -71,10 +71,16 @@ func ReadCLISessionID(agmuxSessionID string, provider Provider, clearOffset int6
 	}
 
 	var lastSessionID string
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	for scanner.Scan() {
-		if sid, ok := provider.ParseSessionID([]byte(scanner.Text())); ok {
+	reader := NewStreamLineReader(f, agmuxSessionID, "stream-file:cli-session-id")
+	for {
+		b, oversized, err := reader.Next()
+		if err != nil {
+			break
+		}
+		if oversized {
+			continue // skipped (warned by the reader)
+		}
+		if sid, ok := provider.ParseSessionID(b); ok {
 			lastSessionID = sid
 		}
 	}
@@ -98,15 +104,21 @@ func ReadModelFromStream(agmuxSessionID string, provider Provider) string {
 	}
 	defer f.Close()
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	for scanner.Scan() {
-		if model, ok := provider.ParseModel([]byte(scanner.Text())); ok {
+	reader := NewStreamLineReader(f, agmuxSessionID, "stream-file:model")
+	for {
+		b, oversized, err := reader.Next()
+		if err != nil {
+			if err != io.EOF {
+				slog.Default().Debug("ReadModelFromStream: reader error", "sessionId", agmuxSessionID, "error", err)
+			}
+			break
+		}
+		if oversized {
+			continue // skipped (warned by the reader)
+		}
+		if model, ok := provider.ParseModel(b); ok {
 			return model
 		}
-	}
-	if err := scanner.Err(); err != nil {
-		slog.Default().Debug("ReadModelFromStream: scanner error", "sessionId", agmuxSessionID, "error", err)
 	}
 	return ""
 }
@@ -343,12 +355,17 @@ func (sp *HolderStreamProcess) loadExistingLines(sessionID string, clearOffset i
 		}
 	}
 
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
+	// An oversized line (e.g. from a session recorded before the holder
+	// replaced them) is turned into the same replacement line the holder
+	// writes, so the line count matches the live path.
+	reader := NewStreamLineReader(f, sp.streamOpts.SessionID, "stream-file:load")
+	for {
+		line, _, err := reader.Next()
+		if err != nil {
+			break
+		}
 		// Normalize lines from JSONL (holder writes raw lines)
-		normalizedLines := sp.provider.NormalizeStreamLine([]byte(line))
+		normalizedLines := sp.provider.NormalizeStreamLine(line)
 		for _, normalized := range normalizedLines {
 			if normalized == nil {
 				continue
