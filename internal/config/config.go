@@ -22,18 +22,53 @@ type PromptTemplate struct {
 }
 
 type Config struct {
-	Server          ServerConfig     `toml:"server"`
-	Daemon          DaemonConfig     `toml:"daemon"`
-	Session         SessionConfig    `toml:"session"`
-	Claude          ClaudeConfig     `toml:"claude"`
-	DevMode         bool             `toml:"dev_mode"`
-	Templates       []RoleTemplate   `toml:"templates" json:"templates"`
-	PromptTemplates []PromptTemplate `toml:"prompt_templates" json:"prompt_templates"`
+	Server          ServerConfig        `toml:"server"`
+	Daemon          DaemonConfig        `toml:"daemon"`
+	Session         SessionConfig       `toml:"session"`
+	Claude          ClaudeConfig        `toml:"claude"`
+	RemoteBrowser   RemoteBrowserConfig `toml:"remote_browser"`
+	DevMode         bool                `toml:"dev_mode"`
+	Templates       []RoleTemplate      `toml:"templates" json:"templates"`
+	PromptTemplates []PromptTemplate    `toml:"prompt_templates" json:"prompt_templates"`
 }
 
 type ServerConfig struct {
 	Port        int    `toml:"port"`
 	FrontendDir string `toml:"frontend_dir"`
+}
+
+// RemoteBrowserConfig configures the agmux-managed Chrome (remote browser).
+// All fields are optional; zero values select defaults.
+type RemoteBrowserConfig struct {
+	// ChromePath is the Chrome executable. Default: macOS Google Chrome.
+	ChromePath string `toml:"chrome_path" json:"chrome_path,omitempty"`
+	// DebugPort is the CDP port (bound to 127.0.0.1 only). Default: 9223.
+	DebugPort int `toml:"debug_port" json:"debug_port,omitempty"`
+	// ProfileDir is the dedicated user-data-dir. Default: ~/.agmux/remote-browser/profile.
+	ProfileDir string `toml:"profile_dir" json:"profile_dir,omitempty"`
+}
+
+// DefaultChromePath is the Chrome executable used when none is configured.
+const DefaultChromePath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+
+// DefaultRemoteBrowserPort is the CDP port used when none is configured.
+// It is deliberately not 9222 so it does not collide with ad-hoc debugging.
+const DefaultRemoteBrowserPort = 9223
+
+// EffectiveChromePath returns the configured path or the default.
+func (c RemoteBrowserConfig) EffectiveChromePath() string {
+	if c.ChromePath == "" {
+		return DefaultChromePath
+	}
+	return c.ChromePath
+}
+
+// EffectivePort returns the configured CDP port or the default.
+func (c RemoteBrowserConfig) EffectivePort() int {
+	if c.DebugPort <= 0 || c.DebugPort > 65535 {
+		return DefaultRemoteBrowserPort
+	}
+	return c.DebugPort
 }
 
 type DaemonConfig struct {
@@ -62,7 +97,7 @@ type SessionConfig struct {
 	CursorCommand      string `toml:"cursor_command"`
 	SystemPrompt       string `toml:"system_prompt"`
 	DefaultRole        string `toml:"default_role" json:"default_role,omitempty"`
-	DefaultModel       string `toml:"default_model" json:"default_model,omitempty"`       // Deprecated: use ClaudeDefaultModel
+	DefaultModel       string `toml:"default_model" json:"default_model,omitempty"` // Deprecated: use ClaudeDefaultModel
 	ClaudeDefaultModel string `toml:"claude_default_model" json:"claude_default_model,omitempty"`
 	CodexDefaultModel  string `toml:"codex_default_model" json:"codex_default_model,omitempty"`
 	CursorDefaultModel string `toml:"cursor_default_model" json:"cursor_default_model,omitempty"`
@@ -107,7 +142,7 @@ func Default() *Config {
 			Port: 4321,
 		},
 		Daemon: DaemonConfig{
-			Interval:                          "30s",
+			Interval:                           "30s",
 			BackgroundTaskNotificationInterval: "30m",
 		},
 		Session: SessionConfig{

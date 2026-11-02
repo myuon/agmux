@@ -51,6 +51,7 @@ type Server struct {
 	commit           string
 	buildDate        string
 	startTime        time.Time
+	remoteBrowser    RemoteBrowser
 }
 
 func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.Logger, sqlDB *sql.DB, port int) *Server {
@@ -207,6 +208,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/metrics/events", s.getMetricsEvents)
 		r.Get("/version", s.getVersion)
 		r.Get("/host-info", s.getHostInfo)
+		s.mountRemoteBrowser(r)
 
 	})
 
