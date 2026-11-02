@@ -250,6 +250,25 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 					},
 				},
 				map[string]interface{}{
+					"name":        "publish_artifact",
+					"description": "作成した HTML ファイル（1ファイル）を agmux に登録し、ユーザーがスマホ等から全画面で閲覧できるようにします。呼び出し時点の内容がコピーされ、ユーザーにブラウザ通知が送られます。表示は sandbox + CSP で隔離され、agmux の API や外部への通信（fetch/WebSocket/フォーム送信）はできません。相対パスのアセット（画像・CSS・JS ファイル）は同梱されないため、HTML は自己完結（インライン、または https の CDN からの読み込み）にしてください。.html / .htm のみ、20 MiB まで。",
+					"inputSchema": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"session_id": sessionIDProperty,
+							"path": map[string]interface{}{
+								"type":        "string",
+								"description": "公開する HTML ファイルの絶対パス（.html / .htm）",
+							},
+							"title": map[string]interface{}{
+								"type":        "string",
+								"description": "一覧と閲覧画面に表示するタイトル",
+							},
+						},
+						"required": []string{"path", "title"},
+					},
+				},
+				map[string]interface{}{
 					"name":        "create_automation",
 					"description": "定期実行のAutomation（スケジュールに従って新しいセッションを起動しプロンプトを実行する自動化）を作成します。ユーザーから定期実行タスクの設定を頼まれたとき、または会話の流れでAutomation化に合意できたときに呼んでください。作成前に名前・トリガー・プロンプト内容をユーザーと確認し、判断に迷う場合は escalate ツールで確認してから呼ぶこと。作成されたAutomationは設定画面（Settings > Automations）に表示されます。",
 					"inputSchema": map[string]interface{}{
@@ -366,6 +385,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 		return s.handleGetLoggedInBrowser(args)
 	case "request_browser_login":
 		return s.handleRequestBrowserLogin(args)
+	case "publish_artifact":
+		return s.handlePublishArtifact(args)
 	case "permission_prompt":
 		return s.handlePermissionPrompt(args)
 	default:

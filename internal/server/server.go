@@ -25,6 +25,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/gorilla/websocket"
+	"github.com/myuon/agmux/internal/artifact"
 	"github.com/myuon/agmux/internal/automation"
 	"github.com/myuon/agmux/internal/browser"
 	"github.com/myuon/agmux/internal/config"
@@ -54,6 +55,7 @@ type Server struct {
 	startTime        time.Time
 	remoteBrowser    RemoteBrowser
 	allowedHosts     map[string]bool
+	artifacts        *artifact.Store
 }
 
 func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.Logger, sqlDB *sql.DB, port int) *Server {
@@ -121,6 +123,12 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 		})
 	})
 
+	if dir, err := artifact.DefaultDir(); err != nil {
+		s.logger.Error("artifacts disabled", "error", err)
+	} else {
+		s.artifacts = artifact.NewStore(sqlDB, dir)
+	}
+
 	s.setupRoutes()
 	return s
 }
@@ -153,6 +161,9 @@ func (s *Server) setupRoutes() {
 
 	// MCP HTTP transport endpoint
 	r.Post("/mcp/{sessionID}", s.handleMCP)
+
+	// Sandboxed raw HTML artifacts
+	s.mountArtifactRaw(r)
 
 	// OTLP receiver endpoints
 	r.Post("/v1/metrics", s.otelReceiver.HandleMetrics)
@@ -215,6 +226,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/version", s.getVersion)
 		r.Get("/host-info", s.getHostInfo)
 		s.mountRemoteBrowser(r)
+		s.mountArtifacts(r)
 
 	})
 
