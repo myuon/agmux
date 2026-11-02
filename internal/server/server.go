@@ -53,6 +53,7 @@ type Server struct {
 	buildDate        string
 	startTime        time.Time
 	remoteBrowser    RemoteBrowser
+	allowedHosts     map[string]bool
 }
 
 func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.Logger, sqlDB *sql.DB, port int) *Server {
@@ -133,6 +134,7 @@ func (s *Server) setupRoutes() {
 	r := chi.NewRouter()
 	r.Use(slogRequestLogger(s.logger))
 	r.Use(middleware.Recoverer)
+	r.Use(s.requestGuard)
 	r.Use(middleware.Compress(5))
 
 	if s.devMode {
@@ -144,6 +146,9 @@ func (s *Server) setupRoutes() {
 		}))
 	}
 
+	if s.hub != nil {
+		s.hub.upgrader.CheckOrigin = s.checkWSOrigin
+	}
 	r.Get("/ws", s.hub.HandleWS)
 
 	// MCP HTTP transport endpoint
@@ -1448,6 +1453,9 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := jsonToConfig(req)
 	cfg.Server.FrontendDir = current.Server.FrontendDir
+	// Not editable via the API: always carry over the on-disk values.
+	cfg.Server.AllowedHosts = current.Server.AllowedHosts
+	cfg.RemoteBrowser = current.RemoteBrowser
 	// Preserve background_task_notification_interval if the request omitted it
 	// (older clients may not send the field).
 	if cfg.Daemon.BackgroundTaskNotificationInterval == "" {

@@ -9,10 +9,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
-
 type Message struct {
 	Type string      `json:"type"`
 	Data interface{} `json:"data"`
@@ -30,6 +26,7 @@ type Hub struct {
 	register   chan *wsClient
 	unregister chan *wsClient
 	logger     *slog.Logger
+	upgrader   websocket.Upgrader
 }
 
 func NewHub(logger *slog.Logger) *Hub {
@@ -39,6 +36,7 @@ func NewHub(logger *slog.Logger) *Hub {
 		register:   make(chan *wsClient),
 		unregister: make(chan *wsClient),
 		logger:     logger.With("component", "ws"),
+		upgrader:   websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
 	}
 }
 
@@ -87,7 +85,7 @@ func (h *Hub) Broadcast(msg Message) {
 }
 
 func (h *Hub) HandleWS(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
+	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		h.logger.Error("ws upgrade error", "error", err)
 		return

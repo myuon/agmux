@@ -35,6 +35,9 @@ type Config struct {
 type ServerConfig struct {
 	Port        int    `toml:"port"`
 	FrontendDir string `toml:"frontend_dir"`
+	// AllowedHosts lists extra hostnames (exact match, no wildcards) accepted
+	// in the Host header. localhost and literal IP addresses are always allowed.
+	AllowedHosts []string `toml:"allowed_hosts,omitempty"`
 }
 
 // RemoteBrowserConfig configures the agmux-managed Chrome (remote browser).
