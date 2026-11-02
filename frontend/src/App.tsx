@@ -3,6 +3,7 @@ import { Outlet, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
 import { NotificationPanel } from "./components/NotificationPanel";
+import { loginRequestPath, loginUrlHost } from "./lib/remoteBrowser";
 import { SessionList } from "./components/SessionList";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { getActiveSessionName } from "./activeSession";
@@ -15,10 +16,11 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js").catch(() => {});
 }
 
-async function sendNotification(title: string, body: string, sessionId?: string) {
+// `url` (same-origin path) overrides the default click target (the session page).
+async function sendNotification(title: string, body: string, sessionId?: string, url?: string) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
 
-  const data = sessionId ? { sessionId } : undefined;
+  const data = sessionId ? { sessionId, ...(url ? { url } : {}) } : undefined;
 
   // Mobile Chrome requires Service Worker for notifications
   if ("serviceWorker" in navigator) {
@@ -33,7 +35,7 @@ async function sendNotification(title: string, body: string, sessionId?: string)
   if (sessionId) {
     n.onclick = () => {
       window.focus();
-      window.location.href = `/sessions/${sessionId}`;
+      window.location.href = url ?? `/sessions/${sessionId}`;
     };
   }
 }
@@ -48,7 +50,16 @@ function useGlobalNotifications() {
       return;
     }
     if (msg.type === "escalation") {
-      const data = msg.data as { sessionId: string; sessionName: string; message: string };
+      const data = msg.data as { id: string; sessionId: string; sessionName: string; message: string; loginUrl?: string };
+      if (data.loginUrl && loginUrlHost(data.loginUrl)) {
+        sendNotification(
+          "agmux - ログイン依頼",
+          `${data.sessionName}: ${data.message}`,
+          data.sessionId,
+          loginRequestPath(data.loginUrl, data.id, data.sessionId),
+        );
+        return;
+      }
       sendNotification("agmux - Escalation", `${data.sessionName}: ${data.message}`, data.sessionId);
       return;
     }

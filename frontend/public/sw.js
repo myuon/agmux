@@ -18,6 +18,13 @@ self.addEventListener("fetch", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const sessionId = event.notification.data?.sessionId;
-  const targetUrl = sessionId ? `/sessions/${sessionId}` : "/";
+  // data.url is a same-origin path (e.g. the remote browser login page); ignore anything else.
+  const url = event.notification.data?.url;
+  const targetUrl =
+    typeof url === "string" && url.startsWith("/") && !url.startsWith("//")
+      ? url
+      : sessionId
+        ? `/sessions/${sessionId}`
+        : "/";
   event.waitUntil(clients.openWindow(targetUrl));
 });

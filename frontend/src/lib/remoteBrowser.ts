@@ -68,6 +68,48 @@ export function screenDeltaToPage(
   };
 }
 
+/** Values the agent's browser-login request passes to the remote browser page. */
+export interface LoginRequestParams {
+  url: string;
+  host: string;
+  escalationId: string;
+  sessionId: string;
+}
+
+/** Only absolute http/https URLs with a host are allowed. Returns the host or null. */
+export function loginUrlHost(raw: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(raw.trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+  if (!u.hostname) return null;
+  return u.host;
+}
+
+/**
+ * Parse `?url=&escalation=&session=` of /remote-browser. Returns null when
+ * any is missing or the url is not a plain http(s) URL.
+ */
+export function parseLoginRequestParams(search: string): LoginRequestParams | null {
+  const p = new URLSearchParams(search);
+  const url = p.get("url")?.trim() ?? "";
+  const escalationId = p.get("escalation") ?? "";
+  const sessionId = p.get("session") ?? "";
+  if (!url || !escalationId || !sessionId) return null;
+  const host = loginUrlHost(url);
+  if (!host) return null;
+  return { url, host, escalationId, sessionId };
+}
+
+/** Path the notification / banner opens for a browser-login request. */
+export function loginRequestPath(url: string, escalationId: string, sessionId: string): string {
+  const q = new URLSearchParams({ url, escalation: escalationId, session: sessionId });
+  return `/remote-browser?${q.toString()}`;
+}
+
 /** Add a scheme to what the user typed in the URL bar. */
 export function normalizeUrl(input: string): string {
   const v = input.trim();

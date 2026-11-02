@@ -26,6 +26,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/gorilla/websocket"
 	"github.com/myuon/agmux/internal/automation"
+	"github.com/myuon/agmux/internal/browser"
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/mcp"
@@ -822,6 +823,8 @@ type createEscalationRequest struct {
 	ID             string `json:"id"`
 	Message        string `json:"message"`
 	TimeoutSeconds *int   `json:"timeout_seconds,omitempty"`
+	// LoginURL marks a browser-login request (request_browser_login).
+	LoginURL string `json:"login_url,omitempty"`
 }
 
 func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
@@ -834,6 +837,12 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 	if req.Message == "" || req.ID == "" {
 		writeError(w, http.StatusBadRequest, "id and message are required")
 		return
+	}
+	if req.LoginURL != "" {
+		if err := browser.ValidateLoginURL(req.LoginURL); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	// Get session name for notification
@@ -855,7 +864,7 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create escalation and get response channel
-	ch := s.escalations.Create(req.ID, sessionID, req.Message, timeoutSeconds)
+	ch := s.escalations.CreateWithLoginURL(req.ID, sessionID, req.Message, timeoutSeconds, req.LoginURL)
 
 	// Update session status to waiting_input
 	if err := s.sessions.UpdateStatus(sessionID, session.StatusWaitingInput); err != nil {
@@ -871,6 +880,7 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 			"sessionName":    sess.Name,
 			"message":        req.Message,
 			"timeoutSeconds": timeoutSeconds,
+			"loginUrl":       req.LoginURL,
 		},
 	})
 	timeout := time.Duration(timeoutSeconds) * time.Second

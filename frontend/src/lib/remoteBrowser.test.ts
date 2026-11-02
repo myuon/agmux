@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapClientToPage, normalizeUrl, screenDeltaToPage } from "./remoteBrowser";
+import { loginRequestPath, loginUrlHost, mapClientToPage, normalizeUrl, parseLoginRequestParams, screenDeltaToPage } from "./remoteBrowser";
 
 describe("mapClientToPage", () => {
   // 2x frame of a 400x800 CSS page => 800x1600 image
@@ -48,5 +48,27 @@ describe("normalizeUrl", () => {
     expect(normalizeUrl("localhost:8000/x")).toBe("http://localhost:8000/x");
     expect(normalizeUrl("http://a.test")).toBe("http://a.test");
     expect(normalizeUrl("  ")).toBe("");
+  });
+});
+
+describe("login request params", () => {
+  it("round-trips through loginRequestPath", () => {
+    const path = loginRequestPath("https://a.test/login?next=/x&y=1", "e1", "s1");
+    expect(parseLoginRequestParams(path.split("?")[1])).toEqual({
+      url: "https://a.test/login?next=/x&y=1",
+      host: "a.test",
+      escalationId: "e1",
+      sessionId: "s1",
+    });
+  });
+
+  it("rejects non-http(s) schemes and missing params", () => {
+    expect(loginUrlHost("javascript:alert(1)")).toBeNull();
+    expect(loginUrlHost("file:///etc/passwd")).toBeNull();
+    expect(loginUrlHost("//a.test")).toBeNull();
+    expect(loginUrlHost("http://localhost:8080/x")).toBe("localhost:8080");
+    expect(parseLoginRequestParams("url=javascript:1&escalation=e&session=s")).toBeNull();
+    expect(parseLoginRequestParams("url=https://a.test&session=s")).toBeNull();
+    expect(parseLoginRequestParams("")).toBeNull();
   });
 });
