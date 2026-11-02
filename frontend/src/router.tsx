@@ -5,7 +5,6 @@ import { NewSessionPage } from "./pages/NewSessionPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { RemoteBrowserPage } from "./pages/RemoteBrowserPage";
-import { ArtifactPage } from "./pages/ArtifactPage";
 import { PreviewPage } from "./pages/PreviewPage";
 import { ScenarioTestPage } from "./pages/ScenarioTestPage";
 import { AutomationsPage } from "./pages/AutomationsPage";
@@ -92,10 +91,6 @@ export const router = createBrowserRouter([
           const config = await api.getConfig();
           return { config };
         },
-      },
-      {
-        path: "artifacts/:id",
-        element: <ArtifactPage />,
       },
       {
         path: "remote-browser",

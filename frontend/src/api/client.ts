@@ -2,13 +2,6 @@ import type { Session } from "../types/session";
 
 const BASE = "/api";
 
-export interface Artifact {
-  id: string;
-  sessionId: string;
-  title: string;
-  createdAt: string;
-}
-
 async function request<T>(
   path: string,
   options?: RequestInit
@@ -257,12 +250,6 @@ export const api = {
 
   listAutomationRuns: (id: string, limit = 50) =>
     request<AutomationRun[]>(`/automations/${id}/runs?limit=${limit}`),
-
-  listArtifacts: (sessionId: string) =>
-    request<Artifact[]>(`/sessions/${sessionId}/artifacts`),
-  getArtifact: (id: string) => request<Artifact>(`/artifacts/${id}`),
-  deleteArtifact: (id: string) =>
-    request<{ status: string }>(`/artifacts/${id}`, { method: "DELETE" }),
 
 };
 

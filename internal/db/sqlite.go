@@ -453,19 +453,6 @@ func migrate(db *sql.DB) error {
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_automation_runs_fired ON automation_runs(fired_at)`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_automation ON sessions(automation_id)`)
 
-	// Migration: create artifacts table (HTML snapshots published by sessions)
-	if _, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS artifacts (
-			id TEXT PRIMARY KEY,
-			session_id TEXT NOT NULL,
-			title TEXT NOT NULL,
-			created_at TEXT NOT NULL
-		)
-	`); err != nil {
-		return err
-	}
-	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_artifacts_session ON artifacts(session_id)`)
-
 	return nil
 }
 
