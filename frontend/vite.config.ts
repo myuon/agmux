@@ -10,6 +10,11 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     proxy: {
+      // Must precede '/api' (first match wins) so the WebSocket upgrade is proxied
+      '/api/remote-browser/ws': {
+        target: `ws://localhost:${backendPort}`,
+        ws: true,
+      },
       '/api': `http://localhost:${backendPort}`,
       '/ws': {
         target: `ws://localhost:${backendPort}`,
