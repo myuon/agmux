@@ -24,6 +24,7 @@ import (
 
 	agmux "github.com/myuon/agmux"
 	"github.com/myuon/agmux/internal/automation"
+	"github.com/myuon/agmux/internal/browser"
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/daemon"
 	"github.com/myuon/agmux/internal/db"
@@ -215,6 +216,22 @@ func serveCmd() *cobra.Command {
 			srv = server.New(mgr, hub, devMode, logger, database, port)
 			srv.SetVersion(version, commit, buildDate)
 
+			// Remote browser (dedicated Chrome). Profile lives under the agmux
+			// data dir, which honors $HOME.
+			rbCfg := browser.Config{
+				ChromePath: cfg.RemoteBrowser.EffectiveChromePath(),
+				Port:       cfg.RemoteBrowser.EffectivePort(),
+				ProfileDir: cfg.RemoteBrowser.ProfileDir,
+			}
+			if rbCfg.ProfileDir == "" {
+				agmuxDir, err := db.AgmuxDir()
+				if err != nil {
+					return fmt.Errorf("agmux dir: %w", err)
+				}
+				rbCfg.ProfileDir = filepath.Join(agmuxDir, "remote-browser", "profile")
+			}
+			srv.SetRemoteBrowser(browser.New(rbCfg, logger, nil))
+
 			// Wire managed holder PIDs into external detector so holder
 			// processes and their children are not detected as external.
 			// SetManagedPIDsFunc must be called BEFORE Start() to avoid
@@ -326,6 +343,10 @@ func serveCmd() *cobra.Command {
 			case sig := <-shutdownCh:
 				logger.Info(fmt.Sprintf("Received %s, shutting down gracefully...", sig))
 				autoScheduler.Stop()
+				// Close Chrome via CDP (never SIGTERM) so cookies are flushed.
+				rbCtx, rbCancel := context.WithTimeout(context.Background(), 12*time.Second)
+				srv.ShutdownRemoteBrowser(rbCtx)
+				rbCancel()
 				mgr.StopAllStreamProcesses()
 				if extDet := srv.ExternalDetector(); extDet != nil {
 					extDet.Stop()
