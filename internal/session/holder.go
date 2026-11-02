@@ -1,7 +1,6 @@
 package session
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/myuon/agmux/internal/db"
+	"github.com/myuon/agmux/internal/linereader"
 )
 
 // SocketDir returns the directory for holder Unix sockets.
@@ -182,6 +182,10 @@ type holder struct {
 	clientsMu sync.Mutex
 	clients   map[net.Conn]struct{}
 
+	// emitMu serializes stream file writes + broadcasts (stdout reader and
+	// handleClient both emit lines)
+	emitMu sync.Mutex
+
 	// readerErr stores any error from readStdout so it can be included in the exit message
 	readerErrMu sync.Mutex
 	readerErr   string
@@ -195,39 +199,48 @@ type holder struct {
 
 // readStdout reads lines from the CLI process stdout, writes to JSONL file,
 // and broadcasts to all connected socket clients.
+//
+// A line larger than the reader's limit never stops the loop: it is replaced
+// by a small valid JSON line (see oversized.go) so that later output keeps
+// flowing and the CLI is never blocked on a full pipe.
 func (h *holder) readStdout(stdout io.Reader) {
 	defer close(h.done)
 
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
+	reader := NewStreamLineReader(stdout, h.sessionID, "holder-stdout")
+	for {
+		b, _, err := reader.Next()
+		if err != nil {
+			if err != io.EOF {
+				errMsg := fmt.Sprintf("stdout reader error: %v", err)
+				slog.Error("holder: "+errMsg, "sessionId", h.sessionID)
+				// Store error for inclusion in exit message
+				h.readerErrMu.Lock()
+				h.readerErr = errMsg
+				h.readerErrMu.Unlock()
+				// Broadcast error to connected clients so the server can update session status
+				h.broadcastControl(HolderControlMessage{
+					Type:    "control",
+					Event:   "error",
+					Content: errMsg,
+				})
+			}
+			return
+		}
+		if len(b) == 0 {
 			continue
 		}
-
-		// Write to JSONL file (permanent record)
-		h.streamFile.WriteString(line + "\n")
-		h.streamFile.Sync()
-
-		// Broadcast to all connected socket clients
-		h.broadcastLine(line)
+		h.emitLine(string(b))
 	}
+}
 
-	if err := scanner.Err(); err != nil {
-		errMsg := fmt.Sprintf("stdout reader error: %v", err)
-		slog.Error("holder: "+errMsg, "sessionId", h.sessionID)
-		// Store error for inclusion in exit message
-		h.readerErrMu.Lock()
-		h.readerErr = errMsg
-		h.readerErrMu.Unlock()
-		// Broadcast error to connected clients so the server can update session status
-		h.broadcastControl(HolderControlMessage{
-			Type:    "control",
-			Event:   "error",
-			Content: errMsg,
-		})
-	}
+// emitLine appends one line to the JSONL stream file (permanent record) and
+// broadcasts it to all connected socket clients.
+func (h *holder) emitLine(line string) {
+	h.emitMu.Lock()
+	defer h.emitMu.Unlock()
+	h.streamFile.WriteString(line + "\n")
+	h.streamFile.Sync()
+	h.broadcastLine(line)
 }
 
 // broadcastLine sends a line to all connected socket clients.
@@ -308,17 +321,27 @@ func (h *holder) handleClient(conn net.Conn) {
 		conn.Close()
 	}()
 
-	scanner := bufio.NewScanner(conn)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
+	// Input lines (user messages, possibly with images) can be large too; an
+	// oversized one must neither kill the connection nor be forwarded
+	// truncated to the CLI's stdin.
+	reader := linereader.New(conn, linereader.Options{})
+	for {
+		l, err := reader.Next()
+		if err != nil {
+			return
+		}
+		if l.Oversized {
+			h.rejectOversizedInput(l.Size)
 			continue
 		}
+		if len(l.Data) == 0 {
+			continue
+		}
+		line := string(l.Data)
 
 		// Check if this is a control message
 		var msg HolderControlMessage
-		if json.Unmarshal([]byte(line), &msg) == nil && msg.Type == "control" {
+		if json.Unmarshal(l.Data, &msg) == nil && msg.Type == "control" {
 			h.handleControl(msg)
 			continue
 		}
@@ -329,6 +352,21 @@ func (h *holder) handleClient(conn net.Conn) {
 			return
 		}
 	}
+}
+
+// rejectOversizedInput reports an input line that was too large to forward.
+// The message was NOT delivered to the CLI. The sender is told through the
+// existing control "error" event, and a visible notice line is added to the
+// stream so the user sees it in the UI.
+func (h *holder) rejectOversizedInput(size int64) {
+	slog.Warn("holder: oversized input line dropped (not delivered to CLI)",
+		"sessionId", h.sessionID, "bytes", size)
+	h.broadcastControl(HolderControlMessage{
+		Type:    "control",
+		Event:   "error",
+		Content: fmt.Sprintf("input line too large (%d bytes): message was not delivered", size),
+	})
+	h.emitLine(string(buildOversizedInputNotice(size)))
 }
 
 // handleControl processes control messages from the server.

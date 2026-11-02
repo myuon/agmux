@@ -1,15 +1,16 @@
 package mcp
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/myuon/agmux/internal/linereader"
 )
 
 // sessionIDProperty is the shared JSON Schema property for session_id across all tools.
@@ -76,17 +77,27 @@ func (s *Server) HandleJSONRPC(requestBody []byte) []byte {
 
 // Run starts the MCP server on stdin/stdout (JSON-RPC 2.0).
 func (s *Server) Run() error {
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	reader := linereader.New(os.Stdin, linereader.Options{})
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
+	for {
+		l, err := reader.Next()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+		if l.Oversized {
+			// Cannot be answered (no id available); skip it and keep serving.
+			slog.Warn("mcp: oversized request line skipped", "bytes", l.Size)
+			continue
+		}
+		if len(l.Data) == 0 {
 			continue
 		}
 
 		var req jsonRPCRequest
-		if err := json.Unmarshal([]byte(line), &req); err != nil {
+		if err := json.Unmarshal(l.Data, &req); err != nil {
 			continue
 		}
 
@@ -111,8 +122,6 @@ func (s *Server) Run() error {
 		out, _ := json.Marshal(resp)
 		fmt.Fprintf(os.Stdout, "%s\n", out)
 	}
-
-	return scanner.Err()
 }
 
 func (s *Server) handleMethod(method string, params json.RawMessage) (interface{}, *jsonRPCError) {

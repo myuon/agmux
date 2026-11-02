@@ -969,15 +969,18 @@ func readSessionLines(logPath string, clearOffset int64) ([]string, error) {
 	}
 
 	var allLines []string
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	for scanner.Scan() {
-		allLines = append(allLines, scanner.Text())
+	// Oversized lines are shown as the holder's replacement notice line.
+	reader := session.NewStreamLineReader(f, "", "cli:session-lines")
+	for {
+		b, _, err := reader.Next()
+		if err == io.EOF {
+			return allLines, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		allLines = append(allLines, string(b))
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return allLines, nil
 }
 
 func tailSessionLogRaw(logPath string, n int, offset int, follow bool, clearOffset int64) error {
@@ -1380,14 +1383,17 @@ func holderCmd() *cobra.Command {
 
 // readTailLines reads the last n lines from the file.
 func readTailLines(file *os.File, n int) ([]string, error) {
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
 	var allLines []string
-	for scanner.Scan() {
-		allLines = append(allLines, scanner.Text())
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
+	reader := session.NewStreamLineReader(file, "", "cli:tail-lines")
+	for {
+		b, _, err := reader.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		allLines = append(allLines, string(b))
 	}
 
 	if len(allLines) <= n {

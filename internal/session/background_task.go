@@ -1,10 +1,10 @@
 package session
 
 import (
-	"bufio"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -456,16 +456,20 @@ func (s *BackgroundTaskStore) RebuildFromJSONL(sessionID string, clearOffset int
 			return err
 		}
 	}
-	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
-	for scanner.Scan() {
-		line := scanner.Bytes()
-		if len(line) == 0 {
-			continue
+	reader := NewStreamLineReader(f, sessionID, "stream-file:background-tasks")
+	for {
+		line, oversized, err := reader.Next()
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return err
+		}
+		if oversized || len(line) == 0 {
+			continue // oversized lines are skipped (warned by the reader)
 		}
 		_ = s.ApplyLine(sessionID, line)
 	}
-	return scanner.Err()
 }
 
 // ClearSession removes all background task rows for the session, used on
