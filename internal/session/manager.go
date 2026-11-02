@@ -49,6 +49,7 @@ type Manager struct {
 	logger             *slog.Logger
 	onNewLines         func(sessionID string, newLines []string, total int)
 	onStatusChange     func(sessionID string, status Status, lastError string)
+	onSessionEnd       func(sessionID string)
 	onContextUsage     func(sessionID string, contextTokens, contextWindow int64)
 	backgroundTasks    *BackgroundTaskStore
 	// startHolderFn overrides StartHolderStreamProcess in tests (nil = real spawn).
@@ -182,6 +183,30 @@ func (m *Manager) SetOnNewLines(fn func(sessionID string, newLines []string, tot
 // SetOnStatusChange sets a callback that fires when a session status changes.
 func (m *Manager) SetOnStatusChange(fn func(sessionID string, status Status, lastError string)) {
 	m.onStatusChange = fn
+}
+
+// SetOnSessionEnd sets a callback that fires when a session ends: it is
+// stopped, deleted, or its status becomes paused/exited/archived. It may fire
+// more than once for the same session, so the callback must be idempotent.
+func (m *Manager) SetOnSessionEnd(fn func(sessionID string)) {
+	m.onSessionEnd = fn
+}
+
+func (m *Manager) fireSessionEnd(id string) {
+	if m.onSessionEnd != nil {
+		m.onSessionEnd(id)
+	}
+}
+
+// fireStatusChange notifies status observers after a successful status update.
+func (m *Manager) fireStatusChange(id string, status Status, lastError string) {
+	if m.onStatusChange != nil {
+		m.onStatusChange(id, status, lastError)
+	}
+	switch status {
+	case StatusPaused, StatusExited, StatusArchived:
+		m.fireSessionEnd(id)
+	}
 }
 
 // SetOnContextUsage sets a callback that fires when a session's context token usage changes.
@@ -792,8 +817,8 @@ func (m *Manager) cancelEphemeralTimeout(sessionID string) {
 // UpdateStatusWithHolderPIDClear updates the session status and clears holder_pid atomically.
 func (m *Manager) UpdateStatusWithHolderPIDClear(id string, status Status) error {
 	_, err := m.db.Exec("UPDATE sessions SET status = ?, holder_pid = 0, updated_at = ? WHERE id = ?", string(status), time.Now(), id)
-	if err == nil && m.onStatusChange != nil {
-		m.onStatusChange(id, status, "")
+	if err == nil {
+		m.fireStatusChange(id, status, "")
 	}
 	return err
 }
@@ -1108,6 +1133,9 @@ func (m *Manager) Stop(id string) error {
 	m.stopStreamProcess(id)
 
 	_, err = m.db.Exec("UPDATE sessions SET status = ?, holder_pid = 0, updated_at = ? WHERE id = ?", string(StatusPaused), time.Now(), id)
+	if err == nil {
+		m.fireSessionEnd(id)
+	}
 	return err
 }
 
@@ -1176,6 +1204,7 @@ func (m *Manager) Delete(id string) error {
 	if err != nil {
 		return err
 	}
+	m.fireSessionEnd(id)
 	// Drop background task rows for the deleted session.
 	if m.backgroundTasks != nil {
 		if err := m.backgroundTasks.ClearSession(id); err != nil {
@@ -1845,8 +1874,8 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 
 func (m *Manager) UpdateStatus(id string, status Status) error {
 	_, err := m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(status), time.Now(), id)
-	if err == nil && m.onStatusChange != nil {
-		m.onStatusChange(id, status, "")
+	if err == nil {
+		m.fireStatusChange(id, status, "")
 	}
 	return err
 }
@@ -1854,8 +1883,8 @@ func (m *Manager) UpdateStatus(id string, status Status) error {
 // UpdateStatusWithError updates the session status and records the last error message.
 func (m *Manager) UpdateStatusWithError(id string, status Status, lastError string) error {
 	_, err := m.db.Exec("UPDATE sessions SET status = ?, last_error = ?, holder_pid = 0, updated_at = ? WHERE id = ?", string(status), lastError, time.Now(), id)
-	if err == nil && m.onStatusChange != nil {
-		m.onStatusChange(id, status, lastError)
+	if err == nil {
+		m.fireStatusChange(id, status, lastError)
 	}
 	return err
 }

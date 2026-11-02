@@ -63,6 +63,10 @@ type SessionService interface {
 	// SetOnNewLines sets a callback for real-time stream updates.
 	SetOnNewLines(fn func(sessionID string, newLines []string, total int))
 
+	// SetOnSessionEnd sets a callback fired when a session is stopped, deleted,
+	// or becomes paused/exited/archived (may fire repeatedly; be idempotent).
+	SetOnSessionEnd(fn func(sessionID string))
+
 	// SetOnStatusChange sets a callback for real-time session status changes.
 	SetOnStatusChange(fn func(sessionID string, status Status, lastError string))
 

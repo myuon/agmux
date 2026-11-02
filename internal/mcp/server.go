@@ -216,6 +216,16 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 					},
 				},
 				map[string]interface{}{
+					"name":        "get_logged_in_browser",
+					"description": "ユーザーのログイン状態を共有した Chrome（agmux 管理のリモートブラウザ）に、このセッション専用のタブを割り当て、agent-browser で操作するための接続情報とコマンド形式を返します。ユーザーがログイン済みのサイトを閲覧・操作する必要があるとき（ログインが必要なページなど）にのみ使ってください。一般的な Web 閲覧・調査・テストには使わず、通常どおり agent-browser を単独で使ってください（このブラウザのプロファイルにはユーザーのログイン情報が入っています）。同じセッションで再度呼ぶと同じタブが返ります。",
+					"inputSchema": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"session_id": sessionIDProperty,
+						},
+					},
+				},
+				map[string]interface{}{
 					"name":        "create_automation",
 					"description": "定期実行のAutomation（スケジュールに従って新しいセッションを起動しプロンプトを実行する自動化）を作成します。ユーザーから定期実行タスクの設定を頼まれたとき、または会話の流れでAutomation化に合意できたときに呼んでください。作成前に名前・トリガー・プロンプト内容をユーザーと確認し、判断に迷う場合は escalate ツールで確認してから呼ぶこと。作成されたAutomationは設定画面（Settings > Automations）に表示されます。",
 					"inputSchema": map[string]interface{}{
@@ -328,6 +338,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 		return s.handleEscalate(args)
 	case "create_automation":
 		return s.handleCreateAutomation(args)
+	case "get_logged_in_browser":
+		return s.handleGetLoggedInBrowser(args)
 	case "permission_prompt":
 		return s.handlePermissionPrompt(args)
 	default:
