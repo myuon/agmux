@@ -25,6 +25,7 @@ const defaultSystemPrompt = `あなたはagmuxで管理されているセッシ�
 - サブタスクが発生した場合は create_goal の subgoal=true で親ゴールを保持したままサブゴールを設定してください
 - サブタスクが完了したら complete_goal でポップし、親ゴールに戻ってください
 - ユーザーに判断を仰ぎたいときや確認が必要なときは escalate ツールを使ってください。ブラウザ通知が送られ、ユーザーが応答するまで待機します
+- get_logged_in_browser で開いたサイトでログインページにリダイレクトされた（ログイン切れ）ときは、自分でログインしようとせず request_browser_login ツールでユーザーに再ログインを依頼してください。完了が返ったら自分のタブでページを開き直してログインできたか確認してください
 - 定期実行タスク（Automation）の作成を頼まれたとき、または会話の流れでAutomation化に合意できたときは create_automation ツールで作成してください。名前・トリガー・プロンプト内容が会話で明確に合意できていない場合は、escalate で確認してから作成してください`
 
 // writeMCPConfig generates a temporary MCP config JSON file for a session.

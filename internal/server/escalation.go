@@ -13,6 +13,9 @@ type Escalation struct {
 	Resolved       bool   `json:"resolved"`
 	TimedOut       bool   `json:"timedOut"`
 	TimeoutSeconds int    `json:"timeoutSeconds"`
+	// LoginURL is set for browser-login requests (request_browser_login): the
+	// user is asked to log in at this URL via the remote browser.
+	LoginURL string `json:"loginUrl,omitempty"`
 }
 
 // EscalationStore manages pending escalations with channels for blocking.
@@ -31,6 +34,11 @@ func NewEscalationStore() *EscalationStore {
 
 // Create adds a new escalation and returns a channel that will receive the user response.
 func (es *EscalationStore) Create(id, sessionID, message string, timeoutSeconds int) chan string {
+	return es.CreateWithLoginURL(id, sessionID, message, timeoutSeconds, "")
+}
+
+// CreateWithLoginURL is Create for a browser-login request.
+func (es *EscalationStore) CreateWithLoginURL(id, sessionID, message string, timeoutSeconds int, loginURL string) chan string {
 	es.mu.Lock()
 	defer es.mu.Unlock()
 
@@ -40,6 +48,7 @@ func (es *EscalationStore) Create(id, sessionID, message string, timeoutSeconds 
 		SessionID:      sessionID,
 		Message:        message,
 		TimeoutSeconds: timeoutSeconds,
+		LoginURL:       loginURL,
 	}
 	es.responseCh[id] = ch
 	return ch

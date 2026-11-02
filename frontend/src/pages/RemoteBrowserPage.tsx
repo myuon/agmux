@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Keyboard, Loader2, Play, RotateCw } from "lucide-react";
-import { mapClientToPage, normalizeUrl, screenDeltaToPage } from "../lib/remoteBrowser";
+import { Link, useLocation } from "react-router-dom";
+import { ArrowLeft, ArrowRight, Check, Keyboard, Loader2, Play, RotateCw, X } from "lucide-react";
+import { api } from "../api/client";
+import { mapClientToPage, normalizeUrl, parseLoginRequestParams, screenDeltaToPage } from "../lib/remoteBrowser";
 
 interface RemoteBrowserStatus {
   running: boolean;
@@ -25,7 +26,17 @@ async function fetchStatus(): Promise<RemoteBrowserStatus> {
   return res.json();
 }
 
+type LoginState = "loading" | "pending" | "gone" | "completed" | "cancelled";
+
 export function RemoteBrowserPage() {
+  const location = useLocation();
+  const loginReq = parseLoginRequestParams(location.search);
+  const loginUrlParamGiven = new URLSearchParams(location.search).has("url");
+  const [loginState, setLoginState] = useState<LoginState>("loading");
+  const [loginReason, setLoginReason] = useState<string | null>(null);
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const loginNavigatedRef = useRef(false);
   const [running, setRunning] = useState<boolean | null>(null);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
@@ -45,6 +56,30 @@ export function RemoteBrowserPage() {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   }, []);
+
+  // Browser-login request: look up the pending request (reason) for the bar.
+  const loginEscalationId = loginReq?.escalationId;
+  const loginSessionId = loginReq?.sessionId;
+  useEffect(() => {
+    if (!loginEscalationId || !loginSessionId) return;
+    let cancelled = false;
+    setLoginState("loading");
+    api
+      .getPendingEscalation(loginSessionId)
+      .then((r) => {
+        if (cancelled) return;
+        if (r.escalation && r.escalation.id === loginEscalationId) {
+          setLoginReason(r.escalation.message ?? null);
+          setLoginState("pending");
+        } else {
+          setLoginState("gone");
+        }
+      })
+      .catch(() => !cancelled && setLoginState("gone"));
+    return () => {
+      cancelled = true;
+    };
+  }, [loginEscalationId, loginSessionId]);
 
   // Initial status
   useEffect(() => {
@@ -136,6 +171,42 @@ export function RemoteBrowserPage() {
       setStartError(e instanceof Error ? e.message : "Failed to start");
     } finally {
       setStarting(false);
+    }
+  };
+
+  // Start Chrome automatically for a pending login request.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (loginReq && loginState === "pending" && running === false && !autoStartedRef.current) {
+      autoStartedRef.current = true;
+      void start();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loginReq?.escalationId, loginState, running]);
+
+  // Navigate the user tab to the login URL exactly once (not on WS reconnects).
+  useEffect(() => {
+    if (loginReq && loginState === "pending" && conn === "connected" && !loginNavigatedRef.current) {
+      loginNavigatedRef.current = true;
+      send({ type: "navigate", url: loginReq.url });
+    }
+  }, [loginReq, loginState, conn, send]);
+
+  const answerLogin = async (outcome: "completed" | "cancelled") => {
+    if (!loginReq || loginBusy) return;
+    setLoginBusy(true);
+    setLoginError(null);
+    try {
+      await api.respondEscalation(
+        loginReq.sessionId,
+        loginReq.escalationId,
+        outcome === "completed" ? "login_completed" : "login_cancelled",
+      );
+      setLoginState(outcome);
+    } catch (e) {
+      setLoginError(e instanceof Error ? e.message : "送信に失敗しました");
+    } finally {
+      setLoginBusy(false);
     }
   };
 
@@ -332,6 +403,60 @@ export function RemoteBrowserPage() {
           </span>
         )}
       </header>
+
+      {loginUrlParamGiven && !loginReq && (
+        <div role="alert" className="px-3 py-2 text-sm bg-red-50 text-red-700 border-b border-red-200">
+          ログイン依頼の URL が不正です（http/https のみ対応）。
+        </div>
+      )}
+      {loginReq && (
+        <div className="px-3 py-2 border-b border-amber-300 bg-amber-50 space-y-2" data-testid="rb-login-bar" data-state={loginState}>
+          {loginState === "loading" && <div className="text-xs text-gray-500">ログイン依頼を確認中...</div>}
+          {loginState === "gone" && (
+            <div className="text-sm text-gray-700">このログイン依頼は既に終了しています（応答済みまたはタイムアウト）。</div>
+          )}
+          {loginState === "pending" && (
+            <>
+              <div className="text-sm text-gray-800 break-words">
+                {loginReason && <div className="font-medium">{loginReason}</div>}
+                <div className="text-xs text-gray-600">
+                  移動先: <span className="font-mono font-semibold" data-testid="rb-login-host">{loginReq.host}</span>
+                </div>
+                <div className="text-xs text-gray-500">パスワード等は、下の画面上でご自身で入力してください。</div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => answerLogin("completed")}
+                  disabled={loginBusy}
+                  className="flex-1 flex items-center justify-center gap-1 px-3 py-2 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50"
+                >
+                  <Check className="h-4 w-4" />
+                  ログイン完了
+                </button>
+                <button
+                  onClick={() => answerLogin("cancelled")}
+                  disabled={loginBusy}
+                  className="flex items-center justify-center gap-1 px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-100 disabled:opacity-50"
+                >
+                  <X className="h-4 w-4" />
+                  キャンセル
+                </button>
+              </div>
+              {loginError && <p role="alert" className="text-xs text-red-600">{loginError}</p>}
+            </>
+          )}
+          {(loginState === "completed" || loginState === "cancelled") && (
+            <div className="text-sm text-gray-800">
+              {loginState === "completed" ? "完了を送信しました。エージェントが作業を再開します。" : "キャンセルしました。"}
+            </div>
+          )}
+          {(loginState === "gone" || loginState === "completed" || loginState === "cancelled") && (
+            <Link to={`/sessions/${loginReq.sessionId}`} className="inline-block text-sm text-blue-600 underline">
+              セッションに戻る
+            </Link>
+          )}
+        </div>
+      )}
 
       {!running ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">

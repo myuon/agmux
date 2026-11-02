@@ -161,7 +161,7 @@ export const api = {
     request<{ files: { name: string; content: string }[] }>(`/sessions/${id}/settings-json`),
 
   getPendingEscalation: (sessionId: string) =>
-    request<{ escalation: { id: string; sessionId: string; message: string; timedOut?: boolean; timeoutSeconds?: number } | null }>(`/sessions/${sessionId}/escalate`),
+    request<{ escalation: { id: string; sessionId: string; message: string; timedOut?: boolean; timeoutSeconds?: number; loginUrl?: string } | null }>(`/sessions/${sessionId}/escalate`),
 
   respondEscalation: (sessionId: string, escalationId: string, response: string) =>
     request<{ status: string }>(`/sessions/${sessionId}/escalate/respond`, {

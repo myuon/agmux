@@ -217,12 +217,36 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 				},
 				map[string]interface{}{
 					"name":        "get_logged_in_browser",
-					"description": "ユーザーのログイン状態を共有した Chrome（agmux 管理のリモートブラウザ）に、このセッション専用のタブを割り当て、agent-browser で操作するための接続情報とコマンド形式を返します。ユーザーがログイン済みのサイトを閲覧・操作する必要があるとき（ログインが必要なページなど）にのみ使ってください。一般的な Web 閲覧・調査・テストには使わず、通常どおり agent-browser を単独で使ってください（このブラウザのプロファイルにはユーザーのログイン情報が入っています）。同じセッションで再度呼ぶと同じタブが返ります。",
+					"description": "ユーザーのログイン状態を共有した Chrome（agmux 管理のリモートブラウザ）に、このセッション専用のタブを割り当て、agent-browser で操作するための接続情報とコマンド形式を返します。ユーザーがログイン済みのサイトを閲覧・操作する必要があるとき（ログインが必要なページなど）にのみ使ってください。一般的な Web 閲覧・調査・テストには使わず、通常どおり agent-browser を単独で使ってください（このブラウザのプロファイルにはユーザーのログイン情報が入っています）。同じセッションで再度呼ぶと同じタブが返ります。ログインページにリダイレクトされた場合は request_browser_login を呼んでください。",
 					"inputSchema": map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
 							"session_id": sessionIDProperty,
 						},
+					},
+				},
+				map[string]interface{}{
+					"name":        "request_browser_login",
+					"description": "ログイン切れを検知したとき（get_logged_in_browser のタブでログインページにリダイレクトされた等）に、ユーザーへ再ログインを依頼します。ユーザーにブラウザ通知が送られ、タップするとリモートブラウザ画面で指定 URL が開きます。ユーザーが「ログイン完了」または「キャンセル」を押すかタイムアウトするまでブロックします。このツールはログインの成否を検証しません。「完了」が返ったら、自分のタブで対象ページを開き直してログインできたかを必ず確認してください。ユーザーのパスワード等を自分で入力・取得しようとしないでください。",
+					"inputSchema": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"session_id": sessionIDProperty,
+							"url": map[string]interface{}{
+								"type":        "string",
+								"description": "ユーザーにログインしてもらうページの URL（http/https のみ）",
+							},
+							"reason": map[string]interface{}{
+								"type":        "string",
+								"description": "ユーザーに表示する短い理由（例: 「example.com のログインが切れました」）",
+							},
+							"timeout_seconds": map[string]interface{}{
+								"type":        "integer",
+								"description": "タイムアウト秒数。デフォルト: 600秒（10分）",
+								"default":     600,
+							},
+						},
+						"required": []string{"url", "reason"},
 					},
 				},
 				map[string]interface{}{
@@ -340,6 +364,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 		return s.handleCreateAutomation(args)
 	case "get_logged_in_browser":
 		return s.handleGetLoggedInBrowser(args)
+	case "request_browser_login":
+		return s.handleRequestBrowserLogin(args)
 	case "permission_prompt":
 		return s.handlePermissionPrompt(args)
 	default:
@@ -467,7 +493,7 @@ func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCErro
 		timeoutSeconds = *input.TimeoutSeconds
 	}
 
-	response, timedOut, err := s.apiEscalate(sessionID, input.Message, timeoutSeconds)
+	response, timedOut, err := s.apiEscalate(sessionID, input.Message, timeoutSeconds, "")
 	if err != nil {
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
@@ -660,11 +686,15 @@ func (s *Server) apiSendNotification(sessionID string, message string) error {
 	return nil
 }
 
-func (s *Server) apiEscalate(sessionID string, message string, timeoutSeconds int) (string, bool, error) {
+func (s *Server) apiEscalate(sessionID string, message string, timeoutSeconds int, loginURL string) (string, bool, error) {
 	escalationID := uuid.New().String()
 	url := fmt.Sprintf("%s/api/sessions/%s/escalate", s.apiURL, sessionID)
-	body := fmt.Sprintf(`{"id":%s,"message":%s,"timeout_seconds":%d}`,
+	body := fmt.Sprintf(`{"id":%s,"message":%s,"timeout_seconds":%d`,
 		jsonString(escalationID), jsonString(message), timeoutSeconds)
+	if loginURL != "" {
+		body += fmt.Sprintf(`,"login_url":%s`, jsonString(loginURL))
+	}
+	body += "}"
 
 	req, err := http.NewRequest("POST", url, strings.NewReader(body))
 	if err != nil {
