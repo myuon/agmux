@@ -74,8 +74,10 @@ function useGlobalNotifications() {
       return;
     }
     if (msg.type === "agent_notification") {
-      const data = msg.data as { sessionId: string; sessionName: string; message: string };
-      sendNotification("agmux - Notification", `${data.sessionName}: ${data.message}`, data.sessionId);
+      const data = msg.data as { sessionId: string; sessionName: string; message: string; url?: string };
+      // Only an artifact viewer path may override the click target.
+      const url = data.url && /^\/artifacts\/[0-9a-f]{32}$/.test(data.url) ? data.url : undefined;
+      sendNotification("agmux - Notification", `${data.sessionName}: ${data.message}`, data.sessionId, url);
       return;
     }
     if (msg.type === "notify") {

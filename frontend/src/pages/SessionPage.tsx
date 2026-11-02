@@ -24,6 +24,7 @@ import { StatusDot } from "../components/StatusBadge";
 import { setActiveSessionName } from "../activeSession";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { StreamOutputView, ActiveTasksPanel } from "../components/session/StreamOutputView";
+import { ArtifactList } from "../components/session/ArtifactList";
 import { ForkPanel } from "../components/session/ForkPanel";
 import { DiffDropdown } from "../components/session/DiffDropdown";
 import { GoalPanel } from "../components/ui/GoalPanel";
@@ -1247,6 +1248,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               <ActiveTasksPanel tasks={activeTasks} sessionId={sessionId} lines={streamLines} sessionActive={session?.status === "working"} toolProgress={toolProgress} />
             </div>
           )}
+          {sessionId && <ArtifactList sessionId={sessionId} />}
           {sessionId && <ForkPanel sessionId={sessionId} />}
           {pendingPermission && sessionId ? (
             <PermissionPromptBanner
