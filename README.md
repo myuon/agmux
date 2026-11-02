@@ -163,6 +163,13 @@ agmux serve  # ローカルで起動
 # http://<tailscale-ip>:4321 でアクセス
 ```
 
+`localhost` と IP アドレス直指定（Tailscale の IP など）でのアクセスは設定不要です。ホスト名（Tailscale MagicDNS 名や独自ドメインなど）でアクセスする場合は、`~/.agmux/config.toml` の `server.allowed_hosts` にそのホスト名を追加してから agmux を再起動してください。
+
+```toml
+[server]
+allowed_hosts = ["my-machine.tailnet-name.ts.net"]
+```
+
 > **警告**: agmuxを直接インターネットに公開するのは絶対にやめてください。認証機能がないため、誰でもセッションを操作できてしまいます。必ずTailscale等のVPN経由でアクセスしてください。
 
 ## 開発

@@ -43,6 +43,7 @@ func doJSON(t *testing.T, s *Server, method, path, body string) *httptest.Respon
 		reader = strings.NewReader(body)
 	}
 	req := httptest.NewRequest(method, path, reader)
+	req.Host = "localhost:4321"
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)

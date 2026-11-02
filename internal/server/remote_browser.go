@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -54,9 +52,6 @@ func (s *Server) ShutdownRemoteBrowser(ctx context.Context) {
 	}
 }
 
-// devOrigin is the Vite dev server origin allowed in dev mode.
-const devOrigin = "http://localhost:5173"
-
 // isLoopbackRemote reports whether the actual TCP peer is a loopback address.
 // Only r.RemoteAddr is consulted: forwarding headers (X-Forwarded-For,
 // CF-Connecting-IP, ...) are attacker-controlled and deliberately ignored.
@@ -69,19 +64,6 @@ func isLoopbackRemote(r *http.Request) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
-}
-
-// originAllowed reports whether a (present) Origin header is same-site with
-// the request Host, or the dev origin in dev mode.
-func (s *Server) originAllowed(r *http.Request, origin string) bool {
-	if s.devMode && origin == devOrigin {
-		return true
-	}
-	u, err := url.Parse(origin)
-	if err != nil || u.Host == "" {
-		return false
-	}
-	return strings.EqualFold(u.Host, r.Host)
 }
 
 // checkRemoteBrowserWSOrigin is the WebSocket CheckOrigin: the Origin header
@@ -102,7 +84,7 @@ func (s *Server) remoteBrowserGuard(next http.Handler) http.Handler {
 			writeError(w, http.StatusForbidden, "remote browser is only available via localhost")
 			return
 		}
-		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
+		if isStateChanging(r.Method) {
 			if origin := r.Header.Get("Origin"); origin != "" && !s.originAllowed(r, origin) {
 				writeError(w, http.StatusForbidden, "cross-site request rejected")
 				return

@@ -215,6 +215,7 @@ func serveCmd() *cobra.Command {
 
 			srv = server.New(mgr, hub, devMode, logger, database, port)
 			srv.SetVersion(version, commit, buildDate)
+			srv.SetAllowedHosts(cfg.Server.AllowedHosts)
 
 			// Remote browser (dedicated Chrome). Profile lives under the agmux
 			// data dir, which honors $HOME.
