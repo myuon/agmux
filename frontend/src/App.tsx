@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Outlet, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "./api/client";
 import type { Session } from "./types/session";
@@ -8,7 +8,8 @@ import { SessionList } from "./components/SessionList";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { getActiveSessionName } from "./activeSession";
 import { IconButton } from "./components/ui/IconButton";
-import { Globe } from "lucide-react";
+import { Globe, MoreHorizontal } from "lucide-react";
+import { ActionMenu, ActionMenuItem } from "./components/ui/ActionMenu";
 import { BroadcastModal } from "./components/BroadcastModal";
 
 // Register service worker for mobile notifications
@@ -137,7 +138,79 @@ function ChevronRightIcon() {
   );
 }
 
-// Shared header action buttons
+// Header icons (shared by the desktop buttons and the mobile menu)
+type IconProps = { className?: string };
+
+function PlusIcon({ className = "h-5 w-5" }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 20 20" fill="currentColor">
+      <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
+function PreviewIcon({ className = "h-5 w-5" }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 20 20" fill="currentColor">
+      <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
+function ScenarioIcon({ className = "h-5 w-5" }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 20 20" fill="currentColor">
+      <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
+function AutomationsIcon({ className = "h-5 w-5" }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 20 20" fill="currentColor">
+      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
+function MetricsIcon({ className = "h-5 w-5" }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 20 20" fill="currentColor">
+      <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
+    </svg>
+  );
+}
+
+function SettingsIcon({ className = "h-5 w-5" }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 20 20" fill="currentColor">
+      <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
+    </svg>
+  );
+}
+
+function BroadcastIcon({ className = "h-5 w-5" }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" />
+      <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.4" />
+      <circle cx="12" cy="12" r="2" />
+      <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.4" />
+      <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19" />
+    </svg>
+  );
+}
+
+function ControllerIcon({ className = "h-5 w-5" }: IconProps) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="4 17 10 11 4 5" />
+      <line x1="12" y1="19" x2="20" y2="19" />
+    </svg>
+  );
+}
+
+// Shared header action buttons (desktop)
 function AppHeaderButtons({
   sessions,
   devMode,
@@ -149,7 +222,7 @@ function AppHeaderButtons({
   onCreateSession: () => void;
   onBroadcast: () => void;
 }) {
-  const navigate = useNavigate();
+  const goToController = useGoToController(sessions);
   return (
     <div className="flex items-center gap-2">
       <button
@@ -157,70 +230,153 @@ function AppHeaderButtons({
         className="p-1.5 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"
         title="New Session"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-          <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-        </svg>
+        <PlusIcon />
       </button>
       {devMode && (
         <IconButton shape="rounded" to="/preview" title="UI Preview">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clipRule="evenodd" />
-          </svg>
+          <PreviewIcon />
         </IconButton>
       )}
       {devMode && (
         <IconButton shape="rounded" to="/scenarios" title="Scenario Test">
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-            <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clipRule="evenodd" />
-          </svg>
+          <ScenarioIcon />
         </IconButton>
       )}
       <IconButton shape="rounded" to="/automations" title="Automations">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-        </svg>
+        <AutomationsIcon />
       </IconButton>
       <IconButton shape="rounded" to="/metrics" title="Metrics">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-          <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z" />
-        </svg>
+        <MetricsIcon />
       </IconButton>
       <IconButton shape="rounded" to="/remote-browser" title="Remote Browser">
         <Globe className="h-5 w-5" />
       </IconButton>
       <IconButton shape="rounded" to="/config" title="Settings">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-          <path fillRule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clipRule="evenodd" />
-        </svg>
+        <SettingsIcon />
       </IconButton>
       <button
         onClick={onBroadcast}
         className="p-1.5 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"
         title="Broadcast"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9" />
-          <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.4" />
-          <circle cx="12" cy="12" r="2" />
-          <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.4" />
-          <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19" />
-        </svg>
+        <BroadcastIcon />
       </button>
       <button
-        onClick={() => {
-          const controller = sessions.find((s) => s.type === "controller");
-          if (controller) {
-            navigate(`/sessions/${controller.id}`);
-          }
-        }}
+        onClick={goToController}
         className="p-1.5 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"
         title="Controller"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="4 17 10 11 4 5" />
-          <line x1="12" y1="19" x2="20" y2="19" />
-        </svg>
+        <ControllerIcon />
       </button>
+    </div>
+  );
+}
+
+function useGoToController(sessions: Session[]) {
+  const navigate = useNavigate();
+  return () => {
+    const controller = sessions.find((s) => s.type === "controller");
+    if (controller) {
+      navigate(`/sessions/${controller.id}`);
+    }
+  };
+}
+
+// Mobile header: "+" and a "..." menu that holds every other destination
+function MobileHeaderButtons({
+  sessions,
+  devMode,
+  onCreateSession,
+  onBroadcast,
+}: {
+  sessions: Session[];
+  devMode: boolean;
+  onCreateSession: () => void;
+  onBroadcast: () => void;
+}) {
+  const navigate = useNavigate();
+  const goToController = useGoToController(sessions);
+  const [open, setOpen] = useState(false);
+  const [menuTop, setMenuTop] = useState(0);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const toggle = () => {
+    if (!open) {
+      const rect = buttonRef.current?.getBoundingClientRect();
+      setMenuTop(rect ? rect.bottom + 4 : 56);
+    }
+    setOpen(!open);
+  };
+
+  const run = (fn: () => void) => () => {
+    setOpen(false);
+    fn();
+  };
+  const itemClass = "min-h-10 px-4";
+
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={onCreateSession}
+        className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"
+        title="New Session"
+        aria-label="New Session"
+      >
+        <PlusIcon />
+      </button>
+      <button
+        ref={buttonRef}
+        onClick={toggle}
+        className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100"
+        title="Menu"
+        aria-label="Menu"
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <MoreHorizontal className="h-5 w-5" />
+      </button>
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              setOpen(false);
+            }}
+            aria-hidden="true"
+          />
+          <div
+            role="menu"
+            className="fixed right-2 z-50 max-w-[calc(100vw-1rem)] overflow-y-auto"
+            style={{ top: menuTop, maxHeight: `calc(100vh - ${menuTop}px - 8px)` }}
+          >
+            <ActionMenu className="w-full">
+              <ActionMenuItem className={itemClass} icon={<Globe className="h-4 w-4" />} label="Remote Browser" onClick={run(() => navigate("/remote-browser"))} />
+              <ActionMenuItem className={itemClass} icon={<AutomationsIcon className="h-4 w-4" />} label="Automations" onClick={run(() => navigate("/automations"))} />
+              <ActionMenuItem className={itemClass} icon={<MetricsIcon className="h-4 w-4" />} label="Metrics" onClick={run(() => navigate("/metrics"))} />
+              <ActionMenuItem className={itemClass} icon={<BroadcastIcon className="h-4 w-4" />} label="Broadcast" onClick={run(onBroadcast)} />
+              <ActionMenuItem className={itemClass} icon={<ControllerIcon className="h-4 w-4" />} label="Controller" onClick={run(goToController)} />
+              <ActionMenuItem className={itemClass} icon={<SettingsIcon className="h-4 w-4" />} label="Settings" onClick={run(() => navigate("/config"))} />
+              {devMode && (
+                <>
+                  <div className="my-1 border-t border-gray-200" role="separator" />
+                  <ActionMenuItem className={itemClass} icon={<PreviewIcon className="h-4 w-4" />} label="UI Preview" onClick={run(() => navigate("/preview"))} />
+                  <ActionMenuItem className={itemClass} icon={<ScenarioIcon className="h-4 w-4" />} label="Scenario Test" onClick={run(() => navigate("/scenarios"))} />
+                </>
+              )}
+            </ActionMenu>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -430,7 +586,7 @@ export function Dashboard() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 px-4 md:px-8 py-3 flex items-center justify-between shrink-0">
         <h1 className="text-lg md:text-xl font-bold text-gray-900">agmux</h1>
-        <AppHeaderButtons
+        <MobileHeaderButtons
           sessions={sessions}
           devMode={devMode}
           onCreateSession={() => navigate("/sessions/new")}

@@ -17,9 +17,10 @@ interface ActionMenuItemProps {
   onClick?: () => void;
   variant?: "default" | "danger";
   disabled?: boolean;
+  className?: string;
 }
 
-export function ActionMenuItem({ icon, label, onClick, variant = "default", disabled = false }: ActionMenuItemProps) {
+export function ActionMenuItem({ icon, label, onClick, variant = "default", disabled = false, className = "" }: ActionMenuItemProps) {
   const variantClasses =
     variant === "danger"
       ? "text-red-600 hover:bg-red-50"
@@ -28,7 +29,7 @@ export function ActionMenuItem({ icon, label, onClick, variant = "default", disa
   return (
     <button
       type="button"
-      className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 whitespace-nowrap ${variantClasses} ${disabled ? "opacity-40 pointer-events-none" : ""}`}
+      className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 whitespace-nowrap ${variantClasses} ${disabled ? "opacity-40 pointer-events-none" : ""} ${className}`}
       onMouseDown={(e) => {
         e.preventDefault();
         onClick?.();
