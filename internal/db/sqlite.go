@@ -433,6 +433,13 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add model column to automations. Empty means the provider
+	// default model.
+	_, err = db.Exec(`ALTER TABLE automations ADD COLUMN model TEXT NOT NULL DEFAULT ''`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: create automation_runs table (execution history)
 	// status: 'success' | 'skipped' | 'error'. session_id is set on success.
 	_, err = db.Exec(`

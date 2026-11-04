@@ -305,6 +305,10 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 								"type":        "string",
 								"description": "セッションを起動するプロジェクトの作業ディレクトリ（絶対パス）。省略時はcontroller領域で実行されます。",
 							},
+							"model": map[string]interface{}{
+								"type":        "string",
+								"description": "セッションで使うモデル名（任意）。省略時はプロバイダの既定モデル。単純な機械的作業（コマンド実行のみ等）には軽量モデル（例: claude-haiku-5-5）を指定するとよい。",
+							},
 							"enabled": map[string]interface{}{
 								"type":        "boolean",
 								"description": "作成時に有効化するかどうか。省略時は true。",
@@ -541,6 +545,7 @@ func (s *Server) handleCreateAutomation(args json.RawMessage) (interface{}, *jso
 		TriggerType  string `json:"triggerType"`
 		TriggerValue string `json:"triggerValue"`
 		ProjectPath  string `json:"projectPath"`
+		Model        string `json:"model"`
 		Enabled      *bool  `json:"enabled"`
 	}
 	if err := json.Unmarshal(args, &input); err != nil {
@@ -564,7 +569,7 @@ func (s *Server) handleCreateAutomation(args json.RawMessage) (interface{}, *jso
 		enabled = *input.Enabled
 	}
 
-	created, err := s.apiCreateAutomation(input.Name, input.Prompt, input.TriggerType, input.TriggerValue, input.ProjectPath, enabled)
+	created, err := s.apiCreateAutomation(input.Name, input.Prompt, input.TriggerType, input.TriggerValue, input.ProjectPath, input.Model, enabled)
 	if err != nil {
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
@@ -587,10 +592,10 @@ type automationResponse struct {
 	Enabled      bool   `json:"enabled"`
 }
 
-func (s *Server) apiCreateAutomation(name, prompt, triggerType, triggerValue, projectPath string, enabled bool) (*automationResponse, error) {
+func (s *Server) apiCreateAutomation(name, prompt, triggerType, triggerValue, projectPath, model string, enabled bool) (*automationResponse, error) {
 	url := fmt.Sprintf("%s/api/automations", s.apiURL)
-	body := fmt.Sprintf(`{"name":%s,"prompt":%s,"triggerType":%s,"triggerValue":%s,"projectPath":%s,"enabled":%t}`,
-		jsonString(name), jsonString(prompt), jsonString(triggerType), jsonString(triggerValue), jsonString(projectPath), enabled)
+	body := fmt.Sprintf(`{"name":%s,"prompt":%s,"triggerType":%s,"triggerValue":%s,"projectPath":%s,"model":%s,"enabled":%t}`,
+		jsonString(name), jsonString(prompt), jsonString(triggerType), jsonString(triggerValue), jsonString(projectPath), jsonString(model), enabled)
 
 	req, err := http.NewRequest("POST", url, strings.NewReader(body))
 	if err != nil {

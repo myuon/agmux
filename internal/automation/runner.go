@@ -73,6 +73,7 @@ func (r *Runner) Run(a Automation, firedAt time.Time) *Run {
 	name := fmt.Sprintf("%s (auto)", a.Name)
 	sess, err := r.sessions.Create(name, projectPath, a.Prompt, false, session.CreateOpts{
 		AutomationID: a.ID,
+		Model:        a.Model,
 	})
 	if err != nil {
 		run.Status = RunError

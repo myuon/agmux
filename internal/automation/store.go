@@ -3,6 +3,7 @@ package automation
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
@@ -31,6 +32,7 @@ type CreateParams struct {
 	TriggerType  TriggerType
 	TriggerValue string
 	ProjectPath  string // empty = controller area
+	Model        string // empty = provider default
 	Enabled      bool
 }
 
@@ -59,14 +61,15 @@ func (s *Store) Create(p CreateParams) (*Automation, error) {
 		TriggerType:  p.TriggerType,
 		TriggerValue: p.TriggerValue,
 		ProjectPath:  p.ProjectPath,
+		Model:        strings.TrimSpace(p.Model),
 		Enabled:      p.Enabled,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
 	if _, err := s.db.Exec(
-		`INSERT INTO automations (id, name, prompt, trigger_type, trigger_value, project_path, enabled, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.ID, a.Name, a.Prompt, string(a.TriggerType), a.TriggerValue, a.ProjectPath, boolToInt(a.Enabled), a.CreatedAt, a.UpdatedAt,
+		`INSERT INTO automations (id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.Name, a.Prompt, string(a.TriggerType), a.TriggerValue, a.ProjectPath, a.Model, boolToInt(a.Enabled), a.CreatedAt, a.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert automation: %w", err)
 	}
@@ -80,7 +83,9 @@ type UpdateParams struct {
 	TriggerType  TriggerType
 	TriggerValue string
 	ProjectPath  string
-	Enabled      bool
+	// Model is optional: nil keeps the stored value, a pointer to "" clears it.
+	Model   *string
+	Enabled bool
 }
 
 // Update replaces the editable fields of an automation.
@@ -94,9 +99,15 @@ func (s *Store) Update(id string, p UpdateParams) (*Automation, error) {
 	if err := ValidateTrigger(p.TriggerType, p.TriggerValue); err != nil {
 		return nil, err
 	}
+	// model = CASE WHEN ? THEN ? ELSE model END keeps the stored value when
+	// the caller did not specify one.
+	setModel, model := 0, ""
+	if p.Model != nil {
+		setModel, model = 1, strings.TrimSpace(*p.Model)
+	}
 	res, err := s.db.Exec(
-		`UPDATE automations SET name = ?, prompt = ?, trigger_type = ?, trigger_value = ?, project_path = ?, enabled = ?, updated_at = ? WHERE id = ?`,
-		p.Name, p.Prompt, string(p.TriggerType), p.TriggerValue, p.ProjectPath, boolToInt(p.Enabled), time.Now(), id,
+		`UPDATE automations SET name = ?, prompt = ?, trigger_type = ?, trigger_value = ?, project_path = ?, model = CASE WHEN ? = 1 THEN ? ELSE model END, enabled = ?, updated_at = ? WHERE id = ?`,
+		p.Name, p.Prompt, string(p.TriggerType), p.TriggerValue, p.ProjectPath, setModel, model, boolToInt(p.Enabled), time.Now(), id,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update automation: %w", err)
@@ -140,7 +151,7 @@ func (s *Store) Delete(id string) error {
 // Get returns an automation by ID.
 func (s *Store) Get(id string) (*Automation, error) {
 	row := s.db.QueryRow(
-		`SELECT id, name, prompt, trigger_type, trigger_value, project_path, enabled, created_at, updated_at
+		`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, created_at, updated_at
 		 FROM automations WHERE id = ?`, id,
 	)
 	a, err := scanAutomation(row)
@@ -155,13 +166,13 @@ func (s *Store) Get(id string) (*Automation, error) {
 
 // List returns all automations ordered by creation time (newest first).
 func (s *Store) List() ([]Automation, error) {
-	return s.list(`SELECT id, name, prompt, trigger_type, trigger_value, project_path, enabled, created_at, updated_at
+	return s.list(`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, created_at, updated_at
 		FROM automations ORDER BY created_at DESC`)
 }
 
 // ListEnabled returns all enabled automations.
 func (s *Store) ListEnabled() ([]Automation, error) {
-	return s.list(`SELECT id, name, prompt, trigger_type, trigger_value, project_path, enabled, created_at, updated_at
+	return s.list(`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, created_at, updated_at
 		FROM automations WHERE enabled = 1 ORDER BY created_at DESC`)
 }
 
@@ -190,14 +201,17 @@ type rowScanner interface {
 func scanAutomation(row rowScanner) (*Automation, error) {
 	var a Automation
 	var triggerType string
-	var projectPath sql.NullString
+	var projectPath, model sql.NullString
 	var enabledInt int
-	if err := row.Scan(&a.ID, &a.Name, &a.Prompt, &triggerType, &a.TriggerValue, &projectPath, &enabledInt, &a.CreatedAt, &a.UpdatedAt); err != nil {
+	if err := row.Scan(&a.ID, &a.Name, &a.Prompt, &triggerType, &a.TriggerValue, &projectPath, &model, &enabledInt, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return nil, err
 	}
 	a.TriggerType = TriggerType(triggerType)
 	if projectPath.Valid {
 		a.ProjectPath = projectPath.String
+	}
+	if model.Valid {
+		a.Model = model.String
 	}
 	a.Enabled = enabledInt != 0
 	return &a, nil

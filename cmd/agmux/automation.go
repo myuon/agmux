@@ -93,6 +93,7 @@ type automationCreateRequest struct {
 	TriggerType  string `json:"triggerType"`
 	TriggerValue string `json:"triggerValue"`
 	ProjectPath  string `json:"projectPath,omitempty"`
+	Model        string `json:"model,omitempty"`
 	Enabled      bool   `json:"enabled"`
 }
 
@@ -190,7 +191,7 @@ func automationListCmd() *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "ID\tNAME\tTRIGGER\tPROJECT\tENABLED")
+			fmt.Fprintln(w, "ID\tNAME\tTRIGGER\tPROJECT\tMODEL\tENABLED")
 			for _, a := range automations {
 				id := a.ID
 				if len(id) > 8 {
@@ -200,8 +201,12 @@ func automationListCmd() *cobra.Command {
 				if project == "" {
 					project = "(controller)"
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\n",
-					id, a.Name, formatTrigger(a), project, a.Enabled)
+				model := a.Model
+				if model == "" {
+					model = "(default)"
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%v\n",
+					id, a.Name, formatTrigger(a), project, model, a.Enabled)
 			}
 			w.Flush()
 			return nil
@@ -215,6 +220,7 @@ func automationCreateCmd() *cobra.Command {
 	var interval string
 	var cron string
 	var projectPath string
+	var model string
 	var disabled bool
 
 	cmd := &cobra.Command{
@@ -260,6 +266,7 @@ If --project is omitted, the automation runs in the controller area.`,
 				TriggerType:  triggerType,
 				TriggerValue: triggerValue,
 				ProjectPath:  projectPath,
+				Model:        model,
 				Enabled:      !disabled,
 			})
 			if err != nil {
@@ -275,6 +282,7 @@ If --project is omitted, the automation runs in the controller area.`,
 	cmd.Flags().StringVar(&interval, "interval", "", "Fire at a fixed interval (Go duration, e.g. 30m, 1h)")
 	cmd.Flags().StringVar(&cron, "cron", "", "Fire on a cron schedule (5-field expression, e.g. \"0 9 * * 1-5\")")
 	cmd.Flags().StringVarP(&projectPath, "project", "p", "", "Project directory path (default: controller area)")
+	cmd.Flags().StringVar(&model, "model", "", "Model for the created session (default: provider default)")
 	cmd.Flags().BoolVar(&disabled, "disabled", false, "Create the automation in disabled state")
 
 	return cmd
