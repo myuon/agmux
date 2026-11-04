@@ -472,6 +472,10 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_artifacts_session ON artifacts(session_id)`)
+	// Migration: add updated_at (empty for rows never updated; readers fall back to created_at)
+	if _, err = db.Exec(`ALTER TABLE artifacts ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`); err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
 
 	return nil
 }

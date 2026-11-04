@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/myuon/agmux/internal/db"
@@ -48,6 +49,17 @@ type Artifact struct {
 	SessionID string `json:"sessionId"`
 	Title     string `json:"title"`
 	CreatedAt string `json:"createdAt"`
+	// UpdatedAt is the last time the content/title was replaced. It equals
+	// CreatedAt for artifacts that were never updated.
+	UpdatedAt string `json:"updatedAt"`
+}
+
+const selectCols = `id, session_id, title, created_at, COALESCE(NULLIF(updated_at, ''), created_at)`
+
+func scanArtifact(sc interface{ Scan(...any) error }) (Artifact, error) {
+	var a Artifact
+	err := sc.Scan(&a.ID, &a.SessionID, &a.Title, &a.CreatedAt, &a.UpdatedAt)
+	return a, err
 }
 
 // ValidateSource resolves path and checks that it is a publishable file.
@@ -77,39 +89,30 @@ func ValidateSource(path string) (string, error) {
 	return resolved, nil
 }
 
-// Publish copies src into dir/<new random id>/index.html and returns the id.
-func Publish(dir, src string) (string, error) {
+// openSource validates src and opens it, re-checking on the handle so the
+// file can't be swapped in between.
+func openSource(src string) (*os.File, error) {
 	resolved, err := ValidateSource(src)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	in, err := os.Open(resolved)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	defer in.Close()
-	// Re-check on the opened handle so the file can't be swapped in between.
 	if info, err := in.Stat(); err != nil || !info.Mode().IsRegular() {
-		return "", errors.New("path is not a regular file")
+		in.Close()
+		return nil, errors.New("path is not a regular file")
 	}
+	return in, nil
+}
 
-	var raw [16]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return "", err
-	}
-	id := hex.EncodeToString(raw[:])
-
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", err
-	}
-	itemDir := filepath.Join(dir, id)
-	if err := os.Mkdir(itemDir, 0o700); err != nil {
-		return "", err
-	}
-	out, err := os.OpenFile(filepath.Join(itemDir, FileName), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+// copyLimited writes in to the new file at path (created exclusively, 0600),
+// failing when it exceeds MaxSize. On error the file is removed.
+func copyLimited(in io.Reader, path string) error {
+	out, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
-		_ = os.RemoveAll(itemDir)
-		return "", err
+		return err
 	}
 	n, err := io.Copy(out, io.LimitReader(in, MaxSize+1))
 	if cerr := out.Close(); err == nil {
@@ -119,10 +122,115 @@ func Publish(dir, src string) (string, error) {
 		err = fmt.Errorf("file is larger than %d MiB", MaxSize>>20)
 	}
 	if err != nil {
+		_ = os.Remove(path)
+	}
+	return err
+}
+
+func randomHex() (string, error) {
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw[:]), nil
+}
+
+// Publish copies src into dir/<new random id>/index.html and returns the id.
+func Publish(dir, src string) (string, error) {
+	in, err := openSource(src)
+	if err != nil {
+		return "", err
+	}
+	defer in.Close()
+
+	id, err := randomHex()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	itemDir := filepath.Join(dir, id)
+	if err := os.Mkdir(itemDir, 0o700); err != nil {
+		return "", err
+	}
+	if err := copyLimited(in, filepath.Join(itemDir, FileName)); err != nil {
 		_ = os.RemoveAll(itemDir)
 		return "", err
 	}
 	return id, nil
+}
+
+var (
+	updateLocksMu sync.Mutex
+	updateLocks   = map[string]*sync.Mutex{}
+)
+
+// LockUpdate serializes updates of one artifact within this process and
+// returns the unlock function. Callers hold it across Replace, the metadata
+// update and Commit/Rollback so concurrent updates can't interleave rollbacks.
+func LockUpdate(id string) func() {
+	updateLocksMu.Lock()
+	m, ok := updateLocks[id]
+	if !ok {
+		m = &sync.Mutex{}
+		updateLocks[id] = m
+	}
+	updateLocksMu.Unlock()
+	m.Lock()
+	return m.Unlock
+}
+
+// Replacement is a content swap that has been applied but can still be undone.
+type Replacement struct {
+	target, backup string
+}
+
+// Commit discards the backup of the previous content.
+func (r *Replacement) Commit() { _ = os.Remove(r.backup) }
+
+// Rollback restores the previous content.
+func (r *Replacement) Rollback() error { return os.Rename(r.backup, r.target) }
+
+// Replace atomically swaps the content of the existing artifact id with src.
+// The new content is staged in a temp file inside the artifact directory and
+// renamed into place, so readers see either all-old or all-new. The previous
+// content is kept as a hard-linked backup until Commit/Rollback. If the
+// artifact does not exist, or src is invalid, nothing is written.
+func Replace(dir, id, src string) (*Replacement, error) {
+	if !ValidID(id) {
+		return nil, ErrNotFound
+	}
+	itemDir := filepath.Join(dir, id)
+	target := filepath.Join(itemDir, FileName)
+	if info, err := os.Lstat(target); err != nil || !info.Mode().IsRegular() {
+		return nil, ErrNotFound
+	}
+	in, err := openSource(src)
+	if err != nil {
+		return nil, err
+	}
+	defer in.Close()
+
+	suffix, err := randomHex()
+	if err != nil {
+		return nil, err
+	}
+	tmp := filepath.Join(itemDir, ".tmp-"+suffix)
+	backup := filepath.Join(itemDir, ".bak-"+suffix)
+	if err := copyLimited(in, tmp); err != nil {
+		return nil, err
+	}
+	if err := os.Link(target, backup); err != nil {
+		_ = os.Remove(tmp)
+		return nil, err
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		_ = os.Remove(tmp)
+		_ = os.Remove(backup)
+		return nil, err
+	}
+	return &Replacement{target: target, backup: backup}, nil
 }
 
 // Store keeps artifact metadata in sqlite and files under dir.
@@ -157,9 +265,10 @@ func (s *Store) Register(sessionID, id, title string) (*Artifact, error) {
 	if info, err := os.Stat(p); err != nil || !info.Mode().IsRegular() {
 		return nil, ErrNotFound
 	}
-	a := &Artifact{ID: id, SessionID: sessionID, Title: title, CreatedAt: time.Now().UTC().Format(time.RFC3339)}
-	_, err = s.db.Exec(`INSERT INTO artifacts (id, session_id, title, created_at) VALUES (?, ?, ?, ?)`,
-		a.ID, a.SessionID, a.Title, a.CreatedAt)
+	now := time.Now().UTC().Format(time.RFC3339)
+	a := &Artifact{ID: id, SessionID: sessionID, Title: title, CreatedAt: now, UpdatedAt: now}
+	_, err = s.db.Exec(`INSERT INTO artifacts (id, session_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		a.ID, a.SessionID, a.Title, a.CreatedAt, a.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -170,26 +279,43 @@ func (s *Store) Get(id string) (*Artifact, error) {
 	if !ValidID(id) {
 		return nil, ErrNotFound
 	}
-	var a Artifact
-	err := s.db.QueryRow(`SELECT id, session_id, title, created_at FROM artifacts WHERE id = ?`, id).
-		Scan(&a.ID, &a.SessionID, &a.Title, &a.CreatedAt)
+	a, err := scanArtifact(s.db.QueryRow(`SELECT `+selectCols+` FROM artifacts WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	return &a, err
 }
 
+// Touch records an update of an existing artifact: updated_at moves to now
+// (nanosecond precision so quick successive updates differ) and the title is
+// replaced when non-empty. session_id and created_at are left alone.
+func (s *Store) Touch(id, title string) (*Artifact, error) {
+	if !ValidID(id) {
+		return nil, ErrNotFound
+	}
+	title = strings.TrimSpace(title)
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	res, err := s.db.Exec(`UPDATE artifacts SET updated_at = ?, title = COALESCE(NULLIF(?, ''), title) WHERE id = ?`, now, title, id)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, ErrNotFound
+	}
+	return s.Get(id)
+}
+
 // List returns a session's artifacts, newest first.
 func (s *Store) List(sessionID string) ([]Artifact, error) {
-	rows, err := s.db.Query(`SELECT id, session_id, title, created_at FROM artifacts WHERE session_id = ? ORDER BY created_at DESC, rowid DESC`, sessionID)
+	rows, err := s.db.Query(`SELECT `+selectCols+` FROM artifacts WHERE session_id = ? ORDER BY created_at DESC, rowid DESC`, sessionID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := []Artifact{}
 	for rows.Next() {
-		var a Artifact
-		if err := rows.Scan(&a.ID, &a.SessionID, &a.Title, &a.CreatedAt); err != nil {
+		a, err := scanArtifact(rows)
+		if err != nil {
 			return nil, err
 		}
 		out = append(out, a)

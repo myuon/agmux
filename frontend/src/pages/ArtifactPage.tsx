@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { api, type Artifact } from "../api/client";
+import { useWebSocket } from "../hooks/useWebSocket";
+import { Toast } from "../components/ui/Toast";
+import { artifactRawUrl } from "../lib/artifact";
 
 // Full-screen viewer for a published HTML artifact.
 //
@@ -14,11 +17,33 @@ export function ArtifactPage() {
   const navigate = useNavigate();
   const [artifact, setArtifact] = useState<Artifact | null>(null);
   const [missing, setMissing] = useState(false);
+  const [updatedToast, setUpdatedToast] = useState(false);
 
   useEffect(() => {
     if (!id) return;
     api.getArtifact(id).then(setArtifact).catch(() => setMissing(true));
   }, [id]);
+
+  // When this artifact is updated, take the new metadata. The new updatedAt
+  // changes the iframe src, which reloads the content (scroll position resets).
+  useWebSocket(
+    useCallback(
+      (msg: { type: string; data: unknown }) => {
+        if (msg.type !== "artifact_updated") return;
+        const a = msg.data as Artifact;
+        if (a.id !== id) return;
+        setArtifact(a);
+        setUpdatedToast(true);
+      },
+      [id],
+    ),
+  );
+
+  useEffect(() => {
+    if (!updatedToast) return;
+    const t = setTimeout(() => setUpdatedToast(false), 2500);
+    return () => clearTimeout(t);
+  }, [updatedToast]);
 
   const back = artifact ? `/sessions/${artifact.sessionId}` : "/";
 
@@ -43,10 +68,11 @@ export function ArtifactPage() {
           </button>
         )}
       </div>
-      {id && !missing && (
+      {updatedToast && <Toast message="更新しました" onClose={() => setUpdatedToast(false)} />}
+      {id && !missing && artifact && (
         <iframe
-          title={artifact?.title ?? "artifact"}
-          src={`/artifacts/${id}/raw`}
+          title={artifact.title}
+          src={artifactRawUrl(id, artifact?.updatedAt)}
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
           className="flex-1 w-full min-h-0 border-0 bg-white"

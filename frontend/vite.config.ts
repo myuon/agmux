@@ -16,7 +16,7 @@ export default defineConfig({
         ws: true,
       },
       // Raw artifact HTML only; /artifacts/:id is the SPA viewer page
-      '^/artifacts/[0-9a-f]+/raw$': `http://localhost:${backendPort}`,
+      '^/artifacts/[0-9a-f]+/raw(\\?.*)?$': `http://localhost:${backendPort}`,
       '/api': `http://localhost:${backendPort}`,
       '/ws': {
         target: `ws://localhost:${backendPort}`,

@@ -260,7 +260,7 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 				},
 				map[string]interface{}{
 					"name":        "publish_artifact",
-					"description": "作成した HTML ファイル（1ファイル）を agmux に登録し、ユーザーがスマホ等から全画面で閲覧できるようにします。呼び出し時点の内容がコピーされ、ユーザーにブラウザ通知が送られます。表示は sandbox + CSP で隔離され、agmux の API や外部への通信（fetch/WebSocket/フォーム送信）はできません。相対パスのアセット（画像・CSS・JS ファイル）は同梱されないため、HTML は自己完結（インライン、または https の CDN からの読み込み）にしてください。.html / .htm のみ、20 MiB まで。",
+					"description": "作成した HTML ファイル（1ファイル）を agmux に登録し、ユーザーがスマホ等から全画面で閲覧できるようにします。呼び出し時点の内容がコピーされ、ユーザーにブラウザ通知が送られます。公開済みの HTML を変更するときは、元の HTML ファイルを編集してから artifact_id を指定して再度呼ぶと同じ URL のまま内容が差し替わります（~/.agmux/artifacts 配下は直接編集しないこと）。表示は sandbox + CSP で隔離され、agmux の API や外部への通信（fetch/WebSocket/フォーム送信）はできません。相対パスのアセット（画像・CSS・JS ファイル）は同梱されないため、HTML は自己完結（インライン、または https の CDN からの読み込み）にしてください。.html / .htm のみ、20 MiB まで。",
 					"inputSchema": map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
@@ -271,10 +271,14 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 							},
 							"title": map[string]interface{}{
 								"type":        "string",
-								"description": "一覧と閲覧画面に表示するタイトル",
+								"description": "一覧と閲覧画面に表示するタイトル。新規公開では必須。artifact_id 指定時は省略すると既存のタイトルのまま",
+							},
+							"artifact_id": map[string]interface{}{
+								"type":        "string",
+								"description": "更新する公開済みアーティファクトの id（公開時の結果に表示される）。指定すると新規公開せず、その id の内容を path のファイルで差し替える",
 							},
 						},
-						"required": []string{"path", "title"},
+						"required": []string{"path"},
 					},
 				},
 				map[string]interface{}{

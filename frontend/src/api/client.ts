@@ -7,6 +7,7 @@ export interface Artifact {
   sessionId: string;
   title: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 async function request<T>(
