@@ -20,7 +20,7 @@ export function ArtifactList({ sessionId }: { sessionId: string }) {
   useWebSocket(
     useCallback(
       (msg: { type: string; data: unknown }) => {
-        if (msg.type !== "artifact_created" && msg.type !== "artifact_deleted") return;
+        if (msg.type !== "artifact_created" && msg.type !== "artifact_updated" && msg.type !== "artifact_deleted") return;
         if ((msg.data as Artifact).sessionId === sessionId) load();
       },
       [sessionId, load],

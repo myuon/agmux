@@ -30,6 +30,7 @@ func (s *Server) mountArtifacts(r chi.Router) {
 	r.Get("/sessions/{id}/artifacts", s.listArtifacts)
 	r.Post("/sessions/{id}/artifacts", s.createArtifact)
 	r.Get("/artifacts/{id}", s.getArtifact)
+	r.Put("/artifacts/{id}", s.updateArtifact)
 	r.Delete("/artifacts/{id}", s.deleteArtifact)
 }
 
@@ -104,6 +105,79 @@ func (s *Server) createArtifact(w http.ResponseWriter, r *http.Request) {
 		Type: "agent_notification",
 		Data: map[string]interface{}{
 			"sessionId":   sessionID,
+			"sessionName": sess.Name,
+			"message":     message,
+			"url":         url,
+		},
+	})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"artifact": a, "url": url})
+}
+
+type updateArtifactRequest struct {
+	// Title replaces the title when non-empty.
+	Title string `json:"title"`
+	// SessionID is the session that performed the update (used only for the
+	// notification). It defaults to the artifact's own session. Ownership of
+	// the artifact never changes.
+	SessionID string `json:"sessionId"`
+}
+
+// updateArtifact records that the content of an existing artifact was
+// replaced (the MCP tool swaps the file itself, in-process). Like creation it
+// takes no path: the server only bumps updated_at / title, notifies and
+// broadcasts.
+func (s *Server) updateArtifact(w http.ResponseWriter, r *http.Request) {
+	store := s.artifactStore(w)
+	if store == nil {
+		return
+	}
+	var req updateArtifactRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	old, err := store.Get(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "artifact not found")
+		return
+	}
+	if p, err := store.FilePath(old.ID); err != nil {
+		writeError(w, http.StatusNotFound, "artifact not found")
+		return
+	} else if info, err := os.Stat(p); err != nil || !info.Mode().IsRegular() {
+		writeError(w, http.StatusNotFound, "artifact not found")
+		return
+	}
+	notifySession := old.SessionID
+	if req.SessionID != "" {
+		notifySession = req.SessionID
+	}
+	sess, err := s.sessions.Get(notifySession)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	a, err := store.Touch(old.ID, req.Title)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, artifact.ErrNotFound) {
+			status = http.StatusNotFound
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+
+	url := "/artifacts/" + a.ID
+	message := "HTML を更新しました: " + a.Title
+	s.recordSessionAction(notifySession, "agent_notification", message)
+	if err := s.saveNotification(notifySession, "notification", message); err != nil {
+		slog.Error("failed to save artifact notification", "error", err)
+	}
+	s.hub.Broadcast(Message{Type: "artifact_updated", Data: a})
+	s.hub.Broadcast(Message{
+		Type: "agent_notification",
+		Data: map[string]interface{}{
+			"sessionId":   notifySession,
 			"sessionName": sess.Name,
 			"message":     message,
 			"url":         url,
