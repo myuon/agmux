@@ -169,6 +169,7 @@ type HolderStreamProcess struct {
 	onNewLines       func(sessionID string, newLines []string, total int)
 	onProcessExit    func(sessionID string, exitErr error)
 	onTurnComplete   func(sessionID string)
+	onTurnFailed     func(sessionID string) // result event with a non-success subtype
 	onHolderRestart  func(sessionID string, newPID int)
 	onContextUsage   func(sessionID string, contextTokens, contextWindow int64)
 	runningTasks     int
@@ -590,6 +591,14 @@ func (sp *HolderStreamProcess) readLoop() {
 				if idle && tcb != nil {
 					tcb(sp.streamOpts.SessionID)
 				}
+			} else {
+				sp.mu.RLock()
+				idle := sp.runningTasks == 0
+				fcb := sp.onTurnFailed
+				sp.mu.RUnlock()
+				if idle && fcb != nil {
+					fcb(sp.streamOpts.SessionID)
+				}
 			}
 		case "turn.completed":
 			// Codex emits turn.completed when a turn finishes.
@@ -731,6 +740,22 @@ func (sp *HolderStreamProcess) SetOnProcessExit(fn func(sessionID string, exitEr
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 	sp.onProcessExit = fn
+}
+
+// SetOnTurnFailed sets a callback for when the CLI ends a turn with an error
+// result. It does not change session status; it exists so automation
+// sessions can still be cleaned up after a failed turn.
+func (sp *HolderStreamProcess) SetOnTurnFailed(fn func(sessionID string)) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.onTurnFailed = fn
+}
+
+// RunningTasks returns the number of background tasks/subagents still running.
+func (sp *HolderStreamProcess) RunningTasks() int {
+	sp.mu.RLock()
+	defer sp.mu.RUnlock()
+	return sp.runningTasks
 }
 
 // SetOnTurnComplete sets a callback for when the CLI completes a turn.

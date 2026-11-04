@@ -51,6 +51,14 @@ type Manager struct {
 	onSessionEnd       func(sessionID string)
 	onContextUsage     func(sessionID string, contextTokens, contextWindow int64)
 	backgroundTasks    *BackgroundTaskStore
+	// autoStop tracks automation-created sessions that are still "armed" for
+	// auto-stop (see automation_autostop.go). Presence in the map means armed;
+	// the value is the max-runtime fallback timer. In-memory only.
+	autoStopMu         sync.Mutex
+	autoStop           map[string]*time.Timer
+	autoStopDelay      time.Duration // 0 = defaultAutoStopDelay
+	autoStopMaxRuntime time.Duration // 0 = defaultAutoStopMaxRuntime
+	autoStopIdleWindow time.Duration // silence required before the fallback stops a session
 	// startHolderFn overrides StartHolderStreamProcess in tests (nil = real spawn).
 	startHolderFn func(opts StreamOpts, provider Provider) (*HolderStreamProcess, error)
 }
@@ -285,7 +293,7 @@ func buildOneShotFirstSendOpts(s *Session, text, mcpPath, effectiveSP string, ap
 // Otherwise, start a new holder process with --resume.
 func (m *Manager) RecoverStreamProcesses() {
 	rows, err := m.db.Query(
-		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid, clear_offset, conversation_started FROM sessions WHERE holder_pid > 0`,
+		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid, clear_offset, conversation_started, COALESCE(automation_id, ''), status FROM sessions WHERE holder_pid > 0`,
 	)
 	if err != nil {
 		m.logger.Error("recover stream processes: query failed", "error", err)
@@ -299,11 +307,17 @@ func (m *Manager) RecoverStreamProcesses() {
 		var holderPID int
 		var clearOffset int64
 		var conversationStartedInt int
-		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt, &holderPID, &clearOffset, &conversationStartedInt); err != nil {
+		var recAutomationID, recStatus string
+		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt, &holderPID, &clearOffset, &conversationStartedInt, &recAutomationID, &recStatus); err != nil {
 			m.logger.Error("recover stream processes: scan failed", "error", err)
 			continue
 		}
 		conversationStarted := conversationStartedInt != 0
+		// Re-arm automation auto-stop only for a session still inside its
+		// first turn (see automation_autostop.go: restart behavior).
+		if recAutomationID != "" && !conversationStarted && Status(recStatus) == StatusWorking {
+			m.armAutoStop(id)
+		}
 
 		// Skip sessions currently being deleted to avoid spawning a new holder
 		// in the window between Delete() killing the old holder and removing the DB record.
@@ -660,7 +674,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		// command-line positional argument rather than via stdin. The CLI exits
 		// after producing the response.
 		streamOpts.InitialPrompt = prompt
-		hsp, err := StartHolderStreamProcess(streamOpts, provider)
+		hsp, err := m.startHolder(streamOpts, provider)
 		if err != nil {
 			return nil, fmt.Errorf("start stream process: %w", err)
 		}
@@ -668,7 +682,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		hsp.recordUserMessage(prompt)
 		sp = hsp
 	default:
-		hsp, err := StartHolderStreamProcess(streamOpts, provider)
+		hsp, err := m.startHolder(streamOpts, provider)
 		if err != nil {
 			return nil, fmt.Errorf("start stream process: %w", err)
 		}
@@ -713,6 +727,11 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, s.AutomationID, holderPID, s.EphemeralTimeoutSeconds, s.CompletionReport, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
+	}
+
+	// Automation sessions stop themselves once their initial turn is done.
+	if automationID != "" && sp != nil {
+		m.armAutoStop(id)
 	}
 
 	// Wire callbacks and start the read loop only after the session row exists.
@@ -1127,6 +1146,7 @@ func (m *Manager) Stop(id string) error {
 
 	// Cancel ephemeral timeout goroutine if active
 	m.cancelEphemeralTimeout(id)
+	m.disarmAutoStop(id)
 
 	// Stop stream process if exists
 	m.stopStreamProcess(id)
@@ -1158,6 +1178,7 @@ func (m *Manager) Delete(id string) error {
 
 	// Cancel ephemeral timeout goroutine if active
 	m.cancelEphemeralTimeout(id)
+	m.disarmAutoStop(id)
 
 	// Stop stream process if exists
 	m.stopStreamProcess(id)
@@ -1273,10 +1294,23 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProces
 		// a separate goroutine because it restarts the holder, which stops
 		// this very read loop. If the user sends the next message before it
 		// gets spawnMu, SendKeysWithImages applies the reservation first.
+		m.scheduleAutoStop(sid)
 		var pending string
 		if err := m.db.QueryRow("SELECT pending_model FROM sessions WHERE id = ?", sid).Scan(&pending); err == nil && pending != "" {
 			go m.applyPendingModel(sid)
 		}
+	})
+	sp.SetOnTurnFailed(func(sid string) {
+		// Only armed (automation) sessions react to a failed turn; for all
+		// others the status handling is unchanged.
+		if !m.isAutoStopArmed(sid) {
+			return
+		}
+		m.logger.Info("automation turn failed (error result detected), scheduling auto-stop", "sessionId", sid)
+		if err := m.UpdateStatus(sid, StatusIdle); err != nil {
+			m.logger.Error("failed to update status after failed turn", "sessionId", sid, "error", err)
+		}
+		m.scheduleAutoStop(sid)
 	})
 	sp.SetOnHolderRestart(func(sid string, newPID int) {
 		m.logger.Info("holder restarted (codex resume), updating holder_pid", "sessionId", sid, "newPid", newPID)
@@ -1359,7 +1393,7 @@ func (m *Manager) SetNotifyInterval(d time.Duration) {
 func (m *Manager) wireNotifyCallback(sp *HolderStreamProcess) {
 	if m.notifyInterval > 0 {
 		sp.SetNotifyInterval(m.notifyInterval)
-		sp.SetSendKeysFunc(m.SendKeys)
+		sp.SetSendKeysFunc(m.sendKeysSystem)
 	}
 }
 
@@ -1438,6 +1472,19 @@ func (m *Manager) SendKeys(id string, text string) error {
 }
 
 func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData) error {
+	// A message from outside means someone is using the session: it is no
+	// longer subject to automation auto-stop.
+	m.disarmAutoStop(id)
+	return m.sendKeysWithImages(id, text, images)
+}
+
+// sendKeysSystem sends a message generated by agmux itself (periodic
+// background-task notification). Unlike SendKeys it does not disarm auto-stop.
+func (m *Manager) sendKeysSystem(id string, text string) error {
+	return m.sendKeysWithImages(id, text, nil)
+}
+
+func (m *Manager) sendKeysWithImages(id string, text string, images []ImageData) error {
 	s, err := m.Get(id)
 	if err != nil {
 		return err
@@ -2228,6 +2275,7 @@ func (m *Manager) Reconnect(id string) error {
 	if err != nil {
 		return err
 	}
+	m.disarmAutoStop(id)
 
 	provider := m.getProvider(s.Provider)
 
@@ -2253,7 +2301,7 @@ func (m *Manager) Reconnect(id string) error {
 	canResume := s.ConversationStarted
 
 	m.killStaleHolder(id)
-	sp, err := StartHolderStreamProcess(StreamOpts{
+	sp, err := m.startHolder(StreamOpts{
 		SessionID:     id,
 		ProjectPath:   s.ProjectPath,
 		MCPConfigPath: mcpConfigPath,
@@ -2287,6 +2335,7 @@ func (m *Manager) Restart(id string) error {
 	if err != nil {
 		return err
 	}
+	m.disarmAutoStop(id)
 
 	if !s.ConversationStarted {
 		return fmt.Errorf("session %s has not started a conversation; use start instead of restart", id)

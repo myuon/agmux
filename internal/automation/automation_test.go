@@ -530,3 +530,25 @@ func TestScheduler_StartStop(t *testing.T) {
 	// Stop is idempotent.
 	sched.Stop()
 }
+
+// An auto-stopped session (#748) is paused, which is not active: the next
+// fire must create a new session, while a still-working one keeps skipping.
+func TestRunner_PausedPreviousSessionDoesNotBlock(t *testing.T) {
+	store := newTestStore(t)
+	sessions := newFakeSessions()
+	r := newTestRunner(t, store, sessions)
+
+	a, err := store.Create(CreateParams{
+		Name: "auto-paused", Prompt: "p", TriggerType: TriggerInterval, TriggerValue: "30m", Enabled: true,
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, RunSuccess, r.Run(*a, time.Now()).Status)
+	assert.Equal(t, RunSkipped, r.Run(*a, time.Now()).Status)
+
+	sessions.setStatus("sess-1", session.StatusPaused)
+	run := r.Run(*a, time.Now())
+	assert.Equal(t, RunSuccess, run.Status)
+	assert.Equal(t, "sess-2", run.SessionID)
+	assert.Len(t, sessions.created, 2)
+}
