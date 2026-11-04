@@ -348,3 +348,48 @@ func TestMCPCreateAutomationInvalidTrigger(t *testing.T) {
 		t.Errorf("len(automations) = %d, want 0 (nothing should be persisted)", len(list))
 	}
 }
+
+func TestAutomationModelOnPut(t *testing.T) {
+	s := newAutomationTestServer(t)
+	rec := doJSON(t, s, http.MethodPost, "/api/automations",
+		`{"name":"a","prompt":"p","triggerType":"interval","triggerValue":"1h","model":"claude-haiku-5-5","enabled":true}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d (%s)", rec.Code, rec.Body.String())
+	}
+	var created automation.Automation
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	if created.Model != "claude-haiku-5-5" {
+		t.Fatalf("created model = %q", created.Model)
+	}
+
+	put := func(extra string) automation.Automation {
+		t.Helper()
+		rec := doJSON(t, s, http.MethodPut, "/api/automations/"+created.ID,
+			`{"name":"a","prompt":"p","triggerType":"interval","triggerValue":"1h","enabled":true`+extra+`}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("put status = %d (%s)", rec.Code, rec.Body.String())
+		}
+		var a automation.Automation
+		_ = json.Unmarshal(rec.Body.Bytes(), &a)
+		return a
+	}
+
+	if got := put("").Model; got != "claude-haiku-5-5" {
+		t.Errorf("PUT without model: model = %q, want kept", got)
+	}
+	if got := put(`,"model":"other"`).Model; got != "other" {
+		t.Errorf("PUT with model: model = %q, want other", got)
+	}
+
+	// PUT /enabled must not touch the model.
+	rec = doJSON(t, s, http.MethodPut, "/api/automations/"+created.ID+"/enabled", `{"enabled":false}`)
+	var toggled automation.Automation
+	_ = json.Unmarshal(rec.Body.Bytes(), &toggled)
+	if rec.Code != http.StatusOK || toggled.Model != "other" || toggled.Enabled {
+		t.Errorf("enabled toggle: code=%d %+v", rec.Code, toggled)
+	}
+
+	if got := put(`,"model":""`).Model; got != "" {
+		t.Errorf("PUT with empty model: model = %q, want cleared", got)
+	}
+}

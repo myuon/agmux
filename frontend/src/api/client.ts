@@ -273,6 +273,7 @@ export interface Automation {
   triggerType: "interval" | "cron";
   triggerValue: string;
   projectPath?: string;
+  model?: string;
   enabled: boolean;
   createdAt: string;
   updatedAt: string;
@@ -284,6 +285,7 @@ export interface AutomationInput {
   triggerType: "interval" | "cron";
   triggerValue: string;
   projectPath?: string;
+  model?: string;
   enabled: boolean;
 }
 

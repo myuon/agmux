@@ -65,6 +65,11 @@ export function AutomationDetailPage() {
               {automation.projectPath || "(controller)"}
             </span>
           </Field>
+          {automation.model && (
+            <Field label="Model">
+              <span className="text-sm text-gray-800 font-mono break-all">{automation.model}</span>
+            </Field>
+          )}
           <Field label="有効">
             <ToggleButton enabled={automation.enabled} onClick={handleToggle}>
               {automation.enabled ? "ON" : "OFF"}

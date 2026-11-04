@@ -12,6 +12,7 @@ const EMPTY_INPUT: AutomationInput = {
   triggerType: "interval",
   triggerValue: "",
   projectPath: "",
+  model: "",
   enabled: true,
 };
 
@@ -104,6 +105,16 @@ export function AutomationForm({
           value={input.projectPath || ""}
           onChange={(e) => setInput({ ...input, projectPath: e.target.value })}
           placeholder="未指定なら controller 領域で起動"
+          className={inputClass}
+        />
+      </div>
+      <div>
+        <label className="text-sm text-gray-600 block mb-1">Model (optional)</label>
+        <input
+          type="text"
+          value={input.model || ""}
+          onChange={(e) => setInput({ ...input, model: e.target.value })}
+          placeholder="未指定ならプロバイダの既定モデル（例: claude-haiku-5-5）"
           className={inputClass}
         />
       </div>
@@ -241,6 +252,7 @@ export function AutomationsPage() {
                       triggerType: a.triggerType,
                       triggerValue: a.triggerValue,
                       projectPath: a.projectPath || "",
+                      model: a.model || "",
                       enabled: a.enabled,
                     }}
                     onSubmit={(input) => handleUpdate(a.id, input)}

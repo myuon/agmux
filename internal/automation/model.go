@@ -37,10 +37,13 @@ type Automation struct {
 	TriggerValue string      `json:"triggerValue"`
 	// ProjectPath is the project working directory the created session runs
 	// in. Empty means the controller area (~/.agmux/controller).
-	ProjectPath string    `json:"projectPath,omitempty"`
-	Enabled     bool      `json:"enabled"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ProjectPath string `json:"projectPath,omitempty"`
+	// Model is the model passed to the created session. Empty means the
+	// provider default.
+	Model     string    `json:"model,omitempty"`
+	Enabled   bool      `json:"enabled"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Run is one entry in the execution history of an automation.

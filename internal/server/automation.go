@@ -17,7 +17,10 @@ type automationRequest struct {
 	TriggerType  string `json:"triggerType"`
 	TriggerValue string `json:"triggerValue"`
 	ProjectPath  string `json:"projectPath,omitempty"`
-	Enabled      bool   `json:"enabled"`
+	// Model is optional. On update, omitting it keeps the stored model and an
+	// explicit "" clears it.
+	Model   *string `json:"model,omitempty"`
+	Enabled bool    `json:"enabled"`
 }
 
 func (s *Server) listAutomations(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +47,7 @@ func (s *Server) createAutomation(w http.ResponseWriter, r *http.Request) {
 		TriggerType:  automation.TriggerType(req.TriggerType),
 		TriggerValue: req.TriggerValue,
 		ProjectPath:  req.ProjectPath,
+		Model:        deref(req.Model),
 		Enabled:      req.Enabled,
 	})
 	if err != nil {
@@ -82,6 +86,7 @@ func (s *Server) updateAutomation(w http.ResponseWriter, r *http.Request) {
 		TriggerType:  automation.TriggerType(req.TriggerType),
 		TriggerValue: req.TriggerValue,
 		ProjectPath:  req.ProjectPath,
+		Model:        req.Model,
 		Enabled:      req.Enabled,
 	})
 	if err != nil {
@@ -152,4 +157,11 @@ func (s *Server) listAutomationRuns(w http.ResponseWriter, r *http.Request) {
 		runs = []automation.Run{}
 	}
 	writeJSON(w, http.StatusOK, runs)
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
