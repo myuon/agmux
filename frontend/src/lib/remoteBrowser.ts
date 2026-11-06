@@ -118,3 +118,30 @@ export function normalizeUrl(input: string): string {
   if (/^(localhost|127\.|\[::1\]|\d+\.\d+\.\d+\.\d+)/i.test(v)) return `http://${v}`;
   return `https://${v}`;
 }
+
+export interface FocusState {
+  secure: boolean;
+  editable: boolean;
+}
+
+/** Parses a server "focus" message; returns null for anything else. */
+export function parseFocusMessage(msg: unknown): FocusState | null {
+  if (!msg || typeof msg !== "object") return null;
+  const m = msg as Record<string, unknown>;
+  if (m.type !== "focus") return null;
+  return { secure: m.secure === true, editable: m.editable === true };
+}
+
+/**
+ * Password mode is on when the user turned it on manually (stays on until
+ * toggled off, regardless of focus messages) or the page focused field is
+ * detected as a password field.
+ */
+export function isSecureInput(manual: boolean, detected: boolean): boolean {
+  return manual || detected;
+}
+
+/** Type of the hidden text sink; "password" stops mobile keyboards from learning. */
+export function sinkInputType(secure: boolean): "text" | "password" {
+  return secure ? "password" : "text";
+}

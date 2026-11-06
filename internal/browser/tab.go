@@ -66,6 +66,10 @@ type UserTab struct {
 	closed    bool
 	lastFrame []byte
 	lastURL   []byte
+	lastFocus []byte
+
+	// evalFn overrides Runtime.evaluate (tests).
+	evalFn func(ctx context.Context, expr string) (json.RawMessage, error)
 }
 
 func newUserTab(ctx context.Context, port int, targetID string, logger *slog.Logger) (*UserTab, error) {
@@ -138,8 +142,10 @@ func (t *UserTab) onEvent(method string, params json.RawMessage) {
 		msg, _ := json.Marshal(urlMessage{Type: "url", URL: n.Frame.URL})
 		t.mu.Lock()
 		t.lastURL = msg
+		t.lastFocus = nil // stale after navigation
 		t.broadcastLocked(msg)
 		t.mu.Unlock()
+		t.scheduleFocusCheck()
 	}
 }
 
@@ -148,6 +154,28 @@ func (t *UserTab) broadcastLocked(msg []byte) {
 		select {
 		case s.ch <- msg:
 		default: // slow consumer: drop (a later frame supersedes this one)
+		}
+	}
+}
+
+// broadcastReliableLocked is like broadcastLocked but for state messages that
+// must not be lost (a later frame does not supersede them): when a
+// subscriber's queue is full (screencast frames flood it) the oldest queued
+// message is discarded to make room.
+func (t *UserTab) broadcastReliableLocked(msg []byte) {
+	for s := range t.subs {
+		select {
+		case s.ch <- msg:
+			continue
+		default:
+		}
+		select {
+		case <-s.ch: // drop the oldest
+		default:
+		}
+		select {
+		case s.ch <- msg:
+		default:
 		}
 	}
 }
@@ -163,6 +191,9 @@ func (t *UserTab) Subscribe(ctx context.Context) (*Subscription, error) {
 	s.C = s.ch
 	if t.lastURL != nil {
 		s.ch <- t.lastURL
+	}
+	if t.lastFocus != nil {
+		s.ch <- t.lastFocus
 	}
 	if t.lastFrame != nil {
 		s.ch <- t.lastFrame
@@ -254,7 +285,9 @@ func (t *UserTab) HandleInput(ctx context.Context, m InputMessage) error {
 		if err := t.mouse(ctx, "mousePressed", m.X, m.Y); err != nil {
 			return err
 		}
-		return t.mouse(ctx, "mouseReleased", m.X, m.Y)
+		err := t.mouse(ctx, "mouseReleased", m.X, m.Y)
+		t.scheduleFocusCheck()
+		return err
 	case "scroll":
 		_, err := t.cdp.Call(ctx, "Input.dispatchMouseEvent", map[string]any{
 			"type": "mouseWheel", "x": m.X, "y": m.Y, "deltaX": m.DeltaX, "deltaY": m.DeltaY,
@@ -263,6 +296,9 @@ func (t *UserTab) HandleInput(ctx context.Context, m InputMessage) error {
 	case "key":
 		if len(m.Key) > maxKeyLen || len(m.Code) > maxKeyLen || len(m.Text) > maxKeyLen {
 			return fmt.Errorf("%w: key too long", ErrInvalidInput)
+		}
+		if m.Key == "Tab" || m.Key == "Enter" {
+			defer t.scheduleFocusCheck()
 		}
 		switch m.Action {
 		case "down":
@@ -287,6 +323,7 @@ func (t *UserTab) HandleInput(ctx context.Context, m InputMessage) error {
 			return err
 		}
 		_, err := t.cdp.Call(ctx, "Page.navigate", map[string]any{"url": m.URL})
+		t.scheduleFocusCheck()
 		return err
 	case "back":
 		return t.back(ctx)

@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, Keyboard, Loader2, Play, RotateCw, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Keyboard, KeyRound, Loader2, Play, RotateCw, X } from "lucide-react";
 import { api } from "../api/client";
-import { mapClientToPage, normalizeUrl, parseLoginRequestParams, screenDeltaToPage } from "../lib/remoteBrowser";
+import {
+  isSecureInput,
+  mapClientToPage,
+  normalizeUrl,
+  parseFocusMessage,
+  parseLoginRequestParams,
+  screenDeltaToPage,
+  sinkInputType,
+} from "../lib/remoteBrowser";
 
 interface RemoteBrowserStatus {
   running: boolean;
@@ -44,6 +52,10 @@ export function RemoteBrowserPage() {
   const [frameSrc, setFrameSrc] = useState<string | null>(null);
   const [urlInput, setUrlInput] = useState("");
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  // Password mode: detected from the page's focused field and/or toggled manually.
+  const [detectedSecure, setDetectedSecure] = useState(false);
+  const [manualSecure, setManualSecure] = useState(false);
+  const secure = isSecureInput(manualSecure, detectedSecure);
 
   const wsRef = useRef<WebSocket | null>(null);
   const metaRef = useRef<FrameMeta | null>(null);
@@ -113,6 +125,11 @@ export function RemoteBrowserPage() {
         try {
           msg = JSON.parse(ev.data);
         } catch {
+          return;
+        }
+        const focus = parseFocusMessage(msg);
+        if (focus) {
+          setDetectedSecure(focus.secure);
           return;
         }
         if (msg.type === "frame" && msg.data && msg.metadata) {
@@ -368,6 +385,19 @@ export function RemoteBrowserPage() {
     else el.focus(); // must happen inside the click handler for iOS
   };
 
+  // The sink's type is switched by React on commit. iOS keeps the old keyboard
+  // mode while the same element stays focused, so re-focus synchronously
+  // (blur -> focus in one task) to make it pick up the new type. Focus is never
+  // released across a task boundary, so the keyboard should stay up; this can
+  // not be verified without a real iOS device.
+  useEffect(() => {
+    const el = kbRef.current;
+    if (el && document.activeElement === el) {
+      el.blur();
+      el.focus();
+    }
+  }, [secure]);
+
   const submitUrl = (e: React.FormEvent) => {
     e.preventDefault();
     const url = normalizeUrl(urlInput);
@@ -525,6 +555,16 @@ export function RemoteBrowserPage() {
                 {conn === "connected" ? "Waiting for frames..." : connLabel}
               </div>
             )}
+            {/* Overlay (not in flow): a layout change would resize the frame and shift tap coordinates. */}
+            {secure && (
+              <div
+                className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1 px-2.5 py-1 text-xs text-amber-800 bg-amber-50 border border-amber-300 rounded-full shadow pointer-events-none"
+                data-testid="rb-secure-indicator"
+              >
+                <KeyRound className="h-3.5 w-3.5" />
+                パスワード入力モード
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-around px-2 py-1.5 border-t border-gray-200">
@@ -553,6 +593,17 @@ export function RemoteBrowserPage() {
               <Keyboard className="h-5 w-5" />
             </button>
             <button
+              onClick={() => setManualSecure((v) => !v)}
+              className={`p-2.5 rounded-lg hover:bg-gray-100 ${manualSecure ? "text-amber-700 bg-amber-50" : "text-gray-600"}`}
+              title="パスワード入力モード"
+              aria-label="パスワード入力モード"
+              aria-pressed={manualSecure}
+              data-testid="rb-secure-toggle"
+              onMouseDown={(e) => e.preventDefault() /* keep the sink focused so the keyboard stays open */}
+            >
+              <KeyRound className="h-5 w-5" />
+            </button>
+            <button
               onClick={() => send({ type: "key", action: "press", key: "Enter", code: "Enter", keyCode: 13 })}
               className="p-2.5 text-gray-600 rounded-lg hover:bg-gray-100"
               title="Enter"
@@ -566,7 +617,7 @@ export function RemoteBrowserPage() {
               16px font avoids iOS zoom. Content is forwarded and cleared immediately. */}
           <input
             ref={kbRef}
-            type="text"
+            type={sinkInputType(secure)}
             aria-label="Remote keyboard input"
             autoCapitalize="off"
             autoCorrect="off"

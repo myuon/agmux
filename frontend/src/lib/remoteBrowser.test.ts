@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { loginRequestPath, loginUrlHost, mapClientToPage, normalizeUrl, parseLoginRequestParams, screenDeltaToPage } from "./remoteBrowser";
+import {
+  isSecureInput,
+  loginRequestPath,
+  loginUrlHost,
+  mapClientToPage,
+  normalizeUrl,
+  parseFocusMessage,
+  parseLoginRequestParams,
+  screenDeltaToPage,
+  sinkInputType,
+} from "./remoteBrowser";
 
 describe("mapClientToPage", () => {
   // 2x frame of a 400x800 CSS page => 800x1600 image
@@ -70,5 +80,26 @@ describe("login request params", () => {
     expect(parseLoginRequestParams("url=javascript:1&escalation=e&session=s")).toBeNull();
     expect(parseLoginRequestParams("url=https://a.test&session=s")).toBeNull();
     expect(parseLoginRequestParams("")).toBeNull();
+  });
+});
+
+describe("password mode helpers", () => {
+  it("parses focus messages", () => {
+    expect(parseFocusMessage({ type: "focus", secure: true, editable: true })).toEqual({ secure: true, editable: true });
+    expect(parseFocusMessage({ type: "focus", secure: "yes" })).toEqual({ secure: false, editable: false });
+    expect(parseFocusMessage({ type: "frame" })).toBeNull();
+    expect(parseFocusMessage(null)).toBeNull();
+    expect(parseFocusMessage("focus")).toBeNull();
+  });
+
+  it("manual mode overrides detection", () => {
+    expect(isSecureInput(true, false)).toBe(true);
+    expect(isSecureInput(false, true)).toBe(true);
+    expect(isSecureInput(false, false)).toBe(false);
+  });
+
+  it("chooses the sink type", () => {
+    expect(sinkInputType(true)).toBe("password");
+    expect(sinkInputType(false)).toBe("text");
   });
 });
