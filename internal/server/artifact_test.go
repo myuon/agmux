@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -211,4 +212,30 @@ func TestRawArtifactAfterUpdateKeepsHeaders(t *testing.T) {
 		assert.Contains(t, w.Header().Get("Content-Security-Policy"), "sandbox allow-scripts")
 		assert.NotContains(t, w.Header().Get("Content-Security-Policy"), "allow-same-origin")
 	}
+}
+
+func TestListAllArtifacts(t *testing.T) {
+	h, store, id1 := newArtifactTestServer(t)
+	src := filepath.Join(t.TempDir(), "b.html")
+	require.NoError(t, os.WriteFile(src, []byte("<p>b</p>"), 0o644))
+	id2, err := artifact.Publish(store.Dir(), src)
+	require.NoError(t, err)
+	_, err = store.Register("s2", id2, "T2")
+	require.NoError(t, err)
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/artifacts", nil))
+	require.Equal(t, 200, w.Code)
+	var got []artifact.Artifact
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	require.Len(t, got, 2)
+	assert.Equal(t, id2, got[0].ID)
+	assert.Equal(t, id1, got[1].ID)
+
+	_, err = store.Touch(id1, "")
+	require.NoError(t, err)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/artifacts", nil))
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+	assert.Equal(t, id1, got[0].ID)
 }

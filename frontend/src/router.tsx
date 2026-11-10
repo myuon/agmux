@@ -5,6 +5,7 @@ import { NewSessionPage } from "./pages/NewSessionPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { RemoteBrowserPage } from "./pages/RemoteBrowserPage";
+import { ArtifactsPage } from "./pages/ArtifactsPage";
 import { ArtifactPage } from "./pages/ArtifactPage";
 import { PreviewPage } from "./pages/PreviewPage";
 import { ScenarioTestPage } from "./pages/ScenarioTestPage";
@@ -64,6 +65,17 @@ export const router = createBrowserRouter([
             },
           },
         ],
+      },
+      {
+        path: "artifacts",
+        element: <ArtifactsPage />,
+        loader: async () => {
+          const [artifacts, sessions] = await Promise.all([
+            api.listAllArtifacts(),
+            api.listSessions().catch(() => []),
+          ]);
+          return { artifacts, sessions };
+        },
       },
       {
         path: "automations",
