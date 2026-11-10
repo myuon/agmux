@@ -27,6 +27,7 @@ const artifactCSP = "sandbox allow-scripts; default-src 'none'; " +
 	"connect-src 'none'; form-action 'none'; frame-src 'none'; base-uri 'none'"
 
 func (s *Server) mountArtifacts(r chi.Router) {
+	r.Get("/artifacts", s.listAllArtifacts)
 	r.Get("/sessions/{id}/artifacts", s.listArtifacts)
 	r.Post("/sessions/{id}/artifacts", s.createArtifact)
 	r.Get("/artifacts/{id}", s.getArtifact)
@@ -45,6 +46,19 @@ func (s *Server) artifactStore(w http.ResponseWriter) *artifact.Store {
 		return nil
 	}
 	return s.artifacts
+}
+
+func (s *Server) listAllArtifacts(w http.ResponseWriter, r *http.Request) {
+	store := s.artifactStore(w)
+	if store == nil {
+		return
+	}
+	list, err := store.ListAll()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
 }
 
 func (s *Server) listArtifacts(w http.ResponseWriter, r *http.Request) {

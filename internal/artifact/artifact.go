@@ -311,6 +311,19 @@ func (s *Store) List(sessionID string) ([]Artifact, error) {
 	if err != nil {
 		return nil, err
 	}
+	return collectArtifacts(rows)
+}
+
+// ListAll returns every artifact across sessions, most recently updated first.
+func (s *Store) ListAll() ([]Artifact, error) {
+	rows, err := s.db.Query(`SELECT ` + selectCols + ` FROM artifacts ORDER BY julianday(COALESCE(NULLIF(updated_at, ''), created_at)) DESC, rowid DESC`)
+	if err != nil {
+		return nil, err
+	}
+	return collectArtifacts(rows)
+}
+
+func collectArtifacts(rows *sql.Rows) ([]Artifact, error) {
 	defer rows.Close()
 	out := []Artifact{}
 	for rows.Next() {

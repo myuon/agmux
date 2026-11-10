@@ -261,6 +261,7 @@ export const api = {
 
   listArtifacts: (sessionId: string) =>
     request<Artifact[]>(`/sessions/${sessionId}/artifacts`),
+  listAllArtifacts: () => request<Artifact[]>("/artifacts"),
   getArtifact: (id: string) => request<Artifact>(`/artifacts/${id}`),
   deleteArtifact: (id: string) =>
     request<{ status: string }>(`/artifacts/${id}`, { method: "DELETE" }),

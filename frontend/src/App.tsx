@@ -8,7 +8,7 @@ import { SessionList } from "./components/SessionList";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { getActiveSessionName } from "./activeSession";
 import { IconButton } from "./components/ui/IconButton";
-import { Globe, MoreHorizontal } from "lucide-react";
+import { FileText, Globe, MoreHorizontal } from "lucide-react";
 import { ActionMenu, ActionMenuItem } from "./components/ui/ActionMenu";
 import { BroadcastModal } from "./components/BroadcastModal";
 
@@ -242,6 +242,9 @@ function AppHeaderButtons({
           <ScenarioIcon />
         </IconButton>
       )}
+      <IconButton shape="rounded" to="/artifacts" title="Artifacts">
+        <FileText className="h-5 w-5" />
+      </IconButton>
       <IconButton shape="rounded" to="/automations" title="Automations">
         <AutomationsIcon />
       </IconButton>
@@ -361,6 +364,7 @@ function MobileHeaderButtons({
           >
             <ActionMenu className="w-full">
               <ActionMenuItem className={itemClass} icon={<Globe className="h-4 w-4" />} label="Remote Browser" onClick={run(() => navigate("/remote-browser"))} />
+              <ActionMenuItem className={itemClass} icon={<FileText className="h-4 w-4" />} label="Artifacts" onClick={run(() => navigate("/artifacts"))} />
               <ActionMenuItem className={itemClass} icon={<AutomationsIcon className="h-4 w-4" />} label="Automations" onClick={run(() => navigate("/automations"))} />
               <ActionMenuItem className={itemClass} icon={<MetricsIcon className="h-4 w-4" />} label="Metrics" onClick={run(() => navigate("/metrics"))} />
               <ActionMenuItem className={itemClass} icon={<BroadcastIcon className="h-4 w-4" />} label="Broadcast" onClick={run(onBroadcast)} />
