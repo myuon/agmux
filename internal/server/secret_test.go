@@ -68,6 +68,7 @@ func newSecretTestServer(t *testing.T) *secretTestEnv {
 	s := &Server{
 		logger:    slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		secrets:   secret.NewStore(sqlDB),
+		sqlDB:     sqlDB,
 		startTime: time.Now(),
 		secretBackends: secret.Registry{
 			secret.BackendKeychain:  kc,

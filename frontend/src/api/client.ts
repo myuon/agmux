@@ -1,4 +1,5 @@
 import type { Session } from "../types/session";
+import type { SecretMeta, SecretRegisterBody, SecretRequestInfo } from "../lib/secret";
 
 const BASE = "/api";
 
@@ -169,7 +170,20 @@ export const api = {
     request<{ files: { name: string; content: string }[] }>(`/sessions/${id}/settings-json`),
 
   getPendingEscalation: (sessionId: string) =>
-    request<{ escalation: { id: string; sessionId: string; message: string; timedOut?: boolean; timeoutSeconds?: number; loginUrl?: string } | null }>(`/sessions/${sessionId}/escalate`),
+    request<{ escalation: { id: string; sessionId: string; message: string; timedOut?: boolean; timeoutSeconds?: number; loginUrl?: string; secretRequest?: SecretRequestInfo } | null }>(`/sessions/${sessionId}/escalate`),
+
+  /** Store the secret a request_secret escalation asked for and resolve it. */
+  resolveSecretRequest: (sessionId: string, escalationId: string, body: SecretRegisterBody) =>
+    request<SecretMeta>(`/sessions/${sessionId}/escalate/secret`, {
+      method: "POST",
+      body: JSON.stringify({ ...body, id: escalationId }),
+    }),
+
+  registerSecret: (body: SecretRegisterBody) =>
+    request<SecretMeta>("/secrets", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 
   respondEscalation: (sessionId: string, escalationId: string, response: string) =>
     request<{ status: string }>(`/sessions/${sessionId}/escalate/respond`, {

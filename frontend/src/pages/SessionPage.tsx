@@ -1,6 +1,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate, useLoaderData, Await, Link } from "react-router-dom";
 import { loginRequestPath, loginUrlHost } from "../lib/remoteBrowser";
+import { SECRET_RESPONSE_CANCELLED, secretRequestPath, type SecretRequestInfo } from "../lib/secret";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -325,6 +326,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [escalationTimedOut, setEscalationTimedOut] = useState(false);
   const [escalationTimeoutSeconds, setEscalationTimeoutSeconds] = useState(300);
   const [escalationLoginUrl, setEscalationLoginUrl] = useState<string | null>(null);
+  const [escalationSecretRequest, setEscalationSecretRequest] = useState<SecretRequestInfo | null>(null);
   const [pendingPermission, setPendingPermission] = useState<{ id: string; toolName: string; input: unknown; timedOut?: boolean; timeoutSeconds?: number } | null>(null);
   const [reconnectToast, setReconnectToast] = useState(false);
   const [restartToast, setRestartToast] = useState<"success" | "error" | null>(null);
@@ -426,10 +428,11 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   // Listen for WebSocket messages (escalation + stream updates)
   const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === "escalation") {
-      const data = msg.data as { id: string; sessionId: string; message?: string; timeoutSeconds?: number; loginUrl?: string };
+      const data = msg.data as { id: string; sessionId: string; message?: string; timeoutSeconds?: number; loginUrl?: string; secretRequest?: SecretRequestInfo | null };
       if (data.sessionId === sessionId) {
         setPendingEscalationId(data.id);
         setEscalationLoginUrl(data.loginUrl || null);
+        setEscalationSecretRequest(data.secretRequest ?? null);
         setEscalationMessage(data.message ?? null);
         setEscalationTimedOut(false);
         setEscalationTimeoutSeconds(data.timeoutSeconds ?? 300);
@@ -618,6 +621,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       if (r.escalation) {
         setPendingEscalationId(r.escalation.id);
         setEscalationLoginUrl(r.escalation.loginUrl || null);
+        setEscalationSecretRequest(r.escalation.secretRequest ?? null);
         setEscalationMessage(r.escalation.message ?? null);
         setEscalationTimedOut(r.escalation.timedOut ?? false);
         setEscalationTimeoutSeconds(r.escalation.timeoutSeconds ?? 300);
@@ -1263,8 +1267,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
               timedOut={escalationTimedOut}
               timeoutSeconds={escalationTimeoutSeconds}
               loginUrl={escalationLoginUrl}
+              secretRequest={escalationSecretRequest}
               sessionId={sessionId}
-              onResponded={() => { setPendingEscalationId(null); setEscalationMessage(null); setEscalationTimedOut(false); setEscalationLoginUrl(null); }}
+              onResponded={() => { setPendingEscalationId(null); setEscalationMessage(null); setEscalationTimedOut(false); setEscalationLoginUrl(null); setEscalationSecretRequest(null); }}
             />
           ) : sendForm}
         </div>
@@ -1472,12 +1477,13 @@ function formatTimeout(seconds: number): string {
   return `${seconds}秒`;
 }
 
-export function EscalationBanner({ escalationId, message, timedOut, timeoutSeconds, loginUrl, sessionId, onResponded }: {
+export function EscalationBanner({ escalationId, message, timedOut, timeoutSeconds, loginUrl, secretRequest, sessionId, onResponded }: {
   escalationId: string;
   message: string | null;
   timedOut: boolean;
   timeoutSeconds: number;
   loginUrl?: string | null;
+  secretRequest?: SecretRequestInfo | null;
   sessionId: string;
   onResponded: () => void;
 }) {
@@ -1507,7 +1513,7 @@ export function EscalationBanner({ escalationId, message, timedOut, timeoutSecon
       <div className="border border-red-300 rounded-lg bg-red-50 p-3 space-y-2">
         <div className="flex items-center gap-2">
           <AlertTriangle className="w-4 h-4 text-red-500 shrink-0" />
-          <span className="font-medium text-sm text-red-800">{loginUrl ? "ログイン依頼" : "Escalation"}</span>
+          <span className="font-medium text-sm text-red-800">{secretRequest ? "シークレット入力依頼" : loginUrl ? "ログイン依頼" : "Escalation"}</span>
           {timeoutSeconds && !timedOut && (
             <span className="text-xs text-gray-500">
               (タイムアウト: {formatTimeout(timeoutSeconds)})
@@ -1536,6 +1542,33 @@ export function EscalationBanner({ escalationId, message, timedOut, timeoutSecon
         )}
         {timedOut ? (
           <div className="text-xs text-amber-700">タイムアウト - エージェントは自動続行しました</div>
+        ) : secretRequest ? (
+          <div className="flex flex-wrap items-center gap-2" data-testid="secret-request-banner">
+            <Link
+              to={secretRequestPath(escalationId, sessionId)}
+              className="px-4 py-1.5 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+            >
+              入力画面を開く（<span className="font-mono">{secretRequest.name}</span>）
+            </Link>
+            <button
+              onClick={async () => {
+                if (sending) return;
+                setSending(true);
+                try {
+                  await api.respondEscalation(sessionId, escalationId, SECRET_RESPONSE_CANCELLED);
+                  onResponded();
+                } catch {
+                  // ignore
+                } finally {
+                  setSending(false);
+                }
+              }}
+              disabled={sending}
+              className="px-3 py-1.5 text-sm border border-gray-300 rounded-md bg-white text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+            >
+              キャンセル
+            </button>
+          </div>
         ) : loginUrl ? (
           <div className="flex flex-wrap items-center gap-2">
             {loginHost ? (

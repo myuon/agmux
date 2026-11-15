@@ -16,6 +16,18 @@ type Escalation struct {
 	// LoginURL is set for browser-login requests (request_browser_login): the
 	// user is asked to log in at this URL via the remote browser.
 	LoginURL string `json:"loginUrl,omitempty"`
+	// SecretRequest is set for secret-registration requests (request_secret):
+	// the user is asked to register a secret with this name. It never holds
+	// the value.
+	SecretRequest *SecretRequestInfo `json:"secretRequest,omitempty"`
+}
+
+// SecretRequestInfo describes the secret an agent asked the user to register.
+type SecretRequestInfo struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// ProjectPath is the requesting session's project (the default scope).
+	ProjectPath string `json:"projectPath,omitempty"`
 }
 
 // EscalationStore manages pending escalations with channels for blocking.
@@ -39,19 +51,47 @@ func (es *EscalationStore) Create(id, sessionID, message string, timeoutSeconds 
 
 // CreateWithLoginURL is Create for a browser-login request.
 func (es *EscalationStore) CreateWithLoginURL(id, sessionID, message string, timeoutSeconds int, loginURL string) chan string {
-	es.mu.Lock()
-	defer es.mu.Unlock()
-
-	ch := make(chan string, 1)
-	es.escalations[id] = &Escalation{
+	return es.add(&Escalation{
 		ID:             id,
 		SessionID:      sessionID,
 		Message:        message,
 		TimeoutSeconds: timeoutSeconds,
 		LoginURL:       loginURL,
-	}
-	es.responseCh[id] = ch
+	})
+}
+
+// CreateSecretRequest is Create for a secret-registration request.
+func (es *EscalationStore) CreateSecretRequest(id, sessionID, message string, timeoutSeconds int, req SecretRequestInfo) chan string {
+	return es.add(&Escalation{
+		ID:             id,
+		SessionID:      sessionID,
+		Message:        message,
+		TimeoutSeconds: timeoutSeconds,
+		SecretRequest:  &req,
+	})
+}
+
+func (es *EscalationStore) add(esc *Escalation) chan string {
+	es.mu.Lock()
+	defer es.mu.Unlock()
+
+	ch := make(chan string, 1)
+	es.escalations[esc.ID] = esc
+	es.responseCh[esc.ID] = ch
 	return ch
+}
+
+// PendingSecretRequest returns the secret request of an unresolved escalation
+// belonging to sessionID, or nil.
+func (es *EscalationStore) PendingSecretRequest(id, sessionID string) *SecretRequestInfo {
+	es.mu.Lock()
+	defer es.mu.Unlock()
+	esc, ok := es.escalations[id]
+	if !ok || esc.Resolved || esc.SessionID != sessionID || esc.SecretRequest == nil {
+		return nil
+	}
+	info := *esc.SecretRequest
+	return &info
 }
 
 // Respond sends a response to a pending escalation.

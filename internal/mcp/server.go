@@ -259,6 +259,30 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 					},
 				},
 				map[string]interface{}{
+					"name":        "request_secret",
+					"description": "API キーなどのシークレットが必要なときに、ユーザーへ登録を依頼します。ユーザーにブラウザ通知が送られ、スマホ等の専用フォームで値（または 1Password 参照）を入力してもらいます。ユーザーが保存・キャンセルするかタイムアウトするまでブロックします。値はあなたには返されず、「NAME を保存しました」とだけ返ります。登録後は `agmux secret exec --env NAME -- <cmd>` で子プロセスの環境変数として利用してください。ユーザーにシークレットの値をチャットや escalate で直接送らせないでください。",
+					"inputSchema": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"session_id": sessionIDProperty,
+							"name": map[string]interface{}{
+								"type":        "string",
+								"description": "シークレット名（環境変数名と同じ形式 [A-Z_][A-Z0-9_]*。例: OPENAI_API_KEY）",
+							},
+							"description": map[string]interface{}{
+								"type":        "string",
+								"description": "ユーザーに表示する用途の説明（例: 「OpenAI API で埋め込みを生成するため」）",
+							},
+							"timeout_seconds": map[string]interface{}{
+								"type":        "integer",
+								"description": "タイムアウト秒数。デフォルト: 600秒（10分）",
+								"default":     600,
+							},
+						},
+						"required": []string{"name", "description"},
+					},
+				},
+				map[string]interface{}{
 					"name":        "publish_artifact",
 					"description": "作成した HTML ファイル（1ファイル）を agmux に登録し、ユーザーがスマホ等から全画面で閲覧できるようにします。呼び出し時点の内容がコピーされ、ユーザーにブラウザ通知が送られます。公開済みの HTML を変更するときは、元の HTML ファイルを編集してから artifact_id を指定して再度呼ぶと同じ URL のまま内容が差し替わります（~/.agmux/artifacts 配下は直接編集しないこと）。表示は sandbox + CSP で隔離され、agmux の API や外部への通信（fetch/WebSocket/フォーム送信）はできません。相対パスのアセット（画像・CSS・JS ファイル）は同梱されないため、HTML は自己完結（インライン、または https の CDN からの読み込み）にしてください。.html / .htm のみ、20 MiB まで。",
 					"inputSchema": map[string]interface{}{
@@ -402,6 +426,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 		return s.handleGetLoggedInBrowser(args)
 	case "request_browser_login":
 		return s.handleRequestBrowserLogin(args)
+	case "request_secret":
+		return s.handleRequestSecret(args)
 	case "publish_artifact":
 		return s.handlePublishArtifact(args)
 	case "permission_prompt":
@@ -726,14 +752,31 @@ func (s *Server) apiSendNotification(sessionID string, message string) error {
 }
 
 func (s *Server) apiEscalate(sessionID string, message string, timeoutSeconds int, loginURL string) (string, bool, error) {
+	var extra map[string]string
+	if loginURL != "" {
+		extra = map[string]string{"login_url": loginURL}
+	}
+	return s.apiEscalateWith(sessionID, message, timeoutSeconds, extra)
+}
+
+// apiEscalateWith creates an escalation with extra string fields in the body
+// (login_url, secret_name, ...) and blocks until it is answered.
+func (s *Server) apiEscalateWith(sessionID string, message string, timeoutSeconds int, extra map[string]string) (string, bool, error) {
 	escalationID := uuid.New().String()
 	url := fmt.Sprintf("%s/api/sessions/%s/escalate", s.apiURL, sessionID)
-	body := fmt.Sprintf(`{"id":%s,"message":%s,"timeout_seconds":%d`,
-		jsonString(escalationID), jsonString(message), timeoutSeconds)
-	if loginURL != "" {
-		body += fmt.Sprintf(`,"login_url":%s`, jsonString(loginURL))
+	payload := map[string]interface{}{
+		"id":              escalationID,
+		"message":         message,
+		"timeout_seconds": timeoutSeconds,
 	}
-	body += "}"
+	for k, v := range extra {
+		payload[k] = v
+	}
+	bodyBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", false, err
+	}
+	body := string(bodyBytes)
 
 	req, err := http.NewRequest("POST", url, strings.NewReader(body))
 	if err != nil {
