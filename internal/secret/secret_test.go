@@ -66,6 +66,27 @@ func TestProjectAllowed(t *testing.T) {
 	}
 }
 
+func TestProjectAllowedResolvesSymlinks(t *testing.T) {
+	root := t.TempDir()
+	real := filepath.Join(root, "real")
+	if err := os.MkdirAll(filepath.Join(real, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	if !ProjectAllowed([]string{link}, filepath.Join(real, "sub")) {
+		t.Error("symlinked allow entry should match the real project path")
+	}
+	if !ProjectAllowed([]string{real}, filepath.Join(link, "sub")) {
+		t.Error("symlinked project path should match the real allow entry")
+	}
+	if ProjectAllowed([]string{filepath.Join(root, "other")}, link) {
+		t.Error("unrelated path matched")
+	}
+}
+
 func TestFileBackendPermsAndRoundTrip(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "secrets")
 	b := NewFileBackend(dir)
@@ -205,7 +226,7 @@ func (f *fakeRunner) Run(_ context.Context, stdin []byte, args ...string) ([]byt
 	case "-i":
 		// Minimal parse of: add-generic-password -U -s SVC -a NAME -w VALUE
 		fields := strings.Fields(string(stdin))
-		if len(fields) != 8 || fields[0] != "add-generic-password" || fields[3] != KeychainService {
+		if len(fields) != 8 || fields[0] != "add-generic-password" || !strings.HasPrefix(fields[3], KeychainService) {
 			return nil, 1, nil
 		}
 		f.items[fields[5]] = fields[7]
@@ -272,6 +293,53 @@ func TestKeychainBackendWithFakeRunner(t *testing.T) {
 	}
 	if err := b.Set(ctx, "bad name", "x"); err == nil {
 		t.Fatal("invalid name accepted")
+	}
+}
+
+func TestKeychainServiceFor(t *testing.T) {
+	if got := KeychainServiceFor("/Users/u/.agmux", "/Users/u/.agmux/"); got != KeychainService {
+		t.Fatalf("default data dir service = %q, want %q", got, KeychainService)
+	}
+	a := KeychainServiceFor("/tmp/dev-home/.agmux", "/Users/u/.agmux")
+	b := KeychainServiceFor("/tmp/other-home/.agmux", "/Users/u/.agmux")
+	if !strings.HasPrefix(a, KeychainService+":") || len(a) != len(KeychainService)+1+12 {
+		t.Fatalf("isolated service = %q", a)
+	}
+	if a == b {
+		t.Fatal("different data dirs share a service name")
+	}
+	if a != KeychainServiceFor("/tmp/dev-home/.agmux/", "/Users/u/.agmux") {
+		t.Fatal("service name is not stable")
+	}
+}
+
+func TestDefaultRegistryIsolatesKeychainServiceByHome(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	reg, err := DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kc := reg[BackendKeychain].(*KeychainBackend)
+	if kc.Service() == KeychainService {
+		t.Fatal("swapped HOME must not use the production keychain service")
+	}
+}
+
+func TestKeychainBackendUsesConfiguredService(t *testing.T) {
+	f := &fakeRunner{items: map[string]string{}}
+	b := NewKeychainBackendWithService(f, "agmux-secret:abc123")
+	ctx := context.Background()
+	if err := b.Set(ctx, "X", "v"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(f.stdin[0], " -s agmux-secret:abc123 ") {
+		t.Fatalf("add used wrong service: %q", f.stdin[0])
+	}
+	_ = b.Delete(ctx, "X")
+	for _, c := range f.calls[1:] {
+		if c[1] != "-s" || c[2] != "agmux-secret:abc123" {
+			t.Fatalf("call used wrong service: %v", c)
+		}
 	}
 }
 

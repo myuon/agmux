@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/secret"
+	"github.com/myuon/agmux/internal/session"
 )
 
 // memBackend is an in-memory secret.Backend for API tests.
@@ -263,4 +265,32 @@ func TestSecretAPI_Authorize(t *testing.T) {
 	if rec := doJSON(t, env.s, http.MethodPost, "/api/secrets/authorize", `{"names":["MISSING"]}`); rec.Code != http.StatusNotFound {
 		t.Fatalf("missing status = %d", rec.Code)
 	}
+
+	// With a session ID, the session's project is authoritative and cwd is
+	// ignored; an unknown session is an error (no fallback to cwd).
+	env.s.sessions = secretStubSessions{projects: map[string]string{"s1": "/p/a/.claude/worktrees/w", "s2": "/other"}}
+	if rec := doJSON(t, env.s, http.MethodPost, "/api/secrets/authorize", `{"names":["SCOPED"],"sessionId":"s1","cwd":"/other"}`); rec.Code != http.StatusOK {
+		t.Fatalf("in-scope session status = %d body=%s", rec.Code, rec.Body)
+	}
+	if rec := doJSON(t, env.s, http.MethodPost, "/api/secrets/authorize", `{"names":["SCOPED"],"sessionId":"s2","cwd":"/p/a"}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("out-of-scope session with in-scope cwd status = %d", rec.Code)
+	}
+	if rec := doJSON(t, env.s, http.MethodPost, "/api/secrets/authorize", `{"names":["GLOBAL"],"sessionId":"nope","cwd":"/p/a"}`); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown session status = %d, want 404", rec.Code)
+	}
+}
+
+// secretStubSessions maps session ID -> project path. Other SessionService
+// methods are unused by the secret API (nil embedded interface).
+type secretStubSessions struct {
+	session.SessionService
+	projects map[string]string
+}
+
+func (m secretStubSessions) Get(id string) (*session.Session, error) {
+	p, ok := m.projects[id]
+	if !ok {
+		return nil, errors.New("session not found")
+	}
+	return &session.Session{ID: id, ProjectPath: p}, nil
 }

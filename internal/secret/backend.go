@@ -2,6 +2,8 @@ package secret
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/user"
@@ -44,10 +46,26 @@ func DefaultRegistry() (Registry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve home dir: %w", err)
 	}
+	dataDir := filepath.Join(home, ".agmux")
+	service := KeychainServiceFor(dataDir, filepath.Join(realHomeDir(), ".agmux"))
 	return Registry{
-		BackendKeychain: NewKeychainBackend(NewSecurityRunner()),
-		BackendFile:     NewFileBackend(filepath.Join(home, ".agmux", "secrets")),
+		BackendKeychain: NewKeychainBackendWithService(NewSecurityRunner(), service),
+		BackendFile:     NewFileBackend(filepath.Join(dataDir, "secrets")),
 	}, nil
+}
+
+// KeychainServiceFor returns the keychain service name for an agmux data dir.
+// The real ~/.agmux (defaultDataDir) uses KeychainService; any other data dir
+// (e.g. an isolated dev instance with $HOME swapped) gets its own namespace
+// "agmux-secret:<hash>" so it can never read, overwrite or delete the
+// production instance's items. (security(1) always uses the real login
+// keychain because HOME is pinned for it.)
+func KeychainServiceFor(dataDir, defaultDataDir string) string {
+	if filepath.Clean(dataDir) == filepath.Clean(defaultDataDir) {
+		return KeychainService
+	}
+	sum := sha256.Sum256([]byte(filepath.Clean(dataDir)))
+	return KeychainService + ":" + hex.EncodeToString(sum[:])[:12]
 }
 
 // realHomeDir returns the login user's home directory from the user database

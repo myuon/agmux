@@ -95,12 +95,7 @@ func (p *CodexProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 		}
 	}
 	// Set session-specific env vars for global MCP server
-	if opts.SessionID != "" {
-		cmd.Env = append(cmd.Env, "AGMUX_SESSION_ID="+opts.SessionID)
-	}
-	if opts.APIPort > 0 {
-		cmd.Env = append(cmd.Env, fmt.Sprintf("AGMUX_API_URL=http://localhost:%d", opts.APIPort))
-	}
+	cmd.Env = appendAgmuxSessionEnv(cmd.Env, opts)
 	return cmd
 }
 

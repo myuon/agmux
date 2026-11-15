@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // Injection is one secret value exposed to the child as an env var.
@@ -34,6 +35,10 @@ type ExecOptions struct {
 	// SIGWINCH received by this process to the child.
 	ForwardSignals bool
 }
+
+// execWaitDelay bounds how long Exec keeps draining output after the child
+// exits (see exec.Cmd.WaitDelay).
+var execWaitDelay = 2 * time.Second
 
 // forwardedSignals are relayed to the child by Exec.
 var forwardedSignals = []os.Signal{
@@ -83,6 +88,9 @@ func Exec(opts ExecOptions) (int, error) {
 	cmd.Stdin = opts.Stdin
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
+	// Background grandchildren (e.g. `sh -c 'sleep 60 & exit 0'`) inherit the
+	// output pipes; don't wait for them to close once the child has exited.
+	cmd.WaitDelay = execWaitDelay
 
 	var sigCh chan os.Signal
 	if opts.ForwardSignals {
@@ -116,6 +124,13 @@ func Exec(opts ExecOptions) (int, error) {
 	_ = stdout.Flush()
 	_ = stderr.Flush()
 
+	if errors.Is(waitErr, exec.ErrWaitDelay) && cmd.ProcessState != nil {
+		// The child exited; only lingering pipe holders were cut off.
+		waitErr = nil
+		if !cmd.ProcessState.Success() {
+			waitErr = &exec.ExitError{ProcessState: cmd.ProcessState}
+		}
+	}
 	if waitErr == nil {
 		return 0, nil
 	}

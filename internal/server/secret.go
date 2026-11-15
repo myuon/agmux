@@ -217,11 +217,20 @@ func (s *Server) authorizeSecrets(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	// cwd is only trusted outside a session. A session ID that does not
+	// resolve is an error rather than a silent fallback to cwd.
 	project := req.Cwd
-	if req.SessionID != "" && s.sessions != nil {
-		if sess, err := s.sessions.Get(req.SessionID); err == nil && sess.ProjectPath != "" {
-			project = sess.ProjectPath
+	if req.SessionID != "" {
+		if s.sessions == nil {
+			writeError(w, http.StatusServiceUnavailable, "session lookup is not available")
+			return
 		}
+		sess, err := s.sessions.Get(req.SessionID)
+		if err != nil {
+			writeError(w, http.StatusNotFound, "session not found: "+req.SessionID)
+			return
+		}
+		project = sess.ProjectPath
 	}
 	resp := secretAuthorizeResponse{Project: project, Secrets: []secret.Secret{}}
 	for _, name := range req.Names {

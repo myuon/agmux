@@ -102,8 +102,17 @@ type KeychainBackend struct {
 
 // NewKeychainBackend returns a keychain backend using runner.
 func NewKeychainBackend(runner CommandRunner) *KeychainBackend {
-	return &KeychainBackend{runner: runner, service: KeychainService}
+	return NewKeychainBackendWithService(runner, KeychainService)
 }
+
+// NewKeychainBackendWithService returns a keychain backend using a specific
+// service name (see KeychainServiceFor).
+func NewKeychainBackendWithService(runner CommandRunner, service string) *KeychainBackend {
+	return &KeychainBackend{runner: runner, service: service}
+}
+
+// Service returns the keychain service name items are stored under.
+func (b *KeychainBackend) Service() string { return b.service }
 
 func (b *KeychainBackend) Kind() BackendKind { return BackendKeychain }
 

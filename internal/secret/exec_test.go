@@ -2,8 +2,10 @@ package secret
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestExecInjectsAndMasks(t *testing.T) {
@@ -87,6 +89,31 @@ func TestExecSignalExitCode(t *testing.T) {
 	}
 	if code != 128+15 {
 		t.Fatalf("exit code = %d, want 143", code)
+	}
+}
+
+func TestExecDoesNotWaitForBackgroundChildren(t *testing.T) {
+	old := execWaitDelay
+	execWaitDelay = 300 * time.Millisecond
+	t.Cleanup(func() { execWaitDelay = old })
+	for _, want := range []int{0, 5} {
+		var out bytes.Buffer
+		start := time.Now()
+		code, err := Exec(ExecOptions{
+			Args:    []string{"sh", "-c", fmt.Sprintf(`sleep 5 & echo hi; exit %d`, want)},
+			BaseEnv: []string{"PATH=/usr/bin:/bin"},
+			Stdout:  &out,
+			Stderr:  &out,
+		})
+		if elapsed := time.Since(start); elapsed > 3*time.Second {
+			t.Fatalf("Exec blocked on background child for %v", elapsed)
+		}
+		if err != nil || code != want {
+			t.Fatalf("code=%d err=%v, want %d", code, err, want)
+		}
+		if out.String() != "hi\n" {
+			t.Fatalf("stdout = %q", out.String())
+		}
 	}
 }
 

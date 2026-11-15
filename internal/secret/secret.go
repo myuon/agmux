@@ -100,15 +100,25 @@ func ProjectAllowed(allowed []string, project string) bool {
 	if project == "" {
 		return false
 	}
-	p := filepath.Clean(project)
+	p := resolvePath(project)
 	for _, a := range allowed {
 		if a == "" {
 			continue
 		}
-		a = filepath.Clean(a)
+		a = resolvePath(a)
 		if p == a || strings.HasPrefix(p, strings.TrimSuffix(a, string(filepath.Separator))+string(filepath.Separator)) {
 			return true
 		}
 	}
 	return false
+}
+
+// resolvePath cleans p and resolves symlinks when possible (best effort), so
+// e.g. /var/... and /private/var/... compare equal on macOS.
+func resolvePath(p string) string {
+	p = filepath.Clean(p)
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
 }
