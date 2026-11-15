@@ -35,8 +35,8 @@ func TestValidateBackendKind(t *testing.T) {
 	if err := ValidateBackendKind(BackendFile); err != nil {
 		t.Error(err)
 	}
-	if err := ValidateBackendKind(Backend1Password); err == nil {
-		t.Error("1password should not be supported yet")
+	if err := ValidateBackendKind(Backend1Password); err != nil {
+		t.Error(err)
 	}
 	if err := ValidateBackendKind("plaintext"); err == nil {
 		t.Error("unknown backend accepted")

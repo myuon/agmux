@@ -8,6 +8,8 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+
+	"github.com/myuon/agmux/internal/config"
 )
 
 // Backend stores and retrieves secret values. Implementations must never log
@@ -48,9 +50,18 @@ func DefaultRegistry() (Registry, error) {
 	}
 	dataDir := filepath.Join(home, ".agmux")
 	service := KeychainServiceFor(dataDir, filepath.Join(realHomeDir(), ".agmux"))
+	keychain := NewKeychainBackendWithService(NewSecurityRunner(), service)
+	// Best effort: a broken config just means defaults.
+	opPath, tokenName := "", DefaultOPTokenSecret
+	if cfg, err := config.Load(); err == nil {
+		opPath = cfg.Secret.OPPath
+		tokenName = cfg.Secret.EffectiveOPTokenSecret()
+	}
 	return Registry{
-		BackendKeychain: NewKeychainBackendWithService(NewSecurityRunner(), service),
+		BackendKeychain: keychain,
 		BackendFile:     NewFileBackend(filepath.Join(dataDir, "secrets")),
+		Backend1Password: NewOnePasswordBackend(NewOPRunner(opPath),
+			KeychainTokenSource(keychain, tokenName)),
 	}, nil
 }
 

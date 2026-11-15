@@ -28,8 +28,8 @@ const (
 	BackendKeychain BackendKind = "keychain"
 	// BackendFile stores the value in ~/.agmux/secrets/<NAME> (0600).
 	BackendFile BackendKind = "file"
-	// Backend1Password is reserved for a future backend that resolves an
-	// op:// reference stored in Secret.Ref. Not implemented yet.
+	// Backend1Password resolves an op:// reference stored in Secret.Ref with
+	// the 1Password CLI. agmux stores no value.
 	Backend1Password BackendKind = "1password"
 )
 
@@ -80,12 +80,10 @@ func ValidateName(name string) error {
 // ValidateBackendKind returns an error for unknown backend kinds.
 func ValidateBackendKind(kind BackendKind) error {
 	switch kind {
-	case BackendKeychain, BackendFile:
+	case BackendKeychain, BackendFile, Backend1Password:
 		return nil
-	case Backend1Password:
-		return errors.New("backend \"1password\" is not supported yet")
 	default:
-		return fmt.Errorf("unknown backend %q (want keychain or file)", kind)
+		return fmt.Errorf("unknown backend %q (want keychain, file or 1password)", kind)
 	}
 }
 

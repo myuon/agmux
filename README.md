@@ -106,6 +106,38 @@ interval = "30s"
 permission_mode = "auto"  # default, acceptEdits, plan, dontAsk, bypassPermissions, auto
 ```
 
+## シークレットと 1Password 連携
+
+`agmux secret` で名前付きシークレットを管理し、`agmux secret exec --env NAME -- COMMAND` で環境変数として注入できます（出力中の値は `***(NAME)` にマスクされます）。
+
+### 1Password バックエンド
+
+`op://vault/item/field` 形式の参照だけを登録し、exec 時に `op read` で解決します。値自体は agmux に保存されません。
+
+```bash
+agmux secret add DB_PASSWORD --op op://Private/db/password
+agmux secret exec --env DB_PASSWORD -- ./run.sh
+```
+
+### サービスアカウントトークンの設定
+
+スマホ操作中や launchd 配下では Mac の生体認証プロンプトを承認できないため、1Password のサービスアカウントトークンを使います。
+
+1. [1Password の Developer 画面](https://developer.1password.com/docs/service-accounts/get-started/) でサービスアカウントを作成し、参照したい Vault への読み取り権限を付与してトークンを発行する
+2. トークンを keychain バックエンドの通常のシークレットとして登録する（名前は予約名 `OP_SERVICE_ACCOUNT_TOKEN`）
+
+```bash
+pbpaste | agmux secret add OP_SERVICE_ACCOUNT_TOKEN --description "1Password service account"
+```
+
+トークンが未登録の場合は、継承した環境変数（デスクトップアプリ連携）にフォールバックします。`op` の実行は 30 秒でタイムアウトします。
+
+```toml
+[secret]
+op_token_secret = "OP_SERVICE_ACCOUNT_TOKEN"  # トークンを保存しているシークレット名（省略可）
+op_path = "/opt/homebrew/bin/op"              # op のパス（省略時は PATH と /opt/homebrew/bin, /usr/local/bin を探索）
+```
+
 ## macOS launchd による自動起動設定
 
 macOS の launchd を使い、ログイン時に agmux サーバーを自動起動できます。
