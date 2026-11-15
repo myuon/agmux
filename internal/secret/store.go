@@ -132,8 +132,12 @@ func (st *Store) Delete(name string) error {
 
 // MarkUsed records that the secret was used now.
 func (st *Store) MarkUsed(name string) error {
+	return st.markUsedAt(name, st.now())
+}
+
+func (st *Store) markUsedAt(name string, t time.Time) error {
 	res, err := st.db.Exec(`UPDATE secrets SET last_used_at = ? WHERE name = ?`,
-		st.now().UTC().Format(time.RFC3339Nano), name)
+		t.UTC().Format(time.RFC3339Nano), name)
 	if err != nil {
 		return err
 	}

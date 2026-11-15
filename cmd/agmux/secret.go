@@ -359,8 +359,10 @@ project ($AGMUX_SESSION_ID), or the current directory outside a session.
 				Secrets []secret.Secret `json:"secrets"`
 			}
 			ctx := cmd.Context()
+			cmdName, argCount := commandSummary(args)
 			if err := api.do(ctx, http.MethodPost, "/api/secrets/authorize", map[string]interface{}{
 				"names": names, "sessionId": sessionID, "cwd": cwd,
+				"command": cmdName, "argCount": argCount,
 			}, &auth); err != nil {
 				return err
 			}
@@ -407,11 +409,9 @@ project ($AGMUX_SESSION_ID), or the current directory outside a session.
 			values = nil
 			inject = nil
 
-			// Best-effort usage report (updates last_used_at).
+			// Best-effort usage report (last_used_at + audit log).
 			usageCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			for _, n := range names {
-				_ = api.do(usageCtx, http.MethodPost, "/api/secrets/"+n+"/used", map[string]string{"sessionId": sessionID}, nil)
-			}
+			api.reportUsage(usageCtx, names, newSecretUsageReport(args, sessionID, cwd, code))
 			cancel()
 
 			if runErr != nil {
@@ -425,4 +425,35 @@ project ($AGMUX_SESSION_ID), or the current directory outside a session.
 	// Everything after the command name belongs to the command.
 	cmd.Flags().SetInterspersed(false)
 	return cmd
+}
+
+// commandSummary returns what the audit log may know about the command:
+// argv[0]'s basename and the number of remaining arguments. Arguments
+// themselves are never reported since they may contain secrets.
+func commandSummary(args []string) (name string, argCount int) {
+	if len(args) == 0 {
+		return "", 0
+	}
+	return secret.CommandName(args[0]), len(args) - 1
+}
+
+// secretUsageReport is the body of POST /api/secrets/{name}/used.
+type secretUsageReport struct {
+	SessionID string `json:"sessionId,omitempty"`
+	Cwd       string `json:"cwd,omitempty"`
+	Command   string `json:"command,omitempty"`
+	ArgCount  int    `json:"argCount"`
+	ExitCode  int    `json:"exitCode"`
+}
+
+func newSecretUsageReport(args []string, sessionID, cwd string, exitCode int) secretUsageReport {
+	name, argCount := commandSummary(args)
+	return secretUsageReport{SessionID: sessionID, Cwd: cwd, Command: name, ArgCount: argCount, ExitCode: exitCode}
+}
+
+// reportUsage tells the daemon each secret was used (errors are ignored).
+func (a *secretAPI) reportUsage(ctx context.Context, names []string, report secretUsageReport) {
+	for _, n := range names {
+		_ = a.do(ctx, http.MethodPost, "/api/secrets/"+n+"/used", report, nil)
+	}
 }

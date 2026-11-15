@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/myuon/agmux/internal/config"
@@ -36,6 +37,11 @@ type secretAuthorizeRequest struct {
 	SessionID string   `json:"sessionId,omitempty"`
 	// Cwd is used as the project path when SessionID is empty or unknown.
 	Cwd string `json:"cwd,omitempty"`
+	// Command / ArgCount describe the command for the audit log of denied
+	// attempts: argv[0] (reduced to its basename server-side) and the number
+	// of remaining args. Full arguments are never sent.
+	Command  string `json:"command,omitempty"`
+	ArgCount int    `json:"argCount,omitempty"`
 }
 
 type secretAuthorizeResponse struct {
@@ -44,14 +50,23 @@ type secretAuthorizeResponse struct {
 	Secrets []secret.Secret `json:"secrets"`
 }
 
+// secretUsageRequest is the body of POST /api/secrets/{name}/used. Every
+// field is optional (older CLIs only send sessionId).
 type secretUsageRequest struct {
 	SessionID string `json:"sessionId,omitempty"`
+	Cwd       string `json:"cwd,omitempty"`
+	// Command is argv[0]; only its basename is stored. Full arguments are
+	// never sent or stored, only their count.
+	Command  string `json:"command,omitempty"`
+	ArgCount int    `json:"argCount,omitempty"`
+	ExitCode *int   `json:"exitCode,omitempty"`
 }
 
 func (s *Server) mountSecrets(r chi.Router) {
 	r.Get("/secrets", s.listSecrets)
 	r.Post("/secrets", s.registerSecret)
 	r.Post("/secrets/authorize", s.authorizeSecrets)
+	r.Get("/secrets/usages", s.listSecretUsages)
 	r.Get("/secrets/{name}", s.getSecret)
 	r.Delete("/secrets/{name}", s.deleteSecret)
 	r.Post("/secrets/{name}/used", s.secretUsed)
@@ -286,6 +301,17 @@ func (s *Server) authorizeSecrets(w http.ResponseWriter, r *http.Request) {
 		}
 		if !secret.ProjectAllowed(sec.AllowedProjects, project) {
 			s.logger.Warn("secret use denied by project scope", "name", name, "project", project, "session", req.SessionID)
+			if _, err := s.secrets.RecordUsage(secret.Usage{
+				SecretName:  name,
+				SessionID:   req.SessionID,
+				ProjectPath: project,
+				Cwd:         req.Cwd,
+				Command:     req.Command,
+				ArgCount:    req.ArgCount,
+				Status:      secret.UsageDenied,
+			}); err != nil {
+				s.logger.Warn("record denied secret usage failed", "name", name, "error", err)
+			}
 			writeError(w, http.StatusForbidden, "secret "+name+" is not allowed in project "+project)
 			return
 		}
@@ -303,7 +329,7 @@ func (s *Server) secretUsed(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	var req secretUsageRequest
 	_ = json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&req)
-	if err := s.recordSecretUsage(name, req.SessionID); err != nil {
+	if err := s.recordSecretUsage(name, req); err != nil {
 		if errors.Is(err, secret.ErrNotFound) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
@@ -314,8 +340,47 @@ func (s *Server) secretUsed(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// recordSecretUsage is the single hook point for secret usage. Today it only
-// updates last_used_at; an audit log (#762) can be added here.
-func (s *Server) recordSecretUsage(name, sessionID string) error {
-	return s.secrets.MarkUsed(name)
+// recordSecretUsage is the single hook point for successful secret usage: it
+// updates last_used_at and appends an audit log entry. The project is the
+// session's project when the session is known, else cwd.
+func (s *Server) recordSecretUsage(name string, req secretUsageRequest) error {
+	project := req.Cwd
+	if req.SessionID != "" && s.sessions != nil {
+		if sess, err := s.sessions.Get(req.SessionID); err == nil {
+			project = sess.ProjectPath
+		}
+	}
+	_, err := s.secrets.RecordUsage(secret.Usage{
+		SecretName:  name,
+		SessionID:   req.SessionID,
+		ProjectPath: project,
+		Cwd:         req.Cwd,
+		Command:     req.Command,
+		ArgCount:    req.ArgCount,
+		ExitCode:    req.ExitCode,
+		Status:      secret.UsageUsed,
+	})
+	return err
+}
+
+// listSecretUsages serves GET /api/secrets/usages?name=&limit= (newest first).
+func (s *Server) listSecretUsages(w http.ResponseWriter, r *http.Request) {
+	if !s.secretsReady(w) {
+		return
+	}
+	limit := 0
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			writeError(w, http.StatusBadRequest, "invalid limit")
+			return
+		}
+		limit = n
+	}
+	list, err := s.secrets.ListUsages(r.URL.Query().Get("name"), limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
 }
