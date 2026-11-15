@@ -477,6 +477,25 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: create secrets table (METADATA ONLY — secret values are kept
+	// in a backend such as the macOS Keychain and must never be stored here).
+	// backend: 'keychain' | 'file' (| '1password' in the future, using ref).
+	// allowed_projects: JSON array of project paths; empty array = all projects.
+	if _, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS secrets (
+			name TEXT PRIMARY KEY,
+			description TEXT NOT NULL DEFAULT '',
+			backend TEXT NOT NULL,
+			ref TEXT NOT NULL DEFAULT '',
+			allowed_projects TEXT NOT NULL DEFAULT '[]',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			last_used_at TEXT
+		)
+	`); err != nil {
+		return err
+	}
+
 	return nil
 }
 
