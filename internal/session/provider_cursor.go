@@ -113,6 +113,8 @@ func (p *CursorProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 			cmd.Env = append(cmd.Env, env)
 		}
 	}
+	// Lets tools run by the agent (e.g. `agmux secret exec`) identify the session.
+	cmd.Env = appendAgmuxSessionEnv(cmd.Env, opts)
 	return cmd
 }
 

@@ -102,6 +102,8 @@ func (p *ClaudeProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 	}
 	// Prevent git from hanging on interactive auth prompts (e.g. HTTPS push)
 	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0")
+	// Lets tools run by the agent (e.g. `agmux secret exec`) identify the session.
+	cmd.Env = appendAgmuxSessionEnv(cmd.Env, opts)
 	return cmd
 }
 

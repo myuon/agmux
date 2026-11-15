@@ -33,6 +33,7 @@ import (
 	"github.com/myuon/agmux/internal/mcp"
 	"github.com/myuon/agmux/internal/otel"
 	"github.com/myuon/agmux/internal/redact"
+	"github.com/myuon/agmux/internal/secret"
 	"github.com/myuon/agmux/internal/session"
 )
 
@@ -56,6 +57,8 @@ type Server struct {
 	remoteBrowser    RemoteBrowser
 	allowedHosts     map[string]bool
 	artifacts        *artifact.Store
+	secrets          *secret.Store
+	secretBackends   secret.Registry
 }
 
 func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.Logger, sqlDB *sql.DB, port int) *Server {
@@ -127,6 +130,13 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 		s.logger.Error("artifacts disabled", "error", err)
 	} else {
 		s.artifacts = artifact.NewStore(sqlDB, dir)
+	}
+
+	s.secrets = secret.NewStore(sqlDB)
+	if reg, err := secret.DefaultRegistry(); err != nil {
+		s.logger.Error("secret backends disabled", "error", err)
+	} else {
+		s.secretBackends = reg
 	}
 
 	s.setupRoutes()
@@ -227,6 +237,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/host-info", s.getHostInfo)
 		s.mountRemoteBrowser(r)
 		s.mountArtifacts(r)
+		s.mountSecrets(r)
 
 	})
 
@@ -1468,6 +1479,7 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 	// Not editable via the API: always carry over the on-disk values.
 	cfg.Server.AllowedHosts = current.Server.AllowedHosts
 	cfg.RemoteBrowser = current.RemoteBrowser
+	cfg.Secret = current.Secret
 	// Preserve background_task_notification_interval if the request omitted it
 	// (older clients may not send the field).
 	if cfg.Daemon.BackgroundTaskNotificationInterval == "" {

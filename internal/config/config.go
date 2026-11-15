@@ -27,6 +27,7 @@ type Config struct {
 	Session         SessionConfig       `toml:"session"`
 	Claude          ClaudeConfig        `toml:"claude"`
 	RemoteBrowser   RemoteBrowserConfig `toml:"remote_browser"`
+	Secret          SecretConfig        `toml:"secret"`
 	DevMode         bool                `toml:"dev_mode"`
 	Templates       []RoleTemplate      `toml:"templates" json:"templates"`
 	PromptTemplates []PromptTemplate    `toml:"prompt_templates" json:"prompt_templates"`
@@ -72,6 +73,21 @@ func (c RemoteBrowserConfig) EffectivePort() int {
 		return DefaultRemoteBrowserPort
 	}
 	return c.DebugPort
+}
+
+// SecretConfig configures the secret store (`agmux secret`).
+type SecretConfig struct {
+	// DefaultBackend is the backend used when registering a secret without an
+	// explicit backend: "keychain" (default) or "file".
+	DefaultBackend string `toml:"default_backend,omitempty" json:"default_backend,omitempty"`
+}
+
+// EffectiveDefaultBackend returns the configured default backend or "keychain".
+func (c SecretConfig) EffectiveDefaultBackend() string {
+	if c.DefaultBackend == "" {
+		return "keychain"
+	}
+	return c.DefaultBackend
 }
 
 type DaemonConfig struct {
