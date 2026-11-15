@@ -80,6 +80,20 @@ type SecretConfig struct {
 	// DefaultBackend is the backend used when registering a secret without an
 	// explicit backend: "keychain" (default) or "file".
 	DefaultBackend string `toml:"default_backend,omitempty" json:"default_backend,omitempty"`
+	// OPPath is the path to the 1Password CLI (op). Empty means PATH and
+	// common install locations.
+	OPPath string `toml:"op_path,omitempty" json:"op_path,omitempty"`
+	// OPTokenSecret is the name of the agmux secret holding the 1Password
+	// service account token. Default "OP_SERVICE_ACCOUNT_TOKEN".
+	OPTokenSecret string `toml:"op_token_secret,omitempty" json:"op_token_secret,omitempty"`
+}
+
+// EffectiveOPTokenSecret returns the configured token secret name or the default.
+func (c SecretConfig) EffectiveOPTokenSecret() string {
+	if c.OPTokenSecret == "" {
+		return "OP_SERVICE_ACCOUNT_TOKEN"
+	}
+	return c.OPTokenSecret
 }
 
 // EffectiveDefaultBackend returns the configured default backend or "keychain".

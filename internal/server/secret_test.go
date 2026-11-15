@@ -70,8 +70,9 @@ func newSecretTestServer(t *testing.T) *secretTestEnv {
 		secrets:   secret.NewStore(sqlDB),
 		startTime: time.Now(),
 		secretBackends: secret.Registry{
-			secret.BackendKeychain: kc,
-			secret.BackendFile:     fb,
+			secret.BackendKeychain:  kc,
+			secret.BackendFile:      fb,
+			secret.Backend1Password: secret.NewOnePasswordBackend(nil, nil),
 		},
 	}
 	s.setupRoutes()
@@ -185,7 +186,9 @@ func TestSecretAPI_Validation(t *testing.T) {
 		{"bad name", map[string]any{"name": "bad-name", "value": val}},
 		{"missing value", map[string]any{"name": "OK"}},
 		{"unknown backend", map[string]any{"name": "OK", "backend": "plain", "value": val}},
-		{"1password not yet", map[string]any{"name": "OK", "backend": "1password", "ref": "op://v/i/f"}},
+		{"1password without ref", map[string]any{"name": "OK", "backend": "1password"}},
+		{"1password bad ref", map[string]any{"name": "OK", "backend": "1password", "ref": "nope"}},
+		{"1password with value", map[string]any{"name": "OK", "backend": "1password", "ref": "op://v/i/f", "value": val}},
 	}
 	for _, c := range cases {
 		b, _ := json.Marshal(c.body)
@@ -207,6 +210,19 @@ func TestSecretAPI_Validation(t *testing.T) {
 	}
 	if strings.Contains(env.logs.String(), val) {
 		t.Fatal("value found in server logs")
+	}
+}
+
+func TestSecretAPI_RegisterOnePasswordRef(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	env := newSecretTestServer(t)
+	rec := doJSON(t, env.s, http.MethodPost, "/api/secrets", `{"name":"DB_PASSWORD","backend":"1password","ref":"op://v/i/f"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body)
+	}
+	sec, err := env.s.secrets.Get("DB_PASSWORD")
+	if err != nil || sec.Backend != secret.Backend1Password || sec.Ref != "op://v/i/f" {
+		t.Fatalf("stored = %+v, %v", sec, err)
 	}
 }
 

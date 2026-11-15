@@ -133,9 +133,21 @@ func (s *Server) registerSecret(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if value == "" {
+	if kind == secret.Backend1Password {
+		// Only a reference is stored; a value is never accepted.
+		if value != "" {
+			writeError(w, http.StatusBadRequest, "the 1password backend does not accept a value; pass an op:// ref")
+			return
+		}
+		if err := secret.ValidateOPRef(req.Ref); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	} else if value == "" {
 		writeError(w, http.StatusBadRequest, "value is required")
 		return
+	} else {
+		req.Ref = ""
 	}
 
 	prev, prevErr := s.secrets.Get(req.Name)
@@ -144,10 +156,12 @@ func (s *Server) registerSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := backend.Set(r.Context(), req.Name, value); err != nil {
-		s.logger.Error("store secret value failed", "name", req.Name, "backend", kind, "error", err)
-		writeError(w, http.StatusInternalServerError, "store secret value: "+err.Error())
-		return
+	if kind != secret.Backend1Password {
+		if err := backend.Set(r.Context(), req.Name, value); err != nil {
+			s.logger.Error("store secret value failed", "name", req.Name, "backend", kind, "error", err)
+			writeError(w, http.StatusInternalServerError, "store secret value: "+err.Error())
+			return
+		}
 	}
 	sec, created, err := s.secrets.Upsert(secret.Secret{
 		Name:            req.Name,

@@ -126,16 +126,21 @@ func readSecretValue(name string) (string, error) {
 }
 
 func secretAddCmd() *cobra.Command {
-	var description, backend string
+	var description, backend, opRef string
 	var projects []string
 	cmd := &cobra.Command{
 		Use:   "add NAME",
-		Short: "Register (or replace) a secret; the value is read from stdin",
+		Short: "Register (or replace) a secret; the value is read from stdin (or --op for a 1Password reference)",
 		Long: `Register a secret named NAME ([A-Z_][A-Z0-9_]*). The value is read from
 stdin (hidden input when stdin is a terminal), e.g.
 
   agmux secret add GITHUB_TOKEN --description "GitHub PAT"
   pbpaste | agmux secret add GITHUB_TOKEN --project ~/src/myrepo
+
+With --op, only a 1Password reference is registered (no value is read); it is
+resolved with "op read" at exec time:
+
+  agmux secret add DB_PASSWORD --op op://Private/db/password
 
 Registering an existing name replaces its value and metadata.`,
 		Args: cobra.ExactArgs(1),
@@ -143,6 +148,17 @@ Registering an existing name replaces its value and metadata.`,
 			name := args[0]
 			if err := secret.ValidateName(name); err != nil {
 				return err
+			}
+			if opRef != "" {
+				if backend != "" && backend != string(secret.Backend1Password) {
+					return errors.New("--op can only be used with the 1password backend")
+				}
+				backend = string(secret.Backend1Password)
+				if err := secret.ValidateOPRef(opRef); err != nil {
+					return err
+				}
+			} else if backend == string(secret.Backend1Password) {
+				return errors.New("the 1password backend requires --op op://vault/item/field")
 			}
 			if backend != "" {
 				if err := secret.ValidateBackendKind(secret.BackendKind(backend)); err != nil {
@@ -161,20 +177,17 @@ Registering an existing name replaces its value and metadata.`,
 			if err != nil {
 				return err
 			}
-			value, err := readSecretValue(name)
-			if err != nil {
-				return err
+			value := ""
+			if opRef == "" {
+				value, err = readSecretValue(name)
+				if err != nil {
+					return err
+				}
+				if value == "" {
+					return errors.New("empty value; nothing registered")
+				}
 			}
-			if value == "" {
-				return errors.New("empty value; nothing registered")
-			}
-			body := map[string]interface{}{
-				"name":            name,
-				"description":     description,
-				"backend":         backend,
-				"value":           value,
-				"allowedProjects": allowed,
-			}
+			body := buildSecretAddBody(name, description, backend, value, opRef, allowed)
 			var sec secret.Secret
 			err = api.do(cmd.Context(), http.MethodPost, "/api/secrets", body, &sec)
 			value = ""
@@ -187,9 +200,27 @@ Registering an existing name replaces its value and metadata.`,
 		},
 	}
 	cmd.Flags().StringVarP(&description, "description", "d", "", "Description of the secret")
-	cmd.Flags().StringVar(&backend, "backend", "", "Value backend: keychain | file (default: [secret] default_backend in config, else keychain)")
+	cmd.Flags().StringVar(&backend, "backend", "", "Value backend: keychain | file | 1password (default: [secret] default_backend in config, else keychain)")
+	cmd.Flags().StringVar(&opRef, "op", "", "Register a 1Password reference (op://vault/item/field) instead of a value")
 	cmd.Flags().StringArrayVar(&projects, "project", nil, "Restrict use to this project path (repeatable; default: all projects)")
 	return cmd
+}
+
+// buildSecretAddBody builds the POST /api/secrets body. The ref is only sent
+// when set; the value is empty for 1Password references.
+func buildSecretAddBody(name, description, backend, value, opRef string, allowed []string) map[string]interface{} {
+	body := map[string]interface{}{
+		"name":            name,
+		"description":     description,
+		"backend":         backend,
+		"allowedProjects": allowed,
+	}
+	if opRef != "" {
+		body["ref"] = opRef
+	} else {
+		body["value"] = value
+	}
+	return body
 }
 
 func expandHome(p string) string {
