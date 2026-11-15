@@ -255,6 +255,9 @@ function AppHeaderButtons({
       <IconButton shape="rounded" to="/artifacts" title="Artifacts">
         <FileText className="h-5 w-5" />
       </IconButton>
+      <IconButton shape="rounded" to="/secrets" title="Secrets">
+        <KeyRound className="h-5 w-5" />
+      </IconButton>
       <IconButton shape="rounded" to="/automations" title="Automations">
         <AutomationsIcon />
       </IconButton>
@@ -378,6 +381,7 @@ function MobileHeaderButtons({
             <ActionMenu className="w-full">
               <ActionMenuItem className={itemClass} icon={<Globe className="h-4 w-4" />} label="Remote Browser" onClick={run(() => navigate("/remote-browser"))} />
               <ActionMenuItem className={itemClass} icon={<FileText className="h-4 w-4" />} label="Artifacts" onClick={run(() => navigate("/artifacts"))} />
+              <ActionMenuItem className={itemClass} icon={<KeyRound className="h-4 w-4" />} label="Secrets" onClick={run(() => navigate("/secrets"))} />
               <ActionMenuItem className={itemClass} icon={<AutomationsIcon className="h-4 w-4" />} label="Automations" onClick={run(() => navigate("/automations"))} />
               <ActionMenuItem className={itemClass} icon={<MetricsIcon className="h-4 w-4" />} label="Metrics" onClick={run(() => navigate("/metrics"))} />
               <ActionMenuItem className={itemClass} icon={<BroadcastIcon className="h-4 w-4" />} label="Broadcast" onClick={run(onBroadcast)} />

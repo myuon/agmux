@@ -496,6 +496,29 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: create secret_usages table (audit log of secret use by
+	// `agmux secret exec`). command is only argv[0]'s basename and arg_count
+	// the number of remaining args — full arguments are never stored since
+	// they may contain secrets. status: 'used' | 'denied'. exit_code is NULL
+	// for denied attempts. Rows are kept when the secret is deleted.
+	if _, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS secret_usages (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			secret_name TEXT NOT NULL,
+			session_id TEXT NOT NULL DEFAULT '',
+			project_path TEXT NOT NULL DEFAULT '',
+			cwd TEXT NOT NULL DEFAULT '',
+			command TEXT NOT NULL DEFAULT '',
+			arg_count INTEGER NOT NULL DEFAULT 0,
+			exit_code INTEGER,
+			status TEXT NOT NULL DEFAULT 'used',
+			used_at TEXT NOT NULL
+		)
+	`); err != nil {
+		return err
+	}
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_secret_usages_name_used_at ON secret_usages(secret_name, used_at)`)
+
 	return nil
 }
 

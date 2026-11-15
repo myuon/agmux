@@ -11,6 +11,31 @@ export interface Artifact {
   updatedAt: string;
 }
 
+export interface SecretMeta {
+  name: string;
+  description: string;
+  backend: string;
+  ref?: string;
+  allowedProjects: string[];
+  createdAt: string;
+  updatedAt: string;
+  lastUsedAt?: string;
+}
+
+export interface SecretUsage {
+  id: number;
+  secretName: string;
+  sessionId: string;
+  projectPath: string;
+  cwd: string;
+  // argv[0] basename only; arguments are never recorded.
+  command: string;
+  argCount: number;
+  exitCode?: number;
+  status: "used" | "denied";
+  usedAt: string;
+}
+
 async function request<T>(
   path: string,
   options?: RequestInit
@@ -279,6 +304,16 @@ export const api = {
   getArtifact: (id: string) => request<Artifact>(`/artifacts/${id}`),
   deleteArtifact: (id: string) =>
     request<{ status: string }>(`/artifacts/${id}`, { method: "DELETE" }),
+
+  // Secrets: metadata only — the API never returns values.
+  listSecrets: () => request<SecretMeta[]>("/secrets"),
+  deleteSecret: (name: string) =>
+    request<{ status: string }>(`/secrets/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  listSecretUsages: (name?: string, limit = 50) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (name) q.set("name", name);
+    return request<SecretUsage[]>(`/secrets/usages?${q}`);
+  },
 
 };
 

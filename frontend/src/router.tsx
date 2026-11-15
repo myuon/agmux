@@ -7,6 +7,7 @@ import { MetricsPage } from "./pages/MetricsPage";
 import { RemoteBrowserPage } from "./pages/RemoteBrowserPage";
 import { SecretNewPage } from "./pages/SecretNewPage";
 import { ArtifactsPage } from "./pages/ArtifactsPage";
+import { SecretsPage } from "./pages/SecretsPage";
 import { ArtifactPage } from "./pages/ArtifactPage";
 import { PreviewPage } from "./pages/PreviewPage";
 import { ScenarioTestPage } from "./pages/ScenarioTestPage";
@@ -76,6 +77,17 @@ export const router = createBrowserRouter([
             api.listSessions().catch(() => []),
           ]);
           return { artifacts, sessions };
+        },
+      },
+      {
+        path: "secrets",
+        element: <SecretsPage />,
+        loader: async () => {
+          const [secrets, sessions] = await Promise.all([
+            api.listSecrets(),
+            api.listSessions().catch(() => []),
+          ]);
+          return { secrets, sessions };
         },
       },
       {

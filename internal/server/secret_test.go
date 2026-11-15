@@ -297,6 +297,76 @@ func TestSecretAPI_Authorize(t *testing.T) {
 	}
 }
 
+func TestSecretAPI_Usages(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	env := newSecretTestServer(t)
+	val := testSecretValue()
+	body, _ := json.Marshal(map[string]any{"name": "SCOPED", "value": val, "allowedProjects": []string{"/p/a"}})
+	if rec := doJSON(t, env.s, http.MethodPost, "/api/secrets", string(body)); rec.Code != http.StatusCreated {
+		t.Fatalf("register status = %d", rec.Code)
+	}
+	env.s.sessions = secretStubSessions{projects: map[string]string{"s1": "/p/a/.claude/worktrees/w"}}
+
+	// Legacy payload (sessionId only) still works.
+	if rec := doJSON(t, env.s, http.MethodPost, "/api/secrets/SCOPED/used", `{"sessionId":"s1"}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("legacy used status = %d", rec.Code)
+	}
+	// Extended payload; a full path in command is reduced to its basename.
+	if rec := doJSON(t, env.s, http.MethodPost, "/api/secrets/SCOPED/used",
+		`{"sessionId":"s1","cwd":"/p/a/x","command":"/usr/bin/gh","argCount":2,"exitCode":1}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("used status = %d", rec.Code)
+	}
+	// Outside a session, cwd is the project.
+	if rec := doJSON(t, env.s, http.MethodPost, "/api/secrets/SCOPED/used",
+		`{"cwd":"/p/a","command":"curl","argCount":0,"exitCode":0}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("used status = %d", rec.Code)
+	}
+	// A denied authorize is recorded.
+	if rec := doJSON(t, env.s, http.MethodPost, "/api/secrets/authorize",
+		`{"names":["SCOPED"],"cwd":"/other","command":"sh","argCount":2}`); rec.Code != http.StatusForbidden {
+		t.Fatalf("denied status = %d", rec.Code)
+	}
+
+	rec := doJSON(t, env.s, http.MethodGet, "/api/secrets/usages?name=SCOPED", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("usages status = %d body=%s", rec.Code, rec.Body)
+	}
+	var usages []secret.Usage
+	if err := json.Unmarshal(rec.Body.Bytes(), &usages); err != nil {
+		t.Fatal(err)
+	}
+	if len(usages) != 4 {
+		t.Fatalf("len = %d: %s", len(usages), rec.Body)
+	}
+	denied, cwdOnly, extended, legacy := usages[0], usages[1], usages[2], usages[3]
+	if denied.Status != secret.UsageDenied || denied.ProjectPath != "/other" || denied.Command != "sh" || denied.ArgCount != 2 || denied.ExitCode != nil {
+		t.Fatalf("denied = %+v", denied)
+	}
+	if cwdOnly.ProjectPath != "/p/a" || cwdOnly.SessionID != "" || cwdOnly.ExitCode == nil || *cwdOnly.ExitCode != 0 {
+		t.Fatalf("cwd only = %+v", cwdOnly)
+	}
+	if extended.Command != "gh" || extended.ArgCount != 2 || extended.ProjectPath != "/p/a/.claude/worktrees/w" ||
+		extended.Cwd != "/p/a/x" || extended.ExitCode == nil || *extended.ExitCode != 1 || extended.Status != secret.UsageUsed {
+		t.Fatalf("extended = %+v", extended)
+	}
+	if legacy.SessionID != "s1" || legacy.ExitCode != nil || legacy.Command != "" {
+		t.Fatalf("legacy = %+v", legacy)
+	}
+
+	rec = doJSON(t, env.s, http.MethodGet, "/api/secrets/usages?limit=1", "")
+	var limited []secret.Usage
+	_ = json.Unmarshal(rec.Body.Bytes(), &limited)
+	if rec.Code != http.StatusOK || len(limited) != 1 {
+		t.Fatalf("limit=1: status=%d len=%d", rec.Code, len(limited))
+	}
+	if rec := doJSON(t, env.s, http.MethodGet, "/api/secrets/usages?limit=x", ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad limit status = %d", rec.Code)
+	}
+	if rec := doJSON(t, env.s, http.MethodGet, "/api/secrets/usages?name=NONE", ""); rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Fatalf("empty usages = %d %s", rec.Code, rec.Body)
+	}
+}
+
 // secretStubSessions maps session ID -> project path. Other SessionService
 // methods are unused by the secret API (nil embedded interface).
 type secretStubSessions struct {
