@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
 import { Link, useLoaderData, useNavigate } from "react-router-dom";
-import { ChevronDown, ChevronRight, KeyRound, Trash2 } from "lucide-react";
-import { api, type SecretMeta, type SecretUsage } from "../api/client";
+import { ChevronDown, ChevronRight, KeyRound, Plus, Trash2 } from "lucide-react";
+import { api, type SecretUsage } from "../api/client";
+import type { SecretMeta } from "../lib/secret";
 import type { Session } from "../types/session";
 import { Chip } from "../components/ui/Chip";
 
@@ -39,8 +40,15 @@ export function SecretsPage() {
           ← Back
         </button>
         <h1 className="text-lg font-bold">Secrets</h1>
-        {/* Header actions slot: the "add secret" button (#760) goes here. */}
-        <div className="ml-auto flex items-center gap-2" data-testid="secrets-header-actions" />
+        <div className="ml-auto flex items-center gap-2" data-testid="secrets-header-actions">
+          <Link
+            to="/secrets/new"
+            className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <Plus size={16} />
+            追加
+          </Link>
+        </div>
       </header>
       <div className="max-w-2xl mx-auto p-3 sm:p-6 space-y-2" data-testid="secrets-page">
         <p className="text-xs text-gray-500 px-1">
@@ -66,7 +74,7 @@ export function SecretsPage() {
   );
 }
 
-function formatTime(iso?: string): string {
+function formatTime(iso?: string | null): string {
   if (!iso) return "-";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? "-" : d.toLocaleString();
@@ -125,7 +133,7 @@ function SecretCard({
         <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs min-w-0">
           <dt className="text-gray-400">プロジェクト</dt>
           <dd className="min-w-0">
-            {secret.allowedProjects.length === 0 ? (
+            {!secret.allowedProjects?.length ? (
               <span className="text-gray-500">すべて</span>
             ) : (
               secret.allowedProjects.map((p) => (
@@ -135,6 +143,14 @@ function SecretCard({
               ))
             )}
           </dd>
+          {secret.ref && (
+            <>
+              <dt className="text-gray-400">参照</dt>
+              <dd className="font-mono text-gray-700 break-all" data-testid="secret-ref">
+                {secret.ref}
+              </dd>
+            </>
+          )}
           <dt className="text-gray-400">最終利用</dt>
           <dd className="text-gray-700">{formatTime(secret.lastUsedAt)}</dd>
         </dl>

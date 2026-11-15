@@ -11,17 +11,6 @@ export interface Artifact {
   updatedAt: string;
 }
 
-export interface SecretMeta {
-  name: string;
-  description: string;
-  backend: string;
-  ref?: string;
-  allowedProjects: string[];
-  createdAt: string;
-  updatedAt: string;
-  lastUsedAt?: string;
-}
-
 export interface SecretUsage {
   id: number;
   secretName: string;
