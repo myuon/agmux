@@ -102,27 +102,44 @@ func defaultSecretBackend() secret.BackendKind {
 	return secret.BackendKind(cfg.Secret.EffectiveDefaultBackend())
 }
 
+// decodeSecretBody reads a body that may carry a secret value into v.
+// Errors never quote the body.
+func decodeSecretBody(w http.ResponseWriter, r *http.Request, v any) bool {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxSecretRequestBytes))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "request body too large or unreadable")
+		return false
+	}
+	if err := json.Unmarshal(body, v); err != nil {
+		// Do not include the decoder error: it may quote parts of the body.
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return false
+	}
+	return true
+}
+
 func (s *Server) registerSecret(w http.ResponseWriter, r *http.Request) {
 	if !s.secretsReady(w) {
 		return
 	}
 	var req secretRequest
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxSecretRequestBytes))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "request body too large or unreadable")
+	if !decodeSecretBody(w, r, &req) {
 		return
 	}
-	if err := json.Unmarshal(body, &req); err != nil {
-		// Do not include the decoder error: it may quote parts of the body.
-		writeError(w, http.StatusBadRequest, "invalid request body")
-		return
-	}
+	s.storeSecret(w, r, &req)
+}
+
+// storeSecretValue writes the value to the backend and upserts the metadata.
+// On failure it writes an error response and returns nil; on success it
+// returns the stored metadata and whether it was newly created without
+// writing a response. req.Value is cleared.
+func (s *Server) storeSecretValue(w http.ResponseWriter, r *http.Request, req *secretRequest) (*secret.Secret, bool) {
 	value := req.Value
 	req.Value = ""
 
 	if err := secret.ValidateName(req.Name); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, false
 	}
 	kind := secret.BackendKind(req.Backend)
 	if kind == "" {
@@ -131,7 +148,7 @@ func (s *Server) registerSecret(w http.ResponseWriter, r *http.Request) {
 	backend, err := s.secretBackends.For(kind)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return nil, false
 	}
 	if kind == secret.Backend1Password {
 		// Only a reference is stored; a value is never accepted.
@@ -145,7 +162,7 @@ func (s *Server) registerSecret(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if value == "" {
 		writeError(w, http.StatusBadRequest, "value is required")
-		return
+		return nil, false
 	} else {
 		req.Ref = ""
 	}
@@ -153,14 +170,16 @@ func (s *Server) registerSecret(w http.ResponseWriter, r *http.Request) {
 	prev, prevErr := s.secrets.Get(req.Name)
 	if prevErr != nil && !errors.Is(prevErr, secret.ErrNotFound) {
 		writeError(w, http.StatusInternalServerError, prevErr.Error())
-		return
+		return nil, false
 	}
 
 	if kind != secret.Backend1Password {
-		if err := backend.Set(r.Context(), req.Name, value); err != nil {
+		
+
+	if err := backend.Set(r.Context(), req.Name, value); err != nil {
 			s.logger.Error("store secret value failed", "name", req.Name, "backend", kind, "error", err)
 			writeError(w, http.StatusInternalServerError, "store secret value: "+err.Error())
-			return
+			return nil, false
 		}
 	}
 	sec, created, err := s.secrets.Upsert(secret.Secret{
@@ -172,7 +191,7 @@ func (s *Server) registerSecret(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return nil, false
 	}
 	// The secret moved to another backend: drop the stale copy.
 	if prev != nil && prev.Backend != kind {
@@ -183,6 +202,15 @@ func (s *Server) registerSecret(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.logger.Info("secret registered", "name", sec.Name, "backend", sec.Backend, "created", created)
+	return sec, created
+}
+
+// storeSecret is storeSecretValue plus the success response.
+func (s *Server) storeSecret(w http.ResponseWriter, r *http.Request, req *secretRequest) {
+	sec, created := s.storeSecretValue(w, r, req)
+	if sec == nil {
+		return
+	}
 	status := http.StatusOK
 	if created {
 		status = http.StatusCreated

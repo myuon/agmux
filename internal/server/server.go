@@ -205,6 +205,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/sessions/{id}/escalate", s.getPendingEscalation)
 		r.Post("/sessions/{id}/escalate", s.createEscalation)
 		r.Post("/sessions/{id}/escalate/respond", s.respondEscalation)
+		r.Post("/sessions/{id}/escalate/secret", s.resolveSecretRequest)
 		r.Get("/sessions/{id}/permission", s.getPendingPermission)
 		r.Post("/sessions/{id}/permission", s.createPermission)
 		r.Post("/sessions/{id}/permission/respond", s.respondPermission)
@@ -853,6 +854,9 @@ type createEscalationRequest struct {
 	TimeoutSeconds *int   `json:"timeout_seconds,omitempty"`
 	// LoginURL marks a browser-login request (request_browser_login).
 	LoginURL string `json:"login_url,omitempty"`
+	// SecretName marks a secret-registration request (request_secret).
+	SecretName        string `json:"secret_name,omitempty"`
+	SecretDescription string `json:"secret_description,omitempty"`
 }
 
 func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
@@ -868,6 +872,16 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.LoginURL != "" {
 		if err := browser.ValidateLoginURL(req.LoginURL); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	if req.SecretName != "" {
+		if req.LoginURL != "" {
+			writeError(w, http.StatusBadRequest, "login_url and secret_name are mutually exclusive")
+			return
+		}
+		if err := secret.ValidateName(req.SecretName); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -892,7 +906,14 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create escalation and get response channel
-	ch := s.escalations.CreateWithLoginURL(req.ID, sessionID, req.Message, timeoutSeconds, req.LoginURL)
+	var secretReq *SecretRequestInfo
+	var ch chan string
+	if req.SecretName != "" {
+		secretReq = &SecretRequestInfo{Name: req.SecretName, Description: req.SecretDescription, ProjectPath: sess.ProjectPath}
+		ch = s.escalations.CreateSecretRequest(req.ID, sessionID, req.Message, timeoutSeconds, *secretReq)
+	} else {
+		ch = s.escalations.CreateWithLoginURL(req.ID, sessionID, req.Message, timeoutSeconds, req.LoginURL)
+	}
 
 	// Update session status to waiting_input
 	if err := s.sessions.UpdateStatus(sessionID, session.StatusWaitingInput); err != nil {
@@ -909,6 +930,7 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 			"message":        req.Message,
 			"timeoutSeconds": timeoutSeconds,
 			"loginUrl":       req.LoginURL,
+			"secretRequest":  secretReq,
 		},
 	})
 	timeout := time.Duration(timeoutSeconds) * time.Second
@@ -1003,6 +1025,14 @@ func (s *Server) respondEscalation(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ID == "" || req.Response == "" {
 		writeError(w, http.StatusBadRequest, "id and response are required")
+		return
+	}
+
+	// A secret request is only resolved by storing the secret
+	// (resolveSecretRequest) or by cancelling: free text would let the user
+	// type the value into a field that is recorded and sent to the agent.
+	if esc := s.escalations.Get(req.ID); esc != nil && esc.SecretRequest != nil && req.Response != SecretResponseCancelled {
+		writeError(w, http.StatusBadRequest, "secret requests can only be cancelled here")
 		return
 	}
 

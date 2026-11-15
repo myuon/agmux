@@ -4,11 +4,12 @@ import { api } from "./api/client";
 import type { Session } from "./types/session";
 import { NotificationPanel } from "./components/NotificationPanel";
 import { loginRequestPath, loginUrlHost } from "./lib/remoteBrowser";
+import { secretRequestPath, type SecretRequestInfo } from "./lib/secret";
 import { SessionList } from "./components/SessionList";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { getActiveSessionName } from "./activeSession";
 import { IconButton } from "./components/ui/IconButton";
-import { FileText, Globe, MoreHorizontal } from "lucide-react";
+import { FileText, Globe, KeyRound, MoreHorizontal } from "lucide-react";
 import { ActionMenu, ActionMenuItem } from "./components/ui/ActionMenu";
 import { BroadcastModal } from "./components/BroadcastModal";
 
@@ -51,7 +52,16 @@ function useGlobalNotifications() {
       return;
     }
     if (msg.type === "escalation") {
-      const data = msg.data as { id: string; sessionId: string; sessionName: string; message: string; loginUrl?: string };
+      const data = msg.data as { id: string; sessionId: string; sessionName: string; message: string; loginUrl?: string; secretRequest?: SecretRequestInfo | null };
+      if (data.secretRequest) {
+        sendNotification(
+          "agmux - シークレット入力依頼",
+          `${data.sessionName}: ${data.secretRequest.name} の登録を依頼しています`,
+          data.sessionId,
+          secretRequestPath(data.id, data.sessionId),
+        );
+        return;
+      }
       if (data.loginUrl && loginUrlHost(data.loginUrl)) {
         sendNotification(
           "agmux - ログイン依頼",
@@ -254,6 +264,9 @@ function AppHeaderButtons({
       <IconButton shape="rounded" to="/remote-browser" title="Remote Browser">
         <Globe className="h-5 w-5" />
       </IconButton>
+      <IconButton shape="rounded" to="/secrets/new" title="シークレットを追加">
+        <KeyRound className="h-5 w-5" />
+      </IconButton>
       <IconButton shape="rounded" to="/config" title="Settings">
         <SettingsIcon />
       </IconButton>
@@ -369,6 +382,7 @@ function MobileHeaderButtons({
               <ActionMenuItem className={itemClass} icon={<MetricsIcon className="h-4 w-4" />} label="Metrics" onClick={run(() => navigate("/metrics"))} />
               <ActionMenuItem className={itemClass} icon={<BroadcastIcon className="h-4 w-4" />} label="Broadcast" onClick={run(onBroadcast)} />
               <ActionMenuItem className={itemClass} icon={<ControllerIcon className="h-4 w-4" />} label="Controller" onClick={run(goToController)} />
+              <ActionMenuItem className={itemClass} icon={<KeyRound className="h-4 w-4" />} label="シークレットを追加" onClick={run(() => navigate("/secrets/new"))} />
               <ActionMenuItem className={itemClass} icon={<SettingsIcon className="h-4 w-4" />} label="Settings" onClick={run(() => navigate("/config"))} />
               {devMode && (
                 <>

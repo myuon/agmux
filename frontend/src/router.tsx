@@ -5,6 +5,7 @@ import { NewSessionPage } from "./pages/NewSessionPage";
 import { ConfigPage } from "./pages/ConfigPage";
 import { MetricsPage } from "./pages/MetricsPage";
 import { RemoteBrowserPage } from "./pages/RemoteBrowserPage";
+import { SecretNewPage } from "./pages/SecretNewPage";
 import { ArtifactsPage } from "./pages/ArtifactsPage";
 import { ArtifactPage } from "./pages/ArtifactPage";
 import { PreviewPage } from "./pages/PreviewPage";
@@ -112,6 +113,10 @@ export const router = createBrowserRouter([
       {
         path: "remote-browser",
         element: <RemoteBrowserPage />,
+      },
+      {
+        path: "secrets/new",
+        element: <SecretNewPage />,
       },
       {
         path: "preview",
