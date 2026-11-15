@@ -154,11 +154,11 @@ func (s *Server) storeSecretValue(w http.ResponseWriter, r *http.Request, req *s
 		// Only a reference is stored; a value is never accepted.
 		if value != "" {
 			writeError(w, http.StatusBadRequest, "the 1password backend does not accept a value; pass an op:// ref")
-			return
+			return nil, false
 		}
 		if err := secret.ValidateOPRef(req.Ref); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
-			return
+			return nil, false
 		}
 	} else if value == "" {
 		writeError(w, http.StatusBadRequest, "value is required")
@@ -174,9 +174,8 @@ func (s *Server) storeSecretValue(w http.ResponseWriter, r *http.Request, req *s
 	}
 
 	if kind != secret.Backend1Password {
-		
 
-	if err := backend.Set(r.Context(), req.Name, value); err != nil {
+		if err := backend.Set(r.Context(), req.Name, value); err != nil {
 			s.logger.Error("store secret value failed", "name", req.Name, "backend", kind, "error", err)
 			writeError(w, http.StatusInternalServerError, "store secret value: "+err.Error())
 			return nil, false

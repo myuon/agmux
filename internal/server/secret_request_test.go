@@ -212,3 +212,36 @@ func TestSecretRequest_Validation(t *testing.T) {
 		t.Fatalf("plain escalation status = %d", rec.Code)
 	}
 }
+
+func TestSecretRequest_OnePasswordRef(t *testing.T) {
+	env := newSecretRequestTestEnv(t)
+	done := startSecretEscalation(t, env, "s1", "esc-op", "DB_PASSWORD")
+
+	// A value is never accepted for the 1password backend; the request stays pending.
+	val := testSecretValue()
+	body, _ := json.Marshal(map[string]any{"id": "esc-op", "backend": "1password", "ref": "op://v/i/f", "value": val})
+	if rec := doJSON(t, env.s, http.MethodPost, "/api/sessions/s1/escalate/secret", string(body)); rec.Code != http.StatusBadRequest {
+		t.Fatalf("value with 1password status = %d", rec.Code)
+	}
+	if rec := doJSON(t, env.s, http.MethodPost, "/api/sessions/s1/escalate/secret", `{"id":"esc-op","backend":"1password","ref":"nope"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad ref status = %d", rec.Code)
+	}
+	if env.s.escalations.PendingSecretRequest("esc-op", "s1") == nil {
+		t.Fatal("request resolved by a failed save")
+	}
+
+	rec := doJSON(t, env.s, http.MethodPost, "/api/sessions/s1/escalate/secret", `{"id":"esc-op","description":"db","backend":"1password","ref":"op://v/i/f"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resolve status = %d body=%s", rec.Code, rec.Body)
+	}
+	if out := waitEscalation(t, done); out["response"] != SecretResponseSaved {
+		t.Fatalf("escalation result = %v", out)
+	}
+	sec, err := env.s.secrets.Get("DB_PASSWORD")
+	if err != nil || sec.Backend != secret.Backend1Password || sec.Ref != "op://v/i/f" || sec.Description != "db" {
+		t.Fatalf("metadata = %+v err=%v", sec, err)
+	}
+	if strings.Contains(env.logs.String(), val) {
+		t.Fatal("value found in logs")
+	}
+}
