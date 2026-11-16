@@ -26,7 +26,7 @@ func TestPublishArtifactForwardsDataFiles(t *testing.T) {
 	if !strings.Contains(gotBody, `"dataFiles":{"ideas.json":"/p/ideas.json"}`) {
 		t.Fatalf("body = %s", gotBody)
 	}
-	if !strings.Contains(text, `fetch("data/<name>")`) || !strings.Contains(text, "ideas.json") {
+	if !strings.Contains(text, `agmuxData("<name>")`) || !strings.Contains(text, "ideas.json") {
 		t.Fatalf("text = %s", text)
 	}
 

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { api, type Artifact } from "../api/client";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { Toast } from "../components/ui/Toast";
 import { artifactRawUrl } from "../lib/artifact";
+import { useArtifactDataRelay } from "../hooks/useArtifactDataRelay";
 
 // Full-screen viewer for a published HTML artifact.
 //
@@ -12,12 +13,16 @@ import { artifactRawUrl } from "../lib/artifact";
 // (scripts only: no same-origin, forms, popups or top navigation). The server
 // also sends a CSP `sandbox` header, so the document never runs on agmux's
 // origin. Never switch this to srcdoc / innerHTML / fetch-then-inject.
+// Data files are relayed to the iframe via postMessage (useArtifactDataRelay)
+// because its own fetch can't carry the auth cookie behind Cloudflare Access.
 export function ArtifactPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [artifact, setArtifact] = useState<Artifact | null>(null);
   const [missing, setMissing] = useState(false);
   const [updatedToast, setUpdatedToast] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  useArtifactDataRelay(iframeRef, id);
 
   useEffect(() => {
     if (!id) return;
@@ -71,6 +76,7 @@ export function ArtifactPage() {
       {updatedToast && <Toast message="更新しました" onClose={() => setUpdatedToast(false)} />}
       {id && !missing && artifact && (
         <iframe
+          ref={iframeRef}
           title={artifact.title}
           src={artifactRawUrl(id, artifact?.updatedAt)}
           sandbox="allow-scripts"

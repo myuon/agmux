@@ -73,7 +73,7 @@ func dataFilesNote(id string, files map[string]string) string {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	return fmt.Sprintf("\nデータファイル: %s\nHTML からは fetch(\"data/<name>\")（絶対パスなら /artifacts/%s/data/<name>）で、開くたびにディスク上の最新の内容を取得できます。", strings.Join(names, ", "), id)
+	return fmt.Sprintf("\nデータファイル: %s\nHTML からは const res = await agmuxData(\"<name>\") で取得し、await res.text() / await res.json() で中身を読んでください（開くたびにディスク上の最新の内容が返ります）。agmuxData は agmux が HTML に自動で注入するヘルパーで、親ページ経由で取得するため Cloudflare Access 等の認証プロキシ越しでも動きます。直接の fetch(\"/artifacts/%s/data/<name>\") は認証プロキシ越しだと失敗します。", strings.Join(names, ", "), id)
 }
 
 // updateArtifact replaces an existing artifact's content under the same id.
