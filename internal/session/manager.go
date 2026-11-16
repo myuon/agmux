@@ -505,6 +505,34 @@ func (m *Manager) updateHolderPID(id string, pid int) {
 	}
 }
 
+// adoptLiveHolder connects to the session's holder recorded in the DB if that
+// process is still alive, registers it as the session's stream process and
+// returns it. It returns nil when there is no live holder or the connection
+// fails; callers then fall back to (re)spawning a holder.
+//
+// Must be called with spawnMu held.
+func (m *Manager) adoptLiveHolder(s *Session, provider Provider, opts StreamOpts) *HolderStreamProcess {
+	var holderPID int
+	if err := m.db.QueryRow("SELECT holder_pid FROM sessions WHERE id = ?", s.ID).Scan(&holderPID); err != nil {
+		return nil
+	}
+	if holderPID <= 0 || !IsHolderAlive(holderPID) {
+		return nil
+	}
+	sp, err := ReconnectHolderStreamProcess(opts, provider, holderPID)
+	if err != nil {
+		m.logger.Warn("send: live holder found but reconnect failed, will replace it", "sessionId", s.ID, "holderPid", holderPID, "error", err)
+		return nil
+	}
+	m.wireSessionIDCallback(s.ID, sp)
+	sp.StartReadLoop()
+	m.streamMu.Lock()
+	m.streamProcesses[s.ID] = sp
+	m.streamMu.Unlock()
+	m.logger.Info("send: attached to live holder instead of replacing it", "sessionId", s.ID, "holderPid", holderPID)
+	return sp
+}
+
 // killStaleHolder checks the DB for the session's current holder_pid and, if the process
 // is still alive, sends SIGTERM and waits for graceful shutdown. Falls back to SIGKILL if
 // SIGTERM does not terminate the process within the timeout. This prevents the race where
@@ -1553,6 +1581,28 @@ func (m *Manager) sendKeysWithImages(id string, text string, images []ImageData)
 		canResume := s.ConversationStarted
 
 		effectiveSP := m.buildEffectiveSystemPrompt(s.SystemPrompt)
+
+		// A live holder may exist even though this Manager has no stream
+		// process for it: e.g. this Manager lives in a short-lived CLI
+		// process (`agmux session send` fallback), or the holder was spawned
+		// by another process. That holder may be in the middle of a turn
+		// (running tools / subagents), so it must NOT be killed. Attach to it
+		// and send the message over its socket instead; the CLI queues a
+		// user message written mid-turn as the next input.
+		if adopted := m.adoptLiveHolder(s, provider, StreamOpts{
+			SessionID:     s.ID,
+			ProjectPath:   s.ProjectPath,
+			MCPConfigPath: mcpPath,
+			SystemPrompt:  effectiveSP,
+			Resume:        canResume,
+			CLISessionID:  cliSessionID,
+			Model:         s.Model,
+			APIPort:       m.apiPort,
+			ClearOffset:   s.ClearOffset,
+		}); adopted != nil {
+			return adopted.SendWithImages(text, images)
+		}
+
 		if provider.IsOneShot() && cliSessionID != "" && canResume {
 			// For one-shot exec providers (Codex/Cursor), start resume directly
 			// with the prompt as a positional arg.
