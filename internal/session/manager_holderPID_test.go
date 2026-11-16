@@ -21,6 +21,7 @@ func newTestDB(t *testing.T) *sql.DB {
 		CREATE TABLE sessions (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
+			name_source TEXT NOT NULL DEFAULT 'manual',
 			project_path TEXT NOT NULL,
 			initial_prompt TEXT,
 			tmux_session TEXT NOT NULL DEFAULT '',

@@ -34,6 +34,10 @@ type SessionService interface {
 
 	// UpdateStatus updates the session status.
 	UpdateStatus(id string, status Status) error
+	// Rename sets the session name explicitly (disables auto-titling).
+	Rename(id, name string) error
+	// SetOnNameChange sets a callback fired after a session's name changes.
+	SetOnNameChange(fn func(sessionID, name string))
 	// UpdateContext updates the session's current task and goal.
 	UpdateContext(id string, currentTask, goal string) error
 	// SwitchModel updates the session's model and applies it to any running

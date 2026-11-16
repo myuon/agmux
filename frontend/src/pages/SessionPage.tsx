@@ -9,7 +9,7 @@ import {
   Sparkles, Settings, Copy,
   RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
   Code, Eye, X, AlertTriangle, LayoutTemplate, ChevronDown,
-  Terminal,
+  Terminal, Pencil,
 } from "lucide-react";
 import { useDesktopPane } from "../App";
 import { Modal } from "../components/ui/Modal";
@@ -334,6 +334,36 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const [clearToast, setClearToast] = useState<"success" | "error" | null>(null);
   const [modelToast, setModelToast] = useState<"success" | "reserved" | "cancelled" | "error" | null>(null);
   const [copiedToast, setCopiedToast] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [renameError, setRenameError] = useState(false);
+  // Guards against saving twice (Enter followed by the resulting blur).
+  const nameEditDoneRef = useRef(false);
+
+  const startEditName = () => {
+    if (!session) return;
+    nameEditDoneRef.current = false;
+    setNameDraft(session.name);
+    setEditingName(true);
+  };
+
+  const finishEditName = (save: boolean) => {
+    if (nameEditDoneRef.current) return;
+    nameEditDoneRef.current = true;
+    setEditingName(false);
+    const name = nameDraft.trim();
+    if (!save || !session || name === "" || name === session.name) return;
+    const prevName = session.name;
+    setSession((prev) => (prev ? { ...prev, name } : prev));
+    api.renameSession(session.id, name).then((updated) => {
+      setSession((prev) => (prev ? { ...prev, name: updated.name, nameSource: updated.nameSource } : prev));
+      setActiveSessionName(updated.name);
+    }).catch(() => {
+      setSession((prev) => (prev ? { ...prev, name: prevName } : prev));
+      setRenameError(true);
+      setTimeout(() => setRenameError(false), 2000);
+    });
+  };
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
@@ -468,6 +498,14 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
           // refetch so the model Chip / reservation label stay in sync.
           api.getSession(sessionId).then(setSession).catch(() => {});
         }
+      }
+    }
+    if (msg.type === "session_update") {
+      // Pick up renames (manual from elsewhere, or auto-title).
+      const list = msg.data as Session[] | null;
+      const updated = list?.find((s) => s.id === sessionId);
+      if (updated) {
+        setSession((prev) => (prev && prev.name !== updated.name ? { ...prev, name: updated.name, nameSource: updated.nameSource } : prev));
       }
     }
     if (msg.type === "context_usage") {
@@ -1041,6 +1079,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       {modelToast === "cancelled" && <Toast message="モデル切替の予約を取り消しました" />}
       {modelToast === "error" && <Toast message="モデルの切替に失敗しました" variant="error" />}
       {copiedToast && <Toast message="セッション名をコピーしました" />}
+      {renameError && <Toast message="セッション名の変更に失敗しました" variant="error" />}
       <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-3 shrink-0">
         {!isDesktopPane && (
           <IconButton onClick={() => navigate("/", { viewTransition: true } as never)} title="Back">
@@ -1050,17 +1089,45 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         {session ? (
           <>
             <span className="inline-flex shrink-0" style={{ viewTransitionName: `session-dot-${session.id}` }}><StatusDot status={session.status} /></span>
-            <h2
-              className="text-xl sm:text-2xl font-bold hover:text-indigo-600 transition-colors cursor-pointer truncate min-w-0 max-w-full"
-              style={{ viewTransitionName: `session-name-${session.id}` }}
-              onClick={() => {
-                navigator.clipboard.writeText(session.name).then(() => {
-                  setCopiedToast(true);
-                  setTimeout(() => setCopiedToast(false), 1500);
-                }).catch(() => {});
-              }}
-              title="クリックでセッション名をコピー"
-            >{session.name}</h2>
+            {editingName ? (
+              <input
+                autoFocus
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.nativeEvent.isComposing) return;
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    finishEditName(true);
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    finishEditName(false);
+                  }
+                }}
+                onBlur={() => finishEditName(true)}
+                aria-label="セッション名"
+                className="text-xl sm:text-2xl font-bold min-w-0 flex-1 basis-40 px-1 py-0 rounded border border-indigo-400 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              />
+            ) : (
+              <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
+                <h2
+                  className="text-xl sm:text-2xl font-bold hover:text-indigo-600 transition-colors cursor-pointer truncate min-w-0"
+                  style={{ viewTransitionName: `session-name-${session.id}` }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(session.name).then(() => {
+                      setCopiedToast(true);
+                      setTimeout(() => setCopiedToast(false), 1500);
+                    }).catch(() => {});
+                  }}
+                  title="クリックでセッション名をコピー"
+                >{session.name}</h2>
+                {session.type !== "external" && (
+                  <IconButton onClick={startEditName} title="セッション名を編集">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </IconButton>
+                )}
+              </span>
+            )}
             <span className="text-xs text-gray-400" style={{ viewTransitionName: `session-status-${session.id}` }}>{session.status}</span>
             {session.provider && (() => {
               const versionMatch = providerVersion?.match(/\d+\.\d+\.\d+/)?.[0];

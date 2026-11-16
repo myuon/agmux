@@ -63,6 +63,7 @@ export const api = {
     roleTemplate?: string;
     ephemeral?: boolean;
     ephemeralTimeoutSeconds?: number;
+    autoName?: boolean;
   }) =>
     request<Session>("/sessions", {
       method: "POST",
@@ -136,6 +137,12 @@ export const api = {
 
   getStreamOutputDelta: (id: string, after: number) =>
     request<{ lines: unknown[]; total: number }>(`/sessions/${id}/stream?after=${after}`),
+
+  renameSession: (id: string, name: string) =>
+    request<Session>(`/sessions/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
 
   updateSessionContext: (id: string, data: { currentTask: string; goal: string }) =>
     request<{ status: string }>(`/sessions/${id}/context`, {

@@ -114,6 +114,11 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 		})
 	})
 
+	// Session renames (manual or auto-title) refresh the session list.
+	sessions.SetOnNameChange(func(sessionID, name string) {
+		s.broadcastSessionUpdate()
+	})
+
 	// Wire real-time context usage updates via WebSocket
 	sessions.SetOnContextUsage(func(sessionID string, contextTokens, contextWindow int64) {
 		hub.Broadcast(Message{
@@ -183,6 +188,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/sessions", s.listSessions)
 		r.Post("/sessions", s.createSession)
 		r.Get("/sessions/{id}", s.getSession)
+		r.Patch("/sessions/{id}", s.updateSession)
 		r.Delete("/sessions/{id}", s.deleteSession)
 		r.Post("/sessions/{id}/stop", s.stopSession)
 		r.Post("/sessions/{id}/send", s.sendToSession)
@@ -286,6 +292,9 @@ type createSessionRequest struct {
 	RoleTemplate            string `json:"roleTemplate,omitempty"`
 	Ephemeral               bool   `json:"ephemeral,omitempty"`
 	EphemeralTimeoutSeconds *int   `json:"ephemeralTimeoutSeconds,omitempty"`
+	// AutoName marks Name as a UI default: the session is auto-titled from its
+	// first user message (#770).
+	AutoName bool `json:"autoName,omitempty"`
 }
 
 type sendImageData struct {
@@ -384,7 +393,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model, FullAuto: req.AutoApprove, SystemPrompt: req.SystemPrompt, ParentSessionID: req.ParentSessionID, RoleTemplate: req.RoleTemplate, Ephemeral: req.Ephemeral, EphemeralTimeoutSeconds: req.EphemeralTimeoutSeconds})
+	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model, FullAuto: req.AutoApprove, SystemPrompt: req.SystemPrompt, ParentSessionID: req.ParentSessionID, RoleTemplate: req.RoleTemplate, Ephemeral: req.Ephemeral, EphemeralTimeoutSeconds: req.EphemeralTimeoutSeconds, AutoName: req.AutoName})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -704,6 +713,44 @@ func (s *Server) updateSessionContext(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+type updateSessionRequest struct {
+	Name *string `json:"name"`
+}
+
+// updateSession updates mutable session attributes. Currently only name.
+func (s *Server) updateSession(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req updateSessionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Name == nil {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	name := strings.TrimSpace(*req.Name)
+	if name == "" {
+		writeError(w, http.StatusBadRequest, "name must not be empty")
+		return
+	}
+	if _, err := s.sessions.Get(id); err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if err := s.sessions.Rename(id, name); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordSessionAction(id, "session_rename", "name: "+name)
+	sess, err := s.sessions.Get(id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sess)
 }
 
 type updateModelRequest struct {

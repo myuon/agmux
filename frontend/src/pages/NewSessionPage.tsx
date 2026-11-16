@@ -113,6 +113,9 @@ export function NewSessionPage() {
         roleTemplate: selectedTemplate || undefined,
         ephemeral: ephemeral || undefined,
         ephemeralTimeoutSeconds: ephemeral && timeoutSecs && timeoutSecs > 0 ? timeoutSecs : undefined,
+        // The name above is always a default (there is no name field), so
+        // let the backend auto-title the session from the first message.
+        autoName: true,
       });
       navigate(`/sessions/${created.id}`);
       setIsSending(false);

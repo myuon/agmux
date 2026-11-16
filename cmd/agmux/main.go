@@ -384,6 +384,7 @@ func sessionCmd() *cobra.Command {
 	cmd.AddCommand(sessionHistoryCmd())
 	cmd.AddCommand(sessionInfoCmd())
 	cmd.AddCommand(sessionRestartCmd())
+	cmd.AddCommand(sessionRenameCmd())
 
 	return cmd
 }
@@ -617,6 +618,43 @@ func sessionRestartCmd() *cobra.Command {
 				return err
 			}
 			fmt.Println("Session restarted.")
+			return nil
+		},
+	}
+}
+
+func sessionRenameCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "rename <id> <name>",
+		Short: "Rename a session (disables automatic titling)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			name := strings.TrimSpace(args[1])
+			if name == "" {
+				return fmt.Errorf("name must not be empty")
+			}
+			err = renameViaDaemon(daemonBaseURL(cfg), args[0], name)
+			if err == nil {
+				fmt.Println("Session renamed.")
+				return nil
+			}
+			if !errors.Is(err, errServerUnreachable) {
+				return err
+			}
+			// No daemon running: update the DB in-process.
+			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
+			if err != nil {
+				return err
+			}
+			defer database.Close()
+			if err := mgr.Rename(args[0], name); err != nil {
+				return err
+			}
+			fmt.Println("Session renamed.")
 			return nil
 		},
 	}

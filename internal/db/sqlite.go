@@ -412,6 +412,17 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: add name_source column to sessions (#770).
+	// 'manual'     : name chosen explicitly (never auto-renamed)
+	// 'default'    : Web UI default name; auto-titled from the first user message
+	// 'generating' : auto-title generation in flight
+	// 'auto'       : name generated automatically
+	// Existing rows default to 'manual' so they are never renamed retroactively.
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN name_source TEXT NOT NULL DEFAULT 'manual'`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: create automations table
 	// trigger_type is 'interval' (trigger_value = Go duration, e.g. "30m")
 	// or 'cron' (trigger_value = standard 5-field cron expression).

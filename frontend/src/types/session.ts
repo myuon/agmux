@@ -1,6 +1,8 @@
 export interface Session {
   id: string;
   name: string;
+  /** How name was set: "manual" | "default" (awaiting auto-title) | "generating" | "auto" */
+  nameSource?: string;
   projectPath: string;
   initialPrompt?: string;
   status: "working" | "idle" | "paused" | "exited" | "waiting_input" | "archived";

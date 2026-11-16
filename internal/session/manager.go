@@ -50,6 +50,9 @@ type Manager struct {
 	onStatusChange     func(sessionID string, status Status, lastError string)
 	onSessionEnd       func(sessionID string)
 	onContextUsage     func(sessionID string, contextTokens, contextWindow int64)
+	onNameChange       func(sessionID, name string)
+	// titleGenerator overrides the auto-title generator (nil = claude -p haiku).
+	titleGenerator TitleGenerator
 	backgroundTasks    *BackgroundTaskStore
 	// autoStop tracks automation-created sessions that are still "armed" for
 	// auto-stop (see automation_autostop.go). Presence in the map means armed;
@@ -292,6 +295,11 @@ func buildOneShotFirstSendOpts(s *Session, text, mcpPath, effectiveSP string, ap
 // If a holder process is still alive (survived server restart), reconnect to it.
 // Otherwise, start a new holder process with --resume.
 func (m *Manager) RecoverStreamProcesses() {
+	// An auto-title generation interrupted by a restart (or started by a
+	// short-lived CLI process) never completes: make it eligible again.
+	if _, err := m.db.Exec("UPDATE sessions SET name_source = ? WHERE name_source = ?", NameSourceDefault, NameSourceGenerating); err != nil {
+		m.logger.Error("recover stream processes: reset auto-title state failed", "error", err)
+	}
 	rows, err := m.db.Query(
 		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid, clear_offset, conversation_started, COALESCE(automation_id, ''), status FROM sessions WHERE holder_pid > 0`,
 	)
@@ -577,6 +585,7 @@ type CreateOpts struct {
 	Ephemeral               bool   // create as ephemeral session
 	EphemeralTimeoutSeconds *int   // timeout in seconds for ephemeral sessions
 	AutomationID            string // ID of the automation that created this session (empty for manual sessions)
+	AutoName                bool   // name is a UI default; auto-title it from the first user message (#770)
 }
 
 // initialCreateStatus returns the status a freshly created session must be
@@ -613,6 +622,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	ephemeral := false
 	var ephemeralTimeoutSeconds *int
 	automationID := ""
+	autoName := false
 	if len(opts) > 0 {
 		if opts[0].Provider != "" {
 			pn = opts[0].Provider
@@ -625,6 +635,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		ephemeral = opts[0].Ephemeral
 		ephemeralTimeoutSeconds = opts[0].EphemeralTimeoutSeconds
 		automationID = opts[0].AutomationID
+		autoName = opts[0].AutoName
 	}
 
 	// Validate parent session exists when creating a sub-session
@@ -749,10 +760,14 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	if sp != nil {
 		holderPID = sp.HolderPID()
 	}
+	s.NameSource = NameSourceManual
+	if autoName {
+		s.NameSource = NameSourceDefault
+	}
 	if _, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, role_template, automation_id, holder_pid, ephemeral_timeout_seconds, completion_report, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, s.AutomationID, holderPID, s.EphemeralTimeoutSeconds, s.CompletionReport, s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, name_source, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, role_template, automation_id, holder_pid, ephemeral_timeout_seconds, completion_report, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.NameSource, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, s.AutomationID, holderPID, s.EphemeralTimeoutSeconds, s.CompletionReport, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
@@ -777,6 +792,11 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	// Start ephemeral timeout goroutine if applicable
 	if ephemeral && ephemeralTimeoutSeconds != nil && *ephemeralTimeoutSeconds > 0 {
 		m.startEphemeralTimeout(s.ID, s.ParentSessionID, time.Duration(*ephemeralTimeoutSeconds)*time.Second)
+	}
+
+	// The initial prompt is the first user message: auto-title from it.
+	if autoName && prompt != "" {
+		m.maybeStartAutoTitle(s.ID, prompt)
 	}
 
 	return s, nil
@@ -871,7 +891,7 @@ func (m *Manager) UpdateStatusWithHolderPIDClear(id string, status Status) error
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
+		`SELECT id, name, name_source, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -888,7 +908,7 @@ func (m *Manager) List() ([]Session, error) {
 		var prompt, systemPrompt, parentSessionID, roleTemplate, automationID, currentTask, goal, goalsJSON, lastError, completionReport sql.NullString
 		var conversationStartedInt int
 		var ephemeralTimeoutSeconds sql.NullInt64
-		if err := rows.Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.NameSource, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.ConversationStarted = conversationStartedInt != 0
@@ -948,9 +968,9 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var conversationStartedInt int
 	var ephemeralTimeoutSeconds sql.NullInt64
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
+		`SELECT id, name, name_source, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.NameSource, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -1503,7 +1523,12 @@ func (m *Manager) SendKeysWithImages(id string, text string, images []ImageData)
 	// A message from outside means someone is using the session: it is no
 	// longer subject to automation auto-stop.
 	m.disarmAutoStop(id)
-	return m.sendKeysWithImages(id, text, images)
+	if err := m.sendKeysWithImages(id, text, images); err != nil {
+		return err
+	}
+	// First user message of a session still waiting for an auto-title (#770).
+	m.maybeStartAutoTitle(id, text)
+	return nil
 }
 
 // sendKeysSystem sends a message generated by agmux itself (periodic
@@ -1869,9 +1894,9 @@ func (m *Manager) GetController() (*Session, error) {
 	var providerStr string
 	var prompt, systemPrompt, currentTask, goal, goalsJSON, lastError sql.NullString
 	err := m.db.QueryRow(
-		`SELECT id, name, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, clear_offset, created_at, updated_at
+		`SELECT id, name, name_source, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, current_task, goal, goals, last_error, clear_offset, created_at, updated_at
 		 FROM sessions WHERE type = ? LIMIT 1`, string(TypeController),
-	).Scan(&s.ID, &s.Name, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.NameSource, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &currentTask, &goal, &goalsJSON, &lastError, &s.ClearOffset, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
