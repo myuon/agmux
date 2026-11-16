@@ -1106,7 +1106,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                 }}
                 onBlur={() => finishEditName(true)}
                 aria-label="セッション名"
-                className="text-xl sm:text-2xl font-bold min-w-0 flex-1 basis-40 px-1 py-0 rounded border border-indigo-400 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                className="text-xl sm:text-2xl font-bold min-w-0 grow basis-[17rem] px-1 py-0 rounded border border-indigo-400 bg-white dark:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
               />
             ) : (
               <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
