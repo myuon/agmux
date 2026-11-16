@@ -35,6 +35,9 @@ const (
 type Session struct {
 	ID              string       `json:"id"`
 	Name            string       `json:"name"`
+	// NameSource tracks how Name was set: "manual", "default" (waiting for
+	// auto-title), "generating" or "auto". See NameSource* constants.
+	NameSource      string       `json:"nameSource,omitempty"`
 	ProjectPath     string       `json:"projectPath"`
 	InitialPrompt   string       `json:"initialPrompt,omitempty"`
 	SystemPrompt    string       `json:"systemPrompt,omitempty"`

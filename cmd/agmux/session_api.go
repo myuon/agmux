@@ -34,17 +34,27 @@ func daemonBaseURL(cfg *config.Config) string {
 // into out (if non-nil). Non-2xx responses are returned as errors carrying the
 // daemon's error message.
 func daemonPost(baseURL, path string, body, out interface{}) error {
+	return daemonRequest(http.MethodPost, baseURL, path, body, out)
+}
+
+// daemonRequest sends a JSON request with the given method to the daemon.
+func daemonRequest(method, baseURL, path string, body, out interface{}) error {
 	b, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)
 	}
+	req, err := http.NewRequest(method, baseURL+path, bytes.NewReader(b))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 60 * time.Second}
-	resp, err := client.Post(baseURL+path, "application/json", bytes.NewReader(b))
+	resp, err := client.Do(req)
 	if err != nil {
 		if errors.Is(err, syscall.ECONNREFUSED) {
 			return errServerUnreachable
 		}
-		return fmt.Errorf("request POST %s failed: %w", path, err)
+		return fmt.Errorf("request %s %s failed: %w", method, path, err)
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -69,6 +79,12 @@ func daemonPost(baseURL, path string, body, out interface{}) error {
 // owns the live connection to the session's holder. If the session is in the
 // middle of a turn the daemon writes the message to the CLI's stdin and the
 // CLI queues it as the next input; nothing is restarted.
+// renameViaDaemon renames a session through the running daemon so the Web UI
+// is notified of the change.
+func renameViaDaemon(baseURL, id, name string) error {
+	return daemonRequest(http.MethodPatch, baseURL, "/api/sessions/"+id, map[string]string{"name": name}, nil)
+}
+
 func sendViaDaemon(baseURL, id, text string) error {
 	return daemonPost(baseURL, "/api/sessions/"+id+"/send", map[string]string{"text": text}, nil)
 }
