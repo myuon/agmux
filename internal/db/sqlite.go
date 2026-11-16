@@ -476,6 +476,14 @@ func migrate(db *sql.DB) error {
 	if _, err = db.Exec(`ALTER TABLE artifacts ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`); err != nil && !isAlterTableDuplicate(err) {
 		return err
 	}
+	// Migration: data files an artifact may fetch (JSON object name → resolved
+	// absolute path) and the resolved project dir they must stay inside.
+	if _, err = db.Exec(`ALTER TABLE artifacts ADD COLUMN data_files TEXT NOT NULL DEFAULT ''`); err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+	if _, err = db.Exec(`ALTER TABLE artifacts ADD COLUMN data_root TEXT NOT NULL DEFAULT ''`); err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
 
 	// Migration: create secrets table (METADATA ONLY — secret values are kept
 	// in a backend such as the macOS Keychain and must never be stored here).

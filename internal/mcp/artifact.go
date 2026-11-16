@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/myuon/agmux/internal/artifact"
@@ -24,6 +25,8 @@ func (s *Server) handlePublishArtifact(args json.RawMessage) (interface{}, *json
 		Path       string `json:"path"`
 		Title      string `json:"title"`
 		ArtifactID string `json:"artifact_id"`
+		// DataFiles: nil = not given (keep on update), {} = clear.
+		DataFiles *map[string]string `json:"data_files"`
 	}
 	if err := json.Unmarshal(args, &input); err != nil {
 		return nil, &jsonRPCError{Code: -32602, Message: "invalid arguments"}
@@ -34,7 +37,7 @@ func (s *Server) handlePublishArtifact(args json.RawMessage) (interface{}, *json
 		return nil, &jsonRPCError{Code: -32602, Message: "path is required"}
 	}
 	if input.ArtifactID != "" {
-		return s.updateArtifact(sessionID, input.ArtifactID, input.Path, input.Title), nil
+		return s.updateArtifact(sessionID, input.ArtifactID, input.Path, input.Title, input.DataFiles), nil
 	}
 	if input.Title == "" {
 		return nil, &jsonRPCError{Code: -32602, Message: "title is required"}
@@ -48,19 +51,36 @@ func (s *Server) handlePublishArtifact(args json.RawMessage) (interface{}, *json
 	if err != nil {
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
-	viewPath, err := s.apiRegisterArtifact(sessionID, id, input.Title)
+	var dataFiles map[string]string
+	if input.DataFiles != nil {
+		dataFiles = *input.DataFiles
+	}
+	viewPath, err := s.apiRegisterArtifact(sessionID, id, input.Title, dataFiles)
 	if err != nil {
 		_ = artifact.RemoveFiles(dir, id)
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
-	return toolResult(fmt.Sprintf("HTML を公開しました。\nartifact_id: %s\nagmux 上の表示パス: %s\n公開時点の内容がコピーされています（元ファイルを後で変更しても反映されません）。内容を変更したいときは、元の HTML を編集してから artifact_id を指定して publish_artifact を再度呼んでください（同じ URL のまま差し替わります。~/.agmux/artifacts 配下は直接編集しないこと）。相対パスのアセット（画像・CSS・JS ファイル）は同梱されないため、HTML は自己完結（インライン、または https の CDN）にしてください。ユーザーにはブラウザ通知が送られました。", id, viewPath), false), nil
+	return toolResult(fmt.Sprintf("HTML を公開しました。\nartifact_id: %s\nagmux 上の表示パス: %s\n公開時点の内容がコピーされています（元ファイルを後で変更しても反映されません）。内容を変更したいときは、元の HTML を編集してから artifact_id を指定して publish_artifact を再度呼んでください（同じ URL のまま差し替わります。~/.agmux/artifacts 配下は直接編集しないこと）。相対パスのアセット（画像・CSS・JS ファイル）は同梱されないため、HTML は自己完結（インライン、または https の CDN）にしてください。ユーザーにはブラウザ通知が送られました。%s", id, viewPath, dataFilesNote(id, dataFiles)), false), nil
+}
+
+// dataFilesNote describes how the artifact can fetch its registered data files.
+func dataFilesNote(id string, files map[string]string) string {
+	if len(files) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(files))
+	for n := range files {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return fmt.Sprintf("\nデータファイル: %s\nHTML からは fetch(\"data/<name>\")（絶対パスなら /artifacts/%s/data/<name>）で、開くたびにディスク上の最新の内容を取得できます。", strings.Join(names, ", "), id)
 }
 
 // updateArtifact replaces an existing artifact's content under the same id.
 // Order: check existence via the API (nothing written for unknown ids), swap
 // the file atomically (keeping a backup), tell the server, and roll the file
 // back if the server refuses so file and metadata stay consistent.
-func (s *Server) updateArtifact(sessionID, id, path, title string) interface{} {
+func (s *Server) updateArtifact(sessionID, id, path, title string, dataFiles *map[string]string) interface{} {
 	if !artifact.ValidID(id) {
 		return toolResult("Error: artifact_id is invalid (expected the 32-character id returned when it was published)", true)
 	}
@@ -81,7 +101,7 @@ func (s *Server) updateArtifact(sessionID, id, path, title string) interface{} {
 		}
 		return toolResult(fmt.Sprintf("Error: %v", err), true)
 	}
-	viewPath, err := s.apiUpdateArtifact(sessionID, id, title)
+	viewPath, err := s.apiUpdateArtifact(sessionID, id, title, dataFiles)
 	if err != nil {
 		if rbErr := rep.Rollback(); rbErr != nil {
 			return toolResult(fmt.Sprintf("Error: %v (previous content could not be restored: %v)", err, rbErr), true)
@@ -89,7 +109,15 @@ func (s *Server) updateArtifact(sessionID, id, path, title string) interface{} {
 		return toolResult(fmt.Sprintf("Error: %v (the artifact was left unchanged)", err), true)
 	}
 	rep.Commit()
-	return toolResult(fmt.Sprintf("HTML を更新しました（同じ URL のまま内容を差し替えました）。\nartifact_id: %s\nagmux 上の表示パス: %s\n開いている画面は自動で再読み込みされ、ユーザーにはブラウザ通知が送られました。再度更新するときも artifact_id を指定してください。", id, viewPath), false)
+	note := ""
+	if dataFiles != nil {
+		if len(*dataFiles) == 0 {
+			note = "\nデータファイルの登録を解除しました。"
+		} else {
+			note = dataFilesNote(id, *dataFiles)
+		}
+	}
+	return toolResult(fmt.Sprintf("HTML を更新しました（同じ URL のまま内容を差し替えました）。\nartifact_id: %s\nagmux 上の表示パス: %s\n開いている画面は自動で再読み込みされ、ユーザーにはブラウザ通知が送られました。再度更新するときも artifact_id を指定してください。%s", id, viewPath, note), false)
 }
 
 func (s *Server) apiCheckArtifact(id string) error {
@@ -108,10 +136,17 @@ func (s *Server) apiCheckArtifact(id string) error {
 	return nil
 }
 
-func (s *Server) apiUpdateArtifact(sessionID, id, title string) (string, error) {
-	payload := map[string]string{"sessionId": sessionID}
+func (s *Server) apiUpdateArtifact(sessionID, id, title string, dataFiles *map[string]string) (string, error) {
+	payload := map[string]interface{}{"sessionId": sessionID}
 	if title != "" {
 		payload["title"] = title
+	}
+	if dataFiles != nil {
+		m := *dataFiles
+		if m == nil {
+			m = map[string]string{}
+		}
+		payload["dataFiles"] = m
 	}
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequest("PUT", fmt.Sprintf("%s/api/artifacts/%s", s.apiURL, url.PathEscape(id)), strings.NewReader(string(body)))
@@ -122,8 +157,12 @@ func (s *Server) apiUpdateArtifact(sessionID, id, title string) (string, error) 
 	return doArtifactRequest(req)
 }
 
-func (s *Server) apiRegisterArtifact(sessionID, id, title string) (string, error) {
-	body, _ := json.Marshal(map[string]string{"id": id, "title": title})
+func (s *Server) apiRegisterArtifact(sessionID, id, title string, dataFiles map[string]string) (string, error) {
+	payload := map[string]interface{}{"id": id, "title": title}
+	if len(dataFiles) > 0 {
+		payload["dataFiles"] = dataFiles
+	}
+	body, _ := json.Marshal(payload)
 	u := fmt.Sprintf("%s/api/sessions/%s/artifacts", s.apiURL, sessionID)
 	req, err := http.NewRequest("POST", u, strings.NewReader(string(body)))
 	if err != nil {

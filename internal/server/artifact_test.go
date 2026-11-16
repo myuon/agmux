@@ -38,7 +38,7 @@ func newArtifactTestServer(t *testing.T) (http.Handler, *artifact.Store, string)
 	require.NoError(t, os.WriteFile(src, []byte("<h1>hi</h1>"), 0o644))
 	id, err := artifact.Publish(store.Dir(), src)
 	require.NoError(t, err)
-	_, err = store.Register("s1", id, "T")
+	_, err = store.Register("s1", id, "T", nil)
 	require.NoError(t, err)
 	return r, store, id
 }
@@ -118,7 +118,7 @@ func newUpdateTestServer(t *testing.T) (http.Handler, *artifact.Store, string, *
 	require.NoError(t, os.WriteFile(src, []byte("<h1>v1</h1>"), 0o644))
 	id, err := artifact.Publish(store.Dir(), src)
 	require.NoError(t, err)
-	_, err = store.Register("s1", id, "T")
+	_, err = store.Register("s1", id, "T", nil)
 	require.NoError(t, err)
 	return r, store, id, hub
 }
@@ -220,7 +220,7 @@ func TestListAllArtifacts(t *testing.T) {
 	require.NoError(t, os.WriteFile(src, []byte("<p>b</p>"), 0o644))
 	id2, err := artifact.Publish(store.Dir(), src)
 	require.NoError(t, err)
-	_, err = store.Register("s2", id2, "T2")
+	_, err = store.Register("s2", id2, "T2", nil)
 	require.NoError(t, err)
 
 	w := httptest.NewRecorder()
@@ -232,7 +232,7 @@ func TestListAllArtifacts(t *testing.T) {
 	assert.Equal(t, id2, got[0].ID)
 	assert.Equal(t, id1, got[1].ID)
 
-	_, err = store.Touch(id1, "")
+	_, err = store.Touch(id1, "", nil)
 	require.NoError(t, err)
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/artifacts", nil))

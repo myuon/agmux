@@ -7,6 +7,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -35,10 +39,36 @@ func (s *Server) mountArtifacts(r chi.Router) {
 	r.Delete("/artifacts/{id}", s.deleteArtifact)
 }
 
-// mountArtifactRaw registers the raw content route (outside /api).
+// mountArtifactRaw registers the raw content and data file routes (outside
+// /api).
 func (s *Server) mountArtifactRaw(r chi.Router) {
 	r.Get("/artifacts/{id}/raw", s.rawArtifact)
+	// HandleFunc (all methods) so non-GET/HEAD get 405 here instead of
+	// falling through to the SPA catch-all.
+	r.HandleFunc("/artifacts/{id}/data/{name}", s.artifactData)
 }
+
+// artifactCSPFor returns the CSP for a raw artifact. Artifacts with data files
+// may connect only to their own data path. The sandboxed document has an
+// opaque origin, so 'self' can't be used: the absolute origin the browser
+// used (request Host) is spelled out, for both http and https because a
+// TLS-terminating proxy (e.g. tailscale serve) may sit in front. Artifacts
+// without data files keep connect-src 'none'.
+func artifactCSPFor(a *artifact.Artifact, host string) string {
+	if a == nil || len(a.DataFiles) == 0 {
+		return artifactCSP
+	}
+	host = strings.ToLower(host)
+	if !cspHostPattern.MatchString(host) {
+		return artifactCSP
+	}
+	p := "//" + host + "/artifacts/" + a.ID + "/data/"
+	return strings.Replace(artifactCSP, "connect-src 'none'", "connect-src http:"+p+" https:"+p, 1)
+}
+
+// cspHostPattern accepts a DNS name or IPv4 address with an optional port —
+// nothing that could break out of the CSP header value.
+var cspHostPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]{1,5})?$`)
 
 func (s *Server) artifactStore(w http.ResponseWriter) *artifact.Store {
 	if s.artifacts == nil {
@@ -77,6 +107,15 @@ func (s *Server) listArtifacts(w http.ResponseWriter, r *http.Request) {
 type createArtifactRequest struct {
 	ID    string `json:"id"`
 	Title string `json:"title"`
+	// DataFiles maps name → absolute path of files the artifact may fetch
+	// (see artifact.ResolveDataFiles for the restrictions).
+	DataFiles map[string]string `json:"dataFiles"`
+}
+
+// resolveArtifactData validates data files against the session's project dir.
+// The artifacts dir is always denied in addition to the agmux data dir.
+func (s *Server) resolveArtifactData(files map[string]string, projectPath string) (*artifact.DataFiles, error) {
+	return artifact.ResolveDataFiles(files, projectPath, s.artifacts.Dir())
 }
 
 // createArtifact registers a file the MCP tool already copied into the
@@ -98,7 +137,14 @@ func (s *Server) createArtifact(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	a, err := store.Register(sessionID, req.ID, req.Title)
+	var data *artifact.DataFiles
+	if len(req.DataFiles) > 0 {
+		if data, err = s.resolveArtifactData(req.DataFiles, sess.ProjectPath); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	a, err := store.Register(sessionID, req.ID, req.Title, data)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, artifact.ErrNotFound) {
@@ -134,6 +180,10 @@ type updateArtifactRequest struct {
 	// notification). It defaults to the artifact's own session. Ownership of
 	// the artifact never changes.
 	SessionID string `json:"sessionId"`
+	// DataFiles replaces the data file mapping when present (an empty object
+	// clears it); omitted or null keeps the current one. Paths are validated
+	// against the project dir of the session performing the update.
+	DataFiles *map[string]string `json:"dataFiles"`
 }
 
 // updateArtifact records that the content of an existing artifact was
@@ -171,7 +221,14 @@ func (s *Server) updateArtifact(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
-	a, err := store.Touch(old.ID, req.Title)
+	var data *artifact.DataFiles
+	if req.DataFiles != nil {
+		if data, err = s.resolveArtifactData(*req.DataFiles, sess.ProjectPath); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	a, err := store.Touch(old.ID, req.Title, data)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, artifact.ErrNotFound) {
@@ -240,7 +297,8 @@ func (s *Server) rawArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "id")
-	if _, err := s.artifacts.Get(id); err != nil {
+	a, err := s.artifacts.Get(id)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -261,8 +319,81 @@ func (s *Server) rawArtifact(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Referrer-Policy", "no-referrer")
 	h.Set("Cross-Origin-Resource-Policy", "same-origin")
-	h.Set("Content-Security-Policy", artifactCSP)
+	h.Set("Content-Security-Policy", artifactCSPFor(a, r.Host))
 	h.Set("Cache-Control", "private, no-store")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, f)
+}
+
+// artifactDataContentType picks the Content-Type from the registered name.
+func artifactDataContentType(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".json":
+		return "application/json; charset=utf-8"
+	case ".md", ".markdown", ".txt":
+		return "text/plain; charset=utf-8"
+	case ".csv":
+		return "text/csv; charset=utf-8"
+	default:
+		return "application/octet-stream"
+	}
+}
+
+// artifactData serves a whitelisted data file of an artifact, read fresh from
+// disk each time. Only names registered for that artifact are served and the
+// stored path is re-validated on every request (still a regular file inside
+// the registered project dir, not under the agmux data dir), so a later
+// symlink swap can't escape. Anything else is a 404; files over
+// artifact.MaxDataSize get 413.
+//
+// The artifact document is sandboxed without allow-same-origin, so its fetch
+// arrives with Origin "null": that origin is allowed via CORS (no
+// credentials). Same-origin requests need no CORS headers.
+func (s *Server) artifactData(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	h := w.Header()
+	h.Set("Cache-Control", "no-store")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Vary", "Origin")
+	if r.Header.Get("Origin") == "null" {
+		h.Set("Access-Control-Allow-Origin", "null")
+	}
+	if s.artifacts == nil {
+		http.NotFound(w, r)
+		return
+	}
+	name := chi.URLParam(r, "name")
+	if !artifact.ValidDataName(name) {
+		http.NotFound(w, r)
+		return
+	}
+	a, err := s.artifacts.Get(chi.URLParam(r, "id"))
+	if err != nil || a.Data() == nil {
+		http.NotFound(w, r)
+		return
+	}
+	path, ok := a.Data().Paths[name]
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	body, err := artifact.ReadDataFile(a.Data().Root, path, s.artifacts.Dir())
+	if errors.Is(err, artifact.ErrDataTooLarge) {
+		http.Error(w, "data file is larger than 5 MiB", http.StatusRequestEntityTooLarge)
+		return
+	}
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	h.Set("Content-Type", artifactDataContentType(name))
+	h.Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(http.StatusOK)
+	if r.Method != http.MethodHead {
+		_, _ = w.Write(body)
+	}
 }

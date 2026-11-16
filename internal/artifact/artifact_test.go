@@ -89,11 +89,11 @@ func TestStoreDeleteOnlyWithinDir(t *testing.T) {
 	src := writeFile(t, filepath.Join(d, "a.html"), "<p>x</p>")
 	id, err := Publish(dir, src)
 	require.NoError(t, err)
-	_, err = st.Register("s1", id, "  ")
+	_, err = st.Register("s1", id, "  ", nil)
 	assert.Error(t, err, "empty title")
-	_, err = st.Register("s1", id, "T")
+	_, err = st.Register("s1", id, "T", nil)
 	require.NoError(t, err)
-	_, err = st.Register("s1", "../victim", "T")
+	_, err = st.Register("s1", "../victim", "T", nil)
 	assert.Error(t, err)
 
 	for _, bad := range []string{"../victim", "..", ".", "", filepath.Join("..", "victim")} {
