@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -652,6 +653,20 @@ func sessionSendCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("load config: %w", err)
 			}
+			// Send through the running daemon: it owns the live holder
+			// connection. Using an in-process Manager here used to treat the
+			// session as having no stream process and kill/respawn its holder,
+			// which killed sessions that were in the middle of a turn.
+			err = sendViaDaemon(daemonBaseURL(cfg), args[0], args[1])
+			if err == nil {
+				fmt.Println("Text sent.")
+				return nil
+			}
+			if !errors.Is(err, errServerUnreachable) {
+				return err
+			}
+			// No daemon running: deliver in-process. The Manager attaches to
+			// a live holder instead of replacing it.
 			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
@@ -688,6 +703,25 @@ func sessionBroadcastCmd() *cobra.Command {
 			}
 			if filter == "" {
 				filter = "active"
+			}
+
+			// Prefer the running daemon (see sessionSendCmd).
+			if remote, err := broadcastViaDaemon(daemonBaseURL(cfg), text, filter); err == nil {
+				if len(remote) == 0 {
+					fmt.Println("No target sessions found.")
+					return nil
+				}
+				for _, r := range remote {
+					if r.Status == "error" {
+						fmt.Printf("  %s: error - %s\n", r.SessionID, r.Error)
+					} else {
+						fmt.Printf("  %s: sent\n", r.SessionID)
+					}
+				}
+				fmt.Printf("Broadcast complete: %d session(s)\n", len(remote))
+				return nil
+			} else if !errors.Is(err, errServerUnreachable) {
+				return err
 			}
 
 			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
