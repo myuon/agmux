@@ -321,8 +321,21 @@ func (s *Server) rawArtifact(w http.ResponseWriter, r *http.Request) {
 	h.Set("Cross-Origin-Resource-Policy", "same-origin")
 	h.Set("Content-Security-Policy", artifactCSPFor(a, r.Host))
 	h.Set("Cache-Control", "private, no-store")
+	if len(a.DataFiles) == 0 {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(w, f)
+		return
+	}
+	// Artifacts with data files get the agmuxData helper (see
+	// artifact_helper.go). No ETag/Content-Length is sent for raw artifacts,
+	// so nothing else has to reflect the modified body.
+	body, err := io.ReadAll(f)
+	if err != nil {
+		http.Error(w, "failed to read artifact", http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, f)
+	_, _ = w.Write(injectArtifactDataHelper(body, a.ID))
 }
 
 // artifactDataContentType picks the Content-Type from the registered name.
