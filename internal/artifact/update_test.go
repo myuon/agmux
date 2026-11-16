@@ -26,7 +26,7 @@ func newTestStore(t *testing.T) (*Store, string, string) {
 	src := writeFile(t, filepath.Join(d, "a.html"), "<p>v1</p>")
 	id, err := Publish(dir, src)
 	require.NoError(t, err)
-	_, err = st.Register("s1", id, "T1")
+	_, err = st.Register("s1", id, "T1", nil)
 	require.NoError(t, err)
 	return st, id, d
 }
@@ -66,7 +66,7 @@ func TestReplaceKeepsIdAndMetadata(t *testing.T) {
 	rep, err := Replace(st.Dir(), id, v2)
 	require.NoError(t, err)
 	assert.Len(t, dirEntries(t, st, id), 2, "backup exists until committed")
-	a, err := st.Touch(id, "")
+	a, err := st.Touch(id, "", nil)
 	require.NoError(t, err)
 	rep.Commit()
 
@@ -78,7 +78,7 @@ func TestReplaceKeepsIdAndMetadata(t *testing.T) {
 	assert.Equal(t, "T1", a.Title, "title kept when omitted")
 	assert.True(t, parseTime(t, a.UpdatedAt).After(parseTime(t, before.UpdatedAt)))
 
-	a2, err := st.Touch(id, "  T2 ")
+	a2, err := st.Touch(id, "  T2 ", nil)
 	require.NoError(t, err)
 	assert.Equal(t, "T2", a2.Title)
 	assert.True(t, parseTime(t, a2.UpdatedAt).After(parseTime(t, a.UpdatedAt)))
@@ -132,9 +132,9 @@ func TestReplaceUnknownAndTraversalWriteNothing(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "unknown id must not create a directory")
 	es, _ := os.ReadDir(victim)
 	assert.Empty(t, es)
-	_, err = st.Touch(unknown, "x")
+	_, err = st.Touch(unknown, "x", nil)
 	assert.ErrorIs(t, err, ErrNotFound)
-	_, err = st.Touch("../victim", "x")
+	_, err = st.Touch("../victim", "x", nil)
 	assert.ErrorIs(t, err, ErrNotFound)
 	assert.Equal(t, "<p>v1</p>", readStored(t, st, id))
 }

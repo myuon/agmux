@@ -52,13 +52,25 @@ type Artifact struct {
 	// UpdatedAt is the last time the content/title was replaced. It equals
 	// CreatedAt for artifacts that were never updated.
 	UpdatedAt string `json:"updatedAt"`
+	// DataFiles lists the names fetchable at /artifacts/{id}/data/{name}.
+	DataFiles []string `json:"dataFiles,omitempty"`
+
+	data *DataFiles
 }
 
-const selectCols = `id, session_id, title, created_at, COALESCE(NULLIF(updated_at, ''), created_at)`
+// Data returns the registered data file mapping (nil when there is none).
+func (a *Artifact) Data() *DataFiles { return a.data }
+
+const selectCols = `id, session_id, title, created_at, COALESCE(NULLIF(updated_at, ''), created_at), data_files, data_root`
 
 func scanArtifact(sc interface{ Scan(...any) error }) (Artifact, error) {
 	var a Artifact
-	err := sc.Scan(&a.ID, &a.SessionID, &a.Title, &a.CreatedAt, &a.UpdatedAt)
+	var paths, root string
+	err := sc.Scan(&a.ID, &a.SessionID, &a.Title, &a.CreatedAt, &a.UpdatedAt, &paths, &root)
+	if err == nil {
+		a.data = decodeDataFiles(paths, root)
+		a.DataFiles = a.data.Names()
+	}
 	return a, err
 }
 
@@ -252,8 +264,9 @@ func (s *Store) FilePath(id string) (string, error) {
 	return filepath.Join(s.dir, id, FileName), nil
 }
 
-// Register records metadata for a file already copied by Publish.
-func (s *Store) Register(sessionID, id, title string) (*Artifact, error) {
+// Register records metadata for a file already copied by Publish. data is the
+// already validated data file mapping (see ResolveDataFiles) or nil.
+func (s *Store) Register(sessionID, id, title string, data *DataFiles) (*Artifact, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return nil, errors.New("title is required")
@@ -266,13 +279,13 @@ func (s *Store) Register(sessionID, id, title string) (*Artifact, error) {
 		return nil, ErrNotFound
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	a := &Artifact{ID: id, SessionID: sessionID, Title: title, CreatedAt: now, UpdatedAt: now}
-	_, err = s.db.Exec(`INSERT INTO artifacts (id, session_id, title, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
-		a.ID, a.SessionID, a.Title, a.CreatedAt, a.UpdatedAt)
+	paths, root := encodeDataFiles(data)
+	_, err = s.db.Exec(`INSERT INTO artifacts (id, session_id, title, created_at, updated_at, data_files, data_root) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		id, sessionID, title, now, now, paths, root)
 	if err != nil {
 		return nil, err
 	}
-	return a, nil
+	return s.Get(id)
 }
 
 func (s *Store) Get(id string) (*Artifact, error) {
@@ -288,14 +301,23 @@ func (s *Store) Get(id string) (*Artifact, error) {
 
 // Touch records an update of an existing artifact: updated_at moves to now
 // (nanosecond precision so quick successive updates differ) and the title is
-// replaced when non-empty. session_id and created_at are left alone.
-func (s *Store) Touch(id, title string) (*Artifact, error) {
+// replaced when non-empty. session_id and created_at are left alone. data
+// replaces the data file mapping when non-nil (an empty mapping clears it);
+// nil keeps the existing one.
+func (s *Store) Touch(id, title string, data *DataFiles) (*Artifact, error) {
 	if !ValidID(id) {
 		return nil, ErrNotFound
 	}
 	title = strings.TrimSpace(title)
 	now := time.Now().UTC().Format(time.RFC3339Nano)
-	res, err := s.db.Exec(`UPDATE artifacts SET updated_at = ?, title = COALESCE(NULLIF(?, ''), title) WHERE id = ?`, now, title, id)
+	var res sql.Result
+	var err error
+	if data != nil {
+		paths, root := encodeDataFiles(data)
+		res, err = s.db.Exec(`UPDATE artifacts SET updated_at = ?, title = COALESCE(NULLIF(?, ''), title), data_files = ?, data_root = ? WHERE id = ?`, now, title, paths, root, id)
+	} else {
+		res, err = s.db.Exec(`UPDATE artifacts SET updated_at = ?, title = COALESCE(NULLIF(?, ''), title) WHERE id = ?`, now, title, id)
+	}
 	if err != nil {
 		return nil, err
 	}
