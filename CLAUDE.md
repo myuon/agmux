@@ -39,6 +39,13 @@ agmux update
 - 動作確認や画面に対する変更がある時は、**uishot**（`mcp__ui-shot__upload_screenshot` 等）で画面をキャプチャし、なるべくそのスクショをPRやissueに貼ること
 - **フロントエンドの変更も embedded 配信**: 以前は config の `frontend_dir` で `dist` を直接配信していたが、副作用が大きいため廃止した（2026-07-14）。フロントエンドのみの変更でも反映にはリリース + `agmux update` が必要
 
+## Experimental 機能ルール
+
+- 効果が読めない新機能（試してみないと有用か分からないもの）は **experimental 機能**として実装し、設定画面から on/off できるようにする
+- 設定は `config.toml` の `[experimental]` セクションに置き、**デフォルトは off**
+- off のときは、UI、API、MCP ツール、バックグラウンド処理のどれにも影響が出ないようにする
+- 定着したら experimental から外す。不要なら削除する。どちらにするかはユーザーと相談して決める
+
 ## エージェントの自律性ルール
 
 - `make build`, コンフリクト解消など技術的に自明な作業は自己判断で進める
