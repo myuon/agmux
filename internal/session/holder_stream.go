@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -409,7 +410,12 @@ func (sp *HolderStreamProcess) readLoop() {
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			if err != io.EOF {
+			if errors.Is(err, net.ErrClosed) {
+				// The daemon closed the socket itself (Disconnect on server
+				// shutdown, or Stop). This is the expected way the loop ends,
+				// not a failure.
+				slog.Debug("holder stream: connection closed", "error", err)
+			} else if err != io.EOF {
 				slog.Error("holder stream: read error", "error", err)
 			}
 			// EOF / read error on the holder socket after a successful PID
