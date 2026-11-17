@@ -6,6 +6,8 @@ import { Section, Field } from "../components/ui/Section";
 import { ToggleButton } from "../components/ui/ToggleButton";
 import { AlertBanner } from "../components/ui/AlertBanner";
 import { LoopTasks } from "../components/LoopTasks";
+import { LoopDashboard } from "../components/LoopDashboard";
+import { useExperimental } from "../hooks/useExperimental";
 import { formatTrigger } from "../models/automation";
 
 const RUN_STATUS_STYLES: Record<AutomationRun["status"], string> = {
@@ -30,6 +32,7 @@ export function AutomationDetailPage() {
     automation: Automation;
     runs: AutomationRun[];
   }>();
+  const loops = useExperimental("loops");
   const [automation, setAutomation] = useState<Automation>(initial);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,7 +57,7 @@ export function AutomationDetailPage() {
         <h1 className="text-lg font-bold">{automation.name}</h1>
       </header>
 
-      <div className="max-w-2xl mx-auto p-6 space-y-6">
+      <div className="max-w-2xl mx-auto p-3 sm:p-6 space-y-6">
         {error && <AlertBanner variant="error">{error}</AlertBanner>}
 
         <Section title="Automation">
@@ -84,8 +87,11 @@ export function AutomationDetailPage() {
           </div>
         </Section>
 
+        {loops && <LoopDashboard automationId={automation.id} />}
+
         <LoopTasks automationId={automation.id} />
 
+        {!loops && (
         <Section title="実行履歴">
           {runs.length === 0 ? (
             <div className="text-sm text-gray-400">まだ実行されていません</div>
@@ -115,6 +121,7 @@ export function AutomationDetailPage() {
             </div>
           )}
         </Section>
+        )}
       </div>
     </div>
   );
