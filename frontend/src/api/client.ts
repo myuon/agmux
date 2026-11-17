@@ -357,6 +357,9 @@ export const api = {
   listAutomationRuns: (id: string, limit = 50) =>
     request<AutomationRun[]>(`/automations/${id}/runs?limit=${limit}`),
 
+  listAutomationReports: (id: string, limit = 100) =>
+    request<AutomationRunReport[]>(`/automations/${id}/reports?limit=${limit}`),
+
   listAutomationTasks: (id: string) =>
     request<AutomationTask[]>(`/automations/${id}/tasks`),
 
@@ -429,6 +432,22 @@ export interface AutomationRun {
   status: "success" | "skipped" | "error";
   message?: string;
   createdAt: string;
+}
+
+// AutomationRunReport mirrors `internal/automation.RunReport` (Go). Experimental "loops".
+export interface AutomationRunReport extends AutomationRun {
+  report: {
+    runId: number;
+    metrics: Record<string, number>;
+    summary: string;
+    links: { title: string; url: string }[];
+    createdAt: string;
+  } | null;
+  durationSeconds: number;
+  stopped: boolean;
+  cost: number;
+  inputTokens: number;
+  outputTokens: number;
 }
 
 // AutomationTask mirrors `internal/automation.Task` (Go). Experimental "loops".
