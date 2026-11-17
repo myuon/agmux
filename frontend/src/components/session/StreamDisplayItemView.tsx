@@ -59,9 +59,17 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermis
         <div className="flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 px-3 py-2.5 text-xs text-red-800">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
           <div className="min-w-0 flex-1">
-            <div className="font-semibold">エラーが発生しました</div>
+            <div className="font-semibold">{resultErrorTitle(item.terminalReason)}</div>
             {item.result && (
               <pre className="mt-1 whitespace-pre-wrap break-words font-sans">{item.result}</pre>
+            )}
+            {!item.result && item.errors && item.errors.length > 0 && (
+              <pre className="mt-1 whitespace-pre-wrap break-words font-sans">{item.errors.join("\n")}</pre>
+            )}
+            {(item.subtype || item.terminalReason) && (
+              <div className="mt-1 text-[11px] text-red-600/80">
+                {[item.subtype, item.terminalReason].filter(Boolean).join(" · ")}
+              </div>
             )}
           </div>
         </div>
@@ -84,6 +92,11 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermis
     );
   }
   return null;
+}
+
+function resultErrorTitle(terminalReason?: string): string {
+  if (terminalReason?.startsWith("aborted")) return "中断されました";
+  return "エラーが発生しました";
 }
 
 type StreamDisplayItemViewProps = Omit<Parameters<typeof StreamDisplayItemView>[0], "item">;

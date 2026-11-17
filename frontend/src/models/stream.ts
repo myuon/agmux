@@ -57,7 +57,7 @@ export type StreamDisplayItem =
   | { kind: "system_event"; eventType: string; label: string; detail?: string }
   | { kind: "rate_limit"; rateLimitType: string; status: string; resetsAt: number; utilization?: number; isUsingOverage?: boolean; overageStatus?: string }
   | { kind: "api_retry"; attempt: number; maxRetries: number; retryDelayMs: number; errorStatus?: number; error?: string }
-  | { kind: "result"; isError: boolean; result: string; subtype: string; numTurns?: number; durationMs?: number; costUsd?: number };
+  | { kind: "result"; isError: boolean; result: string; subtype: string; numTurns?: number; durationMs?: number; costUsd?: number; terminalReason?: string; errors?: string[] };
 
 // State of a background task (run_in_background Bash, a Bash moved to the
 // background on timeout, or a backgrounded Agent) attached to the tool call
@@ -624,6 +624,10 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
         numTurns: raw.num_turns as number | undefined,
         durationMs: raw.duration_ms as number | undefined,
         costUsd: raw.total_cost_usd as number | undefined,
+        terminalReason: typeof raw.terminal_reason === "string" ? raw.terminal_reason : undefined,
+        errors: Array.isArray(raw.errors)
+          ? (raw.errors as unknown[]).filter((e): e is string => typeof e === "string" && e !== "")
+          : undefined,
       };
       // For error results: suppress the immediately preceding assistant group if its
       // text content matches the error message (Claude echoes the error as an assistant message)
