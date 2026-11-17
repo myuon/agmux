@@ -17,6 +17,11 @@ const (
 	// TriggerCron fires according to a standard 5-field cron expression
 	// stored in TriggerValue (e.g. "0 9 * * 1-5").
 	TriggerCron TriggerType = "cron"
+	// TriggerQueue fires while the automation has pending loop tasks and the
+	// previous run has finished. TriggerValue is the wait time after the
+	// previous run (Go duration, empty = 0s). Requires the "loops"
+	// experimental feature.
+	TriggerQueue TriggerType = "queue"
 )
 
 // RunStatus is the outcome of a single automation firing.
@@ -40,10 +45,22 @@ type Automation struct {
 	ProjectPath string `json:"projectPath,omitempty"`
 	// Model is the model passed to the created session. Empty means the
 	// provider default.
-	Model     string    `json:"model,omitempty"`
-	Enabled   bool      `json:"enabled"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	Model   string `json:"model,omitempty"`
+	Enabled bool   `json:"enabled"`
+	// MaxRuns disables the automation once this many successful runs have
+	// been recorded. 0 = unlimited.
+	MaxRuns int `json:"maxRuns,omitempty"`
+	// Until disables the automation once this time has passed. nil = no
+	// deadline.
+	Until     *time.Time `json:"until,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
+}
+
+// UsesLoopFeatures reports whether the automation relies on the "loops"
+// experimental feature (queue trigger or safety valves).
+func (a Automation) UsesLoopFeatures() bool {
+	return a.TriggerType == TriggerQueue || a.MaxRuns > 0 || a.Until != nil
 }
 
 // Run is one entry in the execution history of an automation.
@@ -76,9 +93,27 @@ func ValidateTrigger(triggerType TriggerType, triggerValue string) error {
 			return fmt.Errorf("invalid cron expression %q: %w", triggerValue, err)
 		}
 		return nil
+	case TriggerQueue:
+		_, err := QueueWait(triggerValue)
+		return err
 	default:
 		return fmt.Errorf("unknown trigger type %q", triggerType)
 	}
+}
+
+// QueueWait parses the TriggerValue of a queue trigger (empty = 0s).
+func QueueWait(triggerValue string) (time.Duration, error) {
+	if triggerValue == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(triggerValue)
+	if err != nil {
+		return 0, fmt.Errorf("invalid queue wait %q: %w", triggerValue, err)
+	}
+	if d < 0 {
+		return 0, fmt.Errorf("queue wait must not be negative, got %q", triggerValue)
+	}
+	return d, nil
 }
 
 // NextFireTime returns the next time the automation should fire strictly
@@ -101,6 +136,14 @@ func NextFireTime(a Automation, after time.Time) (time.Time, error) {
 			return time.Time{}, fmt.Errorf("invalid cron expression %q: %w", a.TriggerValue, err)
 		}
 		return sched.Next(after), nil
+	case TriggerQueue:
+		// Queue automations are not time-driven; the scheduler decides based
+		// on pending tasks. This only reports the end of the wait window.
+		d, err := QueueWait(a.TriggerValue)
+		if err != nil {
+			return time.Time{}, err
+		}
+		return after.Add(d), nil
 	default:
 		return time.Time{}, fmt.Errorf("unknown trigger type %q", a.TriggerType)
 	}

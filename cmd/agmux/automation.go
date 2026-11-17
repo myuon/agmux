@@ -95,6 +95,8 @@ type automationCreateRequest struct {
 	ProjectPath  string `json:"projectPath,omitempty"`
 	Model        string `json:"model,omitempty"`
 	Enabled      bool   `json:"enabled"`
+	MaxRuns      int    `json:"maxRuns,omitempty"`
+	Until        string `json:"until,omitempty"`
 }
 
 func (a *automationAPI) create(req automationCreateRequest) (*automation.Automation, error) {
@@ -223,6 +225,10 @@ func automationCreateCmd() *cobra.Command {
 	var projectPath string
 	var model string
 	var disabled bool
+	var queue bool
+	var queueWait string
+	var maxRuns int
+	var until string
 
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -230,6 +236,7 @@ func automationCreateCmd() *cobra.Command {
 		Long: `Create a new automation that fires on a schedule and creates a session with the given prompt.
 
 Specify exactly one of --interval (Go duration, e.g. "30m") or --cron (5-field cron expression, e.g. "0 9 * * 1-5").
+Alternatively use --queue (experimental "loops" feature): fire while the automation has pending loop tasks and the previous run has finished; --queue-wait sets the wait time after the previous run. --max-runs / --until disable the automation automatically.
 If --project is omitted, the automation runs in the controller area.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if name == "" {
@@ -238,13 +245,22 @@ If --project is omitted, the automation runs in the controller area.`,
 			if prompt == "" {
 				return fmt.Errorf("--prompt is required")
 			}
-			if (interval == "") == (cron == "") {
-				return fmt.Errorf("specify exactly one of --interval or --cron")
+			n := 0
+			for _, set := range []bool{interval != "", cron != "", queue} {
+				if set {
+					n++
+				}
+			}
+			if n != 1 {
+				return fmt.Errorf("specify exactly one of --interval, --cron or --queue")
 			}
 
 			triggerType := string(automation.TriggerInterval)
 			triggerValue := interval
-			if cron != "" {
+			if queue {
+				triggerType = string(automation.TriggerQueue)
+				triggerValue = queueWait
+			} else if cron != "" {
 				triggerType = string(automation.TriggerCron)
 				triggerValue = cron
 			}
@@ -269,6 +285,8 @@ If --project is omitted, the automation runs in the controller area.`,
 				ProjectPath:  projectPath,
 				Model:        model,
 				Enabled:      !disabled,
+				MaxRuns:      maxRuns,
+				Until:        until,
 			})
 			if err != nil {
 				return err
@@ -282,6 +300,10 @@ If --project is omitted, the automation runs in the controller area.`,
 	cmd.Flags().StringVarP(&prompt, "prompt", "m", "", "Prompt sent to the agent when the automation fires (required)")
 	cmd.Flags().StringVar(&interval, "interval", "", "Fire at a fixed interval (Go duration, e.g. 30m, 1h)")
 	cmd.Flags().StringVar(&cron, "cron", "", "Fire on a cron schedule (5-field expression, e.g. \"0 9 * * 1-5\")")
+	cmd.Flags().BoolVar(&queue, "queue", false, "Fire while pending loop tasks remain (requires experimental feature loops)")
+	cmd.Flags().StringVar(&queueWait, "queue-wait", "", "With --queue: wait time after the previous run ends (Go duration, default 0s)")
+	cmd.Flags().IntVar(&maxRuns, "max-runs", 0, "Disable automatically after this many successful runs (requires loops; 0 = unlimited)")
+	cmd.Flags().StringVar(&until, "until", "", "Disable automatically after this time (RFC3339, requires loops)")
 	cmd.Flags().StringVarP(&projectPath, "project", "p", "", "Project directory path (default: controller area)")
 	cmd.Flags().StringVar(&model, "model", "", "Model for the created session (default: provider default)")
 	cmd.Flags().BoolVar(&disabled, "disabled", false, "Create the automation in disabled state")

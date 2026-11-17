@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/myuon/agmux/internal/experimental"
 	"github.com/myuon/agmux/internal/linereader"
 )
 
@@ -327,12 +328,20 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 							},
 							"triggerType": map[string]interface{}{
 								"type":        "string",
-								"enum":        []string{"interval", "cron"},
-								"description": "トリガー種別。interval: 固定間隔、cron: cron式スケジュール。",
+								"enum":        []string{"interval", "cron", "queue"},
+								"description": "トリガー種別。interval: 固定間隔、cron: cron式スケジュール、queue: 残タスクがある限り前回終了後に起動（experimental `loops` が on のときのみ）。",
 							},
 							"triggerValue": map[string]interface{}{
 								"type":        "string",
-								"description": "トリガーの値。interval の場合はGoのduration文字列（例: \"30m\", \"1h\"）、cron の場合は5フィールドのcron式（例: \"0 9 * * 1-5\"）。",
+								"description": "トリガーの値。interval の場合はGoのduration文字列（例: \"30m\", \"1h\"）、cron の場合は5フィールドのcron式（例: \"0 9 * * 1-5\"）、queue の場合は前回終了からの待ち時間（Go duration、空なら 0s）。",
+							},
+							"maxRuns": map[string]interface{}{
+								"type":        "integer",
+								"description": "成功Run数がこの回数に達したら自動で無効化する（任意、0または省略で無制限。experimental `loops` が on のときのみ）。",
+							},
+							"until": map[string]interface{}{
+								"type":        "string",
+								"description": "この時刻（RFC3339）を過ぎたら自動で無効化する（任意。experimental `loops` が on のときのみ）。",
 							},
 							"projectPath": map[string]interface{}{
 								"type":        "string",
@@ -597,6 +606,8 @@ func (s *Server) handleCreateAutomation(args json.RawMessage) (interface{}, *jso
 		ProjectPath  string `json:"projectPath"`
 		Model        string `json:"model"`
 		Enabled      *bool  `json:"enabled"`
+		MaxRuns      int    `json:"maxRuns"`
+		Until        string `json:"until"`
 	}
 	if err := json.Unmarshal(args, &input); err != nil {
 		return nil, &jsonRPCError{Code: -32602, Message: "invalid arguments"}
@@ -607,10 +618,16 @@ func (s *Server) handleCreateAutomation(args json.RawMessage) (interface{}, *jso
 	if input.Prompt == "" {
 		return nil, &jsonRPCError{Code: -32602, Message: "prompt is required"}
 	}
-	if input.TriggerType != "interval" && input.TriggerType != "cron" {
+	loopsOn := experimental.Enabled("loops")
+	if input.TriggerType == "queue" || input.MaxRuns != 0 || input.Until != "" {
+		if !loopsOn {
+			return nil, &jsonRPCError{Code: -32602, Message: `queue trigger / maxRuns / until require the experimental feature "loops"`}
+		}
+	}
+	if input.TriggerType != "interval" && input.TriggerType != "cron" && !(input.TriggerType == "queue" && loopsOn) {
 		return nil, &jsonRPCError{Code: -32602, Message: `triggerType must be "interval" or "cron"`}
 	}
-	if input.TriggerValue == "" {
+	if input.TriggerValue == "" && input.TriggerType != "queue" {
 		return nil, &jsonRPCError{Code: -32602, Message: "triggerValue is required"}
 	}
 
@@ -619,7 +636,7 @@ func (s *Server) handleCreateAutomation(args json.RawMessage) (interface{}, *jso
 		enabled = *input.Enabled
 	}
 
-	created, err := s.apiCreateAutomation(input.Name, input.Prompt, input.TriggerType, input.TriggerValue, input.ProjectPath, input.Model, enabled)
+	created, err := s.apiCreateAutomation(input.Name, input.Prompt, input.TriggerType, input.TriggerValue, input.ProjectPath, input.Model, enabled, input.MaxRuns, input.Until)
 	if err != nil {
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
@@ -642,10 +659,10 @@ type automationResponse struct {
 	Enabled      bool   `json:"enabled"`
 }
 
-func (s *Server) apiCreateAutomation(name, prompt, triggerType, triggerValue, projectPath, model string, enabled bool) (*automationResponse, error) {
+func (s *Server) apiCreateAutomation(name, prompt, triggerType, triggerValue, projectPath, model string, enabled bool, maxRuns int, until string) (*automationResponse, error) {
 	url := fmt.Sprintf("%s/api/automations", s.apiURL)
-	body := fmt.Sprintf(`{"name":%s,"prompt":%s,"triggerType":%s,"triggerValue":%s,"projectPath":%s,"model":%s,"enabled":%t}`,
-		jsonString(name), jsonString(prompt), jsonString(triggerType), jsonString(triggerValue), jsonString(projectPath), jsonString(model), enabled)
+	body := fmt.Sprintf(`{"name":%s,"prompt":%s,"triggerType":%s,"triggerValue":%s,"projectPath":%s,"model":%s,"enabled":%t,"maxRuns":%d,"until":%s}`,
+		jsonString(name), jsonString(prompt), jsonString(triggerType), jsonString(triggerValue), jsonString(projectPath), jsonString(model), enabled, maxRuns, jsonString(until))
 
 	req, err := http.NewRequest("POST", url, strings.NewReader(body))
 	if err != nil {
