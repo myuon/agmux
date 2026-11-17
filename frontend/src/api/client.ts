@@ -11,6 +11,13 @@ export interface Artifact {
   updatedAt: string;
 }
 
+export interface ExperimentalFeature {
+  name: string;
+  title: string;
+  description: string;
+  enabled: boolean;
+}
+
 export interface SecretUsage {
   id: number;
   secretName: string;
@@ -222,6 +229,15 @@ export const api = {
     }),
 
   getConfig: () => request<AppConfig>("/config"),
+
+  listExperimental: () =>
+    request<{ features: ExperimentalFeature[] }>("/experimental"),
+
+  setExperimental: (name: string, enabled: boolean) =>
+    request<{ features: ExperimentalFeature[] }>(`/experimental/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    }),
 
   updateConfig: (data: AppConfig) =>
     request<{ status: string }>("/config", {

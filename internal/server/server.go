@@ -242,6 +242,8 @@ func (s *Server) setupRoutes() {
 		r.Get("/metrics/events", s.getMetricsEvents)
 		r.Get("/version", s.getVersion)
 		r.Get("/host-info", s.getHostInfo)
+		r.Get("/experimental", s.listExperimental)
+		r.Put("/experimental/{name}", s.setExperimental)
 		s.mountRemoteBrowser(r)
 		s.mountArtifacts(r)
 		s.mountSecrets(r)
@@ -1557,6 +1559,7 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 	cfg.Server.AllowedHosts = current.Server.AllowedHosts
 	cfg.RemoteBrowser = current.RemoteBrowser
 	cfg.Secret = current.Secret
+	cfg.Experimental = current.Experimental
 	// Preserve background_task_notification_interval if the request omitted it
 	// (older clients may not send the field).
 	if cfg.Daemon.BackgroundTaskNotificationInterval == "" {

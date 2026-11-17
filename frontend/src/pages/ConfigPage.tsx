@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLoaderData } from "react-router-dom";
 import { api } from "../api/client";
-import type { AppConfig, RoleTemplate, PromptTemplate, HostInfo } from "../api/client";
+import type { AppConfig, RoleTemplate, PromptTemplate, HostInfo, ExperimentalFeature } from "../api/client";
 
 type ConfigUpdater = (updater: (prev: AppConfig) => AppConfig) => void;
 import { Section, Field } from "../components/ui/Section";
@@ -199,6 +199,8 @@ export function ConfigPage() {
           </p>
         </Section>
 
+        <ExperimentalSection />
+
         <TemplateManager templates={config.templates || []} onUpdate={(updater) => setConfig(updater)} />
 
         <PromptTemplateManager promptTemplates={config.promptTemplates || []} onUpdate={(updater) => setConfig(updater)} />
@@ -224,6 +226,55 @@ export function ConfigPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function ExperimentalSection() {
+  const [features, setFeatures] = useState<ExperimentalFeature[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.listExperimental()
+      .then((r) => setFeatures(r.features))
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+
+  const toggle = async (f: ExperimentalFeature) => {
+    setPending(f.name);
+    setError(null);
+    try {
+      const r = await api.setExperimental(f.name, !f.enabled);
+      setFeatures(r.features);
+      window.dispatchEvent(new Event("agmux:experimental-changed"));
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPending(null);
+    }
+  };
+
+  return (
+    <Section title="Experimental">
+      <p className="text-xs text-gray-500">
+        試験的な機能です。切り替えはすぐに反映され、Save は不要です。
+      </p>
+      {error && <div className="text-sm text-red-500">{error}</div>}
+      {features === null && !error && <div className="text-sm text-gray-400">Loading...</div>}
+      {features !== null && features.length === 0 && (
+        <div className="text-sm text-gray-400">現在、試験中の機能はありません</div>
+      )}
+      {features?.map((f) => (
+        <div key={f.name} className="space-y-1">
+          <Field label={f.title || f.name}>
+            <ToggleButton enabled={f.enabled} onClick={() => pending === null && toggle(f)}>
+              {f.enabled ? "ON" : "OFF"}
+            </ToggleButton>
+          </Field>
+          {f.description && <p className="text-xs text-gray-500">{f.description}</p>}
+        </div>
+      ))}
+    </Section>
   );
 }
 

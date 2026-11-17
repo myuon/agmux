@@ -140,7 +140,7 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 
 	case "tools/list":
 		return map[string]interface{}{
-			"tools": []interface{}{
+			"tools": filterExperimentalTools([]interface{}{
 				map[string]interface{}{
 					"name":        "create_goal",
 					"description": "agmuxの管理画面に表示されるゴールを設定します。新しいタスクに着手するときに呼んでください。subgoal=trueにすると現在のゴールを保持したままサブゴールを積めます。",
@@ -373,7 +373,7 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 						"required": []string{"tool_name", "input"},
 					},
 				},
-			},
+			}),
 		}, nil
 
 	case "tools/call":
@@ -411,6 +411,9 @@ func (s *Server) resolveSessionID(args json.RawMessage) (string, *jsonRPCError) 
 }
 
 func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *jsonRPCError) {
+	if !toolAvailable(name) {
+		return nil, &jsonRPCError{Code: -32602, Message: "unknown tool: " + name}
+	}
 	switch name {
 	case "create_goal":
 		return s.handleCreateGoal(args)
