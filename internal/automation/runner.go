@@ -123,6 +123,25 @@ func (r *Runner) previousRunActive(automationID string) (string, bool) {
 	return "", false
 }
 
+// ReclaimTasks returns tasks left in_progress by finished run sessions to the
+// pending list (see Store.ReclaimAbandonedTasks).
+func (r *Runner) ReclaimTasks(now time.Time) {
+	n, err := r.store.ReclaimAbandonedTasks(func(sessionID string) bool {
+		sess, err := r.sessions.Get(sessionID)
+		if err != nil {
+			return false
+		}
+		return sess.Status == session.StatusWorking || sess.Status == session.StatusWaitingInput
+	}, now)
+	if err != nil {
+		r.logger.Warn("automation: reclaim abandoned tasks failed", "error", err)
+		return
+	}
+	if n > 0 {
+		r.logger.Info("automation: reclaimed abandoned loop tasks", "count", n)
+	}
+}
+
 func (r *Runner) record(run Run) *Run {
 	saved, err := r.store.InsertRun(run)
 	if err != nil {

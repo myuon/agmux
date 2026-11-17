@@ -30,6 +30,7 @@ func newAutomationTestServer(t *testing.T) *Server {
 	s := &Server{
 		logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		automations: automation.NewStore(sqlDB),
+		sqlDB:       sqlDB,
 		startTime:   time.Now(),
 	}
 	s.setupRoutes()

@@ -5,6 +5,7 @@ import type { Automation, AutomationRun } from "../api/client";
 import { Section, Field } from "../components/ui/Section";
 import { ToggleButton } from "../components/ui/ToggleButton";
 import { AlertBanner } from "../components/ui/AlertBanner";
+import { LoopTasks } from "../components/LoopTasks";
 import { formatTrigger } from "../models/automation";
 
 const RUN_STATUS_STYLES: Record<AutomationRun["status"], string> = {
@@ -82,6 +83,8 @@ export function AutomationDetailPage() {
             </pre>
           </div>
         </Section>
+
+        <LoopTasks automationId={automation.id} />
 
         <Section title="実行履歴">
           {runs.length === 0 ? (

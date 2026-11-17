@@ -140,7 +140,7 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 
 	case "tools/list":
 		return map[string]interface{}{
-			"tools": filterExperimentalTools([]interface{}{
+			"tools": filterExperimentalTools(append([]interface{}{
 				map[string]interface{}{
 					"name":        "create_goal",
 					"description": "agmuxの管理画面に表示されるゴールを設定します。新しいタスクに着手するときに呼んでください。subgoal=trueにすると現在のゴールを保持したままサブゴールを積めます。",
@@ -375,7 +375,7 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 						"required": []string{"tool_name", "input"},
 					},
 				},
-			}),
+			}, loopToolDefs()...)),
 		}, nil
 
 	case "tools/call":
@@ -444,6 +444,12 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 		return s.handlePermissionPrompt(args)
 	case "search_sessions":
 		return s.handleSearchSessions(args)
+	case "loop_task_add":
+		return s.handleLoopTaskAdd(args)
+	case "loop_task_next":
+		return s.handleLoopTaskNext(args)
+	case "loop_task_done":
+		return s.handleLoopTaskDone(args)
 	case "loop_report":
 		return s.handleLoopReport(args)
 	default:

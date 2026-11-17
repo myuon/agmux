@@ -164,6 +164,7 @@ func automationCmd() *cobra.Command {
 	cmd.AddCommand(automationDisableCmd())
 	cmd.AddCommand(automationDeleteCmd())
 	cmd.AddCommand(automationRunsCmd())
+	cmd.AddCommand(automationTaskCmd())
 
 	return cmd
 }
