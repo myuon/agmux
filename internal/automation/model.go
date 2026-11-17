@@ -52,15 +52,42 @@ type Automation struct {
 	MaxRuns int `json:"maxRuns,omitempty"`
 	// Until disables the automation once this time has passed. nil = no
 	// deadline.
-	Until     *time.Time `json:"until,omitempty"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
+	Until *time.Time `json:"until,omitempty"`
+	// WatchMetric is the key of the loop_report metric watched for
+	// stagnation and used to color the dashboard. Empty = none.
+	WatchMetric string `json:"watchMetric,omitempty"`
+	// WatchDirection says which direction of WatchMetric is better.
+	WatchDirection WatchDirection `json:"watchDirection,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
+}
+
+// WatchDirection tells which direction of the watched metric is an improvement.
+type WatchDirection string
+
+const (
+	WatchHigher WatchDirection = "higher"
+	WatchLower  WatchDirection = "lower"
+)
+
+// ValidateWatch checks the WatchMetric / WatchDirection combination.
+func ValidateWatch(metric string, dir WatchDirection) error {
+	if metric == "" {
+		if dir != "" {
+			return fmt.Errorf("watchDirection requires watchMetric")
+		}
+		return nil
+	}
+	if dir != WatchHigher && dir != WatchLower {
+		return fmt.Errorf(`watchDirection must be "higher" or "lower" when watchMetric is set`)
+	}
+	return nil
 }
 
 // UsesLoopFeatures reports whether the automation relies on the "loops"
 // experimental feature (queue trigger or safety valves).
 func (a Automation) UsesLoopFeatures() bool {
-	return a.TriggerType == TriggerQueue || a.MaxRuns > 0 || a.Until != nil
+	return a.TriggerType == TriggerQueue || a.MaxRuns > 0 || a.Until != nil || a.WatchMetric != ""
 }
 
 // Run is one entry in the execution history of an automation.
@@ -74,6 +101,10 @@ type Run struct {
 	Status    RunStatus `json:"status"`
 	Message   string    `json:"message,omitempty"`
 	CreatedAt time.Time `json:"createdAt"`
+	// PendingAtFire is the pending loop task count when the run fired. nil =
+	// not recorded (loops off, or a run from before this was tracked). Only
+	// used on insert; the watchdog reads it via Store.WatchRuns.
+	PendingAtFire *int `json:"-"`
 }
 
 // ValidateTrigger checks that the trigger type / value combination is parseable.

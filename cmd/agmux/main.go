@@ -279,6 +279,19 @@ func serveCmd() *cobra.Command {
 			autoStore := automation.NewStore(database)
 			autoRunner := automation.NewRunner(autoStore, mgr, logger)
 			autoScheduler := automation.NewScheduler(autoStore, autoRunner, logger)
+			autoScheduler.Notify = func(a automation.Automation, sessionID, message string) {
+				if err := server.SaveNotification(database, sessionID, "notification", message); err != nil {
+					logger.Error("failed to save automation watchdog notification", "error", err)
+				}
+				hub.Broadcast(server.Message{
+					Type: "agent_notification",
+					Data: map[string]interface{}{
+						"sessionId":   sessionID,
+						"sessionName": "Automation: " + a.Name,
+						"message":     message,
+					},
+				})
+			}
 			autoScheduler.Start()
 			// Stop is idempotent; the defer covers error-return paths (frontend
 			// load / listen / Serve errors) that bypass the graceful-shutdown
@@ -312,7 +325,6 @@ func serveCmd() *cobra.Command {
 
 			addr := fmt.Sprintf(":%d", port)
 			logger.Info(fmt.Sprintf("Starting agmux on http://localhost:%d", port))
-
 
 			httpSrv := srv.NewHTTPServer(addr)
 
@@ -1221,10 +1233,10 @@ func formatSessionLine(line string) {
 		Type    string `json:"type"`
 		Subtype string `json:"subtype"`
 		Message struct {
-			Role    string `json:"role"`
+			Role    string          `json:"role"`
 			Content json.RawMessage `json:"content"`
 		} `json:"message"`
-		Result   string `json:"result"`
+		Result     string `json:"result"`
 		StopReason string `json:"stop_reason"`
 	}
 	if err := json.Unmarshal([]byte(line), &entry); err != nil {
@@ -1244,9 +1256,9 @@ func formatSessionLine(line string) {
 	case "assistant":
 		// Assistant message: content is an array of blocks
 		var blocks []struct {
-			Type  string `json:"type"`
-			Text  string `json:"text"`
-			Name  string `json:"name"`
+			Type  string          `json:"type"`
+			Text  string          `json:"text"`
+			Name  string          `json:"name"`
 			Input json.RawMessage `json:"input"`
 		}
 		if err := json.Unmarshal(entry.Message.Content, &blocks); err != nil {

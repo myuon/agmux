@@ -28,6 +28,11 @@ type automationRequest struct {
 	// update, omitting keeps the stored value; maxRuns 0 / until "" clear it.
 	MaxRuns *int    `json:"maxRuns,omitempty"`
 	Until   *string `json:"until,omitempty"` // RFC3339
+	// WatchMetric / WatchDirection select the metric watched for stagnation
+	// (experimental "loops"). On update, omitting keeps the stored value and
+	// "" clears it.
+	WatchMetric    *string `json:"watchMetric,omitempty"`
+	WatchDirection *string `json:"watchDirection,omitempty"`
 }
 
 // checkLoopFeatures rejects queue triggers and safety valves while the
@@ -48,6 +53,9 @@ func checkLoopFeatures(req automationRequest) (until *time.Time, err error) {
 	}
 	if (req.MaxRuns != nil && *req.MaxRuns != 0) || until != nil {
 		return nil, fmt.Errorf("maxRuns / until require the experimental feature %q", automation.FeatureLoops)
+	}
+	if deref(req.WatchMetric) != "" || deref(req.WatchDirection) != "" {
+		return nil, fmt.Errorf("watchMetric / watchDirection require the experimental feature %q", automation.FeatureLoops)
 	}
 	return until, nil
 }
@@ -80,15 +88,17 @@ func (s *Server) createAutomation(w http.ResponseWriter, r *http.Request) {
 		maxRuns = *req.MaxRuns
 	}
 	a, err := s.automations.Create(automation.CreateParams{
-		MaxRuns:      maxRuns,
-		Until:        until,
-		Name:         req.Name,
-		Prompt:       req.Prompt,
-		TriggerType:  automation.TriggerType(req.TriggerType),
-		TriggerValue: req.TriggerValue,
-		ProjectPath:  req.ProjectPath,
-		Model:        deref(req.Model),
-		Enabled:      req.Enabled,
+		MaxRuns:        maxRuns,
+		Until:          until,
+		WatchMetric:    deref(req.WatchMetric),
+		WatchDirection: automation.WatchDirection(deref(req.WatchDirection)),
+		Name:           req.Name,
+		Prompt:         req.Prompt,
+		TriggerType:    automation.TriggerType(req.TriggerType),
+		TriggerValue:   req.TriggerValue,
+		ProjectPath:    req.ProjectPath,
+		Model:          deref(req.Model),
+		Enabled:        req.Enabled,
 	})
 	if err != nil {
 		// Store.Create only fails on validation errors or DB errors; treat
@@ -126,16 +136,18 @@ func (s *Server) updateAutomation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a, err := s.automations.Update(id, automation.UpdateParams{
-		MaxRuns:      req.MaxRuns,
-		Until:        until,
-		ClearUntil:   req.Until != nil && *req.Until == "",
-		Name:         req.Name,
-		Prompt:       req.Prompt,
-		TriggerType:  automation.TriggerType(req.TriggerType),
-		TriggerValue: req.TriggerValue,
-		ProjectPath:  req.ProjectPath,
-		Model:        req.Model,
-		Enabled:      req.Enabled,
+		MaxRuns:        req.MaxRuns,
+		Until:          until,
+		ClearUntil:     req.Until != nil && *req.Until == "",
+		WatchMetric:    req.WatchMetric,
+		WatchDirection: watchDirPtr(req.WatchDirection),
+		Name:           req.Name,
+		Prompt:         req.Prompt,
+		TriggerType:    automation.TriggerType(req.TriggerType),
+		TriggerValue:   req.TriggerValue,
+		ProjectPath:    req.ProjectPath,
+		Model:          req.Model,
+		Enabled:        req.Enabled,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -212,4 +224,12 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+func watchDirPtr(p *string) *automation.WatchDirection {
+	if p == nil {
+		return nil
+	}
+	d := automation.WatchDirection(*p)
+	return &d
 }

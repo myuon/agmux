@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/myuon/agmux/internal/db"
+	"github.com/myuon/agmux/internal/experimental"
 	"github.com/myuon/agmux/internal/session"
 )
 
@@ -51,6 +52,11 @@ func NewRunner(store *Store, sessions SessionCreator, logger *slog.Logger) *Runn
 // runs and logged.
 func (r *Runner) Run(a Automation, firedAt time.Time) *Run {
 	run := Run{AutomationID: a.ID, FiredAt: firedAt}
+	if experimental.Enabled(FeatureLoops) {
+		if n, err := r.store.CountPendingTasks(a.ID); err == nil {
+			run.PendingAtFire = &n
+		}
+	}
 
 	// Multi-run guard: skip when the session created by the previous run is
 	// still active.
@@ -149,6 +155,16 @@ func (r *Runner) previousRunActive(automationID string) (string, bool) {
 		return sess.ID, true
 	}
 	return "", false
+}
+
+// SessionStopped reports whether the run session is no longer active (stopped
+// or no longer loadable).
+func (r *Runner) SessionStopped(sessionID string) bool {
+	sess, err := r.sessions.Get(sessionID)
+	if err != nil {
+		return true
+	}
+	return sess.Status != session.StatusWorking && sess.Status != session.StatusWaitingInput
 }
 
 // ReclaimTasks returns tasks left in_progress by finished run sessions to the

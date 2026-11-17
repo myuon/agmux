@@ -87,7 +87,11 @@ export function AutomationDetailPage() {
           </div>
         </Section>
 
-        {loops && <LoopDashboard automationId={automation.id} />}
+        {loops && <LoopDashboard
+            automationId={automation.id}
+            watchMetric={automation.watchMetric}
+            watchDirection={automation.watchDirection}
+          />}
 
         <LoopTasks automationId={automation.id} />
 

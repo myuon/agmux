@@ -64,7 +64,15 @@ function Sparkline({ points }: { points: number[] }) {
  * Dashboard of a loop (experimental "loops"): summary, metric trends and a
  * per-run list. The caller renders it only while the feature is on.
  */
-export function LoopDashboard({ automationId }: { automationId: string }) {
+export function LoopDashboard({
+  automationId,
+  watchMetric,
+  watchDirection,
+}: {
+  automationId: string;
+  watchMetric?: string;
+  watchDirection?: "higher" | "lower";
+}) {
   const [reports, setReports] = useState<AutomationRunReport[]>([]);
   const [tasks, setTasks] = useState<AutomationTask[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -135,6 +143,10 @@ export function LoopDashboard({ automationId }: { automationId: string }) {
             {series.map(({ key, values }) => {
               const last = values[values.length - 1];
               const diff = values.length >= 2 ? last - values[values.length - 2] : null;
+              // Only the watched metric is judged good/bad; other metrics stay neutral.
+              const judged = key === watchMetric && !!watchDirection && diff != null && diff !== 0;
+              const good = judged && (watchDirection === "higher" ? diff! > 0 : diff! < 0);
+              const diffClass = !judged ? "text-gray-500" : good ? "text-green-600" : "text-red-600";
               return (
                 <Stat
                   key={key}
@@ -144,9 +156,7 @@ export function LoopDashboard({ automationId }: { automationId: string }) {
                     diff == null ? (
                       "前回なし"
                     ) : (
-                      <span
-                        className={diff > 0 ? "text-green-600" : diff < 0 ? "text-red-600" : ""}
-                      >
+                      <span className={diffClass}>
                         前回比 {diff > 0 ? "+" : ""}
                         {formatNum(diff)}
                       </span>
