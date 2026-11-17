@@ -269,6 +269,10 @@ func migrate(db *sql.DB) error {
 	// Migration: create indexes for otel tables
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_metrics_name ON otel_metrics(name)`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_metrics_session ON otel_metrics(session_id)`)
+	// Per-session cost/token lookups (loop reports, timeline) filter on both
+	// session_id and name. Without this the planner picks idx_otel_metrics_name
+	// and scans every cost row (seconds on a large DB).
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_metrics_session_name ON otel_metrics(session_id, name)`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_metrics_timestamp ON otel_metrics(timestamp)`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_events_name ON otel_events(name)`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_otel_events_session ON otel_events(session_id)`)
