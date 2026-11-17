@@ -461,6 +461,20 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: loop watchdog (#784). watch_metric / watch_direction select the
+	// metric watched for stagnation; watchdog_notified is a JSON map of
+	// condition kind -> newest run id already notified (duplicate suppression).
+	for _, col := range []string{
+		`watch_metric TEXT NOT NULL DEFAULT ''`,
+		`watch_direction TEXT NOT NULL DEFAULT ''`,
+		`watchdog_notified TEXT NOT NULL DEFAULT ''`,
+	} {
+		_, err = db.Exec(`ALTER TABLE automations ADD COLUMN ` + col)
+		if err != nil && !isAlterTableDuplicate(err) {
+			return err
+		}
+	}
+
 	// Migration: create automation_runs table (execution history)
 	// status: 'success' | 'skipped' | 'error'. session_id is set on success.
 	_, err = db.Exec(`
@@ -475,6 +489,11 @@ func migrate(db *sql.DB) error {
 		)
 	`)
 	if err != nil {
+		return err
+	}
+	// pending_at_fire: pending loop task count when the run fired (-1 = unknown).
+	_, err = db.Exec(`ALTER TABLE automation_runs ADD COLUMN pending_at_fire INTEGER NOT NULL DEFAULT -1`)
+	if err != nil && !isAlterTableDuplicate(err) {
 		return err
 	}
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_automation_runs_automation ON automation_runs(automation_id)`)

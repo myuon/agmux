@@ -36,6 +36,9 @@ type CreateParams struct {
 	Enabled      bool
 	MaxRuns      int        // 0 = unlimited
 	Until        *time.Time // nil = no deadline
+	// WatchMetric / WatchDirection: stagnation watch (loops). Both empty = none.
+	WatchMetric    string
+	WatchDirection WatchDirection
 }
 
 // Create inserts a new automation and returns it.
@@ -53,6 +56,11 @@ func (s *Store) Create(p CreateParams) (*Automation, error) {
 		return nil, fmt.Errorf("maxRuns must not be negative")
 	}
 
+	p.WatchMetric = strings.TrimSpace(p.WatchMetric)
+	if err := ValidateWatch(p.WatchMetric, p.WatchDirection); err != nil {
+		return nil, err
+	}
+
 	id, err := newAutomationID()
 	if err != nil {
 		return nil, fmt.Errorf("generate automation id: %w", err)
@@ -60,23 +68,25 @@ func (s *Store) Create(p CreateParams) (*Automation, error) {
 
 	now := time.Now()
 	a := &Automation{
-		ID:           id,
-		Name:         p.Name,
-		Prompt:       p.Prompt,
-		TriggerType:  p.TriggerType,
-		TriggerValue: p.TriggerValue,
-		ProjectPath:  p.ProjectPath,
-		Model:        strings.TrimSpace(p.Model),
-		Enabled:      p.Enabled,
-		MaxRuns:      p.MaxRuns,
-		Until:        p.Until,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:             id,
+		Name:           p.Name,
+		Prompt:         p.Prompt,
+		TriggerType:    p.TriggerType,
+		TriggerValue:   p.TriggerValue,
+		ProjectPath:    p.ProjectPath,
+		Model:          strings.TrimSpace(p.Model),
+		Enabled:        p.Enabled,
+		MaxRuns:        p.MaxRuns,
+		Until:          p.Until,
+		WatchMetric:    p.WatchMetric,
+		WatchDirection: p.WatchDirection,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if _, err := s.db.Exec(
-		`INSERT INTO automations (id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, max_runs, until, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.ID, a.Name, a.Prompt, string(a.TriggerType), a.TriggerValue, a.ProjectPath, a.Model, boolToInt(a.Enabled), a.MaxRuns, a.Until, a.CreatedAt, a.UpdatedAt,
+		`INSERT INTO automations (id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, max_runs, until, watch_metric, watch_direction, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.Name, a.Prompt, string(a.TriggerType), a.TriggerValue, a.ProjectPath, a.Model, boolToInt(a.Enabled), a.MaxRuns, a.Until, a.WatchMetric, string(a.WatchDirection), a.CreatedAt, a.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert automation: %w", err)
 	}
@@ -98,6 +108,10 @@ type UpdateParams struct {
 	MaxRuns    *int
 	Until      *time.Time
 	ClearUntil bool
+	// WatchMetric / WatchDirection are optional: nil keeps the stored value,
+	// a pointer to "" clears it. When metric is cleared the direction is too.
+	WatchMetric    *string
+	WatchDirection *WatchDirection
 }
 
 // Update replaces the editable fields of an automation.
@@ -114,6 +128,28 @@ func (s *Store) Update(id string, p UpdateParams) (*Automation, error) {
 	if p.MaxRuns != nil && *p.MaxRuns < 0 {
 		return nil, fmt.Errorf("maxRuns must not be negative")
 	}
+	// Resolve the watch settings (nil keeps the stored value) and validate.
+	watchMetric, watchDir := "", WatchDirection("")
+	setWatch := p.WatchMetric != nil || p.WatchDirection != nil
+	if setWatch {
+		cur, err := s.Get(id)
+		if err != nil {
+			return nil, err
+		}
+		watchMetric, watchDir = cur.WatchMetric, cur.WatchDirection
+		if p.WatchMetric != nil {
+			watchMetric = strings.TrimSpace(*p.WatchMetric)
+		}
+		if p.WatchDirection != nil {
+			watchDir = *p.WatchDirection
+		}
+		if watchMetric == "" {
+			watchDir = ""
+		}
+		if err := ValidateWatch(watchMetric, watchDir); err != nil {
+			return nil, err
+		}
+	}
 	setMax, maxRuns := 0, 0
 	if p.MaxRuns != nil {
 		setMax, maxRuns = 1, *p.MaxRuns
@@ -129,8 +165,8 @@ func (s *Store) Update(id string, p UpdateParams) (*Automation, error) {
 		setModel, model = 1, strings.TrimSpace(*p.Model)
 	}
 	res, err := s.db.Exec(
-		`UPDATE automations SET name = ?, prompt = ?, trigger_type = ?, trigger_value = ?, project_path = ?, model = CASE WHEN ? = 1 THEN ? ELSE model END, max_runs = CASE WHEN ? = 1 THEN ? ELSE max_runs END, until = CASE WHEN ? = 1 THEN ? ELSE until END, enabled = ?, updated_at = ? WHERE id = ?`,
-		p.Name, p.Prompt, string(p.TriggerType), p.TriggerValue, p.ProjectPath, setModel, model, setMax, maxRuns, setUntil, p.Until, boolToInt(p.Enabled), time.Now(), id,
+		`UPDATE automations SET name = ?, prompt = ?, trigger_type = ?, trigger_value = ?, project_path = ?, model = CASE WHEN ? = 1 THEN ? ELSE model END, max_runs = CASE WHEN ? = 1 THEN ? ELSE max_runs END, until = CASE WHEN ? = 1 THEN ? ELSE until END, watch_metric = CASE WHEN ? = 1 THEN ? ELSE watch_metric END, watch_direction = CASE WHEN ? = 1 THEN ? ELSE watch_direction END, enabled = ?, updated_at = ? WHERE id = ?`,
+		p.Name, p.Prompt, string(p.TriggerType), p.TriggerValue, p.ProjectPath, setModel, model, setMax, maxRuns, setUntil, p.Until, boolToInt(setWatch), watchMetric, boolToInt(setWatch), string(watchDir), boolToInt(p.Enabled), time.Now(), id,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update automation: %w", err)
@@ -177,7 +213,7 @@ func (s *Store) Delete(id string) error {
 // Get returns an automation by ID.
 func (s *Store) Get(id string) (*Automation, error) {
 	row := s.db.QueryRow(
-		`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, max_runs, until, created_at, updated_at
+		`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, max_runs, until, watch_metric, watch_direction, created_at, updated_at
 		 FROM automations WHERE id = ?`, id,
 	)
 	a, err := scanAutomation(row)
@@ -192,13 +228,13 @@ func (s *Store) Get(id string) (*Automation, error) {
 
 // List returns all automations ordered by creation time (newest first).
 func (s *Store) List() ([]Automation, error) {
-	return s.list(`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, max_runs, until, created_at, updated_at
+	return s.list(`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, max_runs, until, watch_metric, watch_direction, created_at, updated_at
 		FROM automations ORDER BY created_at DESC`)
 }
 
 // ListEnabled returns all enabled automations.
 func (s *Store) ListEnabled() ([]Automation, error) {
-	return s.list(`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, max_runs, until, created_at, updated_at
+	return s.list(`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, max_runs, until, watch_metric, watch_direction, created_at, updated_at
 		FROM automations WHERE enabled = 1 ORDER BY created_at DESC`)
 }
 
@@ -230,13 +266,15 @@ func scanAutomation(row rowScanner) (*Automation, error) {
 	var projectPath, model sql.NullString
 	var enabledInt int
 	var until sql.NullTime
-	if err := row.Scan(&a.ID, &a.Name, &a.Prompt, &triggerType, &a.TriggerValue, &projectPath, &model, &enabledInt, &a.MaxRuns, &until, &a.CreatedAt, &a.UpdatedAt); err != nil {
+	var watchDir string
+	if err := row.Scan(&a.ID, &a.Name, &a.Prompt, &triggerType, &a.TriggerValue, &projectPath, &model, &enabledInt, &a.MaxRuns, &until, &a.WatchMetric, &watchDir, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if until.Valid {
 		t := until.Time
 		a.Until = &t
 	}
+	a.WatchDirection = WatchDirection(watchDir)
 	a.TriggerType = TriggerType(triggerType)
 	if projectPath.Valid {
 		a.ProjectPath = projectPath.String
@@ -251,10 +289,14 @@ func scanAutomation(row rowScanner) (*Automation, error) {
 // InsertRun appends an execution history entry and returns it with its ID set.
 func (s *Store) InsertRun(run Run) (*Run, error) {
 	now := time.Now()
+	pending := -1
+	if run.PendingAtFire != nil {
+		pending = *run.PendingAtFire
+	}
 	res, err := s.db.Exec(
-		`INSERT INTO automation_runs (automation_id, fired_at, session_id, status, message, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		run.AutomationID, run.FiredAt, run.SessionID, string(run.Status), run.Message, now,
+		`INSERT INTO automation_runs (automation_id, fired_at, session_id, status, message, pending_at_fire, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		run.AutomationID, run.FiredAt, run.SessionID, string(run.Status), run.Message, pending, now,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert automation run: %w", err)

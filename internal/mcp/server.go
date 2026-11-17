@@ -343,6 +343,15 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 								"type":        "string",
 								"description": "この時刻（RFC3339）を過ぎたら自動で無効化する（任意。experimental `loops` が on のときのみ）。",
 							},
+							"watchMetric": map[string]interface{}{
+								"type":        "string",
+								"description": "停滞を監視する指標の key（loop_report の metrics のキー。任意。直近 3 回で最良値を更新しないと通知される。ダッシュボードの色分けにも使う。experimental `loops` が on のときのみ）。",
+							},
+							"watchDirection": map[string]interface{}{
+								"type":        "string",
+								"enum":        []string{"higher", "lower"},
+								"description": "watchMetric の良い向き。higher: 大きいほど良い、lower: 小さいほど良い。watchMetric 指定時は必須。",
+							},
 							"projectPath": map[string]interface{}{
 								"type":        "string",
 								"description": "セッションを起動するプロジェクトの作業ディレクトリ（絶対パス）。省略時はcontroller領域で実行されます。",
@@ -599,15 +608,17 @@ func (s *Server) handleEscalate(args json.RawMessage) (interface{}, *jsonRPCErro
 
 func (s *Server) handleCreateAutomation(args json.RawMessage) (interface{}, *jsonRPCError) {
 	var input struct {
-		Name         string `json:"name"`
-		Prompt       string `json:"prompt"`
-		TriggerType  string `json:"triggerType"`
-		TriggerValue string `json:"triggerValue"`
-		ProjectPath  string `json:"projectPath"`
-		Model        string `json:"model"`
-		Enabled      *bool  `json:"enabled"`
-		MaxRuns      int    `json:"maxRuns"`
-		Until        string `json:"until"`
+		Name           string `json:"name"`
+		Prompt         string `json:"prompt"`
+		TriggerType    string `json:"triggerType"`
+		TriggerValue   string `json:"triggerValue"`
+		ProjectPath    string `json:"projectPath"`
+		Model          string `json:"model"`
+		Enabled        *bool  `json:"enabled"`
+		MaxRuns        int    `json:"maxRuns"`
+		Until          string `json:"until"`
+		WatchMetric    string `json:"watchMetric"`
+		WatchDirection string `json:"watchDirection"`
 	}
 	if err := json.Unmarshal(args, &input); err != nil {
 		return nil, &jsonRPCError{Code: -32602, Message: "invalid arguments"}
@@ -619,9 +630,9 @@ func (s *Server) handleCreateAutomation(args json.RawMessage) (interface{}, *jso
 		return nil, &jsonRPCError{Code: -32602, Message: "prompt is required"}
 	}
 	loopsOn := experimental.Enabled("loops")
-	if input.TriggerType == "queue" || input.MaxRuns != 0 || input.Until != "" {
+	if input.TriggerType == "queue" || input.MaxRuns != 0 || input.Until != "" || input.WatchMetric != "" || input.WatchDirection != "" {
 		if !loopsOn {
-			return nil, &jsonRPCError{Code: -32602, Message: `queue trigger / maxRuns / until require the experimental feature "loops"`}
+			return nil, &jsonRPCError{Code: -32602, Message: `queue trigger / maxRuns / until / watchMetric / watchDirection require the experimental feature "loops"`}
 		}
 	}
 	if input.TriggerType != "interval" && input.TriggerType != "cron" && !(input.TriggerType == "queue" && loopsOn) {
@@ -636,7 +647,7 @@ func (s *Server) handleCreateAutomation(args json.RawMessage) (interface{}, *jso
 		enabled = *input.Enabled
 	}
 
-	created, err := s.apiCreateAutomation(input.Name, input.Prompt, input.TriggerType, input.TriggerValue, input.ProjectPath, input.Model, enabled, input.MaxRuns, input.Until)
+	created, err := s.apiCreateAutomation(input.Name, input.Prompt, input.TriggerType, input.TriggerValue, input.ProjectPath, input.Model, enabled, input.MaxRuns, input.Until, input.WatchMetric, input.WatchDirection)
 	if err != nil {
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
@@ -659,10 +670,10 @@ type automationResponse struct {
 	Enabled      bool   `json:"enabled"`
 }
 
-func (s *Server) apiCreateAutomation(name, prompt, triggerType, triggerValue, projectPath, model string, enabled bool, maxRuns int, until string) (*automationResponse, error) {
+func (s *Server) apiCreateAutomation(name, prompt, triggerType, triggerValue, projectPath, model string, enabled bool, maxRuns int, until, watchMetric, watchDirection string) (*automationResponse, error) {
 	url := fmt.Sprintf("%s/api/automations", s.apiURL)
-	body := fmt.Sprintf(`{"name":%s,"prompt":%s,"triggerType":%s,"triggerValue":%s,"projectPath":%s,"model":%s,"enabled":%t,"maxRuns":%d,"until":%s}`,
-		jsonString(name), jsonString(prompt), jsonString(triggerType), jsonString(triggerValue), jsonString(projectPath), jsonString(model), enabled, maxRuns, jsonString(until))
+	body := fmt.Sprintf(`{"name":%s,"prompt":%s,"triggerType":%s,"triggerValue":%s,"projectPath":%s,"model":%s,"enabled":%t,"maxRuns":%d,"until":%s,"watchMetric":%s,"watchDirection":%s}`,
+		jsonString(name), jsonString(prompt), jsonString(triggerType), jsonString(triggerValue), jsonString(projectPath), jsonString(model), enabled, maxRuns, jsonString(until), jsonString(watchMetric), jsonString(watchDirection))
 
 	req, err := http.NewRequest("POST", url, strings.NewReader(body))
 	if err != nil {

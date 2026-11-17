@@ -412,6 +412,8 @@ export interface Automation {
   enabled: boolean;
   maxRuns?: number;
   until?: string;
+  watchMetric?: string;
+  watchDirection?: "higher" | "lower";
   createdAt: string;
   updatedAt: string;
 }
@@ -427,6 +429,10 @@ export interface AutomationInput {
   // Loop safety valves (experimental "loops"). until is RFC3339; "" clears it.
   maxRuns?: number;
   until?: string;
+  // Metric watched for stagnation / dashboard coloring (experimental "loops").
+  // watchMetric "" clears it; watchDirection is required when it is set.
+  watchMetric?: string;
+  watchDirection?: "higher" | "lower" | "";
 }
 
 export interface AutomationRun {

@@ -29,6 +29,9 @@ type Scheduler struct {
 	logger   *slog.Logger
 	interval time.Duration
 	now      func() time.Time
+	// Notify delivers a watchdog notification (may be nil). sessionID is the
+	// latest run session (may be empty).
+	Notify func(a Automation, sessionID, message string)
 
 	mu     sync.Mutex
 	stopCh chan struct{}
@@ -114,6 +117,9 @@ func (s *Scheduler) Tick(now time.Time) {
 	loopsOn := experimental.Enabled(FeatureLoops)
 	for _, a := range automations {
 		if loopsOn && s.enforceLimits(a, now) {
+			continue
+		}
+		if loopsOn && s.watchdog(a, now) {
 			continue
 		}
 		if a.TriggerType == TriggerQueue && !loopsOn {

@@ -57,9 +57,13 @@ export function AutomationForm({
         // Loop settings are not shown (and not sent) while the feature is off.
         delete payload.maxRuns;
         delete payload.until;
+        delete payload.watchMetric;
+        delete payload.watchDirection;
       } else {
         payload.maxRuns = payload.maxRuns || 0;
         payload.until = payload.until || "";
+        payload.watchMetric = (payload.watchMetric || "").trim();
+        payload.watchDirection = payload.watchMetric ? payload.watchDirection || "higher" : "";
       }
       await onSubmit(payload);
     } catch (e: unknown) {
@@ -171,6 +175,32 @@ export function AutomationForm({
               onChange={(e) => setInput({ ...input, until: fromLocalInput(e.target.value) })}
               className={inputClass}
             />
+          </div>
+        </div>
+      )}
+      {loopsEnabled && (
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label className="text-sm text-gray-600 block mb-1">監視する指標の key（任意）</label>
+            <input
+              type="text"
+              value={input.watchMetric || ""}
+              onChange={(e) => setInput({ ...input, watchMetric: e.target.value })}
+              placeholder="例: failing_tests（直近3回で改善しなければ通知）"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="text-sm text-gray-600 block mb-1">良い向き</label>
+            <select
+              value={input.watchDirection || "higher"}
+              onChange={(e) => setInput({ ...input, watchDirection: e.target.value as "higher" | "lower" })}
+              disabled={!input.watchMetric}
+              className={inputClass}
+            >
+              <option value="higher">大きいほど良い</option>
+              <option value="lower">小さいほど良い</option>
+            </select>
           </div>
         </div>
       )}
@@ -312,6 +342,8 @@ export function AutomationsPage() {
                       enabled: a.enabled,
                       maxRuns: a.maxRuns,
                       until: a.until,
+                      watchMetric: a.watchMetric,
+                      watchDirection: a.watchDirection,
                     }}
                     onSubmit={(input) => handleUpdate(a.id, input)}
                     onCancel={() => setEditingId(null)}

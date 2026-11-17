@@ -403,6 +403,7 @@ func TestAutomationLoopFeaturesRequireExperimental(t *testing.T) {
 		`{"name":"q","prompt":"p","triggerType":"queue","triggerValue":"","enabled":true}`,
 		`{"name":"m","prompt":"p","triggerType":"interval","triggerValue":"1h","maxRuns":3}`,
 		`{"name":"u","prompt":"p","triggerType":"interval","triggerValue":"1h","until":"2030-01-01T00:00:00Z"}`,
+		`{"name":"w","prompt":"p","triggerType":"interval","triggerValue":"1h","watchMetric":"x","watchDirection":"lower"}`,
 	} {
 		rec := doJSON(t, s, http.MethodPost, "/api/automations", body)
 		if rec.Code != http.StatusBadRequest {
@@ -417,5 +418,27 @@ func TestAutomationLoopFeaturesRequireExperimental(t *testing.T) {
 		`{"name":"q","prompt":"p","triggerType":"queue","triggerValue":"5m","maxRuns":3,"until":"2030-01-01T00:00:00Z","enabled":true}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create queue = %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAutomationWatchMetric(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s := newAutomationTestServer(t)
+	if err := experimental.Set("loops", true); err != nil {
+		t.Fatal(err)
+	}
+	// direction is required with a metric
+	rec := doJSON(t, s, http.MethodPost, "/api/automations",
+		`{"name":"w","prompt":"p","triggerType":"interval","triggerValue":"1h","watchMetric":"x"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing direction = %d, want 400", rec.Code)
+	}
+	rec = doJSON(t, s, http.MethodPost, "/api/automations",
+		`{"name":"w","prompt":"p","triggerType":"interval","triggerValue":"1h","watchMetric":"failing_tests","watchDirection":"lower"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"watchMetric":"failing_tests"`) || !strings.Contains(rec.Body.String(), `"watchDirection":"lower"`) {
+		t.Errorf("response missing watch fields: %s", rec.Body.String())
 	}
 }
