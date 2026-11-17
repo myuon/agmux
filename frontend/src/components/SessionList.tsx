@@ -5,6 +5,8 @@ import type { Session } from "../types/session";
 import { SecondaryButton } from "./ui/SecondaryButton";
 import { ExternalProcessRow } from "./ui/ExternalProcessRow";
 import { SessionCard } from "./ui/SessionCard";
+import { SessionSearch } from "./SessionSearch";
+import { useExperimental } from "../hooks/useExperimental";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -42,6 +44,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
   const sessionMatch = useMatch("/sessions/:id");
   const selectedSessionId = sessionMatch?.params.id ?? null;
   const childrenMap = useMemo(() => buildChildrenMap(sessions), [sessions]);
+  const searchEnabled = useExperimental("session_search");
 
   const topLevelSessions = useMemo(() => {
     return sessions
@@ -116,9 +119,10 @@ export function SessionList({ sessions, onRestartController }: Props) {
     );
   };
 
-  return (
+  const list = (
     <div className="flex flex-col gap-1.5">
       {topLevelSessions.map((s) => renderSession(s, 0))}
     </div>
   );
+  return searchEnabled ? <SessionSearch>{list}</SessionSearch> : list;
 }

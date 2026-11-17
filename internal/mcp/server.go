@@ -351,6 +351,7 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 						"required": []string{"name", "prompt", "triggerType", "triggerValue"},
 					},
 				},
+				searchSessionsToolDef(),
 				map[string]interface{}{
 					"name":        "permission_prompt",
 					"description": "Handle permission prompts from Claude Code CLI",
@@ -440,6 +441,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 		return s.handlePublishArtifact(args)
 	case "permission_prompt":
 		return s.handlePermissionPrompt(args)
+	case "search_sessions":
+		return s.handleSearchSessions(args)
 	default:
 		return nil, &jsonRPCError{Code: -32602, Message: "unknown tool: " + name}
 	}

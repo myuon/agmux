@@ -21,7 +21,13 @@ type Feature struct {
 
 // Features is the registry of known experimental features. Add an entry here
 // when introducing a new experimental feature.
-var Features = []Feature{}
+var Features = []Feature{
+	{
+		Name:        "session_search",
+		Title:       "セッション横断検索",
+		Description: "全セッションの会話を横断して検索できるようにします。セッション一覧に検索ボックスが出て、エージェントは search_sessions ツールで過去のやりとりを引けます。有効にすると既存の履歴を裏で索引します。",
+	},
+}
 
 // Lookup returns the feature with the given name.
 func Lookup(name string) (Feature, bool) {

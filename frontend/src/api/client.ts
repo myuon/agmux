@@ -18,6 +18,15 @@ export interface ExperimentalFeature {
   enabled: boolean;
 }
 
+export interface SessionSearchResult {
+  sessionId: string;
+  sessionName: string;
+  projectPath: string;
+  updatedAt: string;
+  role: "user" | "assistant";
+  snippet: string;
+}
+
 export interface SecretUsage {
   id: number;
   secretName: string;
@@ -229,6 +238,11 @@ export const api = {
     }),
 
   getConfig: () => request<AppConfig>("/config"),
+
+  searchSessions: (q: string, limit = 30) =>
+    request<{ results: SessionSearchResult[]; indexing: boolean }>(
+      `/search?${new URLSearchParams({ q, limit: String(limit) })}`
+    ),
 
   listExperimental: () =>
     request<{ features: ExperimentalFeature[] }>("/experimental"),
