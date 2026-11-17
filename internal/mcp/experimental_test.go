@@ -6,6 +6,24 @@ import (
 	"github.com/myuon/agmux/internal/experimental"
 )
 
+func TestLoopReportToolGatedByLoops(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	tools := []interface{}{loopReportToolDef()}
+	if got := filterExperimentalTools(tools); len(got) != 0 {
+		t.Fatal("loop_report must be hidden while loops is off")
+	}
+	s := NewServerForHTTP("sess", "http://127.0.0.1:0")
+	if _, err := s.callTool("loop_report", nil); err == nil {
+		t.Fatal("expected loop_report call to be rejected while off")
+	}
+	if err := experimental.Set("loops", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := filterExperimentalTools(tools); len(got) != 1 {
+		t.Fatal("loop_report must be visible when loops is on")
+	}
+}
+
 func TestFilterExperimentalTools(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	origF, origT := experimental.Features, experimentalTools

@@ -7,6 +7,7 @@ import "github.com/myuon/agmux/internal/experimental"
 // the feature is off.
 var experimentalTools = map[string]string{
 	"search_sessions": "session_search",
+	"loop_report":     "loops",
 }
 
 func toolAvailable(name string) bool {

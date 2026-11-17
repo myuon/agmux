@@ -32,6 +32,11 @@ var Features = []Feature{
 		Title:       "学びの受信箱",
 		Description: "ゴールを完了したセッションを安いモデルで振り返り、CLAUDE.md・スキル・メモリへの追記を提案します。採用したものだけが反映されます（CLAUDE.md とスキルは PR、メモリは直接書き込み）。モデルは config.toml の [learning_inbox] model で変更できます（既定 haiku）。",
 	},
+	{
+		Name:        "loops",
+		Title:       "ループ",
+		Description: "Automation を残タスクがある限り回すループとして使えるようにします。残タスクリスト、各回の結果記録、ダッシュボードが使えるようになります。",
+	},
 }
 
 // Lookup returns the feature with the given name.
