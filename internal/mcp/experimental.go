@@ -5,7 +5,9 @@ import "github.com/myuon/agmux/internal/experimental"
 // experimentalTools maps an MCP tool name to the experimental feature that
 // gates it. Gated tools are hidden from tools/list and rejected on call while
 // the feature is off.
-var experimentalTools = map[string]string{}
+var experimentalTools = map[string]string{
+	"search_sessions": "session_search",
+}
 
 func toolAvailable(name string) bool {
 	feature, gated := experimentalTools[name]

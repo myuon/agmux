@@ -29,6 +29,7 @@ import (
 	"github.com/myuon/agmux/internal/automation"
 	"github.com/myuon/agmux/internal/browser"
 	"github.com/myuon/agmux/internal/config"
+	"github.com/myuon/agmux/internal/search"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/mcp"
 	"github.com/myuon/agmux/internal/otel"
@@ -38,6 +39,7 @@ import (
 )
 
 type Server struct {
+	searchIndexer    *search.Indexer
 	sessions         session.SessionService
 	hub              *Hub
 	router           chi.Router
@@ -78,6 +80,7 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 		externalDetector: extDetector,
 		startTime:        time.Now(),
 	}
+	s.initSearch()
 
 	// Wire real-time stream updates via WebSocket
 	sessions.SetOnNewLines(func(sessionID string, newLines []string, total int) {
@@ -244,6 +247,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/host-info", s.getHostInfo)
 		r.Get("/experimental", s.listExperimental)
 		r.Put("/experimental/{name}", s.setExperimental)
+		r.Get("/search", s.searchSessions)
 		s.mountRemoteBrowser(r)
 		s.mountArtifacts(r)
 		s.mountSecrets(r)
