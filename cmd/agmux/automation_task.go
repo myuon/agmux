@@ -25,6 +25,9 @@ func (a *automationAPI) listTasks(id string) ([]automation.Task, error) {
 func (a *automationAPI) addTask(id, title, body string) (*automation.Task, error) {
 	var t automation.Task
 	req := map[string]string{"title": title, "body": body}
+	if sid := os.Getenv("AGMUX_SESSION_ID"); sid != "" {
+		req["sourceSessionId"] = sid
+	}
 	if err := a.do(http.MethodPost, "/api/automations/"+id+"/tasks", req, &t); err != nil {
 		return nil, err
 	}
