@@ -234,6 +234,8 @@ func (s *Server) setupRoutes() {
 		r.Delete("/automations/{id}", s.deleteAutomation)
 		r.Put("/automations/{id}/enabled", s.setAutomationEnabled)
 		r.Get("/automations/{id}/runs", s.listAutomationRuns)
+		r.Get("/automations/{id}/reports", s.listAutomationReports)
+		r.Post("/sessions/{id}/loop-report", s.postLoopReport)
 		r.Get("/projects/recent", s.getRecentProjects)
 		r.Get("/claude/models", s.getClaudeModels)
 		r.Get("/claude/version", s.getClaudeVersion)
