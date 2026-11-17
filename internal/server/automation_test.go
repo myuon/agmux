@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"github.com/myuon/agmux/internal/experimental"
 	"io"
 	"log/slog"
 	"net/http"
@@ -392,5 +393,29 @@ func TestAutomationModelOnPut(t *testing.T) {
 
 	if got := put(`,"model":""`).Model; got != "" {
 		t.Errorf("PUT with empty model: model = %q, want cleared", got)
+	}
+}
+
+func TestAutomationLoopFeaturesRequireExperimental(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s := newAutomationTestServer(t)
+	for _, body := range []string{
+		`{"name":"q","prompt":"p","triggerType":"queue","triggerValue":"","enabled":true}`,
+		`{"name":"m","prompt":"p","triggerType":"interval","triggerValue":"1h","maxRuns":3}`,
+		`{"name":"u","prompt":"p","triggerType":"interval","triggerValue":"1h","until":"2030-01-01T00:00:00Z"}`,
+	} {
+		rec := doJSON(t, s, http.MethodPost, "/api/automations", body)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("body %s = %d, want 400 while loops is off", body, rec.Code)
+		}
+	}
+
+	if err := experimental.Set("loops", true); err != nil {
+		t.Fatal(err)
+	}
+	rec := doJSON(t, s, http.MethodPost, "/api/automations",
+		`{"name":"q","prompt":"p","triggerType":"queue","triggerValue":"5m","maxRuns":3,"until":"2030-01-01T00:00:00Z","enabled":true}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create queue = %d: %s", rec.Code, rec.Body.String())
 	}
 }

@@ -34,6 +34,8 @@ type CreateParams struct {
 	ProjectPath  string // empty = controller area
 	Model        string // empty = provider default
 	Enabled      bool
+	MaxRuns      int        // 0 = unlimited
+	Until        *time.Time // nil = no deadline
 }
 
 // Create inserts a new automation and returns it.
@@ -46,6 +48,9 @@ func (s *Store) Create(p CreateParams) (*Automation, error) {
 	}
 	if err := ValidateTrigger(p.TriggerType, p.TriggerValue); err != nil {
 		return nil, err
+	}
+	if p.MaxRuns < 0 {
+		return nil, fmt.Errorf("maxRuns must not be negative")
 	}
 
 	id, err := newAutomationID()
@@ -63,13 +68,15 @@ func (s *Store) Create(p CreateParams) (*Automation, error) {
 		ProjectPath:  p.ProjectPath,
 		Model:        strings.TrimSpace(p.Model),
 		Enabled:      p.Enabled,
+		MaxRuns:      p.MaxRuns,
+		Until:        p.Until,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
 	if _, err := s.db.Exec(
-		`INSERT INTO automations (id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		a.ID, a.Name, a.Prompt, string(a.TriggerType), a.TriggerValue, a.ProjectPath, a.Model, boolToInt(a.Enabled), a.CreatedAt, a.UpdatedAt,
+		`INSERT INTO automations (id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, max_runs, until, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.Name, a.Prompt, string(a.TriggerType), a.TriggerValue, a.ProjectPath, a.Model, boolToInt(a.Enabled), a.MaxRuns, a.Until, a.CreatedAt, a.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert automation: %w", err)
 	}
@@ -86,6 +93,11 @@ type UpdateParams struct {
 	// Model is optional: nil keeps the stored value, a pointer to "" clears it.
 	Model   *string
 	Enabled bool
+	// MaxRuns / Until are optional: nil keeps the stored value. A pointer to 0
+	// clears MaxRuns; ClearUntil clears Until.
+	MaxRuns    *int
+	Until      *time.Time
+	ClearUntil bool
 }
 
 // Update replaces the editable fields of an automation.
@@ -99,6 +111,17 @@ func (s *Store) Update(id string, p UpdateParams) (*Automation, error) {
 	if err := ValidateTrigger(p.TriggerType, p.TriggerValue); err != nil {
 		return nil, err
 	}
+	if p.MaxRuns != nil && *p.MaxRuns < 0 {
+		return nil, fmt.Errorf("maxRuns must not be negative")
+	}
+	setMax, maxRuns := 0, 0
+	if p.MaxRuns != nil {
+		setMax, maxRuns = 1, *p.MaxRuns
+	}
+	setUntil := 0
+	if p.Until != nil || p.ClearUntil {
+		setUntil = 1
+	}
 	// model = CASE WHEN ? THEN ? ELSE model END keeps the stored value when
 	// the caller did not specify one.
 	setModel, model := 0, ""
@@ -106,8 +129,8 @@ func (s *Store) Update(id string, p UpdateParams) (*Automation, error) {
 		setModel, model = 1, strings.TrimSpace(*p.Model)
 	}
 	res, err := s.db.Exec(
-		`UPDATE automations SET name = ?, prompt = ?, trigger_type = ?, trigger_value = ?, project_path = ?, model = CASE WHEN ? = 1 THEN ? ELSE model END, enabled = ?, updated_at = ? WHERE id = ?`,
-		p.Name, p.Prompt, string(p.TriggerType), p.TriggerValue, p.ProjectPath, setModel, model, boolToInt(p.Enabled), time.Now(), id,
+		`UPDATE automations SET name = ?, prompt = ?, trigger_type = ?, trigger_value = ?, project_path = ?, model = CASE WHEN ? = 1 THEN ? ELSE model END, max_runs = CASE WHEN ? = 1 THEN ? ELSE max_runs END, until = CASE WHEN ? = 1 THEN ? ELSE until END, enabled = ?, updated_at = ? WHERE id = ?`,
+		p.Name, p.Prompt, string(p.TriggerType), p.TriggerValue, p.ProjectPath, setModel, model, setMax, maxRuns, setUntil, p.Until, boolToInt(p.Enabled), time.Now(), id,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update automation: %w", err)
@@ -154,7 +177,7 @@ func (s *Store) Delete(id string) error {
 // Get returns an automation by ID.
 func (s *Store) Get(id string) (*Automation, error) {
 	row := s.db.QueryRow(
-		`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, created_at, updated_at
+		`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, max_runs, until, created_at, updated_at
 		 FROM automations WHERE id = ?`, id,
 	)
 	a, err := scanAutomation(row)
@@ -169,13 +192,13 @@ func (s *Store) Get(id string) (*Automation, error) {
 
 // List returns all automations ordered by creation time (newest first).
 func (s *Store) List() ([]Automation, error) {
-	return s.list(`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, created_at, updated_at
+	return s.list(`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, max_runs, until, created_at, updated_at
 		FROM automations ORDER BY created_at DESC`)
 }
 
 // ListEnabled returns all enabled automations.
 func (s *Store) ListEnabled() ([]Automation, error) {
-	return s.list(`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, created_at, updated_at
+	return s.list(`SELECT id, name, prompt, trigger_type, trigger_value, project_path, model, enabled, max_runs, until, created_at, updated_at
 		FROM automations WHERE enabled = 1 ORDER BY created_at DESC`)
 }
 
@@ -206,8 +229,13 @@ func scanAutomation(row rowScanner) (*Automation, error) {
 	var triggerType string
 	var projectPath, model sql.NullString
 	var enabledInt int
-	if err := row.Scan(&a.ID, &a.Name, &a.Prompt, &triggerType, &a.TriggerValue, &projectPath, &model, &enabledInt, &a.CreatedAt, &a.UpdatedAt); err != nil {
+	var until sql.NullTime
+	if err := row.Scan(&a.ID, &a.Name, &a.Prompt, &triggerType, &a.TriggerValue, &projectPath, &model, &enabledInt, &a.MaxRuns, &until, &a.CreatedAt, &a.UpdatedAt); err != nil {
 		return nil, err
+	}
+	if until.Valid {
+		t := until.Time
+		a.Until = &t
 	}
 	a.TriggerType = TriggerType(triggerType)
 	if projectPath.Valid {
@@ -326,4 +354,28 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// CountSuccessRuns returns the number of successful runs of an automation.
+func (s *Store) CountSuccessRuns(automationID string) (int, error) {
+	var n int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM automation_runs WHERE automation_id = ? AND status = ?`,
+		automationID, string(RunSuccess),
+	).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count success runs: %w", err)
+	}
+	return n, nil
+}
+
+// CountPendingTasks returns the number of pending loop tasks.
+func (s *Store) CountPendingTasks(automationID string) (int, error) {
+	var n int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM automation_tasks WHERE automation_id = ? AND status = ?`,
+		automationID, string(TaskPending),
+	).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count pending tasks: %w", err)
+	}
+	return n, nil
 }

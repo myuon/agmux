@@ -405,11 +405,13 @@ export interface Automation {
   id: string;
   name: string;
   prompt: string;
-  triggerType: "interval" | "cron";
+  triggerType: "interval" | "cron" | "queue";
   triggerValue: string;
   projectPath?: string;
   model?: string;
   enabled: boolean;
+  maxRuns?: number;
+  until?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -417,11 +419,14 @@ export interface Automation {
 export interface AutomationInput {
   name: string;
   prompt: string;
-  triggerType: "interval" | "cron";
+  triggerType: "interval" | "cron" | "queue";
   triggerValue: string;
   projectPath?: string;
   model?: string;
   enabled: boolean;
+  // Loop safety valves (experimental "loops"). until is RFC3339; "" clears it.
+  maxRuns?: number;
+  until?: string;
 }
 
 export interface AutomationRun {

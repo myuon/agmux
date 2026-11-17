@@ -17,6 +17,10 @@ type SessionCreator interface {
 	UpdateStatus(id string, status session.Status) error
 }
 
+// QueuePromptSuffix is appended to the initial prompt of sessions started by
+// a queue-trigger automation.
+const QueuePromptSuffix = "\n\n---\nこのセッションはループの1回です。最初に loop_task_next でタスクを1件取り出し、それに取り組んでください。終わったら loop_task_done で結果（done/failed）を記録し、最後に loop_report で指標と要約を記録してください。作業中に見つけた別の作業は loop_task_add で残タスクに追加してください。loop_task_next が空を返したら何もせず終了してください。"
+
 // Runner executes a fired automation: it creates a new session and sends the
 // automation prompt to it. When the session created by the previous run is
 // still active, the firing is skipped and recorded as such.
@@ -71,7 +75,11 @@ func (r *Runner) Run(a Automation, firedAt time.Time) *Run {
 	}
 
 	name := fmt.Sprintf("%s (auto)", a.Name)
-	sess, err := r.sessions.Create(name, projectPath, a.Prompt, false, session.CreateOpts{
+	prompt := a.Prompt
+	if a.TriggerType == TriggerQueue {
+		prompt += QueuePromptSuffix
+	}
+	sess, err := r.sessions.Create(name, projectPath, prompt, false, session.CreateOpts{
 		AutomationID: a.ID,
 		Model:        a.Model,
 	})
@@ -99,6 +107,26 @@ func (r *Runner) Run(a Automation, firedAt time.Time) *Run {
 	r.logger.Info("automation fired: session created",
 		"automationId", a.ID, "name", a.Name, "sessionId", sess.ID, "projectPath", projectPath)
 	return r.record(run)
+}
+
+// PreviousRunState reports whether the session of the most recent run is
+// still active and when that run ended. The end time is the session's last
+// update when it is later than the run's fired_at (fallback: fired_at).
+func (r *Runner) PreviousRunState(automationID string) (active bool, finishedAt time.Time) {
+	if _, act := r.previousRunActive(automationID); act {
+		return true, time.Time{}
+	}
+	prev, err := r.store.LatestRun(automationID)
+	if err != nil || prev == nil {
+		return false, time.Time{}
+	}
+	finishedAt = prev.FiredAt
+	if prev.SessionID != "" {
+		if sess, err := r.sessions.Get(prev.SessionID); err == nil && sess.UpdatedAt.After(finishedAt) {
+			finishedAt = sess.UpdatedAt
+		}
+	}
+	return false, finishedAt
 }
 
 // previousRunActive reports whether the session created by the most recent

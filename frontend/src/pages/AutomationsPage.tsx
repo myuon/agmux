@@ -5,6 +5,20 @@ import type { Automation, AutomationInput } from "../api/client";
 import { ToggleButton } from "../components/ui/ToggleButton";
 import { AlertBanner } from "../components/ui/AlertBanner";
 import { formatTrigger } from "../models/automation";
+import { useExperimental } from "../hooks/useExperimental";
+
+// RFC3339 <-> <input type="datetime-local"> value (local time).
+function toLocalInput(rfc: string | undefined): string {
+  if (!rfc) return "";
+  const d = new Date(rfc);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function fromLocalInput(v: string): string {
+  return v ? new Date(v).toISOString() : "";
+}
 
 const EMPTY_INPUT: AutomationInput = {
   name: "",
@@ -29,6 +43,7 @@ export function AutomationForm({
   onCancel: () => void;
   submitLabel: string;
 }) {
+  const loopsEnabled = useExperimental("loops");
   const [input, setInput] = useState<AutomationInput>(initial);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +52,16 @@ export function AutomationForm({
     setSubmitting(true);
     setError(null);
     try {
-      await onSubmit(input);
+      const payload = { ...input };
+      if (!loopsEnabled) {
+        // Loop settings are not shown (and not sent) while the feature is off.
+        delete payload.maxRuns;
+        delete payload.until;
+      } else {
+        payload.maxRuns = payload.maxRuns || 0;
+        payload.until = payload.until || "";
+      }
+      await onSubmit(payload);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "保存に失敗しました");
     } finally {
@@ -83,17 +107,26 @@ export function AutomationForm({
           >
             <option value="interval">Interval</option>
             <option value="cron">Cron</option>
+            {(loopsEnabled || input.triggerType === "queue") && (
+              <option value="queue">Queue（残タスクがある限り）</option>
+            )}
           </select>
         </div>
         <div className="flex-1">
           <label className="text-sm text-gray-600 block mb-1">
-            {input.triggerType === "interval" ? "Interval（Go duration）" : "Cron 式（5フィールド）"}
+            {input.triggerType === "interval"
+              ? "Interval（Go duration）"
+              : input.triggerType === "queue"
+                ? "前回終了からの待ち時間（Go duration、空なら 0s）"
+                : "Cron 式（5フィールド）"}
           </label>
           <input
             type="text"
             value={input.triggerValue}
             onChange={(e) => setInput({ ...input, triggerValue: e.target.value })}
-            placeholder={input.triggerType === "interval" ? "30m" : "0 9 * * 1-5"}
+            placeholder={
+              input.triggerType === "interval" ? "30m" : input.triggerType === "queue" ? "0s" : "0 9 * * 1-5"
+            }
             className={inputClass}
           />
         </div>
@@ -118,6 +151,29 @@ export function AutomationForm({
           className={inputClass}
         />
       </div>
+      {loopsEnabled && (
+        <div className="flex gap-3">
+          <div>
+            <label className="text-sm text-gray-600 block mb-1">最大回数（0 = 無制限）</label>
+            <input
+              type="number"
+              min={0}
+              value={input.maxRuns ?? 0}
+              onChange={(e) => setInput({ ...input, maxRuns: Math.max(0, Number(e.target.value) || 0) })}
+              className={inputClass}
+            />
+          </div>
+          <div className="flex-1">
+            <label className="text-sm text-gray-600 block mb-1">期限（空なら無制限）</label>
+            <input
+              type="datetime-local"
+              value={toLocalInput(input.until)}
+              onChange={(e) => setInput({ ...input, until: fromLocalInput(e.target.value) })}
+              className={inputClass}
+            />
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-2">
         <label className="text-sm text-gray-600">有効</label>
         <ToggleButton
@@ -254,6 +310,8 @@ export function AutomationsPage() {
                       projectPath: a.projectPath || "",
                       model: a.model || "",
                       enabled: a.enabled,
+                      maxRuns: a.maxRuns,
+                      until: a.until,
                     }}
                     onSubmit={(input) => handleUpdate(a.id, input)}
                     onCancel={() => setEditingId(null)}

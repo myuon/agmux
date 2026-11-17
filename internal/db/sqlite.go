@@ -451,6 +451,16 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: loop safety valves. max_runs 0 = unlimited, until NULL = no deadline.
+	_, err = db.Exec(`ALTER TABLE automations ADD COLUMN max_runs INTEGER NOT NULL DEFAULT 0`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE automations ADD COLUMN until DATETIME`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: create automation_runs table (execution history)
 	// status: 'success' | 'skipped' | 'error'. session_id is set on success.
 	_, err = db.Exec(`

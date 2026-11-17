@@ -2,12 +2,15 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/myuon/agmux/internal/automation"
+	"github.com/myuon/agmux/internal/experimental"
 )
 
 // automationRequest is the request body for creating / updating an automation.
@@ -21,6 +24,32 @@ type automationRequest struct {
 	// explicit "" clears it.
 	Model   *string `json:"model,omitempty"`
 	Enabled bool    `json:"enabled"`
+	// MaxRuns / Until are loop safety valves (experimental "loops"). On
+	// update, omitting keeps the stored value; maxRuns 0 / until "" clear it.
+	MaxRuns *int    `json:"maxRuns,omitempty"`
+	Until   *string `json:"until,omitempty"` // RFC3339
+}
+
+// checkLoopFeatures rejects queue triggers and safety valves while the
+// experimental "loops" feature is off. It also parses the until timestamp.
+func checkLoopFeatures(req automationRequest) (until *time.Time, err error) {
+	if req.Until != nil && *req.Until != "" {
+		t, perr := time.Parse(time.RFC3339, *req.Until)
+		if perr != nil {
+			return nil, fmt.Errorf("invalid until %q (RFC3339 expected): %w", *req.Until, perr)
+		}
+		until = &t
+	}
+	if experimental.Enabled(automation.FeatureLoops) {
+		return until, nil
+	}
+	if automation.TriggerType(req.TriggerType) == automation.TriggerQueue {
+		return nil, fmt.Errorf("queue trigger requires the experimental feature %q", automation.FeatureLoops)
+	}
+	if (req.MaxRuns != nil && *req.MaxRuns != 0) || until != nil {
+		return nil, fmt.Errorf("maxRuns / until require the experimental feature %q", automation.FeatureLoops)
+	}
+	return until, nil
 }
 
 func (s *Server) listAutomations(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +70,18 @@ func (s *Server) createAutomation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	until, err := checkLoopFeatures(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	maxRuns := 0
+	if req.MaxRuns != nil {
+		maxRuns = *req.MaxRuns
+	}
 	a, err := s.automations.Create(automation.CreateParams{
+		MaxRuns:      maxRuns,
+		Until:        until,
 		Name:         req.Name,
 		Prompt:       req.Prompt,
 		TriggerType:  automation.TriggerType(req.TriggerType),
@@ -80,7 +120,15 @@ func (s *Server) updateAutomation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	until, err := checkLoopFeatures(req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	a, err := s.automations.Update(id, automation.UpdateParams{
+		MaxRuns:      req.MaxRuns,
+		Until:        until,
+		ClearUntil:   req.Until != nil && *req.Until == "",
 		Name:         req.Name,
 		Prompt:       req.Prompt,
 		TriggerType:  automation.TriggerType(req.TriggerType),
