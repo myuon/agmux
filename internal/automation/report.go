@@ -112,9 +112,9 @@ func (s *Store) ListRunReports(automationID string, limit int) ([]RunReport, err
 		rr.Report = rep
 		if r.SessionID != "" {
 			end := now
-			var status sql.NullString
+			var status, cliID sql.NullString
 			var updated sql.NullTime
-			err := s.db.QueryRow(`SELECT status, updated_at FROM sessions WHERE id = ?`, r.SessionID).Scan(&status, &updated)
+			err := s.db.QueryRow(`SELECT status, updated_at, cli_session_id FROM sessions WHERE id = ?`, r.SessionID).Scan(&status, &updated, &cliID)
 			if err == nil && updated.Valid && (status.String == "paused" || status.String == "exited" || status.String == "archived") {
 				end = updated.Time
 				rr.Stopped = true
@@ -122,7 +122,7 @@ func (s *Store) ListRunReports(automationID string, limit int) ([]RunReport, err
 			if d := end.Sub(r.FiredAt).Seconds(); d > 0 {
 				rr.DurationSeconds = d
 			}
-			s.fillUsage(&rr)
+			s.fillUsage(&rr, cliID.String)
 		}
 		out = append(out, rr)
 	}
@@ -131,16 +131,21 @@ func (s *Store) ListRunReports(automationID string, limit int) ([]RunReport, err
 
 // fillUsage sums cost / tokens recorded via OTel for the run's session.
 // Missing data leaves the values at zero.
-func (s *Store) fillUsage(rr *RunReport) {
+func (s *Store) fillUsage(rr *RunReport, cliSessionID string) {
+	// otel_metrics.session_id holds the Claude CLI session id, not the agmux id.
+	cliArg := cliSessionID
+	if cliArg == "" {
+		cliArg = rr.SessionID
+	}
 	var cost sql.NullFloat64
 	if err := s.db.QueryRow(
-		`SELECT SUM(value) FROM otel_metrics WHERE name = 'claude_code.cost.usage' AND session_id = ?`,
-		rr.SessionID).Scan(&cost); err == nil && cost.Valid {
+		`SELECT SUM(value) FROM otel_metrics WHERE name = 'claude_code.cost.usage' AND session_id IN (?, ?)`,
+		rr.SessionID, cliArg).Scan(&cost); err == nil && cost.Valid {
 		rr.Cost = cost.Float64
 	}
 	rows, err := s.db.Query(
 		`SELECT json_extract(attributes, '$.type'), SUM(value) FROM otel_metrics
-		 WHERE name = 'claude_code.token.usage' AND session_id = ? GROUP BY 1`, rr.SessionID)
+		 WHERE name = 'claude_code.token.usage' AND session_id IN (?, ?) GROUP BY 1`, rr.SessionID, cliArg)
 	if err != nil {
 		return
 	}

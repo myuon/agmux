@@ -42,6 +42,30 @@ func TestReport_SaveOverwriteAndList(t *testing.T) {
 	assert.Greater(t, list[0].DurationSeconds, 0.0)
 }
 
+func TestListRunReports_UsageViaCLISessionID(t *testing.T) {
+	s := newTestStore(t)
+	a, err := s.Create(CreateParams{Name: "loop", Prompt: "p", TriggerType: TriggerInterval, TriggerValue: "1h", Enabled: true})
+	require.NoError(t, err)
+	_, err = s.InsertRun(Run{AutomationID: a.ID, FiredAt: time.Now().Add(-time.Hour), SessionID: "agmux-1", Status: RunSuccess})
+	require.NoError(t, err)
+	_, err = s.db.Exec(`INSERT INTO sessions (id, name, project_path, cli_session_id) VALUES ('agmux-1', 'n', '/tmp', 'cli-1')`)
+	require.NoError(t, err)
+	now := time.Now()
+	_, err = s.db.Exec(`INSERT INTO otel_metrics (name, value, attributes, session_id, timestamp) VALUES
+		('claude_code.cost.usage', 1.5, '{}', 'cli-1', ?),
+		('claude_code.token.usage', 100, '{"type":"input"}', 'cli-1', ?),
+		('claude_code.token.usage', 40, '{"type":"output"}', 'cli-1', ?),
+		('claude_code.cost.usage', 9, '{}', 'other', ?)`, now, now, now, now)
+	require.NoError(t, err)
+
+	list, err := s.ListRunReports(a.ID, 0)
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	assert.Equal(t, 1.5, list[0].Cost)
+	assert.Equal(t, 100.0, list[0].InputTokens)
+	assert.Equal(t, 40.0, list[0].OutputTokens)
+}
+
 func TestFindRunBySession_NotAutomation(t *testing.T) {
 	s := newTestStore(t)
 	_, err := s.FindRunBySession("unknown")
