@@ -7,6 +7,7 @@ import { ToggleButton } from "../components/ui/ToggleButton";
 import { AlertBanner } from "../components/ui/AlertBanner";
 import { LoopTasks } from "../components/LoopTasks";
 import { LoopDashboard } from "../components/LoopDashboard";
+import { LoopTimeline } from "../components/LoopTimeline";
 import { useExperimental } from "../hooks/useExperimental";
 import { formatTrigger } from "../models/automation";
 
@@ -60,40 +61,106 @@ export function AutomationDetailPage() {
       <div className="max-w-2xl mx-auto p-3 sm:p-6 space-y-6">
         {error && <AlertBanner variant="error">{error}</AlertBanner>}
 
-        <Section title="Automation">
-          <Field label="Trigger">
-            <span className="text-sm text-gray-800">{formatTrigger(automation)}</span>
-          </Field>
-          <Field label="Project">
-            <span className="text-sm text-gray-800 font-mono break-all">
-              {automation.projectPath || "(controller)"}
-            </span>
-          </Field>
-          {automation.model && (
-            <Field label="Model">
-              <span className="text-sm text-gray-800 font-mono break-all">{automation.model}</span>
+        {loops ? (
+          <>
+            {((automation.feeders?.length ?? 0) > 0 || (automation.feeds?.length ?? 0) > 0) && (
+              <div className="text-sm text-gray-700 space-y-1 break-words">
+                {(automation.feeders ?? []).length > 0 && (
+                  <div>
+                    供給元:{" "}
+                    {(automation.feeders ?? []).map((f) => (
+                      <Link key={f.id} to={`/automations/${f.id}`} className="text-blue-600 hover:underline mr-2 break-all">
+                        {f.name}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+                {(automation.feeds ?? []).length > 0 && (
+                  <div>
+                    供給先:{" "}
+                    {(automation.feeds ?? []).map((f) => (
+                      <Link key={f.id} to={`/automations/${f.id}`} className="text-blue-600 hover:underline mr-2 break-all">
+                        {f.name}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            <LoopDashboard
+              automationId={automation.id}
+              watchMetric={automation.watchMetric}
+              watchDirection={automation.watchDirection}
+            />
+            <LoopTasks automationId={automation.id} />
+            <LoopTimeline automationId={automation.id} />
+            <details className="group">
+              <summary className="cursor-pointer text-sm font-semibold text-gray-700 px-1 py-2">
+                設定（プロンプト・トリガー・有効化）
+              </summary>
+              <div className="mt-2">
+                  <Section title="Automation">
+            <Field label="Trigger">
+              <span className="text-sm text-gray-800">{formatTrigger(automation)}</span>
             </Field>
-          )}
-          <Field label="有効">
-            <ToggleButton enabled={automation.enabled} onClick={handleToggle}>
-              {automation.enabled ? "ON" : "OFF"}
-            </ToggleButton>
-          </Field>
-          <div>
-            <label className="text-sm text-gray-600 block mb-1">Prompt</label>
-            <pre className="bg-gray-50 border border-gray-200 rounded px-3 py-2 text-xs text-gray-700 whitespace-pre-wrap">
-              {automation.prompt}
-            </pre>
-          </div>
-        </Section>
+            <Field label="Project">
+              <span className="text-sm text-gray-800 font-mono break-all">
+                {automation.projectPath || "(controller)"}
+              </span>
+            </Field>
+            {automation.model && (
+              <Field label="Model">
+                <span className="text-sm text-gray-800 font-mono break-all">{automation.model}</span>
+              </Field>
+            )}
+            <Field label="有効">
+              <ToggleButton enabled={automation.enabled} onClick={handleToggle}>
+                {automation.enabled ? "ON" : "OFF"}
+              </ToggleButton>
+            </Field>
+            <div>
+              <label className="text-sm text-gray-600 block mb-1">Prompt</label>
+              <pre className="bg-gray-50 border border-gray-200 rounded px-3 py-2 text-xs text-gray-700 whitespace-pre-wrap">
+                {automation.prompt}
+              </pre>
+            </div>
+          </Section>
 
-        {loops && <LoopDashboard
-            automationId={automation.id}
-            watchMetric={automation.watchMetric}
-            watchDirection={automation.watchDirection}
-          />}
+              </div>
+            </details>
+          </>
+        ) : (
+          <>
+          <Section title="Automation">
+            <Field label="Trigger">
+              <span className="text-sm text-gray-800">{formatTrigger(automation)}</span>
+            </Field>
+            <Field label="Project">
+              <span className="text-sm text-gray-800 font-mono break-all">
+                {automation.projectPath || "(controller)"}
+              </span>
+            </Field>
+            {automation.model && (
+              <Field label="Model">
+                <span className="text-sm text-gray-800 font-mono break-all">{automation.model}</span>
+              </Field>
+            )}
+            <Field label="有効">
+              <ToggleButton enabled={automation.enabled} onClick={handleToggle}>
+                {automation.enabled ? "ON" : "OFF"}
+              </ToggleButton>
+            </Field>
+            <div>
+              <label className="text-sm text-gray-600 block mb-1">Prompt</label>
+              <pre className="bg-gray-50 border border-gray-200 rounded px-3 py-2 text-xs text-gray-700 whitespace-pre-wrap">
+                {automation.prompt}
+              </pre>
+            </div>
+          </Section>
 
-        <LoopTasks automationId={automation.id} />
+            <LoopTasks automationId={automation.id} />
+          </>
+        )}
 
         {!loops && (
         <Section title="実行履歴">

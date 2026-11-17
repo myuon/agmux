@@ -364,6 +364,12 @@ export const api = {
   listAutomationReports: (id: string, limit = 100) =>
     request<AutomationRunReport[]>(`/automations/${id}/reports?limit=${limit}`),
 
+  getAutomationTimeline: (id: string, before?: string, limit = 30) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (before) q.set("before", before);
+    return request<AutomationTimeline>(`/automations/${id}/timeline?${q}`);
+  },
+
   listAutomationTasks: (id: string) =>
     request<AutomationTask[]>(`/automations/${id}/tasks`),
 
@@ -495,6 +501,26 @@ export interface AutomationRunReport extends AutomationRun {
   cost: number;
   inputTokens: number;
   outputTokens: number;
+}
+
+// AutomationTimelineEvent mirrors `internal/automation.TimelineEvent` (Go). Experimental "loops".
+export interface AutomationTimelineEvent {
+  kind: "run" | "task_added" | "task_finished" | "disabled";
+  at: string;
+  run?: AutomationRunReport;
+  runTasks?: AutomationTask[];
+  // Set when the run belongs to a loop that fed tasks into this one.
+  feeder?: AutomationRef;
+  addedTasks?: string[];
+  task?: AutomationTask;
+  source?: AutomationRef;
+  sourceSessionId?: string;
+  message?: string;
+}
+
+export interface AutomationTimeline {
+  events: AutomationTimelineEvent[];
+  nextBefore: string;
 }
 
 // AutomationTask mirrors `internal/automation.Task` (Go). Experimental "loops".
