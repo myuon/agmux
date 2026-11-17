@@ -228,6 +228,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/broadcast", s.broadcastToSessions)
 		r.Post("/sessions/controller/restart", s.restartController)
 		r.Get("/automations", s.listAutomations)
+		r.Get("/automations/summary", s.listAutomationSummaries)
 		r.Post("/automations", s.createAutomation)
 		r.Get("/automations/{id}", s.getAutomation)
 		r.Put("/automations/{id}", s.updateAutomation)
