@@ -401,7 +401,15 @@ export const api = {
 
 };
 
+export interface AutomationRef {
+  id: string;
+  name: string;
+}
+
 export interface Automation {
+  // Only present while the experimental "loops" feature is on.
+  feeders?: AutomationRef[];
+  feeds?: AutomationRef[];
   id: string;
   name: string;
   prompt: string;
@@ -471,6 +479,7 @@ export interface AutomationTask {
   runId?: number;
   result: string;
   createdBy: "user" | "agent";
+  sourceAutomationId?: string;
   attempts: number;
   createdAt: string;
   updatedAt: string;

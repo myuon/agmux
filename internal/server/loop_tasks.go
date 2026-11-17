@@ -62,12 +62,30 @@ func (s *Server) addAutomationTask(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Title string `json:"title"`
 		Body  string `json:"body"`
+		// SourceSessionID is the session that adds the task (the CLI sends
+		// AGMUX_SESSION_ID). When it belongs to an automation, that
+		// automation is recorded as the source and the task is by an agent.
+		SourceSessionID string `json:"sourceSessionId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	t, err := s.automations.AddTask(id, req.Title, req.Body, automation.CreatedByUser)
+	createdBy, source := automation.CreatedByUser, ""
+	if req.SourceSessionID != "" {
+		src, err := s.automations.AutomationIDForSession(req.SourceSessionID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if src != "" {
+			createdBy = automation.CreatedByAgent
+			if src != id {
+				source = src
+			}
+		}
+	}
+	t, err := s.automations.AddTaskFrom(id, req.Title, req.Body, createdBy, source)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -144,7 +162,7 @@ func (s *Server) loopTaskAdd(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	t, err := s.automations.AddTask(autoID, req.Title, req.Body, automation.CreatedByAgent)
+	t, err := s.automations.AddTaskFrom(autoID, req.Title, req.Body, automation.CreatedByAgent, autoID)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

@@ -523,6 +523,10 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_automation_tasks_automation ON automation_tasks(automation_id, status)`)
+	// Migration: source_automation_id = the automation whose session added the task
+	if _, err = db.Exec(`ALTER TABLE automation_tasks ADD COLUMN source_automation_id TEXT`); err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
 	// Migration: create automation_run_reports table (loop_report results, one row per run)
 	if _, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS automation_run_reports (

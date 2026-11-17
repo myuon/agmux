@@ -69,7 +69,38 @@ func (s *Server) listAutomations(w http.ResponseWriter, r *http.Request) {
 	if automations == nil {
 		automations = []automation.Automation{}
 	}
-	writeJSON(w, http.StatusOK, automations)
+	if !experimental.Enabled(automation.FeatureLoops) {
+		writeJSON(w, http.StatusOK, automations)
+		return
+	}
+	feeders, feeds, err := s.automations.Relations()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out := make([]automationWithRelations, 0, len(automations))
+	for _, a := range automations {
+		out = append(out, withRelations(a, feeders, feeds))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// automationWithRelations adds the loop relations (loops feature only).
+type automationWithRelations struct {
+	automation.Automation
+	Feeders []automation.Ref `json:"feeders"`
+	Feeds   []automation.Ref `json:"feeds"`
+}
+
+func withRelations(a automation.Automation, feeders, feeds map[string][]automation.Ref) automationWithRelations {
+	r := automationWithRelations{Automation: a, Feeders: feeders[a.ID], Feeds: feeds[a.ID]}
+	if r.Feeders == nil {
+		r.Feeders = []automation.Ref{}
+	}
+	if r.Feeds == nil {
+		r.Feeds = []automation.Ref{}
+	}
+	return r
 }
 
 func (s *Server) createAutomation(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +145,15 @@ func (s *Server) getAutomation(w http.ResponseWriter, r *http.Request) {
 	a, err := s.automations.Get(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	if experimental.Enabled(automation.FeatureLoops) {
+		feeders, feeds, err := s.automations.Relations()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, withRelations(*a, feeders, feeds))
 		return
 	}
 	writeJSON(w, http.StatusOK, a)

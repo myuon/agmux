@@ -54,21 +54,26 @@ type Task struct {
 	RunID        *int64     `json:"runId,omitempty"`
 	Result       string     `json:"result"`
 	CreatedBy    string     `json:"createdBy"`
-	Attempts     int        `json:"attempts"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	UpdatedAt    time.Time  `json:"updatedAt"`
+	// SourceAutomationID is the automation whose session added the task
+	// (empty when added by a user or by the automation itself).
+	SourceAutomationID string    `json:"sourceAutomationId,omitempty"`
+	Attempts           int       `json:"attempts"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
-const taskColumns = `id, automation_id, title, body, status, run_id, result, created_by, attempts, created_at, updated_at`
+const taskColumns = `id, automation_id, title, body, status, run_id, result, created_by, attempts, created_at, updated_at, source_automation_id`
 
 func scanTask(row rowScanner) (*Task, error) {
 	var t Task
 	var status string
 	var runID sql.NullInt64
-	if err := row.Scan(&t.ID, &t.AutomationID, &t.Title, &t.Body, &status, &runID, &t.Result, &t.CreatedBy, &t.Attempts, &t.CreatedAt, &t.UpdatedAt); err != nil {
+	var source sql.NullString
+	if err := row.Scan(&t.ID, &t.AutomationID, &t.Title, &t.Body, &status, &runID, &t.Result, &t.CreatedBy, &t.Attempts, &t.CreatedAt, &t.UpdatedAt, &source); err != nil {
 		return nil, err
 	}
 	t.Status = TaskStatus(status)
+	t.SourceAutomationID = source.String
 	if runID.Valid {
 		v := runID.Int64
 		t.RunID = &v
@@ -78,6 +83,12 @@ func scanTask(row rowScanner) (*Task, error) {
 
 // AddTask appends a pending task to the automation's list.
 func (s *Store) AddTask(automationID, title, body, createdBy string) (*Task, error) {
+	return s.AddTaskFrom(automationID, title, body, createdBy, "")
+}
+
+// AddTaskFrom is AddTask with the automation that added the task recorded as
+// its source ("" for none).
+func (s *Store) AddTaskFrom(automationID, title, body, createdBy, sourceAutomationID string) (*Task, error) {
 	title = strings.TrimSpace(title)
 	if title == "" {
 		return nil, fmt.Errorf("task title is required")
@@ -90,9 +101,9 @@ func (s *Store) AddTask(automationID, title, body, createdBy string) (*Task, err
 	}
 	now := time.Now()
 	res, err := s.db.Exec(
-		`INSERT INTO automation_tasks (automation_id, title, body, status, result, created_by, attempts, created_at, updated_at)
-		 VALUES (?, ?, ?, 'pending', '', ?, 0, ?, ?)`,
-		automationID, title, body, createdBy, now, now,
+		`INSERT INTO automation_tasks (automation_id, title, body, status, result, created_by, attempts, created_at, updated_at, source_automation_id)
+		 VALUES (?, ?, ?, 'pending', '', ?, 0, ?, ?, ?)`,
+		automationID, title, body, createdBy, now, now, sql.NullString{String: sourceAutomationID, Valid: sourceAutomationID != ""},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("insert task: %w", err)
@@ -317,4 +328,37 @@ func (s *Store) ReclaimAbandonedTasks(isActive func(sessionID string) bool, now 
 		}
 	}
 	return len(cands), nil
+}
+
+// Ref is a lightweight reference to an automation.
+type Ref struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// Relations returns, per automation id, the other automations that added
+// tasks to it (Feeders) and the ones it added tasks to (Feeds), derived from
+// automation_tasks.source_automation_id. Self references are excluded.
+func (s *Store) Relations() (feeders, feeds map[string][]Ref, err error) {
+	rows, err := s.db.Query(
+		`SELECT DISTINCT t.automation_id, t.source_automation_id, COALESCE(tgt.name, ''), COALESCE(src.name, '')
+		 FROM automation_tasks t
+		 JOIN automations tgt ON tgt.id = t.automation_id
+		 JOIN automations src ON src.id = t.source_automation_id
+		 WHERE t.source_automation_id IS NOT NULL AND t.source_automation_id != '' AND t.source_automation_id != t.automation_id
+		 ORDER BY t.automation_id, t.source_automation_id`)
+	if err != nil {
+		return nil, nil, fmt.Errorf("query relations: %w", err)
+	}
+	defer rows.Close()
+	feeders, feeds = map[string][]Ref{}, map[string][]Ref{}
+	for rows.Next() {
+		var target, source, targetName, sourceName string
+		if err := rows.Scan(&target, &source, &targetName, &sourceName); err != nil {
+			return nil, nil, fmt.Errorf("scan relation: %w", err)
+		}
+		feeders[target] = append(feeders[target], Ref{ID: source, Name: sourceName})
+		feeds[source] = append(feeds[source], Ref{ID: target, Name: targetName})
+	}
+	return feeders, feeds, rows.Err()
 }
