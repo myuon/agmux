@@ -1,17 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import type { AutomationRunReport, AutomationTask } from "../api/client";
 import { Section } from "./ui/Section";
 import { AlertBanner } from "./ui/AlertBanner";
 
-const RUN_STATUS_STYLES: Record<AutomationRunReport["status"], string> = {
-  success: "bg-green-50 border-green-300 text-green-700",
-  skipped: "bg-yellow-50 border-yellow-300 text-yellow-700",
-  error: "bg-red-50 border-red-300 text-red-700",
-};
-
-function formatDuration(sec: number): string {
+export function formatDuration(sec: number): string {
   if (sec <= 0) return "-";
   const s = Math.round(sec);
   if (s < 60) return `${s}秒`;
@@ -20,7 +13,7 @@ function formatDuration(sec: number): string {
   return `${Math.floor(m / 60)}時間${m % 60}分`;
 }
 
-function formatNum(n: number): string {
+export function formatNum(n: number): string {
   return Number.isInteger(n) ? String(n) : n.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
@@ -61,8 +54,8 @@ function Sparkline({ points }: { points: number[] }) {
 }
 
 /**
- * Dashboard of a loop (experimental "loops"): summary, metric trends and a
- * per-run list. The caller renders it only while the feature is on.
+ * Dashboard of a loop (experimental "loops"): summary and metric trends
+ * (the per-run history is LoopTimeline). The caller renders it only while on.
  */
 export function LoopDashboard({
   automationId,
@@ -115,14 +108,6 @@ export function LoopDashboard({
       .map((r) => r.report?.metrics?.[key])
       .filter((v): v is number => typeof v === "number"),
   }));
-
-  const taskByRun = new Map<number, AutomationTask[]>();
-  for (const t of tasks) {
-    if (t.runId == null) continue;
-    taskByRun.set(t.runId, [...(taskByRun.get(t.runId) ?? []), t]);
-  }
-
-  const newestFirst = [...reports].reverse();
 
   return (
     <>
@@ -186,89 +171,6 @@ export function LoopDashboard({
           </div>
         </Section>
       )}
-
-      <Section title="回ごとの一覧">
-        {loaded && newestFirst.length === 0 ? (
-          <div className="text-sm text-gray-400">まだ実行されていません</div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {newestFirst.map((r) => {
-              const runTasks = taskByRun.get(r.id) ?? [];
-              const running = !!r.sessionId && !r.stopped && r.status === "success";
-              return (
-                <div key={r.id} className="py-3 space-y-1.5 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`px-2 py-0.5 text-xs font-medium rounded-full border ${RUN_STATUS_STYLES[r.status]}`}
-                    >
-                      {r.status}
-                    </span>
-                    {running && <span className="text-xs text-blue-600">実行中</span>}
-                    <span className="text-sm text-gray-800">
-                      {new Date(r.firedAt).toLocaleString()}
-                    </span>
-                    {r.sessionId && (
-                      <Link
-                        to={`/sessions/${r.sessionId}`}
-                        className="text-xs text-blue-600 hover:underline ml-auto shrink-0"
-                      >
-                        セッションを開く
-                      </Link>
-                    )}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    所要 {formatDuration(r.durationSeconds)} / コスト ${(r.cost || 0).toFixed(2)}
-                  </div>
-                  {runTasks.length > 0 && (
-                    <div className="text-xs text-gray-700 break-words">
-                      タスク: {runTasks.map((t) => t.title).join(", ")}
-                    </div>
-                  )}
-                  {r.message && <div className="text-xs text-gray-500 break-all">{r.message}</div>}
-                  {r.report ? (
-                    <div className="space-y-1">
-                      {r.report.summary && (
-                        <div className="text-sm text-gray-800 whitespace-pre-wrap break-words">
-                          {r.report.summary}
-                        </div>
-                      )}
-                      {Object.keys(r.report.metrics).length > 0 && (
-                        <div className="flex flex-wrap gap-1">
-                          {Object.entries(r.report.metrics).map(([k, v]) => (
-                            <span
-                              key={k}
-                              className="px-1.5 py-0.5 text-xs bg-gray-100 rounded font-mono"
-                            >
-                              {k}: {formatNum(v)}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {r.report.links.length > 0 && (
-                        <div className="flex flex-wrap gap-x-3 text-xs">
-                          {r.report.links.map((l, i) => (
-                            <a
-                              key={i}
-                              href={l.url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-blue-600 hover:underline break-all"
-                            >
-                              {l.title || l.url}
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-xs text-gray-400">指標なし</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Section>
     </>
   );
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/myuon/agmux/internal/automation"
@@ -71,4 +72,39 @@ func (s *Server) postLoopReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, rep)
+}
+
+// getAutomationTimeline returns the loop's chronological events (newest
+// first). Hidden (404) while `loops` is off.
+func (s *Server) getAutomationTimeline(w http.ResponseWriter, r *http.Request) {
+	if !loopsEnabled() {
+		http.NotFound(w, r)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if _, err := s.automations.Get(id); err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	var before time.Time
+	if v := r.URL.Query().Get("before"); v != "" {
+		t, err := time.Parse(time.RFC3339Nano, v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid before (RFC3339 expected)")
+			return
+		}
+		before = t
+	}
+	limit := 0
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			limit = n
+		}
+	}
+	tl, err := s.automations.Timeline(id, before, limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, tl)
 }
