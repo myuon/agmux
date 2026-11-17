@@ -27,6 +27,11 @@ var Features = []Feature{
 		Title:       "セッション横断検索",
 		Description: "全セッションの会話を横断して検索できるようにします。セッション一覧に検索ボックスが出て、エージェントは search_sessions ツールで過去のやりとりを引けます。有効にすると既存の履歴を裏で索引します。",
 	},
+	{
+		Name:        "learning_inbox",
+		Title:       "学びの受信箱",
+		Description: "ゴールを完了したセッションを安いモデルで振り返り、CLAUDE.md・スキル・メモリへの追記を提案します。採用したものだけが反映されます（CLAUDE.md とスキルは PR、メモリは直接書き込み）。モデルは config.toml の [learning_inbox] model で変更できます（既定 haiku）。",
+	},
 }
 
 // Lookup returns the feature with the given name.

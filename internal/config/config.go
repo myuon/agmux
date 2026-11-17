@@ -31,6 +31,7 @@ type Config struct {
 	DevMode         bool                `toml:"dev_mode"`
 	Templates       []RoleTemplate      `toml:"templates" json:"templates"`
 	PromptTemplates []PromptTemplate    `toml:"prompt_templates" json:"prompt_templates"`
+	LearningInbox   LearningInboxConfig `toml:"learning_inbox,omitempty"`
 	// Experimental holds opt-in feature flags (see internal/experimental).
 	Experimental map[string]bool `toml:"experimental,omitempty" json:"experimental,omitempty"`
 }
@@ -158,6 +159,12 @@ func IsValidPermissionMode(mode string) bool {
 
 type ClaudeConfig struct {
 	PermissionMode string `toml:"permission_mode"`
+}
+
+// LearningInboxConfig configures the learning inbox experimental feature.
+type LearningInboxConfig struct {
+	// Model used to review finished sessions (default: haiku).
+	Model string `toml:"model,omitempty" json:"model,omitempty"`
 }
 
 // ClaudePermissionMode returns the effective permission mode, defaulting to DefaultPermissionMode.

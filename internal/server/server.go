@@ -29,6 +29,7 @@ import (
 	"github.com/myuon/agmux/internal/automation"
 	"github.com/myuon/agmux/internal/browser"
 	"github.com/myuon/agmux/internal/config"
+	"github.com/myuon/agmux/internal/learning"
 	"github.com/myuon/agmux/internal/search"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/mcp"
@@ -40,6 +41,7 @@ import (
 
 type Server struct {
 	searchIndexer    *search.Indexer
+	learning         *learning.Reviewer
 	sessions         session.SessionService
 	hub              *Hub
 	router           chi.Router
@@ -81,6 +83,7 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 		startTime:        time.Now(),
 	}
 	s.initSearch()
+	s.initLearning()
 
 	// Wire real-time stream updates via WebSocket
 	sessions.SetOnNewLines(func(sessionID string, newLines []string, total int) {
@@ -248,6 +251,10 @@ func (s *Server) setupRoutes() {
 		r.Get("/experimental", s.listExperimental)
 		r.Put("/experimental/{name}", s.setExperimental)
 		r.Get("/search", s.searchSessions)
+		r.Get("/learning/proposals", s.listLearningProposals)
+		r.Post("/learning/proposals/{pid}/accept", s.acceptLearningProposal)
+		r.Post("/learning/proposals/{pid}/reject", s.rejectLearningProposal)
+		r.Post("/sessions/{id}/learning/review", s.reviewSessionLearning)
 		s.mountRemoteBrowser(r)
 		s.mountArtifacts(r)
 		s.mountSecrets(r)
@@ -840,6 +847,9 @@ func (s *Server) completeGoal(w http.ResponseWriter, r *http.Request) {
 	result := map[string]interface{}{"status": "ok"}
 	if cgResult.ParentGoal != nil {
 		result["parentGoal"] = cgResult.ParentGoal
+	}
+	if cgResult.ParentGoal == nil {
+		s.maybeReviewLearning(id)
 	}
 
 	// Broadcast goal_completed notification via WebSocket
@@ -1564,6 +1574,7 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 	cfg.RemoteBrowser = current.RemoteBrowser
 	cfg.Secret = current.Secret
 	cfg.Experimental = current.Experimental
+	cfg.LearningInbox = current.LearningInbox
 	// Preserve background_task_notification_interval if the request omitted it
 	// (older clients may not send the field).
 	if cfg.Daemon.BackgroundTaskNotificationInterval == "" {

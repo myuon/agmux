@@ -9,8 +9,9 @@ import {
   Sparkles, Settings, Copy,
   RotateCcw, ImagePlus, SendHorizonal, Plus, Slash,
   Code, Eye, X, AlertTriangle, LayoutTemplate, ChevronDown,
-  Terminal, Pencil,
+  Terminal, Pencil, Inbox,
 } from "lucide-react";
+import { useExperimental } from "../hooks/useExperimental";
 import { useDesktopPane } from "../App";
 import { Modal } from "../components/ui/Modal";
 import { FileCodeViewer } from "../components/ui/FileCodeViewer";
@@ -302,6 +303,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const { id: sessionId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const isDesktopPane = useDesktopPane();
+  const learningEnabled = useExperimental("learning_inbox");
 
   const [session, setSession] = useState<Session | null>(initialSession);
   const [message, setMessage] = useState("");
@@ -807,6 +809,21 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
                   onClick={() => {
                     setShowActionMenu(false);
                     setShowTemplateMenu(true);
+                  }}
+                />
+              )}
+              {learningEnabled && session.type !== "controller" && (
+                <ActionMenuItem
+                  icon={<Inbox className="w-4 h-4" />}
+                  label="振り返る"
+                  onClick={async () => {
+                    setShowActionMenu(false);
+                    try {
+                      const r = await api.reviewSessionLearning(session.id);
+                      alert(r.started ? "振り返りを開始しました。提案ができたら学びの受信箱に届きます。" : "このセッションは振り返り中です。");
+                    } catch (e) {
+                      alert(`振り返りを開始できませんでした: ${(e as Error).message}`);
+                    }
                   }}
                 />
               )}
