@@ -13,6 +13,7 @@ import { PreviewPage } from "./pages/PreviewPage";
 import { ScenarioTestPage } from "./pages/ScenarioTestPage";
 import { AutomationsPage } from "./pages/AutomationsPage";
 import { AutomationDetailPage } from "./pages/AutomationDetailPage";
+import { LearningInboxPage } from "./pages/LearningInboxPage";
 import { api } from "./api/client";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 
@@ -78,6 +79,10 @@ export const router = createBrowserRouter([
           ]);
           return { artifacts, sessions };
         },
+      },
+      {
+        path: "learning",
+        element: <LearningInboxPage />,
       },
       {
         path: "secrets",

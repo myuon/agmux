@@ -9,7 +9,8 @@ import { SessionList } from "./components/SessionList";
 import { useWebSocket } from "./hooks/useWebSocket";
 import { getActiveSessionName } from "./activeSession";
 import { IconButton } from "./components/ui/IconButton";
-import { FileText, Globe, KeyRound, MoreHorizontal } from "lucide-react";
+import { FileText, Globe, Inbox, KeyRound, MoreHorizontal } from "lucide-react";
+import { useExperimental } from "./hooks/useExperimental";
 import { ActionMenu, ActionMenuItem } from "./components/ui/ActionMenu";
 import { BroadcastModal } from "./components/BroadcastModal";
 
@@ -233,6 +234,7 @@ function AppHeaderButtons({
   onBroadcast: () => void;
 }) {
   const goToController = useGoToController(sessions);
+  const learningEnabled = useExperimental("learning_inbox");
   return (
     <div className="flex items-center gap-2">
       <button
@@ -250,6 +252,11 @@ function AppHeaderButtons({
       {devMode && (
         <IconButton shape="rounded" to="/scenarios" title="Scenario Test">
           <ScenarioIcon />
+        </IconButton>
+      )}
+      {learningEnabled && (
+        <IconButton shape="rounded" to="/learning" title="学びの受信箱">
+          <Inbox className="h-5 w-5" />
         </IconButton>
       )}
       <IconButton shape="rounded" to="/artifacts" title="Artifacts">
@@ -312,6 +319,7 @@ function MobileHeaderButtons({
 }) {
   const navigate = useNavigate();
   const goToController = useGoToController(sessions);
+  const learningEnabled = useExperimental("learning_inbox");
   const [open, setOpen] = useState(false);
   const [menuTop, setMenuTop] = useState(0);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -377,6 +385,9 @@ function MobileHeaderButtons({
           >
             <ActionMenu className="w-full">
               <ActionMenuItem className={itemClass} icon={<Globe className="h-4 w-4" />} label="Remote Browser" onClick={run(() => navigate("/remote-browser"))} />
+              {learningEnabled && (
+                <ActionMenuItem className={itemClass} icon={<Inbox className="h-4 w-4" />} label="学びの受信箱" onClick={run(() => navigate("/learning"))} />
+              )}
               <ActionMenuItem className={itemClass} icon={<FileText className="h-4 w-4" />} label="Artifacts" onClick={run(() => navigate("/artifacts"))} />
               <ActionMenuItem className={itemClass} icon={<KeyRound className="h-4 w-4" />} label="Secrets" onClick={run(() => navigate("/secrets"))} />
               <ActionMenuItem className={itemClass} icon={<AutomationsIcon className="h-4 w-4" />} label="Automations" onClick={run(() => navigate("/automations"))} />

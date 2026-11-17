@@ -27,6 +27,24 @@ export interface SessionSearchResult {
   snippet: string;
 }
 
+export interface LearningProposal {
+  id: number;
+  sessionId: string;
+  sessionName: string;
+  projectPath: string;
+  target: "claude_md" | "skill" | "memory";
+  name: string;
+  memoryType?: string;
+  title: string;
+  content: string;
+  reason: string;
+  status: "pending" | "applying" | "applied" | "rejected" | "failed";
+  applySessionId?: string;
+  error?: string;
+  createdAt: string;
+  decidedAt?: string;
+}
+
 export interface SecretUsage {
   id: number;
   secretName: string;
@@ -243,6 +261,21 @@ export const api = {
     request<{ results: SessionSearchResult[]; indexing: boolean }>(
       `/search?${new URLSearchParams({ q, limit: String(limit) })}`
     ),
+
+  listLearningProposals: () =>
+    request<{ proposals: LearningProposal[] }>("/learning/proposals"),
+
+  acceptLearningProposal: (id: number, content?: string) =>
+    request<{ proposal: LearningProposal }>(`/learning/proposals/${id}/accept`, {
+      method: "POST",
+      body: JSON.stringify(content !== undefined ? { content } : {}),
+    }),
+
+  rejectLearningProposal: (id: number) =>
+    request<{ proposal: LearningProposal }>(`/learning/proposals/${id}/reject`, { method: "POST" }),
+
+  reviewSessionLearning: (sessionId: string) =>
+    request<{ started: boolean }>(`/sessions/${sessionId}/learning/review`, { method: "POST" }),
 
   listExperimental: () =>
     request<{ features: ExperimentalFeature[] }>("/experimental"),
