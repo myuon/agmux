@@ -471,6 +471,30 @@ func migrate(db *sql.DB) error {
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_automation_runs_fired ON automation_runs(fired_at)`)
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_automation ON sessions(automation_id)`)
 
+	// Migration: create automation_tasks table (remaining-task list of a loop,
+	// experimental feature "loops").
+	// status: 'pending' | 'in_progress' | 'done' | 'failed'
+	// created_by: 'user' | 'agent'. attempts counts retries after an
+	// in_progress task was abandoned by its run's session.
+	if _, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS automation_tasks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			automation_id TEXT NOT NULL,
+			title TEXT NOT NULL,
+			body TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'pending',
+			run_id INTEGER,
+			result TEXT NOT NULL DEFAULT '',
+			created_by TEXT NOT NULL DEFAULT 'user',
+			attempts INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)
+	`); err != nil {
+		return err
+	}
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_automation_tasks_automation ON automation_tasks(automation_id, status)`)
+
 	// Migration: create artifacts table (HTML snapshots published by sessions)
 	if _, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS artifacts (

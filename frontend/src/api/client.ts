@@ -357,6 +357,28 @@ export const api = {
   listAutomationRuns: (id: string, limit = 50) =>
     request<AutomationRun[]>(`/automations/${id}/runs?limit=${limit}`),
 
+  listAutomationTasks: (id: string) =>
+    request<AutomationTask[]>(`/automations/${id}/tasks`),
+
+  addAutomationTask: (id: string, title: string, body = "") =>
+    request<AutomationTask>(`/automations/${id}/tasks`, {
+      method: "POST",
+      body: JSON.stringify({ title, body }),
+    }),
+
+  updateAutomationTask: (
+    id: string,
+    taskId: number,
+    data: { title?: string; body?: string; status?: AutomationTask["status"] },
+  ) =>
+    request<AutomationTask>(`/automations/${id}/tasks/${taskId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+
+  deleteAutomationTask: (id: string, taskId: number) =>
+    request<{ status: string }>(`/automations/${id}/tasks/${taskId}`, { method: "DELETE" }),
+
   listArtifacts: (sessionId: string) =>
     request<Artifact[]>(`/sessions/${sessionId}/artifacts`),
   listAllArtifacts: () => request<Artifact[]>("/artifacts"),
@@ -407,6 +429,21 @@ export interface AutomationRun {
   status: "success" | "skipped" | "error";
   message?: string;
   createdAt: string;
+}
+
+// AutomationTask mirrors `internal/automation.Task` (Go). Experimental "loops".
+export interface AutomationTask {
+  id: number;
+  automationId: string;
+  title: string;
+  body: string;
+  status: "pending" | "in_progress" | "done" | "failed";
+  runId?: number;
+  result: string;
+  createdBy: "user" | "agent";
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // BackgroundTaskDTO mirrors `internal/session.BackgroundTask` (Go).

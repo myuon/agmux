@@ -145,6 +145,9 @@ func (s *Store) Delete(id string) error {
 	if _, err := s.db.Exec(`DELETE FROM automation_runs WHERE automation_id = ?`, id); err != nil {
 		return fmt.Errorf("delete automation runs: %w", err)
 	}
+	if _, err := s.db.Exec(`DELETE FROM automation_tasks WHERE automation_id = ?`, id); err != nil {
+		return fmt.Errorf("delete automation tasks: %w", err)
+	}
 	return nil
 }
 

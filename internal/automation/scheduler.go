@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/myuon/agmux/internal/experimental"
 )
 
 // DefaultTickInterval is how often the scheduler checks for due automations.
@@ -98,6 +100,12 @@ func (s *Scheduler) Stop() {
 // Tick checks all enabled automations and fires the due ones. Exposed for
 // tests; the Start loop calls it on every tick.
 func (s *Scheduler) Tick(now time.Time) {
+	// Loop cleanup only runs while the "loops" experimental feature is on.
+	if experimental.Enabled(FeatureLoops) {
+		if rc, ok := s.runner.(interface{ ReclaimTasks(time.Time) }); ok {
+			rc.ReclaimTasks(now)
+		}
+	}
 	automations, err := s.store.ListEnabled()
 	if err != nil {
 		s.logger.Error("automation scheduler: list enabled failed", "error", err)
