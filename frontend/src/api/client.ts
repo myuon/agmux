@@ -331,6 +331,10 @@ export const api = {
 
   listAutomations: () => request<Automation[]>("/automations"),
 
+  // Experimental "loops" only: 404 while the feature is off.
+  listAutomationSummaries: () =>
+    request<AutomationSummary[]>("/automations/summary"),
+
   getAutomation: (id: string) => request<Automation>(`/automations/${id}`),
 
   createAutomation: (data: AutomationInput) =>
@@ -404,6 +408,30 @@ export const api = {
 export interface AutomationRef {
   id: string;
   name: string;
+}
+
+// AutomationSummary mirrors the Go automationSummary (session list loop row).
+export interface AutomationSummary {
+  id: string;
+  name: string;
+  enabled: boolean;
+  triggerType: "interval" | "cron" | "queue";
+  state: "running" | "waiting" | "stopped";
+  stoppedReason?: string;
+  pendingTasks: number;
+  nextFireAt: string | null;
+  nextReason?: string;
+  lastRunAt: string | null;
+  createdAt: string;
+  recentRuns: {
+    runId: number;
+    sessionId: string;
+    sessionName: string;
+    sessionStatus: string;
+    firedAt: string;
+  }[];
+  feeders: AutomationRef[];
+  feeds: AutomationRef[];
 }
 
 export interface Automation {

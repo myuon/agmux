@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useMatch } from "react-router-dom";
 import { motion } from "motion/react";
 import type { Session } from "../types/session";
@@ -7,6 +7,8 @@ import { ExternalProcessRow } from "./ui/ExternalProcessRow";
 import { SessionCard } from "./ui/SessionCard";
 import { SessionSearch } from "./SessionSearch";
 import { useExperimental } from "../hooks/useExperimental";
+import { api, type AutomationSummary } from "../api/client";
+import { LoopRow } from "./ui/LoopRow";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -46,6 +48,53 @@ export function SessionList({ sessions, onRestartController }: Props) {
   const childrenMap = useMemo(() => buildChildrenMap(sessions), [sessions]);
   const searchEnabled = useExperimental("session_search");
 
+  const loopsEnabled = useExperimental("loops");
+  const [loops, setLoops] = useState<AutomationSummary[]>([]);
+  useEffect(() => {
+    if (!loopsEnabled) {
+      setLoops([]);
+      return;
+    }
+    let cancelled = false;
+    const load = () =>
+      api
+        .listAutomationSummaries()
+        .then((r) => {
+          if (!cancelled) setLoops(r);
+        })
+        .catch(() => {});
+    load();
+    const timer = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // Session updates (websocket) also change loop state, so reload on them.
+  }, [loopsEnabled, sessions]);
+
+  // Loops that feed another loop hang below it instead of getting their own row
+  // (mutual feeders stay top-level so neither disappears).
+  const { topLoops, feedersByTarget } = useMemo(() => {
+    const byId = new Map(loops.map((l) => [l.id, l]));
+    const feedersByTarget = new Map<string, AutomationSummary[]>();
+    const top: AutomationSummary[] = [];
+    for (const l of loops) {
+      const targets = l.feeds.filter((t) => {
+        const target = byId.get(t.id);
+        return target && !target.feeds.some((b) => b.id === l.id);
+      });
+      if (targets.length === 0) {
+        // Disabled loops that never ran (and were not stopped by a safety valve) are noise.
+        if (l.enabled || l.lastRunAt || l.stoppedReason) top.push(l);
+        continue;
+      }
+      for (const t of targets) {
+        feedersByTarget.set(t.id, [...(feedersByTarget.get(t.id) ?? []), l]);
+      }
+    }
+    return { topLoops: top, feedersByTarget };
+  }, [loops]);
+
   const topLevelSessions = useMemo(() => {
     return sessions
       .filter((s) => !s.parentSessionId)
@@ -60,7 +109,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
       });
   }, [sessions]);
 
-  if (sessions.length === 0) {
+  if (sessions.length === 0 && topLoops.length === 0) {
     return (
       <div className="text-center text-gray-400 py-8">
         <p className="text-sm">No sessions yet</p>
@@ -119,9 +168,35 @@ export function SessionList({ sessions, onRestartController }: Props) {
     );
   };
 
+  // Loop rows are interleaved with sessions by latest activity; the controller
+  // stays pinned first and external processes last.
+  type Item = { kind: "session"; s: Session } | { kind: "loop"; l: AutomationSummary };
+  const loopTime = (l: AutomationSummary) => new Date(l.lastRunAt ?? l.createdAt).getTime();
+  const items: Item[] = [
+    ...topLevelSessions.map((s): Item => ({ kind: "session", s })),
+    ...topLoops.map((l): Item => ({ kind: "loop", l })),
+  ];
+  const rank = (i: Item) =>
+    i.kind === "loop" ? 1 : i.s.type === "controller" ? 0 : i.s.type === "external" ? 2 : 1;
+  const time = (i: Item) => (i.kind === "loop" ? loopTime(i.l) : new Date(i.s.updatedAt).getTime());
+  items.sort((a, b) => rank(a) - rank(b) || time(b) - time(a));
+
   const list = (
     <div className="flex flex-col gap-1.5">
-      {topLevelSessions.map((s) => renderSession(s, 0))}
+      {items.map((i) =>
+        i.kind === "session" ? (
+          renderSession(i.s, 0)
+        ) : (
+          <LoopRow
+            key={`loop-${i.l.id}`}
+            loop={i.l}
+            feeders={feedersByTarget.get(i.l.id)}
+            timeAgo={timeAgo}
+            onOpenLoop={(id) => navigate(`/automations/${id}`)}
+            onOpenSession={(id) => navigate(`/sessions/${id}`)}
+          />
+        ),
+      )}
     </div>
   );
   return searchEnabled ? <SessionSearch>{list}</SessionSearch> : list;
