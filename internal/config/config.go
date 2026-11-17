@@ -31,6 +31,8 @@ type Config struct {
 	DevMode         bool                `toml:"dev_mode"`
 	Templates       []RoleTemplate      `toml:"templates" json:"templates"`
 	PromptTemplates []PromptTemplate    `toml:"prompt_templates" json:"prompt_templates"`
+	// Experimental holds opt-in feature flags (see internal/experimental).
+	Experimental map[string]bool `toml:"experimental,omitempty" json:"experimental,omitempty"`
 }
 
 type ServerConfig struct {

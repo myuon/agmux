@@ -1,0 +1,121 @@
+// Package experimental manages opt-in feature flags for features whose value
+// is not yet proven. Flags live in the [experimental] section of config.toml
+// and default to off. See CLAUDE.md "Experimental 機能ルール".
+package experimental
+
+import (
+	"fmt"
+	"os"
+	"sync"
+	"time"
+
+	"github.com/myuon/agmux/internal/config"
+)
+
+// Feature describes a known experimental feature.
+type Feature struct {
+	Name        string `json:"name"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+}
+
+// Features is the registry of known experimental features. Add an entry here
+// when introducing a new experimental feature.
+var Features = []Feature{}
+
+// Lookup returns the feature with the given name.
+func Lookup(name string) (Feature, bool) {
+	for _, f := range Features {
+		if f.Name == name {
+			return f, true
+		}
+	}
+	return Feature{}, false
+}
+
+// cache avoids re-parsing config.toml on every call; it reloads when the
+// file's mtime or size changes.
+var cache struct {
+	mu      sync.Mutex
+	path    string
+	modTime time.Time
+	size    int64
+	flags   map[string]bool
+	loaded  bool
+}
+
+// Enabled reports whether the named feature is turned on. Unknown features
+// and any error while reading the config are treated as off.
+func Enabled(name string) bool {
+	if _, ok := Lookup(name); !ok {
+		return false
+	}
+	return loadFlags()[name]
+}
+
+func loadFlags() map[string]bool {
+	path, err := config.ConfigPath()
+	if err != nil {
+		return nil
+	}
+	st, statErr := os.Stat(path)
+
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	if statErr != nil {
+		cache.loaded = false
+		return nil
+	}
+	if cache.loaded && cache.path == path && cache.modTime.Equal(st.ModTime()) && cache.size == st.Size() {
+		return cache.flags
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return nil
+	}
+	cache.path, cache.modTime, cache.size, cache.loaded = path, st.ModTime(), st.Size(), true
+	cache.flags = cfg.Experimental
+	return cache.flags
+}
+
+// Status is a feature together with its current on/off state.
+type Status struct {
+	Feature
+	Enabled bool `json:"enabled"`
+}
+
+// List returns all known features with their current state.
+func List() []Status {
+	flags := loadFlags()
+	out := make([]Status, 0, len(Features))
+	for _, f := range Features {
+		out = append(out, Status{Feature: f, Enabled: flags[f.Name]})
+	}
+	return out
+}
+
+// Set turns a known feature on or off and persists it to config.toml.
+func Set(name string, enabled bool) error {
+	if _, ok := Lookup(name); !ok {
+		return fmt.Errorf("unknown experimental feature: %s", name)
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	if cfg.Experimental == nil {
+		cfg.Experimental = map[string]bool{}
+	}
+	if enabled {
+		cfg.Experimental[name] = true
+	} else {
+		delete(cfg.Experimental, name)
+	}
+	if err := config.Save(cfg); err != nil {
+		return err
+	}
+	cache.mu.Lock()
+	cache.loaded = false
+	cache.mu.Unlock()
+	return nil
+}
