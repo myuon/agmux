@@ -10,6 +10,7 @@ var experimentalTools = map[string]string{
 	"loop_task_add":   "loops",
 	"loop_task_next":  "loops",
 	"loop_task_done":  "loops",
+	"loop_report":     "loops",
 }
 
 func toolAvailable(name string) bool {

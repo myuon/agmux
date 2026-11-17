@@ -494,6 +494,18 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_automation_tasks_automation ON automation_tasks(automation_id, status)`)
+	// Migration: create automation_run_reports table (loop_report results, one row per run)
+	if _, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS automation_run_reports (
+			run_id INTEGER PRIMARY KEY,
+			metrics TEXT NOT NULL DEFAULT '{}',
+			summary TEXT NOT NULL DEFAULT '',
+			links TEXT NOT NULL DEFAULT '[]',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`); err != nil {
+		return err
+	}
 
 	// Migration: create artifacts table (HTML snapshots published by sessions)
 	if _, err = db.Exec(`

@@ -241,6 +241,8 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/loop-tasks/add", s.loopTaskAdd)
 		r.Post("/sessions/{id}/loop-tasks/next", s.loopTaskNext)
 		r.Post("/sessions/{id}/loop-tasks/done", s.loopTaskDone)
+		r.Get("/automations/{id}/reports", s.listAutomationReports)
+		r.Post("/sessions/{id}/loop-report", s.postLoopReport)
 		r.Get("/projects/recent", s.getRecentProjects)
 		r.Get("/claude/models", s.getClaudeModels)
 		r.Get("/claude/version", s.getClaudeVersion)
