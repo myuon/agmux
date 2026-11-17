@@ -278,6 +278,18 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
     };
   }
 
+  // CLI notifications (e.g. key=stop-hook-error). The text may end with a
+  // TUI-only key hint such as " · ctrl+o to see", which is meaningless here.
+  if (subtype === "notification") {
+    const text = typeof raw.text === "string" ? raw.text.replace(/\s*·\s*ctrl\+\S+ to \S+$/, "").trim() : "";
+    if (!text) return null;
+    return {
+      kind: "system_event",
+      eventType: "notification",
+      label: text,
+    };
+  }
+
   if (subtype === "task_notification") {
     const status = raw.status as string;
     const summary = (raw.summary as string) || "";
