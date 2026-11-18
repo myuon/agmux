@@ -161,6 +161,29 @@ func TestProjects_CoordinatorPrefersLiveOverExited(t *testing.T) {
 	}
 }
 
+// Sub-sessions (created by another session, or learning apply sessions) are
+// not coordinator candidates unless nothing else exists.
+func TestProjects_CoordinatorSkipsSubSessions(t *testing.T) {
+	s := newProjectsTestServer(t, false)
+	p := "/work/repo"
+	addSess(t, s, "human", p, 60, nil)
+	addSess(t, s, "kid", p, 1, map[string]string{"by": "human"})
+	addSess(t, s, "apply", p, 1, nil)
+	if _, err := s.sqlDB.Exec(`UPDATE sessions SET name = '学びの反映: 何か' WHERE id = 'apply'`); err != nil {
+		t.Fatal(err)
+	}
+	if got := coordID(getProjectDetail(t, s, p)); got != "human" {
+		t.Fatalf("coordinator = %q, want human", got)
+	}
+	// Only sub-sessions left: the most recent one is used as a last resort.
+	if _, err := s.sqlDB.Exec(`UPDATE sessions SET status='archived' WHERE id='human'`); err != nil {
+		t.Fatal(err)
+	}
+	if got := coordID(getProjectDetail(t, s, p)); got == "" {
+		t.Fatal("expected a last-resort coordinator")
+	}
+}
+
 // Archived members (e.g. ephemeral sessions) are grouped under the project
 // instead of being dropped, and do not count as active or bump the time.
 func TestProjects_ArchivedMembersGrouped(t *testing.T) {

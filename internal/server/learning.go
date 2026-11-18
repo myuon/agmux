@@ -48,8 +48,8 @@ func (s *Server) initLearning() {
 		}
 		return learning.DefaultModel
 	}
-	r.StartSession = func(name, projectPath, prompt string) (string, error) {
-		sess, err := s.sessions.Create(name, projectPath, prompt, true, session.CreateOpts{})
+	r.StartSession = func(name, projectPath, prompt, createdBy string) (string, error) {
+		sess, err := s.sessions.Create(name, projectPath, prompt, true, session.CreateOpts{CreatedBySessionID: createdBy})
 		if err != nil {
 			return "", err
 		}

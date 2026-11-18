@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -34,6 +35,18 @@ type projSession struct {
 // are short-lived sub-sessions and are excluded too.
 func (p projSession) eligibleCoordinator() bool {
 	return p.AutomationID == "" && p.Type == "worker" && p.Status != "archived"
+}
+
+// learningApplyPrefix is the name prefix of sessions the learning inbox starts
+// to apply an accepted proposal. Newer ones record created_by_session_id, but
+// ones created before that was recorded only carry this prefix, so the name is
+// used as a stopgap to keep them from being chosen as coordinator.
+const learningApplyPrefix = "学びの反映: "
+
+// isSubSession reports whether the session was spawned by another session (or
+// the learning inbox) rather than started by a person.
+func isSubSession(p projSession) bool {
+	return p.CreatedBy != "" || strings.HasPrefix(p.Name, learningApplyPrefix)
 }
 
 // projectModel is a point-in-time resolution of projects, their coordinators
@@ -115,7 +128,8 @@ func (s *Server) loadProjectModel() (*projectModel, error) {
 //     session of that path;
 //  2. otherwise the most recently active eligible session of the path
 //     (updated_at, newest first), preferring ones that are not exited;
-//  3. exited sessions are chosen only when nothing else is eligible.
+//  3. exited sessions, then sub-sessions (created_by_session_id set, or named
+//     "学びの反映: …"), are chosen only when nothing better is eligible.
 //
 // Automatic choices are recomputed on every load, so a long-dead session never
 // holds a project; archived / deleted ones drop out without any hook.
@@ -132,9 +146,21 @@ func (m *projectModel) resolveCoordinators() {
 			assign(path, id)
 		}
 	}
+	// rank: 0 = ordinary session, 1 = exited, 2 = sub-session. Sub-sessions
+	// (created by another session, or auto-created learning apply sessions) are
+	// only a last resort.
+	rank := func(p projSession) int {
+		switch {
+		case isSubSession(p):
+			return 2
+		case p.Status == "exited":
+			return 1
+		}
+		return 0
+	}
 	better := func(a, b projSession) bool { // a is a better coordinator than b
-		if (a.Status == "exited") != (b.Status == "exited") {
-			return b.Status == "exited"
+		if ra, rb := rank(a), rank(b); ra != rb {
+			return ra < rb
 		}
 		if !a.UpdatedAt.Equal(b.UpdatedAt) {
 			return a.UpdatedAt.After(b.UpdatedAt)

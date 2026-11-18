@@ -43,7 +43,7 @@ func setup(t *testing.T, output string) *env {
 		e.prompts = append(e.prompts, prompt)
 		return output, nil
 	}
-	e.r.StartSession = func(name, projectPath, prompt string) (string, error) {
+	e.r.StartSession = func(name, projectPath, prompt, createdBy string) (string, error) {
 		e.started = append(e.started, prompt)
 		return "apply1", nil
 	}
