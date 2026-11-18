@@ -28,7 +28,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: React
 }
 
 /** Small dependency-free SVG line chart; x axis is the run order. */
-function Sparkline({ points }: { points: number[] }) {
+export function Sparkline({ points, className = "w-full h-14" }: { points: number[]; className?: string }) {
   const w = 240;
   const h = 56;
   const pad = 6;
@@ -42,7 +42,7 @@ function Sparkline({ points }: { points: number[] }) {
     .map((v, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(v).toFixed(1)}`)
     .join(" ");
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-14" role="img">
+    <svg viewBox={`0 0 ${w} ${h}`} className={className} role="img">
       <path d={path} fill="none" stroke="#2563eb" strokeWidth={1.5} />
       {points.map((v, i) => (
         <circle key={i} cx={x(i)} cy={y(v)} r={2.5} fill="#2563eb">

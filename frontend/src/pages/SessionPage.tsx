@@ -271,7 +271,7 @@ function SessionPageSkeleton({ sessionId }: { sessionId?: string }) {
 }
 
 export function SessionPage() {
-  const { id: sessionId } = useParams<{ id: string }>();
+  const { id: paramId } = useParams<{ id: string }>();
   const loaderData = useLoaderData<{
     session: Session;
     streamOutput: Promise<DeferredData["streamOutput"]>;
@@ -279,6 +279,8 @@ export function SessionPage() {
     providerVersion: Promise<string | null>;
     promptTemplates: Promise<PromptTemplate[]>;
   }>();
+  // Embedded in the project page there is no :id param; the loader decides.
+  const sessionId = paramId ?? loaderData.session.id;
 
   const deferredPromise = useMemo(
     () =>
@@ -300,7 +302,7 @@ export function SessionPage() {
 }
 
 function SessionPageInner({ session: initialSession, deferred }: { session: Session; deferred: DeferredData }) {
-  const { id: sessionId } = useParams<{ id: string }>();
+  const sessionId = initialSession.id;
   const navigate = useNavigate();
   const isDesktopPane = useDesktopPane();
   const learningEnabled = useExperimental("learning_inbox");
