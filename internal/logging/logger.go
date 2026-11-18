@@ -26,12 +26,33 @@ func Setup() (*os.File, *slog.Logger, error) {
 		return nil, nil, err
 	}
 
-	writer := io.MultiWriter(os.Stderr, file)
-	logger := slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{
+	logger := slog.New(slog.NewJSONHandler(newWriter(os.Stderr, file), &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
 
 	return file, logger, nil
+}
+
+// newWriter returns the destination for daemon logs. When stderr already
+// points to the log file (launchd redirects StandardErrorPath to agmux.log),
+// writing to both would duplicate every line, so only the file is used.
+func newWriter(stderr, file *os.File) io.Writer {
+	if sameFile(stderr, file) {
+		return file
+	}
+	return io.MultiWriter(stderr, file)
+}
+
+func sameFile(a, b *os.File) bool {
+	ai, err := a.Stat()
+	if err != nil {
+		return false
+	}
+	bi, err := b.Stat()
+	if err != nil {
+		return false
+	}
+	return os.SameFile(ai, bi)
 }
 
 // LogPath returns the default log file path.
@@ -42,4 +63,3 @@ func LogPath() (string, error) {
 	}
 	return filepath.Join(home, ".agmux", "agmux.log"), nil
 }
-
