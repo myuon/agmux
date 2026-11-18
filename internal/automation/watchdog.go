@@ -3,6 +3,7 @@ package automation
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/myuon/agmux/internal/experimental"
@@ -154,13 +155,24 @@ func (s *Scheduler) watchdog(a Automation, now time.Time) bool {
 		return false
 	}
 	changed := false
-	// fresh reports whether the condition, whose newest involved run is
-	// runID, was not notified yet; it records the notification.
-	fresh := func(kind string, runID int64) bool {
-		if notified[kind] >= runID {
+	// transition updates the state of a condition and reports whether it has
+	// just entered it (and so must be notified). A condition is notified once
+	// per state: it stays quiet while active, and is re-armed when it clears.
+	// token identifies the state (e.g. the stagnant best value); a different
+	// token while active counts as a new state. Presence in the map means active.
+	transition := func(kind string, active bool, token int64) bool {
+		cur, was := notified[kind]
+		if !active {
+			if was {
+				delete(notified, kind)
+				changed = true
+			}
 			return false
 		}
-		notified[kind] = runID
+		if was && cur == token {
+			return false
+		}
+		notified[kind] = token
 		changed = true
 		return true
 	}
@@ -196,73 +208,89 @@ func (s *Scheduler) watchdog(a Automation, now time.Time) bool {
 		}
 	}
 
+	// 1. consecutive failures: disable + notify. Disabling is a one-shot
+	// action; the window restarts after re-enabling.
 	if len(runs) >= n {
 		window := runs[:n]
-		newest := window[0].ID
-
-		// 1. consecutive failures: disable + notify.
 		allErr := true
 		for _, r := range window {
 			if r.Status != RunError {
 				allErr = false
 			}
 		}
-		if allErr && fresh(watchFailures, newest) {
+		if transition(watchFailures, allErr, 1) {
 			reason := fmt.Sprintf("%d consecutive errors (last: %s)", n, window[0].Message)
 			if disable(reason) {
 				notify(fmt.Sprintf("Automation「%s」を無効化しました: %d 回連続で失敗しました（%s）", a.Name, n, window[0].Message))
 				return true
 			}
 		}
+	} else {
+		transition(watchFailures, false, 0)
+	}
 
-		// 2. no report: sessions finished without calling loop_report.
-		if stopper, ok := s.runner.(sessionStopper); ok {
-			noReport := true
-			for _, r := range window {
+	// 2. no report: only for automations used as a loop (queue trigger, or
+	// one that has recorded a loop_report at least once).
+	noReport := false
+	if stopper, ok := s.runner.(sessionStopper); ok && len(runs) >= n {
+		isLoop := a.TriggerType == TriggerQueue
+		if !isLoop {
+			if v, err := s.store.HasReport(a.ID); err != nil {
+				s.logger.Warn("automation watchdog: query reports failed", "automationId", a.ID, "error", err)
+			} else {
+				isLoop = v
+			}
+		}
+		if isLoop {
+			noReport = true
+			for _, r := range runs[:n] {
 				if r.Status != RunSuccess || r.SessionID == "" || r.HasReport || !stopper.SessionStopped(r.SessionID) {
 					noReport = false
 				}
 			}
-			if noReport && fresh(watchNoReport, newest) {
-				if a.TriggerType == TriggerQueue {
-					if disable(fmt.Sprintf("%d consecutive runs ended without loop_report", n)) {
-						notify(fmt.Sprintf("Automation「%s」を無効化しました: %d 回連続で loop_report が呼ばれずにセッションが終了しました", a.Name, n))
-						return true
-					}
-				} else {
-					notify(fmt.Sprintf("Automation「%s」: %d 回連続で loop_report が呼ばれずにセッションが終了しました", a.Name, n))
-				}
+		}
+	}
+	if transition(watchNoReport, noReport, 1) {
+		if a.TriggerType == TriggerQueue {
+			if disable(fmt.Sprintf("%d consecutive runs ended without loop_report", n)) {
+				notify(fmt.Sprintf("Automation「%s」を無効化しました: %d 回連続で loop_report が呼ばれずにセッションが終了しました", a.Name, n))
+				return true
 			}
+		} else {
+			notify(fmt.Sprintf("Automation「%s」: %d 回連続で loop_report が呼ばれずにセッションが終了しました", a.Name, n))
 		}
 	}
 
 	// 3. backlog keeps growing: pending at fire strictly increased n times.
-	if len(runs) == n+1 {
-		grow := true
+	grow := len(runs) == n+1
+	if grow {
 		for i := 0; i < n; i++ {
 			newer, older := runs[i].Pending, runs[i+1].Pending
 			if newer < 0 || older < 0 || newer <= older {
 				grow = false
 			}
 		}
-		if grow && fresh(watchPending, runs[0].ID) {
-			notify(fmt.Sprintf("Automation「%s」: 残タスクが %d 回連続で増え続けています（%d 件）", a.Name, n, runs[0].Pending))
-		}
+	}
+	if transition(watchPending, grow, 1) {
+		notify(fmt.Sprintf("Automation「%s」: 残タスクが %d 回連続で増え続けています（%d 件）", a.Name, n, runs[0].Pending))
 	}
 
-	// 4. stagnation of the watched metric.
+	// 4. stagnation of the watched metric: once per (metric, best value).
+	stagnated, best := false, 0.0
 	if a.WatchMetric != "" {
 		pts, err := s.store.MetricHistory(a.ID, a.WatchMetric)
 		if err != nil {
 			s.logger.Warn("automation watchdog: metric history failed", "automationId", a.ID, "error", err)
-		} else if len(pts) > n {
+			return false
+		}
+		if len(pts) > n {
 			better := func(x, than float64) bool {
 				if a.WatchDirection == WatchLower {
 					return x < than
 				}
 				return x > than
 			}
-			best := pts[0].Value
+			best = pts[0].Value
 			for _, p := range pts[1 : len(pts)-n] {
 				if better(p.Value, best) {
 					best = p.Value
@@ -274,11 +302,24 @@ func (s *Scheduler) watchdog(a Automation, now time.Time) bool {
 					improved = true
 				}
 			}
-			newest := pts[len(pts)-1]
-			if !improved && fresh(watchStagnated, newest.RunID) {
-				notify(fmt.Sprintf("Automation「%s」: 指標 %s が直近 %d 回で最良値 %g を更新していません", a.Name, a.WatchMetric, n, best))
-			}
+			stagnated = !improved
 		}
 	}
+	token := int64(math.Float64bits(best))
+	if transition(watchStagnated, stagnated, token) {
+		notify(fmt.Sprintf("Automation「%s」: 指標 %s が直近 %d 回で最良値 %g を更新していません", a.Name, a.WatchMetric, n, best))
+	}
 	return false
+}
+
+// HasReport reports whether the automation has ever recorded a loop_report.
+func (s *Store) HasReport(automationID string) (bool, error) {
+	var n int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM automation_runs r JOIN automation_run_reports rep ON rep.run_id = r.id
+		 WHERE r.automation_id = ?`, automationID).Scan(&n)
+	if err != nil {
+		return false, fmt.Errorf("query reports: %w", err)
+	}
+	return n > 0, nil
 }

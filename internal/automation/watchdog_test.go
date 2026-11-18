@@ -110,6 +110,9 @@ func (e *wdEnv) finishedSession(id string) {
 
 func TestWatchdog_NoReport_NotifyOnlyForNonQueue(t *testing.T) {
 	e := newWDEnv(t, nil)
+	// has been used as a loop before (recorded a report once)
+	e.finishedSession("old")
+	e.addRun(t, RunSuccess, "old", 0, map[string]float64{"x": 1}, true)
 	for _, id := range []string{"a", "b", "c"} {
 		e.finishedSession(id)
 		e.addRun(t, RunSuccess, id, 0, nil, false)
@@ -285,4 +288,70 @@ func TestStore_WatchSettings(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", cleared.WatchMetric)
 	assert.Equal(t, WatchDirection(""), cleared.WatchDirection)
+}
+
+func TestWatchdog_NoReport_NonLoopAutomationIsSilent(t *testing.T) {
+	e := newWDEnv(t, nil) // interval trigger, never reported
+	for _, id := range []string{"a", "b", "c", "d", "e"} {
+		e.finishedSession(id)
+		e.addRun(t, RunSuccess, id, 0, nil, false)
+		e.sched.Tick(time.Now())
+	}
+	assert.Empty(t, *e.notes)
+	assert.True(t, e.enabled(t))
+}
+
+func TestWatchdog_NoReport_OncePerStateAndRearms(t *testing.T) {
+	e := newWDEnv(t, nil)
+	e.finishedSession("old")
+	e.addRun(t, RunSuccess, "old", 0, map[string]float64{"x": 1}, true)
+	for _, id := range []string{"a", "b", "c"} {
+		e.finishedSession(id)
+		e.addRun(t, RunSuccess, id, 0, nil, false)
+	}
+	e.sched.Tick(time.Now())
+	require.Len(t, *e.notes, 1)
+
+	// more runs while the state continues: no re-notification
+	for _, id := range []string{"d", "e"} {
+		e.finishedSession(id)
+		e.addRun(t, RunSuccess, id, 0, nil, false)
+		e.sched.Tick(time.Now())
+	}
+	assert.Len(t, *e.notes, 1)
+
+	// a report leaves the state, then three silent runs enter it again
+	e.finishedSession("r")
+	e.addRun(t, RunSuccess, "r", 0, map[string]float64{"x": 1}, true)
+	e.sched.Tick(time.Now())
+	for _, id := range []string{"f", "g", "h"} {
+		e.finishedSession(id)
+		e.addRun(t, RunSuccess, id, 0, nil, false)
+	}
+	e.sched.Tick(time.Now())
+	assert.Len(t, *e.notes, 2)
+}
+
+func TestWatchdog_Stagnation_OncePerBestValue(t *testing.T) {
+	e := newWDEnv(t, func(p *CreateParams) { p.WatchMetric = "score"; p.WatchDirection = WatchHigher })
+	add := func(id string, v float64) {
+		e.finishedSession(id)
+		e.addRun(t, RunSuccess, id, 0, map[string]float64{"score": v}, true)
+		e.sched.Tick(time.Now())
+	}
+	for i, v := range []float64{5, 9, 8, 9, 7} {
+		add(string(rune('a'+i)), v)
+	}
+	require.Len(t, *e.notes, 1)
+	add("f", 6)
+	add("g", 7)
+	assert.Len(t, *e.notes, 1, "same best value: no repeat")
+
+	// improvement clears the state; a new stall at a new best notifies again
+	add("h", 12)
+	for i, v := range []float64{1, 2, 3} {
+		add(string(rune('i'+i)), v)
+	}
+	assert.Len(t, *e.notes, 2)
+	assert.Contains(t, (*e.notes)[1], "12")
 }
