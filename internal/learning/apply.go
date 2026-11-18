@@ -37,7 +37,7 @@ func (r *Reviewer) Accept(id int64, content string) (*Proposal, error) {
 		if r.StartSession == nil {
 			return nil, fmt.Errorf("cannot start apply session")
 		}
-		sid, err := r.StartSession(fmt.Sprintf("学びの反映: %s", p.Title), p.ProjectPath, applyPrompt(p))
+		sid, err := r.StartSession(fmt.Sprintf("学びの反映: %s", p.Title), p.ProjectPath, applyPrompt(p), p.SessionID)
 		if err != nil {
 			_ = r.store.Decide(id, StatusFailed, p.Content, "", err.Error())
 			return nil, err

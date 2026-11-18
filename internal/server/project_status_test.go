@@ -37,6 +37,7 @@ func TestProjectStatus_Text(t *testing.T) {
 	p := "/work/repo"
 	addSess(t, s, "main", p, 70, nil)
 	addSess(t, s, "w1", p, 60, map[string]string{"status": "working"})
+	touchSess(t, s, "main", 0)
 	if _, err := s.sqlDB.Exec(`UPDATE sessions SET goal = 'テストを直す' WHERE id = 'w1'`); err != nil {
 		t.Fatal(err)
 	}
@@ -124,6 +125,7 @@ func TestProjectNotices_BufferedWhileBusyThenOneMessage(t *testing.T) {
 	p := "/work/repo"
 	addSess(t, s, "main", p, 70, map[string]string{"status": "working"})
 	addSess(t, s, "w1", p, 60, nil)
+	touchSess(t, s, "main", 0)
 	a, err := s.automations.Create(automation.CreateParams{
 		Name: "nightly", Prompt: "p", TriggerType: automation.TriggerInterval, TriggerValue: "1h",
 		ProjectPath: p, Enabled: true})
@@ -160,6 +162,7 @@ func TestProjectNotices_EscalationFromSubAndNotFromCoordinator(t *testing.T) {
 	p := "/work/repo"
 	addSess(t, s, "main", p, 70, nil)
 	addSess(t, s, "w1", p, 60, map[string]string{"status": "working"})
+	touchSess(t, s, "main", 0)
 	addSess(t, s, "other", "/work/other", 50, nil)
 
 	s.noticeEscalation("main", "自分の escalate")
@@ -184,6 +187,7 @@ func TestProjectNotices_OffSendsNothing(t *testing.T) {
 	p := "/work/repo"
 	addSess(t, s, "main", p, 70, nil)
 	addSess(t, s, "w1", p, 60, nil)
+	touchSess(t, s, "main", 0)
 	a, err := s.automations.Create(automation.CreateParams{
 		Name: "n", Prompt: "p", TriggerType: automation.TriggerInterval, TriggerValue: "1h", ProjectPath: p, Enabled: true})
 	if err != nil {

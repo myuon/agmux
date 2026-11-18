@@ -552,6 +552,8 @@ export interface ProjectDetail extends ProjectSummary {
     updatedAt: string;
   }[];
   automationList: ProjectAutomation[];
+  /** Archived members (e.g. finished ephemeral sessions); folded away in the UI. */
+  archivedSessions?: ProjectDetail["sessions"];
   escalations: { id: string; sessionId: string; message: string }[];
 }
 

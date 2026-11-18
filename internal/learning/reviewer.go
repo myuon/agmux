@@ -42,8 +42,9 @@ const (
 type Generator func(ctx context.Context, model, prompt string) (string, error)
 
 // SessionStarter starts a session in projectPath that runs prompt, returning
-// its ID. Used to turn accepted repo changes into a PR.
-type SessionStarter func(name, projectPath, prompt string) (string, error)
+// its ID. Used to turn accepted repo changes into a PR. createdBySessionID is
+// the session the proposal came from (recorded as the creator).
+type SessionStarter func(name, projectPath, prompt, createdBySessionID string) (string, error)
 
 type Reviewer struct {
 	store      *Store

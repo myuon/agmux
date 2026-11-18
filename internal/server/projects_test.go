@@ -55,6 +55,16 @@ func addSess(t *testing.T, s *Server, id, path string, ageMin int, extra map[str
 	}
 }
 
+// touchSess sets a session's updated_at to ageMin minutes ago (recency drives
+// the automatic coordinator choice).
+func touchSess(t *testing.T, s *Server, id string, ageMin int) {
+	t.Helper()
+	ts := time.Now().Add(-time.Duration(ageMin) * time.Minute)
+	if _, err := s.sqlDB.Exec(`UPDATE sessions SET updated_at = ? WHERE id = ?`, ts, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func projURL(path string) string { return "/api/projects/" + url.PathEscape(path) }
 
 func getProjectDetail(t *testing.T, s *Server, path string) projectDetail {
@@ -94,16 +104,17 @@ func TestProjects_DisabledReturns404(t *testing.T) {
 func TestProjects_CoordinatorAutoDecision(t *testing.T) {
 	s := newProjectsTestServer(t, false)
 	p := "/work/repo"
-	addSess(t, s, "ctl", p, 100, map[string]string{"type": "controller"})
-	addSess(t, s, "run1", p, 90, map[string]string{"automation": "auto-x"})
-	addSess(t, s, "eph", p, 80, map[string]string{"type": "ephemeral"})
+	addSess(t, s, "ctl", p, 1, map[string]string{"type": "controller"})
+	addSess(t, s, "run1", p, 1, map[string]string{"automation": "auto-x"})
+	addSess(t, s, "eph", p, 1, map[string]string{"type": "ephemeral"})
 	addSess(t, s, "main", p, 70, nil)
 	addSess(t, s, "second", p, 60, nil)
 	addSess(t, s, "third", p, 50, nil)
 
+	// The most recently active regular session wins (not the oldest).
 	d := getProjectDetail(t, s, p)
-	if coordID(d) != "main" {
-		t.Fatalf("coordinator = %q, want main", coordID(d))
+	if coordID(d) != "third" {
+		t.Fatalf("coordinator = %q, want third", coordID(d))
 	}
 	if d.Name != "repo" || d.Path != p {
 		t.Errorf("name/path = %q %q", d.Name, d.Path)
@@ -113,30 +124,100 @@ func TestProjects_CoordinatorAutoDecision(t *testing.T) {
 	for _, x := range d.Sessions {
 		ids[x.ID] = true
 	}
-	if ids["main"] || ids["ctl"] || !ids["second"] || !ids["third"] || !ids["eph"] {
+	if ids["third"] || ids["ctl"] || !ids["second"] || !ids["main"] || !ids["eph"] {
 		t.Errorf("sessions = %v", ids)
 	}
 
-	// Archive the coordinator: moves to the next oldest regular session.
+	// Activity moves the coordinator (recomputed, not sticky).
+	touchSess(t, s, "main", 0)
+	if got := coordID(getProjectDetail(t, s, p)); got != "main" {
+		t.Fatalf("after activity coordinator = %q, want main", got)
+	}
+	// Archiving it moves on to the next most recent.
 	if _, err := s.sqlDB.Exec(`UPDATE sessions SET status='archived' WHERE id='main'`); err != nil {
 		t.Fatal(err)
 	}
-	if got := coordID(getProjectDetail(t, s, p)); got != "second" {
-		t.Fatalf("after archive coordinator = %q, want second", got)
+	if got := coordID(getProjectDetail(t, s, p)); got != "third" {
+		t.Fatalf("after archive coordinator = %q, want third", got)
 	}
-	// The move is persisted: un-archiving the old one does not take it back.
-	if _, err := s.sqlDB.Exec(`UPDATE sessions SET status='idle' WHERE id='main'`); err != nil {
+}
+
+// An exited session is only chosen when nothing else is eligible, even if it
+// is the most recently updated one; a long-dead exited session never wins.
+func TestProjects_CoordinatorPrefersLiveOverExited(t *testing.T) {
+	s := newProjectsTestServer(t, false)
+	p := "/work/repo"
+	addSess(t, s, "c3coo", p, 128*24*60, map[string]string{"status": "exited"})
+	addSess(t, s, "live", p, 30, nil)
+	addSess(t, s, "recent-exited", p, 1, map[string]string{"status": "exited"})
+	if got := coordID(getProjectDetail(t, s, p)); got != "live" {
+		t.Fatalf("coordinator = %q, want live", got)
+	}
+	if _, err := s.sqlDB.Exec(`UPDATE sessions SET status='archived' WHERE id='live'`); err != nil {
 		t.Fatal(err)
 	}
-	if got := coordID(getProjectDetail(t, s, p)); got != "second" {
-		t.Fatalf("after un-archive coordinator = %q, want second (sticky)", got)
+	if got := coordID(getProjectDetail(t, s, p)); got != "recent-exited" {
+		t.Fatalf("only exited left: coordinator = %q, want recent-exited", got)
 	}
-	// Delete the coordinator: moves on again (oldest remaining is main).
-	if _, err := s.sqlDB.Exec(`DELETE FROM sessions WHERE id='second'`); err != nil {
+}
+
+// Sub-sessions (created by another session, or learning apply sessions) are
+// not coordinator candidates unless nothing else exists.
+func TestProjects_CoordinatorSkipsSubSessions(t *testing.T) {
+	s := newProjectsTestServer(t, false)
+	p := "/work/repo"
+	addSess(t, s, "human", p, 60, nil)
+	addSess(t, s, "kid", p, 1, map[string]string{"by": "human"})
+	addSess(t, s, "apply", p, 1, nil)
+	if _, err := s.sqlDB.Exec(`UPDATE sessions SET name = '学びの反映: 何か' WHERE id = 'apply'`); err != nil {
 		t.Fatal(err)
 	}
-	if got := coordID(getProjectDetail(t, s, p)); got != "main" {
-		t.Fatalf("after delete coordinator = %q, want main", got)
+	if got := coordID(getProjectDetail(t, s, p)); got != "human" {
+		t.Fatalf("coordinator = %q, want human", got)
+	}
+	// Only sub-sessions left: the most recent one is used as a last resort.
+	if _, err := s.sqlDB.Exec(`UPDATE sessions SET status='archived' WHERE id='human'`); err != nil {
+		t.Fatal(err)
+	}
+	if got := coordID(getProjectDetail(t, s, p)); got == "" {
+		t.Fatal("expected a last-resort coordinator")
+	}
+}
+
+// Archived members (e.g. ephemeral sessions) are grouped under the project
+// instead of being dropped, and do not count as active or bump the time.
+func TestProjects_ArchivedMembersGrouped(t *testing.T) {
+	s := newProjectsTestServer(t, false)
+	p := "/work/repo"
+	addSess(t, s, "main", p, 10, nil)
+	addSess(t, s, "eph1", p, 5, map[string]string{"type": "ephemeral", "status": "archived"})
+	addSess(t, s, "eph2", p, 4, map[string]string{"type": "ephemeral", "status": "archived"})
+	d := getProjectDetail(t, s, p)
+	if len(d.ArchivedSessions) != 2 || len(d.Sessions) != 0 {
+		t.Fatalf("archived=%d sessions=%d", len(d.ArchivedSessions), len(d.Sessions))
+	}
+	// A project made only of archived sessions does not appear.
+	addSess(t, s, "lonely", "/work/other", 3, map[string]string{"status": "archived"})
+	if rec := doJSON(t, s, http.MethodGet, projURL("/work/other"), ""); rec.Code != http.StatusNotFound {
+		t.Errorf("archived-only project = %d, want 404", rec.Code)
+	}
+}
+
+// The list is ordered by the project-wide last update, not the coordinator's.
+func TestProjects_ListOrderUsesProjectWideUpdate(t *testing.T) {
+	s := newProjectsTestServer(t, false)
+	// "old" has a stale coordinator but a recently active sub-session.
+	addSess(t, s, "oldc", "/work/old", 1000, nil)
+	addSess(t, s, "oldsub", "/work/old", 1000, map[string]string{"type": "ephemeral"})
+	touchSess(t, s, "oldsub", 1)
+	addSess(t, s, "midc", "/work/mid", 60, nil)
+	rec := doJSON(t, s, http.MethodGet, "/api/projects", "")
+	var list []projectSummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 2 || list[0].Path != "/work/old" {
+		t.Fatalf("order = %+v", list)
 	}
 }
 
@@ -169,7 +250,12 @@ func TestProjects_SetCoordinator(t *testing.T) {
 	if rec := doJSON(t, s, http.MethodPut, projURL("/work/none")+"/coordinator", `{"sessionId":"main"}`); rec.Code != http.StatusNotFound {
 		t.Errorf("unknown project = %d, want 404", rec.Code)
 	}
-	// Archiving the manually chosen coordinator falls back to the oldest.
+	// The explicit choice beats a more recently active session.
+	touchSess(t, s, "main", 0)
+	if got := coordID(getProjectDetail(t, s, p)); got != "other" {
+		t.Fatalf("explicit coordinator = %q, want other", got)
+	}
+	// Archiving the manually chosen coordinator falls back to the automatic pick.
 	if _, err := s.sqlDB.Exec(`UPDATE sessions SET status='archived' WHERE id='other'`); err != nil {
 		t.Fatal(err)
 	}
@@ -188,6 +274,9 @@ func TestProjects_CreatedByPlacesItemsUnderCoordinator(t *testing.T) {
 	// A session in lab created by a non-coordinator stays in lab.
 	addSess(t, s, "sub", home, 40, nil)
 	addSess(t, s, "labchild", lab, 30, map[string]string{"by": "sub"})
+	// coordA / coordB are the most recently active in their projects.
+	touchSess(t, s, "coordA", 0)
+	touchSess(t, s, "coordB", 0)
 
 	// A loop coordA created in lab, and its run session.
 	loop, err := s.automations.Create(automation.CreateParams{
@@ -250,6 +339,7 @@ func TestProjects_ListSummaryAndEscalations(t *testing.T) {
 	addSess(t, s, "w1", p, 60, map[string]string{"status": "working"})
 	addSess(t, s, "w2", p, 50, map[string]string{"status": "waiting_input"})
 	addSess(t, s, "w3", p, 40, nil)
+	touchSess(t, s, "main", 0)
 	s.escalations.Create("e1", "w1", "need input", 60)
 	s.escalations.Create("e2", "main", "question", 60)
 	s.escalations.Respond("e2", "ok")

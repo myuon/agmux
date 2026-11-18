@@ -473,8 +473,9 @@ func TestSuggestion_CoordinatorTarget(t *testing.T) {
 	if err := experimental.Set("projects", true); err != nil {
 		t.Fatal(err)
 	}
-	// s0 is older so it becomes the project's coordinator.
+	// s0 is the most recently active so it becomes the project coordinator.
 	addSess(t, e.s, "s0", e.project, 60, nil)
+	touchSess(t, e.s, "s0", 0)
 	writeRule(t, suggestion.ProjectDir(e.project), "c.md", strings.Replace(rule("coord", "goal_completed", "q"), "cooldown: 1h", "cooldown: 1h\ntarget: coordinator", 1))
 
 	e.s.fireSuggestions(suggestEvent{Trigger: "goal_completed", SessionID: "s1"})
