@@ -50,6 +50,8 @@ type projectModel struct {
 	coordPath map[string]string
 	// stored is the projects table as read.
 	stored map[string]string
+	// explicit marks stored coordinators that were set by hand (PUT).
+	explicit map[string]bool
 }
 
 func (s *Server) loadProjectModel() (*projectModel, error) {
@@ -59,6 +61,7 @@ func (s *Server) loadProjectModel() (*projectModel, error) {
 		coordinator: map[string]string{},
 		coordPath:   map[string]string{},
 		stored:      map[string]string{},
+		explicit:    map[string]bool{},
 	}
 	rows, err := s.sqlDB.Query(
 		`SELECT id, name, status, type, project_path, COALESCE(automation_id, ''), created_by_session_id, COALESCE(parent_session_id, ''), COALESCE(goal, ''), created_at, updated_at
@@ -85,17 +88,19 @@ func (s *Server) loadProjectModel() (*projectModel, error) {
 		m.autoByID[a.ID] = a
 	}
 
-	prow, err := s.sqlDB.Query(`SELECT path, coordinator_session_id FROM projects`)
+	prow, err := s.sqlDB.Query(`SELECT path, coordinator_session_id, explicit FROM projects`)
 	if err != nil {
 		return nil, err
 	}
 	defer prow.Close()
 	for prow.Next() {
 		var path, id string
-		if err := prow.Scan(&path, &id); err != nil {
+		var explicit int
+		if err := prow.Scan(&path, &id, &explicit); err != nil {
 			return nil, err
 		}
 		m.stored[path] = id
+		m.explicit[path] = explicit != 0
 	}
 	if err := prow.Err(); err != nil {
 		return nil, err
@@ -106,41 +111,47 @@ func (s *Server) loadProjectModel() (*projectModel, error) {
 }
 
 // resolveCoordinators decides each project's coordinator:
-//  1. the stored one while it is still an eligible session of that path
-//     (covers manual reassignment);
-//  2. otherwise the oldest eligible session of the path that was not created
-//     by another session (UI / API origin);
-//  3. otherwise the oldest eligible session of the path that is not itself
-//     attached to another project's coordinator.
+//  1. the stored one while it was set by hand (PUT) and is still an eligible
+//     session of that path;
+//  2. otherwise the most recently active eligible session of the path
+//     (updated_at, newest first), preferring ones that are not exited;
+//  3. exited sessions are chosen only when nothing else is eligible.
 //
-// A stored coordinator that was archived or deleted therefore moves on to the
-// next oldest regular session without any hook on archive / delete.
+// Automatic choices are recomputed on every load, so a long-dead session never
+// holds a project; archived / deleted ones drop out without any hook.
 func (m *projectModel) resolveCoordinators() {
 	assign := func(path, id string) {
 		m.coordinator[path] = id
 		m.coordPath[id] = path
 	}
 	for path, id := range m.stored {
+		if !m.explicit[path] {
+			continue
+		}
 		if p, ok := m.byID[id]; ok && p.eligibleCoordinator() && p.Path == path {
 			assign(path, id)
 		}
 	}
-	// sessions is ordered oldest first.
+	better := func(a, b projSession) bool { // a is a better coordinator than b
+		if (a.Status == "exited") != (b.Status == "exited") {
+			return b.Status == "exited"
+		}
+		if !a.UpdatedAt.Equal(b.UpdatedAt) {
+			return a.UpdatedAt.After(b.UpdatedAt)
+		}
+		return a.CreatedAt.Before(b.CreatedAt)
+	}
+	best := map[string]projSession{}
 	for _, p := range m.sessions {
 		if !p.eligibleCoordinator() || m.coordinator[p.Path] != "" {
 			continue
 		}
-		if _, creatorExists := m.byID[p.CreatedBy]; p.CreatedBy == "" || !creatorExists {
-			assign(p.Path, p.ID)
+		if cur, ok := best[p.Path]; !ok || better(p, cur) {
+			best[p.Path] = p
 		}
 	}
-	for _, p := range m.sessions {
-		if !p.eligibleCoordinator() || m.coordinator[p.Path] != "" {
-			continue
-		}
-		if _, byCoord := m.coordPath[p.CreatedBy]; !byCoord {
-			assign(p.Path, p.ID)
-		}
+	for path, p := range best {
+		assign(path, p.ID)
 	}
 }
 
@@ -183,6 +194,9 @@ type projectData struct {
 	// run sessions).
 	subs        []projSession
 	automations []automation.Automation
+	// archived are archived sessions that belong to the project; they are
+	// folded away in the UI instead of showing as plain rows.
+	archived []projSession
 }
 
 func (m *projectModel) projects() map[string]*projectData {
@@ -195,8 +209,10 @@ func (m *projectModel) projects() map[string]*projectData {
 		}
 		return d
 	}
+	var archived []projSession
 	for _, p := range m.sessions {
 		if p.Status == "archived" {
+			archived = append(archived, p)
 			continue
 		}
 		path := m.sessionPath(p)
@@ -217,6 +233,12 @@ func (m *projectModel) projects() map[string]*projectData {
 			d.automations = append(d.automations, a)
 		}
 	}
+	// Archived sessions only join projects that exist for other reasons.
+	for _, p := range archived {
+		if d, ok := out[m.sessionPath(p)]; ok {
+			d.archived = append(d.archived, p)
+		}
+	}
 	return out
 }
 
@@ -229,16 +251,20 @@ func (s *Server) persistCoordinators(m *projectModel, projects map[string]*proje
 		if (exists && cur == want) || (!exists && want == "") {
 			continue
 		}
-		s.upsertCoordinator(path, want)
+		s.upsertCoordinator(path, want, m.explicit[path] && cur == want)
 	}
 }
 
-func (s *Server) upsertCoordinator(path, id string) {
+func (s *Server) upsertCoordinator(path, id string, explicit bool) {
 	now := time.Now()
+	ex := 0
+	if explicit {
+		ex = 1
+	}
 	if _, err := s.sqlDB.Exec(
-		`INSERT INTO projects (path, coordinator_session_id, created_at, updated_at) VALUES (?, ?, ?, ?)
-		 ON CONFLICT(path) DO UPDATE SET coordinator_session_id = excluded.coordinator_session_id, updated_at = excluded.updated_at`,
-		path, id, now, now); err != nil {
+		`INSERT INTO projects (path, coordinator_session_id, explicit, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT(path) DO UPDATE SET coordinator_session_id = excluded.coordinator_session_id, explicit = excluded.explicit, updated_at = excluded.updated_at`,
+		path, id, ex, now, now); err != nil {
 		s.logger.Warn("projects: persist coordinator failed", "path", path, "error", err)
 	}
 }
@@ -308,9 +334,11 @@ type projectEscalation struct {
 
 type projectDetail struct {
 	projectSummary
-	Sessions       []projectSession    `json:"sessions"`
-	AutomationList []projectAutomation `json:"automationList"`
-	Escalations    []projectEscalation `json:"escalations"`
+	Sessions []projectSession `json:"sessions"`
+	// ArchivedSessions are archived members, folded away by the UI.
+	ArchivedSessions []projectSession    `json:"archivedSessions"`
+	AutomationList   []projectAutomation `json:"automationList"`
+	Escalations      []projectEscalation `json:"escalations"`
 }
 
 func (s *Server) projectEscalations(m *projectModel, path string) []projectEscalation {
@@ -343,7 +371,7 @@ func (s *Server) buildProject(m *projectModel, d *projectData, detail bool, now 
 		sum.Coordinator = &projectCoordinator{ID: d.coordinator.ID, Name: d.coordinator.Name, Status: d.coordinator.Status}
 		touch(d.coordinator.UpdatedAt)
 	}
-	pd := &projectDetail{Sessions: []projectSession{}, AutomationList: []projectAutomation{}, Escalations: s.projectEscalations(m, d.path)}
+	pd := &projectDetail{Sessions: []projectSession{}, ArchivedSessions: []projectSession{}, AutomationList: []projectAutomation{}, Escalations: s.projectEscalations(m, d.path)}
 	sum.PendingEscalations = len(pd.Escalations)
 	loops := loopsEnabled()
 
@@ -354,6 +382,15 @@ func (s *Server) buildProject(m *projectModel, d *projectData, detail bool, now 
 		touch(p.UpdatedAt)
 		if detail && p.AutomationID == "" {
 			pd.Sessions = append(pd.Sessions, projectSession{
+				ID: p.ID, Name: p.Name, Status: p.Status, Type: p.Type, ProjectPath: p.Path,
+				CreatedBySessionID: p.CreatedBy, ParentSessionID: p.ParentID,
+				CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
+			})
+		}
+	}
+	if detail {
+		for _, p := range d.archived {
+			pd.ArchivedSessions = append(pd.ArchivedSessions, projectSession{
 				ID: p.ID, Name: p.Name, Status: p.Status, Type: p.Type, ProjectPath: p.Path,
 				CreatedBySessionID: p.CreatedBy, ParentSessionID: p.ParentID,
 				CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
@@ -376,7 +413,6 @@ func (s *Server) buildProject(m *projectModel, d *projectData, detail bool, now 
 		if as.LastRunAt != nil {
 			touch(*as.LastRunAt)
 		}
-		touch(a.UpdatedAt)
 		if !detail {
 			continue
 		}
@@ -525,7 +561,7 @@ func (s *Server) setProjectCoordinator(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "session cannot be a coordinator (must be a regular, non-archived session; automation, controller, external and ephemeral sessions are excluded)")
 		return
 	}
-	s.upsertCoordinator(path, sess.ID)
+	s.upsertCoordinator(path, sess.ID, true)
 	m, err = s.loadProjectModel()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

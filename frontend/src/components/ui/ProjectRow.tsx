@@ -8,7 +8,7 @@ interface ProjectRowProps {
   /** Loop summaries of this project's automations (experimental "loops"). */
   loops: AutomationSummary[];
   loopsOn: boolean;
-  /** Last message time of the coordinator (falls back to the project's). */
+  /** Last update of the whole project (coordinator, members, automation runs). */
   updatedAt: string | null;
   isSelected: boolean;
   timeAgo: (dateStr: string) => string;
@@ -38,13 +38,15 @@ export function ProjectRow({
   onOpenSession,
 }: ProjectRowProps) {
   const [open, setOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const coord = project.coordinator;
   const coordId = coord?.id;
   const subs = project.sessions.filter((s) => s.id !== coordId && s.status !== "archived");
+  const archived = project.archivedSessions ?? [];
   const loopIds = new Set(loops.map((l) => l.id));
   // Automations that have no loop summary (loops off, or hidden as noise) get a plain row.
   const plainAutos = project.automationList.filter((a) => !loopIds.has(a.id));
-  const hasChildren = subs.length > 0 || loops.length > 0 || plainAutos.length > 0;
+  const hasChildren = subs.length > 0 || archived.length > 0 || loops.length > 0 || plainAutos.length > 0;
   const alert = project.pendingEscalations > 0 || project.automations.stopped > 0;
   return (
     <div>
@@ -124,6 +126,31 @@ export function ProjectRow({
               <span className="ml-auto shrink-0 text-gray-400">{timeAgo(s.updatedAt)}</span>
             </button>
           ))}
+          {archived.length > 0 && (
+            <>
+              <button
+                type="button"
+                aria-expanded={showArchived}
+                onClick={() => setShowArchived((v) => !v)}
+                className="text-left text-xs text-gray-400 hover:text-gray-600 px-1 py-0.5"
+              >
+                {showArchived ? "▾" : "▸"} アーカイブ済み {archived.length} 件
+              </button>
+              {showArchived &&
+                archived.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => onOpenSession(s.id)}
+                    className="w-full flex items-center gap-2 text-left text-xs border border-gray-100 rounded-lg bg-gray-50 px-3 py-1.5 text-gray-500 hover:shadow-sm"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-gray-300" />
+                    <span className="truncate min-w-0">{s.name || s.id}</span>
+                    <span className="ml-auto shrink-0 text-gray-400">{timeAgo(s.updatedAt)}</span>
+                  </button>
+                ))}
+            </>
+          )}
         </div>
       )}
     </div>

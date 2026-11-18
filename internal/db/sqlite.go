@@ -450,6 +450,13 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: projects.explicit (#823). 1 = the coordinator was set by hand
+	// (PUT) and wins over the automatic choice; 0 = automatic, recomputed.
+	_, err = db.Exec(`ALTER TABLE projects ADD COLUMN explicit INTEGER NOT NULL DEFAULT 0`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: create automations table
 	// trigger_type is 'interval' (trigger_value = Go duration, e.g. "30m")
 	// or 'cron' (trigger_value = standard 5-field cron expression).

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useMatch } from "react-router-dom";
 import { motion } from "motion/react";
 import type { Session } from "../types/session";
@@ -6,7 +6,7 @@ import { SecondaryButton } from "./ui/SecondaryButton";
 import { ExternalProcessRow } from "./ui/ExternalProcessRow";
 import { SessionCard } from "./ui/SessionCard";
 import { SessionSearch } from "./SessionSearch";
-import { useExperimental } from "../hooks/useExperimental";
+import { useExperimental, useExperimentalState } from "../hooks/useExperimental";
 import { api, type AutomationSummary, type ProjectDetail } from "../api/client";
 import { LoopRow } from "./ui/LoopRow";
 import { ChoiceCardsBadge } from "./session/ChoiceCards";
@@ -40,10 +40,9 @@ function buildChildrenMap(sessions: Session[]): Map<string, Session[]> {
   return map;
 }
 
-/** The coordinator's last activity, else the project's. */
-function projectUpdatedAt(p: ProjectDetail, sessions: Session[]): string | null {
-  const coord = p.coordinator && sessions.find((s) => s.id === p.coordinator!.id);
-  return coord?.updatedAt ?? p.lastUpdatedAt;
+/** The project's last update: max over the coordinator, members and automation runs. */
+function projectUpdatedAt(p: ProjectDetail): string | null {
+  return p.lastUpdatedAt;
 }
 
 interface Props {
@@ -86,11 +85,19 @@ export function SessionList({ sessions, onRestartController }: Props) {
   }, [loopsEnabled, sessions]);
 
   // Experimental "projects": one row per project instead of the flat list.
-  const projectsEnabled = useExperimental("projects");
+  // projectsState is null until the flag is known; projectsLoaded flips once the
+  // first /api/projects round trip has finished. Until both are known we draw a
+  // skeleton, never the flat list (it would flash and then be replaced).
+  const projectsState = useExperimentalState("projects");
+  const projectsEnabled = projectsState === true;
   const [projects, setProjects] = useState<ProjectDetail[]>([]);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const firstLoadDone = useRef(false);
   useEffect(() => {
     if (!projectsEnabled) {
       setProjects([]);
+      setProjectsLoaded(false);
+      firstLoadDone.current = false;
       return;
     }
     let cancelled = false;
@@ -99,15 +106,26 @@ export function SessionList({ sessions, onRestartController }: Props) {
         .listProjects()
         .then((list) => Promise.all(list.map((p) => api.getProject(p.path))))
         .then((r) => {
-          if (!cancelled) setProjects(r);
+          if (!cancelled) {
+            setProjects(r);
+            setProjectsLoaded(true);
+          }
         })
-        .catch(() => {});
-    // Session updates arrive often; debounce the (N+1) reload.
-    const first = setTimeout(load, 300);
+        .catch(() => {
+          if (!cancelled) setProjectsLoaded(true);
+        });
+    // The first load runs immediately; later session updates are debounced.
+    let first: ReturnType<typeof setTimeout> | undefined;
+    if (!firstLoadDone.current) {
+      firstLoadDone.current = true;
+      load();
+    } else {
+      first = setTimeout(load, 300);
+    }
     const timer = setInterval(load, 30_000);
     return () => {
       cancelled = true;
-      clearTimeout(first);
+      if (first) clearTimeout(first);
       clearInterval(timer);
     };
   }, [projectsEnabled, sessions]);
@@ -117,6 +135,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
     for (const p of projects) {
       if (p.coordinator) sessionIds.add(p.coordinator.id);
       for (const x of p.sessions) sessionIds.add(x.id);
+      for (const x of p.archivedSessions ?? []) sessionIds.add(x.id);
       for (const a of p.automationList) automationIds.add(a.id);
     }
     return { sessionIds, automationIds };
@@ -159,6 +178,19 @@ export function SessionList({ sessions, onRestartController }: Props) {
         return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
       });
   }, [sessions, projectMembers]);
+
+  if (projectsState === null || (projectsEnabled && !projectsLoaded)) {
+    return (
+      <div className="flex flex-col gap-1.5" aria-busy="true" aria-label="読み込み中">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="border border-gray-200 rounded-lg bg-white px-3 py-2 animate-pulse">
+            <div className="h-3 w-1/2 rounded bg-gray-200" />
+            <div className="mt-2 h-2.5 w-3/4 rounded bg-gray-100" />
+          </div>
+        ))}
+      </div>
+    );
+  }
 
   if (sessions.length === 0 && topLoops.length === 0 && projects.length === 0) {
     return (
@@ -230,7 +262,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
   const items: Item[] = [
     ...topLevelSessions.map((s): Item => ({ kind: "session", s })),
     ...topLoops.filter((l) => !projectMembers.automationIds.has(l.id)).map((l): Item => ({ kind: "loop", l })),
-    ...projects.map((p): Item => ({ kind: "project", p, at: new Date(projectUpdatedAt(p, sessions) ?? 0).getTime() })),
+    ...projects.map((p): Item => ({ kind: "project", p, at: new Date(projectUpdatedAt(p) ?? 0).getTime() })),
   ];
   const rank = (i: Item) =>
     i.kind !== "session" ? 1 : i.s.type === "controller" ? 0 : i.s.type === "external" ? 2 : 1;
@@ -249,7 +281,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
             project={i.p}
             loops={loops.filter((l) => i.p.automationList.some((a) => a.id === l.id))}
             loopsOn={loopsEnabled}
-            updatedAt={projectUpdatedAt(i.p, sessions)}
+            updatedAt={projectUpdatedAt(i.p)}
             isSelected={projectMatch ? decodeURIComponent(projectMatch.params.path ?? "") === i.p.path : false}
             timeAgo={timeAgo}
             onOpenProject={() => navigate(projectUrl(i.p.path))}
