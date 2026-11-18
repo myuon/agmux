@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLoaderData } from "react-router-dom";
 import { api } from "../api/client";
-import type { AppConfig, RoleTemplate, PromptTemplate, HostInfo, ExperimentalFeature } from "../api/client";
+import type { AppConfig, RoleTemplate, PromptTemplate, HostInfo, ExperimentalFeature, SuggestionRules } from "../api/client";
 
 type ConfigUpdater = (updater: (prev: AppConfig) => AppConfig) => void;
 import { Section, Field } from "../components/ui/Section";
@@ -200,6 +200,7 @@ export function ConfigPage() {
         </Section>
 
         <ExperimentalSection />
+        <SuggestionRulesSection />
 
         <TemplateManager templates={config.templates || []} onUpdate={(updater) => setConfig(updater)} />
 
@@ -274,6 +275,58 @@ function ExperimentalSection() {
           {f.description && <p className="text-xs text-gray-500">{f.description}</p>}
         </div>
       ))}
+    </Section>
+  );
+}
+
+const SOURCE_LABEL: Record<string, string> = { builtin: "組み込み", global: "全体", project: "プロジェクト" };
+
+// Shown only while proactive_suggestions and choice_cards are both on (the
+// endpoint answers 404 otherwise).
+function SuggestionRulesSection() {
+  const [data, setData] = useState<SuggestionRules | null>(null);
+
+  useEffect(() => {
+    const load = () => {
+      api.listSuggestionRules().then(setData).catch(() => setData(null));
+    };
+    load();
+    window.addEventListener("agmux:experimental-changed", load);
+    return () => window.removeEventListener("agmux:experimental-changed", load);
+  }, []);
+
+  if (!data) return null;
+
+  return (
+    <Section title="提案ルール">
+      <p className="text-xs text-gray-500" data-testid="suggestion-rules-summary">
+        直近 {data.windowDays} 日に出したカード: {data.recentCards} 件。ルールは ~/.agmux/suggestions/*.md（全体）と
+        &lt;プロジェクト&gt;/.agmux/suggestions/*.md に置きます。同じ id はプロジェクトが優先されます。
+      </p>
+      {data.errors.length > 0 && (
+        <ul className="text-xs text-red-500 list-disc pl-5">
+          {data.errors.map((e) => (
+            <li key={e} className="break-all">{e}</li>
+          ))}
+        </ul>
+      )}
+      <ul className="space-y-2">
+        {data.rules.map((r) => (
+          <li key={`${r.source}:${r.projectPath ?? ""}:${r.id}`} className="text-sm border border-gray-200 dark:border-gray-700 rounded p-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-mono">{r.id}</span>
+              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800">{SOURCE_LABEL[r.source] ?? r.source}</span>
+              <span className="text-xs text-gray-500">
+                {r.trigger}
+                {r.detector ? ` / ${r.detector}` : ""} → {r.target}
+              </span>
+              <span className="text-xs text-gray-500 ml-auto">直近 {r.recentCards} 件</span>
+            </div>
+            <div className="text-xs text-gray-500 mt-1">{r.question}</div>
+            {r.projectPath && <div className="text-xs text-gray-400 break-all">{r.projectPath}</div>}
+          </li>
+        ))}
+      </ul>
     </Section>
   );
 }
