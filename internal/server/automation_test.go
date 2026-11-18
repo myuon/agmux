@@ -421,6 +421,52 @@ func TestAutomationLoopFeaturesRequireExperimental(t *testing.T) {
 	}
 }
 
+func TestAutomationWatchTarget(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s := newAutomationTestServer(t)
+	// loops off: rejected
+	rec := doJSON(t, s, http.MethodPost, "/api/automations",
+		`{"name":"t","prompt":"p","triggerType":"interval","triggerValue":"1h","watchTarget":0}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("loops off = %d, want 400", rec.Code)
+	}
+	if err := experimental.Set("loops", true); err != nil {
+		t.Fatal(err)
+	}
+	rec = doJSON(t, s, http.MethodPost, "/api/automations",
+		`{"name":"w","prompt":"p","triggerType":"interval","triggerValue":"1h","watchTarget":0}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("target without metric = %d, want 400", rec.Code)
+	}
+	rec = doJSON(t, s, http.MethodPost, "/api/automations",
+		`{"name":"w","prompt":"p","triggerType":"interval","triggerValue":"1h","watchMetric":"x","watchDirection":"lower","watchTarget":0}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create = %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"watchTarget":0`) {
+		t.Errorf("response missing watchTarget: %s", rec.Body.String())
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	put := func(extra string) string {
+		return doJSON(t, s, http.MethodPut, "/api/automations/"+created.ID,
+			`{"name":"w","prompt":"p","triggerType":"interval","triggerValue":"1h"`+extra+`}`).Body.String()
+	}
+	if body := put(``); !strings.Contains(body, `"watchTarget":0`) {
+		t.Errorf("omitted should keep: %s", body)
+	}
+	if body := put(`,"watchTarget":3`); !strings.Contains(body, `"watchTarget":3`) {
+		t.Errorf("update: %s", body)
+	}
+	if body := put(`,"watchTarget":null`); strings.Contains(body, `watchTarget`) {
+		t.Errorf("null should clear: %s", body)
+	}
+}
+
 func TestAutomationWatchMetric(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	s := newAutomationTestServer(t)

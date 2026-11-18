@@ -303,6 +303,11 @@ func (s *Scheduler) watchdog(a Automation, now time.Time) bool {
 				}
 			}
 			stagnated = !improved
+			// A latest value that has reached the target cannot improve
+			// further, so it is not stagnation.
+			if a.WatchTarget != nil && WatchTargetReached(a.WatchDirection, *a.WatchTarget, pts[len(pts)-1].Value) {
+				stagnated = false
+			}
 		}
 	}
 	token := int64(math.Float64bits(best))

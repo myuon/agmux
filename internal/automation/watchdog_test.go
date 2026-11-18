@@ -223,6 +223,78 @@ func TestWatchdog_Stagnation(t *testing.T) {
 	}
 }
 
+func TestWatchdog_Stagnation_Target(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	cases := []struct {
+		name   string
+		dir    WatchDirection
+		target *float64
+		values []float64
+		notify bool
+	}{
+		{"lower at target", WatchLower, f(0), []float64{5, 0, 0, 0, 0}, false},
+		{"lower below target", WatchLower, f(2), []float64{5, 1, 1, 1, 1}, false},
+		{"lower not reached", WatchLower, f(0), []float64{5, 2, 3, 2, 4}, true},
+		{"lower no target keeps old behavior", WatchLower, nil, []float64{5, 0, 0, 0, 0}, true},
+		{"higher at target", WatchHigher, f(10), []float64{5, 10, 10, 10, 10}, false},
+		{"higher not reached", WatchHigher, f(10), []float64{5, 9, 8, 9, 7}, true},
+		{"reached before but latest dropped", WatchLower, f(0), []float64{5, 0, 1, 1, 1}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newWDEnv(t, func(p *CreateParams) {
+				p.WatchMetric = "score"
+				p.WatchDirection = tc.dir
+				p.WatchTarget = tc.target
+			})
+			for i, v := range tc.values {
+				id := string(rune('a' + i))
+				e.finishedSession(id)
+				e.addRun(t, RunSuccess, id, 0, map[string]float64{"score": v}, true)
+			}
+			e.sched.Tick(time.Now())
+			if tc.notify {
+				assert.Len(t, *e.notes, 1)
+			} else {
+				assert.Empty(t, *e.notes)
+			}
+		})
+	}
+}
+
+func TestStore_WatchTarget(t *testing.T) {
+	store := newTestStore(t)
+	zero := 0.0
+	base := CreateParams{Name: "n", Prompt: "p", TriggerType: TriggerInterval, TriggerValue: "1h", Enabled: true}
+
+	noMetric := base
+	noMetric.WatchTarget = &zero
+	_, err := store.Create(noMetric)
+	assert.Error(t, err, "target requires metric")
+
+	ok := base
+	ok.WatchMetric = "m"
+	ok.WatchDirection = WatchLower
+	ok.WatchTarget = &zero
+	a, err := store.Create(ok)
+	require.NoError(t, err)
+	got, err := store.Get(a.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.WatchTarget)
+	assert.Equal(t, 0.0, *got.WatchTarget)
+
+	up := UpdateParams{Name: "n", Prompt: "p", TriggerType: TriggerInterval, TriggerValue: "1h", Enabled: true}
+	kept, err := store.Update(a.ID, up)
+	require.NoError(t, err)
+	require.NotNil(t, kept.WatchTarget, "omitted keeps")
+
+	up.ClearWatchTarget = true
+	cleared, err := store.Update(a.ID, up)
+	require.NoError(t, err)
+	assert.Nil(t, cleared.WatchTarget)
+	assert.Equal(t, "m", cleared.WatchMetric)
+}
+
 func TestWatchdog_NoMetricConfiguredNoStagnation(t *testing.T) {
 	e := newWDEnv(t, nil)
 	for i, v := range []float64{9, 1, 1, 1, 1} {

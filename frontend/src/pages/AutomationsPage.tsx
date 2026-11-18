@@ -59,11 +59,13 @@ export function AutomationForm({
         delete payload.until;
         delete payload.watchMetric;
         delete payload.watchDirection;
+        delete payload.watchTarget;
       } else {
         payload.maxRuns = payload.maxRuns || 0;
         payload.until = payload.until || "";
         payload.watchMetric = (payload.watchMetric || "").trim();
         payload.watchDirection = payload.watchMetric ? payload.watchDirection || "higher" : "";
+        payload.watchTarget = payload.watchMetric ? (payload.watchTarget ?? null) : null;
       }
       await onSubmit(payload);
     } catch (e: unknown) {
@@ -201,6 +203,19 @@ export function AutomationForm({
               <option value="higher">大きいほど良い</option>
               <option value="lower">小さいほど良い</option>
             </select>
+          </div>
+          <div>
+            <label className="text-sm text-gray-600 block mb-1">目標値（任意）</label>
+            <input
+              type="number"
+              value={input.watchTarget ?? ""}
+              onChange={(e) =>
+                setInput({ ...input, watchTarget: e.target.value === "" ? null : Number(e.target.value) })
+              }
+              disabled={!input.watchMetric}
+              placeholder="例: 0"
+              className={inputClass}
+            />
           </div>
         </div>
       )}
@@ -344,6 +359,7 @@ export function AutomationsPage() {
                       until: a.until,
                       watchMetric: a.watchMetric,
                       watchDirection: a.watchDirection,
+                      watchTarget: a.watchTarget,
                     }}
                     onSubmit={(input) => handleUpdate(a.id, input)}
                     onCancel={() => setEditingId(null)}
