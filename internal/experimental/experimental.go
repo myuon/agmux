@@ -37,6 +37,11 @@ var Features = []Feature{
 		Title:       "ループ",
 		Description: "Automation を残タスクがある限り回すループとして使えるようにします。残タスクリスト、各回の結果記録、ダッシュボードが使えるようになります。",
 	},
+	{
+		Name:        "projects",
+		Title:       "プロジェクト単位の表示",
+		Description: "セッションをプロジェクト（リポジトリ）単位にまとめ、各プロジェクトのコーディネーター（メインのセッション）を中心に表示します。コーディネーターは配下のループや Automation の状態をツールで把握でき、停止などの知らせを受け取ります。",
+	},
 }
 
 // Lookup returns the feature with the given name.

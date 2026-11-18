@@ -99,6 +99,8 @@ type automationCreateRequest struct {
 	Until          string `json:"until,omitempty"`
 	WatchMetric    string `json:"watchMetric,omitempty"`
 	WatchDirection string `json:"watchDirection,omitempty"`
+	// CreatedBySessionID is the calling agent session ($AGMUX_SESSION_ID).
+	CreatedBySessionID string `json:"createdBySessionId,omitempty"`
 }
 
 func (a *automationAPI) create(req automationCreateRequest) (*automation.Automation, error) {
@@ -293,6 +295,8 @@ If --project is omitted, the automation runs in the controller area.`,
 				Until:          until,
 				WatchMetric:    watchMetric,
 				WatchDirection: watchDirection,
+
+				CreatedBySessionID: os.Getenv("AGMUX_SESSION_ID"),
 			})
 			if err != nil {
 				return err
