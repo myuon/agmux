@@ -194,3 +194,23 @@ func TestStore_UpdateKeepsLimitsWhenOmitted(t *testing.T) {
 	assert.Equal(t, 0, got.MaxRuns)
 	assert.Nil(t, got.Until)
 }
+
+func TestScheduler_MaxRunsCallsOnLimitStop(t *testing.T) {
+	enableLoops(t)
+	store := newTestStore(t)
+	sessions := newFakeSessions()
+	sched := newTestScheduler(t, store, sessions)
+	var msgs []string
+	sched.OnLimitStop = func(a Automation, message string) { msgs = append(msgs, message) }
+	a := newQueueAutomation(t, store, "", func(p *CreateParams) { p.MaxRuns = 1 })
+	_, err := store.AddTask(a.ID, "t", "", "user")
+	require.NoError(t, err)
+	now := time.Now()
+	for i := 0; i < 3; i++ {
+		sched.Tick(now.Add(time.Duration(i) * time.Second))
+		sessions.setStatus("sess-1", session.StatusIdle)
+	}
+	require.Len(t, msgs, 1)
+	assert.Contains(t, msgs[0], "安全弁")
+	assert.Contains(t, msgs[0], "max runs")
+}

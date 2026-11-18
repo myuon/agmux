@@ -371,6 +371,7 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 				},
 				searchSessionsToolDef(),
 				loopReportToolDef(),
+				getProjectStatusToolDef(),
 				map[string]interface{}{
 					"name":        "permission_prompt",
 					"description": "Handle permission prompts from Claude Code CLI",
@@ -470,6 +471,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 		return s.handleLoopTaskDone(args)
 	case "loop_report":
 		return s.handleLoopReport(args)
+	case "get_project_status":
+		return s.handleGetProjectStatus(args)
 	default:
 		return nil, &jsonRPCError{Code: -32602, Message: "unknown tool: " + name}
 	}
