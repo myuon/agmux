@@ -7,8 +7,12 @@ import { ExternalProcessRow } from "./ui/ExternalProcessRow";
 import { SessionCard } from "./ui/SessionCard";
 import { SessionSearch } from "./SessionSearch";
 import { useExperimental } from "../hooks/useExperimental";
-import { api, type AutomationSummary } from "../api/client";
+import { api, type AutomationSummary, type ProjectDetail } from "../api/client";
 import { LoopRow } from "./ui/LoopRow";
+import { ChoiceCardsBadge } from "./session/ChoiceCards";
+import { useOpenChoiceSessions } from "../hooks/useChoiceCards";
+import { ProjectRow } from "./ui/ProjectRow";
+import { projectUrl } from "./ProjectSummaryLine";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -36,6 +40,12 @@ function buildChildrenMap(sessions: Session[]): Map<string, Session[]> {
   return map;
 }
 
+/** The coordinator's last activity, else the project's. */
+function projectUpdatedAt(p: ProjectDetail, sessions: Session[]): string | null {
+  const coord = p.coordinator && sessions.find((s) => s.id === p.coordinator!.id);
+  return coord?.updatedAt ?? p.lastUpdatedAt;
+}
+
 interface Props {
   sessions: Session[];
   onRestartController: () => void;
@@ -45,8 +55,11 @@ export function SessionList({ sessions, onRestartController }: Props) {
   const navigate = useNavigate();
   const sessionMatch = useMatch("/sessions/:id");
   const selectedSessionId = sessionMatch?.params.id ?? null;
+  const projectMatch = useMatch("/projects/:path");
   const childrenMap = useMemo(() => buildChildrenMap(sessions), [sessions]);
   const searchEnabled = useExperimental("session_search");
+
+  const openChoiceSessions = useOpenChoiceSessions(sessions);
 
   const loopsEnabled = useExperimental("loops");
   const [loops, setLoops] = useState<AutomationSummary[]>([]);
@@ -71,6 +84,43 @@ export function SessionList({ sessions, onRestartController }: Props) {
     };
     // Session updates (websocket) also change loop state, so reload on them.
   }, [loopsEnabled, sessions]);
+
+  // Experimental "projects": one row per project instead of the flat list.
+  const projectsEnabled = useExperimental("projects");
+  const [projects, setProjects] = useState<ProjectDetail[]>([]);
+  useEffect(() => {
+    if (!projectsEnabled) {
+      setProjects([]);
+      return;
+    }
+    let cancelled = false;
+    const load = () =>
+      api
+        .listProjects()
+        .then((list) => Promise.all(list.map((p) => api.getProject(p.path))))
+        .then((r) => {
+          if (!cancelled) setProjects(r);
+        })
+        .catch(() => {});
+    // Session updates arrive often; debounce the (N+1) reload.
+    const first = setTimeout(load, 300);
+    const timer = setInterval(load, 30_000);
+    return () => {
+      cancelled = true;
+      clearTimeout(first);
+      clearInterval(timer);
+    };
+  }, [projectsEnabled, sessions]);
+  const projectMembers = useMemo(() => {
+    const sessionIds = new Set<string>();
+    const automationIds = new Set<string>();
+    for (const p of projects) {
+      if (p.coordinator) sessionIds.add(p.coordinator.id);
+      for (const x of p.sessions) sessionIds.add(x.id);
+      for (const a of p.automationList) automationIds.add(a.id);
+    }
+    return { sessionIds, automationIds };
+  }, [projects]);
 
   // Loops that feed another loop hang below it instead of getting their own row
   // (mutual feeders stay top-level so neither disappears).
@@ -98,6 +148,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
   const topLevelSessions = useMemo(() => {
     return sessions
       .filter((s) => !s.parentSessionId)
+      .filter((s) => !projectMembers.sessionIds.has(s.id))
       .sort((a, b) => {
         // Controller pinned first, external processes last,
         // threads by most recent activity (last message) first
@@ -107,9 +158,9 @@ export function SessionList({ sessions, onRestartController }: Props) {
         if (a.type !== "external" && b.type === "external") return -1;
         return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
       });
-  }, [sessions]);
+  }, [sessions, projectMembers]);
 
-  if (sessions.length === 0 && topLoops.length === 0) {
+  if (sessions.length === 0 && topLoops.length === 0 && projects.length === 0) {
     return (
       <div className="text-center text-gray-400 py-8">
         <p className="text-sm">No sessions yet</p>
@@ -150,6 +201,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
               isSubSession={depth > 0}
               isSelected={s.id === selectedSessionId}
               completionReport={s.completionReport}
+              badge={openChoiceSessions.has(s.id) ? <ChoiceCardsBadge /> : undefined}
               onClick={() => navigate(`/sessions/${s.id}`, { viewTransition: true } as never)}
               actions={
                 s.type === "controller" && (s.status === "paused" || s.status === "exited") ? (
@@ -170,15 +222,20 @@ export function SessionList({ sessions, onRestartController }: Props) {
 
   // Loop rows are interleaved with sessions by latest activity; the controller
   // stays pinned first and external processes last.
-  type Item = { kind: "session"; s: Session } | { kind: "loop"; l: AutomationSummary };
+  type Item =
+    | { kind: "session"; s: Session }
+    | { kind: "loop"; l: AutomationSummary }
+    | { kind: "project"; p: ProjectDetail; at: number };
   const loopTime = (l: AutomationSummary) => new Date(l.lastRunAt ?? l.createdAt).getTime();
   const items: Item[] = [
     ...topLevelSessions.map((s): Item => ({ kind: "session", s })),
-    ...topLoops.map((l): Item => ({ kind: "loop", l })),
+    ...topLoops.filter((l) => !projectMembers.automationIds.has(l.id)).map((l): Item => ({ kind: "loop", l })),
+    ...projects.map((p): Item => ({ kind: "project", p, at: new Date(projectUpdatedAt(p, sessions) ?? 0).getTime() })),
   ];
   const rank = (i: Item) =>
-    i.kind === "loop" ? 1 : i.s.type === "controller" ? 0 : i.s.type === "external" ? 2 : 1;
-  const time = (i: Item) => (i.kind === "loop" ? loopTime(i.l) : new Date(i.s.updatedAt).getTime());
+    i.kind !== "session" ? 1 : i.s.type === "controller" ? 0 : i.s.type === "external" ? 2 : 1;
+  const time = (i: Item) =>
+    i.kind === "loop" ? loopTime(i.l) : i.kind === "project" ? i.at : new Date(i.s.updatedAt).getTime();
   items.sort((a, b) => rank(a) - rank(b) || time(b) - time(a));
 
   const list = (
@@ -186,6 +243,19 @@ export function SessionList({ sessions, onRestartController }: Props) {
       {items.map((i) =>
         i.kind === "session" ? (
           renderSession(i.s, 0)
+        ) : i.kind === "project" ? (
+          <ProjectRow
+            key={`project-${i.p.path}`}
+            project={i.p}
+            loops={loops.filter((l) => i.p.automationList.some((a) => a.id === l.id))}
+            loopsOn={loopsEnabled}
+            updatedAt={projectUpdatedAt(i.p, sessions)}
+            isSelected={projectMatch ? decodeURIComponent(projectMatch.params.path ?? "") === i.p.path : false}
+            timeAgo={timeAgo}
+            onOpenProject={() => navigate(projectUrl(i.p.path))}
+            onOpenLoop={(id) => navigate(`/automations/${id}`)}
+            onOpenSession={(id) => navigate(`/sessions/${id}`)}
+          />
         ) : (
           <LoopRow
             key={`loop-${i.l.id}`}

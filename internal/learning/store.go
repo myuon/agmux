@@ -3,6 +3,7 @@ package learning
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -11,6 +12,13 @@ const (
 	TargetClaudeMD = "claude_md"
 	TargetSkill    = "skill"
 	TargetMemory   = "memory"
+	TargetLoop     = "loop" // origin repeated_task: create a disabled Automation
+)
+
+// Proposal origins. Empty means an ordinary per-session review.
+const (
+	OriginRepeatedCorrection = "repeated_correction"
+	OriginRepeatedTask       = "repeated_task"
 )
 
 // Proposal statuses.
@@ -39,6 +47,14 @@ type Proposal struct {
 	Error          string     `json:"error,omitempty"`
 	CreatedAt      time.Time  `json:"createdAt"`
 	DecidedAt      *time.Time `json:"decidedAt,omitempty"`
+
+	// Proactive suggestions (origin != "").
+	Origin       string    `json:"origin,omitempty"`
+	ClusterID    int64     `json:"clusterId,omitempty"`
+	TriggerType  string    `json:"triggerType,omitempty"`  // loop: interval | cron | queue
+	TriggerValue string    `json:"triggerValue,omitempty"` // loop
+	AutomationID string    `json:"automationId,omitempty"` // loop: set once accepted
+	Evidence     []*Signal `json:"evidence,omitempty"`
 }
 
 // Store persists proposals and per-session review progress.
@@ -73,15 +89,29 @@ func NewStore(db *sql.DB) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	for _, col := range []string{
+		`origin TEXT NOT NULL DEFAULT ''`,
+		`cluster_id INTEGER NOT NULL DEFAULT 0`,
+		`trigger_type TEXT NOT NULL DEFAULT ''`,
+		`trigger_value TEXT NOT NULL DEFAULT ''`,
+		`automation_id TEXT NOT NULL DEFAULT ''`,
+	} {
+		if _, err := db.Exec(`ALTER TABLE learning_proposals ADD COLUMN ` + col); err != nil && !strings.Contains(err.Error(), "duplicate column") {
+			return nil, err
+		}
+	}
+	if err := initSignalTables(db); err != nil {
+		return nil, err
+	}
 	return &Store{db: db}, nil
 }
 
-const proposalCols = `id, session_id, session_name, project_path, target, name, memory_type, title, content, reason, status, apply_session_id, error, created_at, decided_at`
+const proposalCols = `id, session_id, session_name, project_path, target, name, memory_type, title, content, reason, status, apply_session_id, error, created_at, decided_at, origin, cluster_id, trigger_type, trigger_value, automation_id`
 
 func scanProposal(sc interface{ Scan(...interface{}) error }) (*Proposal, error) {
 	var p Proposal
 	var decided sql.NullTime
-	if err := sc.Scan(&p.ID, &p.SessionID, &p.SessionName, &p.ProjectPath, &p.Target, &p.Name, &p.MemoryType, &p.Title, &p.Content, &p.Reason, &p.Status, &p.ApplySessionID, &p.Error, &p.CreatedAt, &decided); err != nil {
+	if err := sc.Scan(&p.ID, &p.SessionID, &p.SessionName, &p.ProjectPath, &p.Target, &p.Name, &p.MemoryType, &p.Title, &p.Content, &p.Reason, &p.Status, &p.ApplySessionID, &p.Error, &p.CreatedAt, &decided, &p.Origin, &p.ClusterID, &p.TriggerType, &p.TriggerValue, &p.AutomationID); err != nil {
 		return nil, err
 	}
 	if decided.Valid {
@@ -94,9 +124,9 @@ func scanProposal(sc interface{ Scan(...interface{}) error }) (*Proposal, error)
 func (s *Store) Insert(p *Proposal) error {
 	p.Status = StatusPending
 	p.CreatedAt = time.Now()
-	res, err := s.db.Exec(`INSERT INTO learning_proposals (session_id, session_name, project_path, target, name, memory_type, title, content, reason, status, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		p.SessionID, p.SessionName, p.ProjectPath, p.Target, p.Name, p.MemoryType, p.Title, p.Content, p.Reason, p.Status, p.CreatedAt)
+	res, err := s.db.Exec(`INSERT INTO learning_proposals (session_id, session_name, project_path, target, name, memory_type, title, content, reason, status, created_at, origin, cluster_id, trigger_type, trigger_value)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		p.SessionID, p.SessionName, p.ProjectPath, p.Target, p.Name, p.MemoryType, p.Title, p.Content, p.Reason, p.Status, p.CreatedAt, p.Origin, p.ClusterID, p.TriggerType, p.TriggerValue)
 	if err != nil {
 		return err
 	}
@@ -110,7 +140,11 @@ func (s *Store) Get(id int64) (*Proposal, error) {
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("proposal not found: %d", id)
 	}
-	return p, err
+	if err != nil {
+		return nil, err
+	}
+	s.attachEvidence(p)
+	return p, nil
 }
 
 // List returns proposals, newest first. Empty status means all.
@@ -139,7 +173,13 @@ func (s *Store) List(status string, limit int) ([]*Proposal, error) {
 		}
 		out = append(out, p)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, p := range out {
+		s.attachEvidence(p)
+	}
+	return out, nil
 }
 
 // Rejected returns recently rejected proposals for a project, used to keep
@@ -177,6 +217,12 @@ func (s *Store) Pending(projectPath string) ([]*Proposal, error) {
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// SetAutomation records the Automation created from an accepted loop proposal.
+func (s *Store) SetAutomation(id int64, automationID string) error {
+	_, err := s.db.Exec(`UPDATE learning_proposals SET automation_id = ? WHERE id = ?`, automationID, id)
+	return err
 }
 
 // Decide moves a pending proposal to a new status. It fails if the proposal

@@ -6,6 +6,7 @@ import type { StreamDisplayItem } from "../../models/stream";
 import { chunkToolCallRuns } from "../../models/stream";
 import { ToolCallView } from "./ToolCallView";
 import { ToolCallGroupView } from "./ToolCallGroupView";
+import { ChoiceCardView } from "./ChoiceCards";
 import { AlertTriangle, CheckCircle } from "lucide-react";
 
 function SystemEventView({ item }: { item: Extract<StreamDisplayItem, { kind: "system_event" }> }) {
@@ -49,6 +50,9 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermis
   }
   if (item.kind === "rate_limit") {
     return <RateLimitEventRow item={item} />;
+  }
+  if (item.kind === "choice_card") {
+    return <ChoiceCardView cardId={item.cardId} />;
   }
   if (item.kind === "api_retry") {
     return <ApiRetryEventRow item={item} />;

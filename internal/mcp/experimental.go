@@ -12,6 +12,7 @@ var experimentalTools = map[string]string{
 	"loop_task_done":     "loops",
 	"loop_report":        "loops",
 	"get_project_status": "projects",
+	"offer_choices":   "choice_cards",
 }
 
 func toolAvailable(name string) bool {

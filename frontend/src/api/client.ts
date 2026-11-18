@@ -11,6 +11,19 @@ export interface Artifact {
   updatedAt: string;
 }
 
+// ChoiceCard mirrors `ChoiceCard` in internal/server/choice_cards.go.
+export interface ChoiceCard {
+  id: string;
+  sessionId: string;
+  prompt: string;
+  choices: { id: string; label: string; action: { type: string } }[];
+  source: "agent" | "rule";
+  status: "open" | "answered" | "dismissed";
+  answer?: string;
+  streamOffset: number;
+  createdAt: string;
+}
+
 export interface ExperimentalFeature {
   name: string;
   title: string;
@@ -27,12 +40,22 @@ export interface SessionSearchResult {
   snippet: string;
 }
 
+export interface LearningSignal {
+  id: number;
+  sessionId: string;
+  sessionName?: string;
+  kind: "correction" | "task";
+  summary: string;
+  excerpt: string;
+  createdAt: string;
+}
+
 export interface LearningProposal {
   id: number;
   sessionId: string;
   sessionName: string;
   projectPath: string;
-  target: "claude_md" | "skill" | "memory";
+  target: "claude_md" | "skill" | "memory" | "loop";
   name: string;
   memoryType?: string;
   title: string;
@@ -43,6 +66,12 @@ export interface LearningProposal {
   error?: string;
   createdAt: string;
   decidedAt?: string;
+  origin?: "repeated_correction" | "repeated_task";
+  triggerType?: "interval" | "cron" | "queue";
+  triggerValue?: string;
+  automationId?: string;
+  clusterId?: number;
+  evidence?: LearningSignal[];
 }
 
 export interface SecretUsage {
@@ -286,6 +315,21 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }),
 
+  // Experimental "choice_cards" only: 404 while the feature is off.
+  listChoiceCards: (sessionId: string) =>
+    request<{ cards: ChoiceCard[] }>(`/sessions/${sessionId}/choice-cards`),
+
+  listOpenChoiceCards: () => request<{ cards: ChoiceCard[] }>("/choice-cards"),
+
+  answerChoiceCard: (cardId: string, choiceId: string) =>
+    request<ChoiceCard>(`/choice-cards/${cardId}/answer`, {
+      method: "POST",
+      body: JSON.stringify({ choiceId }),
+    }),
+
+  dismissChoiceCard: (cardId: string) =>
+    request<ChoiceCard>(`/choice-cards/${cardId}/dismiss`, { method: "POST", body: "{}" }),
+
   updateConfig: (data: AppConfig) =>
     request<{ status: string }>("/config", {
       method: "PUT",
@@ -336,6 +380,16 @@ export const api = {
     request<AutomationSummary[]>("/automations/summary"),
 
   getAutomation: (id: string) => request<Automation>(`/automations/${id}`),
+
+  // Experimental "projects" (#805): 404 while the feature is off.
+  listProjects: () => request<ProjectSummary[]>("/projects"),
+  getProject: (path: string) =>
+    request<ProjectDetail>(`/projects/${encodeURIComponent(path)}`),
+  setProjectCoordinator: (path: string, sessionId: string) =>
+    request<ProjectDetail>(`/projects/${encodeURIComponent(path)}/coordinator`, {
+      method: "PUT",
+      body: JSON.stringify({ sessionId }),
+    }),
 
   createAutomation: (data: AutomationInput) =>
     request<Automation>("/automations", {
@@ -438,6 +492,44 @@ export interface AutomationSummary {
   }[];
   feeders: AutomationRef[];
   feeds: AutomationRef[];
+}
+
+// Mirrors the Go projectSummary / projectDetail (internal/server/projects.go).
+export interface ProjectSummary {
+  path: string;
+  name: string;
+  coordinator: { id: string; name: string; status: string } | null;
+  activeSessions: number;
+  automations: { running: number; waiting: number; stopped: number };
+  pendingEscalations: number;
+  lastUpdatedAt: string | null;
+}
+
+export interface ProjectAutomation {
+  id: string;
+  name: string;
+  enabled: boolean;
+  triggerType: string;
+  state: "running" | "waiting" | "stopped";
+  lastRunAt: string | null;
+  nextFireAt: string | null;
+  // loops only
+  pendingTasks?: number;
+  stoppedReason?: string;
+  latestReport?: { metrics: Record<string, number>; summary: string } | null;
+}
+
+export interface ProjectDetail extends ProjectSummary {
+  sessions: {
+    id: string;
+    name: string;
+    status: string;
+    type: string;
+    projectPath: string;
+    updatedAt: string;
+  }[];
+  automationList: ProjectAutomation[];
+  escalations: { id: string; sessionId: string; message: string }[];
 }
 
 export interface Automation {
