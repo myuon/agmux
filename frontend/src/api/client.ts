@@ -573,6 +573,7 @@ export interface Automation {
   until?: string;
   watchMetric?: string;
   watchDirection?: "higher" | "lower";
+  watchTarget?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -592,6 +593,8 @@ export interface AutomationInput {
   // watchMetric "" clears it; watchDirection is required when it is set.
   watchMetric?: string;
   watchDirection?: "higher" | "lower" | "";
+  // Goal of watchMetric; null clears it. Omitted keeps the stored value.
+  watchTarget?: number | null;
 }
 
 export interface AutomationRun {

@@ -58,6 +58,10 @@ type Automation struct {
 	WatchMetric string `json:"watchMetric,omitempty"`
 	// WatchDirection says which direction of WatchMetric is better.
 	WatchDirection WatchDirection `json:"watchDirection,omitempty"`
+	// WatchTarget is an optional goal for WatchMetric. While the latest value
+	// has reached it (lower: <=, higher: >=) the metric is not judged as
+	// stagnating. nil = no target.
+	WatchTarget *float64 `json:"watchTarget,omitempty"`
 	// CreatedBySessionID is the session (AGMUX_SESSION_ID) that created the
 	// automation via the CLI / MCP / API. Empty when created from the UI.
 	CreatedBySessionID string    `json:"createdBySessionId,omitempty"`
@@ -85,6 +89,23 @@ func ValidateWatch(metric string, dir WatchDirection) error {
 		return fmt.Errorf(`watchDirection must be "higher" or "lower" when watchMetric is set`)
 	}
 	return nil
+}
+
+// ValidateWatchTarget rejects a target without a watched metric.
+func ValidateWatchTarget(metric string, target *float64) error {
+	if target != nil && metric == "" {
+		return fmt.Errorf("watchTarget requires watchMetric")
+	}
+	return nil
+}
+
+// WatchTargetReached reports whether value has reached the target in the
+// better direction.
+func WatchTargetReached(dir WatchDirection, target, value float64) bool {
+	if dir == WatchLower {
+		return value <= target
+	}
+	return value >= target
 }
 
 // UsesLoopFeatures reports whether the automation relies on the "loops"

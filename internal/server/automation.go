@@ -33,6 +33,9 @@ type automationRequest struct {
 	// "" clears it.
 	WatchMetric    *string `json:"watchMetric,omitempty"`
 	WatchDirection *string `json:"watchDirection,omitempty"`
+	// WatchTarget is the goal of WatchMetric: a number, or null / "" to clear
+	// it on update. Absent keeps the stored value.
+	WatchTarget json.RawMessage `json:"watchTarget,omitempty"`
 	// CreatedBySessionID records the creating session on create (#805).
 	CreatedBySessionID string `json:"createdBySessionId,omitempty"`
 }
@@ -40,6 +43,9 @@ type automationRequest struct {
 // checkLoopFeatures rejects queue triggers and safety valves while the
 // experimental "loops" feature is off. It also parses the until timestamp.
 func checkLoopFeatures(req automationRequest) (until *time.Time, err error) {
+	if _, _, terr := parseWatchTarget(req.WatchTarget); terr != nil {
+		return nil, terr
+	}
 	if req.Until != nil && *req.Until != "" {
 		t, perr := time.Parse(time.RFC3339, *req.Until)
 		if perr != nil {
@@ -50,14 +56,18 @@ func checkLoopFeatures(req automationRequest) (until *time.Time, err error) {
 	if experimental.Enabled(automation.FeatureLoops) {
 		return until, nil
 	}
+	target, _, terr := parseWatchTarget(req.WatchTarget)
+	if terr != nil {
+		return nil, terr
+	}
 	if automation.TriggerType(req.TriggerType) == automation.TriggerQueue {
 		return nil, fmt.Errorf("queue trigger requires the experimental feature %q", automation.FeatureLoops)
 	}
 	if (req.MaxRuns != nil && *req.MaxRuns != 0) || until != nil {
 		return nil, fmt.Errorf("maxRuns / until require the experimental feature %q", automation.FeatureLoops)
 	}
-	if deref(req.WatchMetric) != "" || deref(req.WatchDirection) != "" {
-		return nil, fmt.Errorf("watchMetric / watchDirection require the experimental feature %q", automation.FeatureLoops)
+	if deref(req.WatchMetric) != "" || deref(req.WatchDirection) != "" || target != nil {
+		return nil, fmt.Errorf("watchMetric / watchDirection / watchTarget require the experimental feature %q", automation.FeatureLoops)
 	}
 	return until, nil
 }
@@ -120,7 +130,9 @@ func (s *Server) createAutomation(w http.ResponseWriter, r *http.Request) {
 	if req.MaxRuns != nil {
 		maxRuns = *req.MaxRuns
 	}
+	target, _, _ := parseWatchTarget(req.WatchTarget)
 	a, err := s.automations.Create(automation.CreateParams{
+		WatchTarget:    target,
 		MaxRuns:        maxRuns,
 		Until:          until,
 		WatchMetric:    deref(req.WatchMetric),
@@ -179,19 +191,22 @@ func (s *Server) updateAutomation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	target, clearTarget, _ := parseWatchTarget(req.WatchTarget)
 	a, err := s.automations.Update(id, automation.UpdateParams{
-		MaxRuns:        req.MaxRuns,
-		Until:          until,
-		ClearUntil:     req.Until != nil && *req.Until == "",
-		WatchMetric:    req.WatchMetric,
-		WatchDirection: watchDirPtr(req.WatchDirection),
-		Name:           req.Name,
-		Prompt:         req.Prompt,
-		TriggerType:    automation.TriggerType(req.TriggerType),
-		TriggerValue:   req.TriggerValue,
-		ProjectPath:    req.ProjectPath,
-		Model:          req.Model,
-		Enabled:        req.Enabled,
+		WatchTarget:      target,
+		ClearWatchTarget: clearTarget,
+		MaxRuns:          req.MaxRuns,
+		Until:            until,
+		ClearUntil:       req.Until != nil && *req.Until == "",
+		WatchMetric:      req.WatchMetric,
+		WatchDirection:   watchDirPtr(req.WatchDirection),
+		Name:             req.Name,
+		Prompt:           req.Prompt,
+		TriggerType:      automation.TriggerType(req.TriggerType),
+		TriggerValue:     req.TriggerValue,
+		ProjectPath:      req.ProjectPath,
+		Model:            req.Model,
+		Enabled:          req.Enabled,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -261,6 +276,29 @@ func (s *Server) listAutomationRuns(w http.ResponseWriter, r *http.Request) {
 		runs = []automation.Run{}
 	}
 	writeJSON(w, http.StatusOK, runs)
+}
+
+// parseWatchTarget decodes the watchTarget field. set is false when the field
+// was absent; clear is true for null / "". A number yields a non-nil value.
+func parseWatchTarget(raw json.RawMessage) (value *float64, clear bool, err error) {
+	if len(raw) == 0 {
+		return nil, false, nil
+	}
+	var v interface{}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return nil, false, fmt.Errorf("invalid watchTarget")
+	}
+	switch t := v.(type) {
+	case nil:
+		return nil, true, nil
+	case string:
+		if t == "" {
+			return nil, true, nil
+		}
+	case float64:
+		return &t, false, nil
+	}
+	return nil, false, fmt.Errorf("watchTarget must be a number, null or an empty string")
 }
 
 func deref(s *string) string {

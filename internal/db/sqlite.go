@@ -509,6 +509,12 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
+	// Migration: watch_target (#828), optional goal of the watched metric.
+	_, err = db.Exec(`ALTER TABLE automations ADD COLUMN watch_target REAL`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: created_by_session_id on automations (#805).
 	_, err = db.Exec(`ALTER TABLE automations ADD COLUMN created_by_session_id TEXT NOT NULL DEFAULT ''`)
 	if err != nil && !isAlterTableDuplicate(err) {

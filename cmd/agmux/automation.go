@@ -88,17 +88,18 @@ func (a *automationAPI) list() ([]automation.Automation, error) {
 
 // automationCreateRequest mirrors the server's automationRequest body.
 type automationCreateRequest struct {
-	Name           string `json:"name"`
-	Prompt         string `json:"prompt"`
-	TriggerType    string `json:"triggerType"`
-	TriggerValue   string `json:"triggerValue"`
-	ProjectPath    string `json:"projectPath,omitempty"`
-	Model          string `json:"model,omitempty"`
-	Enabled        bool   `json:"enabled"`
-	MaxRuns        int    `json:"maxRuns,omitempty"`
-	Until          string `json:"until,omitempty"`
-	WatchMetric    string `json:"watchMetric,omitempty"`
-	WatchDirection string `json:"watchDirection,omitempty"`
+	Name           string   `json:"name"`
+	Prompt         string   `json:"prompt"`
+	TriggerType    string   `json:"triggerType"`
+	TriggerValue   string   `json:"triggerValue"`
+	ProjectPath    string   `json:"projectPath,omitempty"`
+	Model          string   `json:"model,omitempty"`
+	Enabled        bool     `json:"enabled"`
+	MaxRuns        int      `json:"maxRuns,omitempty"`
+	Until          string   `json:"until,omitempty"`
+	WatchMetric    string   `json:"watchMetric,omitempty"`
+	WatchDirection string   `json:"watchDirection,omitempty"`
+	WatchTarget    *float64 `json:"watchTarget,omitempty"`
 	// CreatedBySessionID is the calling agent session ($AGMUX_SESSION_ID).
 	CreatedBySessionID string `json:"createdBySessionId,omitempty"`
 }
@@ -235,6 +236,7 @@ func automationCreateCmd() *cobra.Command {
 	var until string
 	var watchMetric string
 	var watchDirection string
+	var watchTarget float64
 
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -279,6 +281,10 @@ If --project is omitted, the automation runs in the controller area.`,
 				projectPath = abs
 			}
 
+			var target *float64
+			if cmd.Flags().Changed("watch-target") {
+				target = &watchTarget
+			}
 			api, err := newAutomationAPI()
 			if err != nil {
 				return err
@@ -295,6 +301,7 @@ If --project is omitted, the automation runs in the controller area.`,
 				Until:          until,
 				WatchMetric:    watchMetric,
 				WatchDirection: watchDirection,
+				WatchTarget:    target,
 
 				CreatedBySessionID: os.Getenv("AGMUX_SESSION_ID"),
 			})
@@ -316,6 +323,7 @@ If --project is omitted, the automation runs in the controller area.`,
 	cmd.Flags().StringVar(&until, "until", "", "Disable automatically after this time (RFC3339, requires loops)")
 	cmd.Flags().StringVar(&watchMetric, "watch-metric", "", "Metric key (from loop_report) to watch for stagnation (requires loops)")
 	cmd.Flags().StringVar(&watchDirection, "watch-direction", "", "Which direction of --watch-metric is better: higher or lower (required with --watch-metric)")
+	cmd.Flags().Float64Var(&watchTarget, "watch-target", 0, "Goal value of --watch-metric; not judged as stagnating while the latest value has reached it (requires --watch-metric)")
 	cmd.Flags().StringVarP(&projectPath, "project", "p", "", "Project directory path (default: controller area)")
 	cmd.Flags().StringVar(&model, "model", "", "Model for the created session (default: provider default)")
 	cmd.Flags().BoolVar(&disabled, "disabled", false, "Create the automation in disabled state")
