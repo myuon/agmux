@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/myuon/agmux/internal/automation"
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/experimental"
@@ -73,6 +74,22 @@ func (s *Server) initLearning() {
 	r.Proactive = func() bool {
 		return experimental.Enabled(learning.FeatureName) && experimental.Enabled(learning.ProactiveFeatureName)
 	}
+	r.LoopsEnabled = func() bool { return experimental.Enabled(automation.FeatureLoops) }
+	r.CreateAutomation = func(name, prompt, projectPath, triggerType, triggerValue string) (string, error) {
+		// Created disabled; the person reviews it and enables it.
+		a, err := s.automations.Create(automation.CreateParams{
+			Name:         name,
+			Prompt:       prompt,
+			TriggerType:  automation.TriggerType(triggerType),
+			TriggerValue: triggerValue,
+			ProjectPath:  projectPath,
+			Enabled:      false,
+		})
+		if err != nil {
+			return "", err
+		}
+		return a.ID, nil
+	}
 	r.OnSuggestion = func(p *learning.Proposal, summary string, n int) {
 		msg := suggestionMessage(p, summary, n)
 		if err := s.saveNotification(p.SessionID, "notification", msg); err != nil {
@@ -95,6 +112,8 @@ func suggestionMessage(p *learning.Proposal, summary string, n int) string {
 	switch p.Origin {
 	case learning.OriginRepeatedCorrection:
 		return fmt.Sprintf("提案があります: 何回も指摘されている『%s』をハーネスに書きますか？", summary)
+	case learning.OriginRepeatedTask:
+		return fmt.Sprintf("提案があります: 『%s』を%d回手で頼んでいます。ループにしますか？", summary, n)
 	}
 	return fmt.Sprintf("提案があります: %s", p.Title)
 }
