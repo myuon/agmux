@@ -42,7 +42,7 @@ export interface LearningProposal {
   sessionId: string;
   sessionName: string;
   projectPath: string;
-  target: "claude_md" | "skill" | "memory";
+  target: "claude_md" | "skill" | "memory" | "loop";
   name: string;
   memoryType?: string;
   title: string;
@@ -53,7 +53,10 @@ export interface LearningProposal {
   error?: string;
   createdAt: string;
   decidedAt?: string;
-  origin?: "repeated_correction";
+  origin?: "repeated_correction" | "repeated_task";
+  triggerType?: "interval" | "cron" | "queue";
+  triggerValue?: string;
+  automationId?: string;
   clusterId?: number;
   evidence?: LearningSignal[];
 }

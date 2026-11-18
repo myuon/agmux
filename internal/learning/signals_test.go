@@ -14,6 +14,9 @@ type proactiveEnv struct {
 	*env
 	reviewOut     string // output for the review prompt
 	clusterAnswer string // output for the cluster judgement prompt
+	loopOut       string // output for the loop proposal prompt
+	created       []string
+	loops         bool
 	suggested     []*Proposal
 	calls         map[string]int
 }
@@ -35,9 +38,17 @@ func setupProactive(t *testing.T, on bool) *proactiveEnv {
 		case strings.Contains(prompt, "## 繰り返されている訂正"):
 			e.calls["correction"]++
 			return `{"proposals":[{"target":"claude_md","title":"PR は日本語で書く","content":"- PR の本文は日本語で書く","reason":"2 セッションで指摘"}]}`, nil
+		case strings.Contains(prompt, "## 手で依頼された作業"):
+			e.calls["loop"]++
+			return e.loopOut, nil
 		}
 		t.Fatalf("unexpected prompt: %.80s", prompt)
 		return "", nil
+	}
+	e.r.LoopsEnabled = func() bool { return e.loops }
+	e.r.CreateAutomation = func(name, prompt, projectPath, triggerType, triggerValue string) (string, error) {
+		e.created = append(e.created, name+"|"+prompt+"|"+triggerType+"|"+triggerValue)
+		return "auto1", nil
 	}
 	return e
 }
@@ -192,5 +203,138 @@ func TestProactiveOffDoesNothing(t *testing.T) {
 	e.r.db.QueryRow(`SELECT COUNT(*) FROM learning_signals`).Scan(&n)
 	if n != 0 || len(e.suggested) != 0 || e.calls["cluster"] != 0 || e.calls["correction"] != 0 {
 		t.Fatalf("off must not extract/match/suggest: signals=%d %+v", n, e.calls)
+	}
+}
+
+const taskOut = `{"proposals":[],"signals":[{"kind":"task","summary":"依存パッケージを更新して PR を作る","excerpt":"依存を更新して PR 出しておいて"}]}`
+const loopOut = `{"name":"依存パッケージの定期更新","prompt":"依存パッケージを更新し、テストが通れば PR を作る","trigger_type":"cron","trigger_value":"0 9 * * 1","reason":"週次の作業に見える"}`
+
+func (e *proactiveEnv) addAutomationSession(t *testing.T, id string) {
+	t.Helper()
+	e.addSession(t, id)
+	if _, err := e.r.db.Exec(`UPDATE sessions SET automation_id = 'auto0' WHERE id = ?`, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRepeatedTaskSuggestedAtThreeManualSessions(t *testing.T) {
+	e := setupProactive(t, true)
+	for _, id := range []string{"s2", "s3"} {
+		e.addSession(t, id)
+	}
+	e.addAutomationSession(t, "a1")
+	e.addAutomationSession(t, "a2")
+	e.reviewOut = taskOut
+	e.loopOut = loopOut
+	e.clusterAnswer = `{"cluster_id": 1}`
+
+	e.review(t, "s1")
+	e.review(t, "s2")
+	// Sessions started by an automation are not counted.
+	e.review(t, "a1")
+	e.review(t, "a2")
+	if len(e.suggested) != 0 {
+		t.Fatalf("two manual requests must not suggest (automation sessions ignored): %+v", e.calls)
+	}
+
+	e.review(t, "s3")
+	if len(e.suggested) != 1 {
+		t.Fatalf("expected a suggestion at 3 manual sessions: %+v", e.calls)
+	}
+	p := e.suggested[0]
+	if p.Origin != OriginRepeatedTask || p.Target != TargetLoop || p.Title != "依存パッケージの定期更新" ||
+		p.TriggerType != "cron" || p.TriggerValue != "0 9 * * 1" || p.ClusterID != 1 {
+		t.Fatalf("unexpected proposal: %+v", p)
+	}
+	got, _ := e.r.store.Get(p.ID)
+	if len(got.Evidence) != 3 {
+		t.Fatalf("evidence should be the 3 manual requests, got %d", len(got.Evidence))
+	}
+
+	// Accepting creates the automation (disabled by the creator) and records it.
+	acc, err := e.r.Accept(p.ID, "編集後のプロンプト")
+	if err != nil || acc.Status != StatusApplied || acc.AutomationID != "auto1" {
+		t.Fatalf("accept: %v %+v", err, acc)
+	}
+	if len(e.created) != 1 || e.created[0] != "依存パッケージの定期更新|編集後のプロンプト|cron|0 9 * * 1" {
+		t.Fatalf("automation params wrong: %v", e.created)
+	}
+	if len(e.started) != 0 {
+		t.Fatal("loop proposals must not start an apply session")
+	}
+}
+
+func TestLoopTriggerFallsBack(t *testing.T) {
+	for name, trig := range map[string]string{
+		"invalid":    `"trigger_type":"interval","trigger_value":"often"`,
+		"queue-off":  `"trigger_type":"queue","trigger_value":"0s"`,
+		"bogus-type": `"trigger_type":"weekly","trigger_value":"1"`,
+	} {
+		e := setupProactive(t, true)
+		e.reviewOut = taskOut
+		e.loopOut = `{"name":"n","prompt":"p",` + trig + `}`
+		e.clusterAnswer = `{"cluster_id": 1}`
+		for _, id := range []string{"s2", "s3"} {
+			e.addSession(t, id)
+		}
+		e.review(t, "s1")
+		e.review(t, "s2")
+		e.review(t, "s3")
+		if len(e.suggested) != 1 || e.suggested[0].TriggerType != "interval" || e.suggested[0].TriggerValue != "24h" {
+			t.Fatalf("%s: expected interval 24h fallback, got %+v", name, e.suggested)
+		}
+	}
+
+	// queue is kept when loops is on.
+	e := setupProactive(t, true)
+	e.loops = true
+	e.reviewOut = taskOut
+	e.loopOut = `{"name":"n","prompt":"p","trigger_type":"queue","trigger_value":"0s"}`
+	e.clusterAnswer = `{"cluster_id": 1}`
+	for _, id := range []string{"s2", "s3"} {
+		e.addSession(t, id)
+	}
+	e.review(t, "s1")
+	e.review(t, "s2")
+	e.review(t, "s3")
+	if len(e.suggested) != 1 || e.suggested[0].TriggerType != "queue" {
+		t.Fatalf("queue should be kept with loops on: %+v", e.suggested)
+	}
+}
+
+func TestRejectedLoopIsNotSuggestedAgain(t *testing.T) {
+	e := setupProactive(t, true)
+	for _, id := range []string{"s2", "s3", "s4"} {
+		e.addSession(t, id)
+	}
+	e.reviewOut = taskOut
+	e.loopOut = loopOut
+	e.clusterAnswer = `{"cluster_id": 1}`
+	e.review(t, "s1")
+	e.review(t, "s2")
+	e.review(t, "s3")
+	if len(e.suggested) != 1 {
+		t.Fatal("expected a suggestion")
+	}
+	if _, err := e.r.Reject(e.suggested[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	e.review(t, "s4")
+	if len(e.suggested) != 1 || e.calls["loop"] != 1 {
+		t.Fatalf("rejected cluster must stay quiet: %d %+v", len(e.suggested), e.calls)
+	}
+}
+
+func TestTaskSignalsOffDoNothing(t *testing.T) {
+	e := setupProactive(t, false)
+	for _, id := range []string{"s2", "s3"} {
+		e.addSession(t, id)
+	}
+	e.reviewOut = taskOut
+	e.review(t, "s1")
+	e.review(t, "s2")
+	e.review(t, "s3")
+	if len(e.suggested) != 0 || e.calls["loop"] != 0 || e.calls["cluster"] != 0 {
+		t.Fatalf("off must not act: %+v", e.calls)
 	}
 }

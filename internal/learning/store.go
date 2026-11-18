@@ -12,11 +12,13 @@ const (
 	TargetClaudeMD = "claude_md"
 	TargetSkill    = "skill"
 	TargetMemory   = "memory"
+	TargetLoop     = "loop" // origin repeated_task: create a disabled Automation
 )
 
 // Proposal origins. Empty means an ordinary per-session review.
 const (
 	OriginRepeatedCorrection = "repeated_correction"
+	OriginRepeatedTask       = "repeated_task"
 )
 
 // Proposal statuses.

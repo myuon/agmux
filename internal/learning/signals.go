@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/myuon/agmux/internal/automation"
 )
 
 // ProactiveFeatureName is the experimental flag for repeated-pattern
@@ -17,6 +19,7 @@ const ProactiveFeatureName = "proactive_suggestions"
 // Signal kinds.
 const (
 	SignalCorrection = "correction"
+	SignalTask       = "task"
 )
 
 // Cluster states.
@@ -30,11 +33,12 @@ const (
 	maxClusterCandidates = 30
 	maxSignalsPerReview  = 6
 	correctionThreshold  = 2 // distinct sessions
+	taskThreshold        = 3 // distinct manually-started sessions
 	maxExcerptRunes      = 300
 )
 
 // Signal is something a review noticed that may repeat across sessions: a
-// correction the user made.
+// correction the user made, or a kind of task the user asked for.
 type Signal struct {
 	ID          int64     `json:"id"`
 	ProjectPath string    `json:"projectPath"`
@@ -203,7 +207,7 @@ func ParseSignals(raw string) []*Signal {
 	var res []*Signal
 	for _, g := range out.Signals {
 		g.Summary = strings.TrimSpace(g.Summary)
-		if g.Summary == "" || g.Kind != SignalCorrection {
+		if g.Summary == "" || (g.Kind != SignalCorrection && g.Kind != SignalTask) {
 			continue
 		}
 		res = append(res, &Signal{Kind: g.Kind, Summary: g.Summary, Excerpt: headRunes(strings.TrimSpace(g.Excerpt), maxExcerptRunes)})
@@ -221,18 +225,27 @@ func (r *Reviewer) proactiveOn() bool {
 const signalsInstruction = `
 ## シグナル（任意）
 proposals とは別に、複数セッションにまたがる繰り返しの検知に使う「シグナル」を、出力 JSON の "signals" に入れてください。
-- kind は "correction": ユーザーがエージェントのやり方を直した・指摘した箇所。summary は「何をどう直されたか」を、このセッション固有の固有名詞を落とした一般形で1文
+- kind が "correction": ユーザーがエージェントのやり方を直した・指摘した箇所。summary は「何をどう直されたか」を、このセッション固有の固有名詞を落とした一般形で1文
+- kind が "task": ユーザーが依頼した作業の型。summary は固有名詞（PR 番号、ファイル名など）を落とした一般形で1文（例: 「依存パッケージを更新して PR を作る」）
 - excerpt: 根拠になったユーザー発言の短い抜粋（そのまま、300字以内）
 - 該当が無ければ空配列。最大 6 件
-出力は {"proposals":[...],"signals":[{"kind":"correction","summary":"…","excerpt":"…"}]} の形にする。
+出力は {"proposals":[...],"signals":[{"kind":"correction|task","summary":"…","excerpt":"…"}]} の形にする。
 `
 
 // processSignals stores the signals of a review, clusters them with earlier
 // signals of the same project and raises suggestions that reached their
-// threshold.
+// threshold. Task signals from automation sessions are not counted.
 func (r *Reviewer) processSignals(ctx context.Context, sess *sessionInfo, signals []*Signal) {
+	automated := false
+	var automationID sql.NullString
+	if err := r.db.QueryRow(`SELECT automation_id FROM sessions WHERE id = ?`, sess.id).Scan(&automationID); err == nil && automationID.Valid && automationID.String != "" {
+		automated = true
+	}
 	touched := map[int64]string{} // cluster id -> kind
 	for _, sig := range signals {
+		if sig.Kind == SignalTask && automated {
+			continue
+		}
 		sig.ProjectPath, sig.SessionID = sess.projectPath, sess.id
 		if err := r.store.InsertSignal(sig); err != nil {
 			r.logger.Warn("learning: insert signal failed", "error", err)
@@ -284,6 +297,9 @@ func clusterPrompt(cands []cluster, sig *Signal) string {
 		fmt.Fprintf(&b, "- %d: %s\n", c.ID, c.Summary)
 	}
 	what := "ユーザーの訂正"
+	if sig.Kind == SignalTask {
+		what = "ユーザーが依頼した作業の型"
+	}
 	return fmt.Sprintf(`次の「新しいシグナル」（%s）が、候補クラスタのどれかと同じ趣旨かを判定してください。
 言い回しや固有名詞が違っても、同じ指摘・同じ種類の作業なら同じ趣旨です。迷う場合は "new" にしてください。
 
@@ -341,6 +357,11 @@ func (r *Reviewer) maybeSuggest(ctx context.Context, sess *sessionInfo, clusterI
 			return nil
 		}
 		p, err = r.buildCorrectionProposal(ctx, sess, sigs)
+	case SignalTask:
+		if n < taskThreshold {
+			return nil
+		}
+		p, err = r.buildLoopProposal(ctx, sess, sigs)
 	}
 	if err != nil || p == nil {
 		return err
@@ -422,4 +443,63 @@ const correctionPrompt = `複数のセッションで、ユーザーがエージ
 ## 出力形式
 JSON だけを出力する（前置き・コードフェンス不要）。proposals は最大1件。
 {"proposals":[{"target":"claude_md|skill|memory","name":"skill名 または memory の slug（kebab-case）。claude_md では空","memory_type":"memory のときだけ: user|feedback|project|reference","title":"一行の要約","content":"追記する本文（Markdown）","reason":"なぜ提案するか。根拠となった指摘を短く引用"}]}
+`
+
+func (r *Reviewer) loopsOn() bool { return r.LoopsEnabled != nil && r.LoopsEnabled() }
+
+func (r *Reviewer) buildLoopProposal(ctx context.Context, sess *sessionInfo, sigs []*Signal) (*Proposal, error) {
+	queueNote := "queue は使えません（interval か cron を選ぶ）"
+	if r.loopsOn() {
+		queueNote = "queue は「残タスクがある限り回す」型の作業のときだけ選ぶ（trigger_value は実行間の待ち時間、例 0s）"
+	}
+	prompt := fmt.Sprintf(loopPrompt, sess.projectPath, queueNote, evidenceList(sigs))
+	raw, err := r.Generate(ctx, r.Model(), prompt)
+	if err != nil {
+		return nil, err
+	}
+	var out struct {
+		Name         string `json:"name"`
+		Prompt       string `json:"prompt"`
+		TriggerType  string `json:"trigger_type"`
+		TriggerValue string `json:"trigger_value"`
+		Reason       string `json:"reason"`
+	}
+	if err := json.Unmarshal([]byte(extractJSON(raw)), &out); err != nil {
+		return nil, fmt.Errorf("parse loop proposal: %w", err)
+	}
+	out.Name, out.Prompt = strings.TrimSpace(out.Name), strings.TrimSpace(out.Prompt)
+	if out.Name == "" || out.Prompt == "" {
+		return nil, nil
+	}
+	tt, tv := automation.TriggerType(out.TriggerType), strings.TrimSpace(out.TriggerValue)
+	if automation.ValidateTrigger(tt, tv) != nil || (tt == automation.TriggerQueue && !r.loopsOn()) {
+		// The person reviews the trigger before enabling, so fall back to a
+		// plain daily interval rather than dropping the suggestion.
+		tt, tv = automation.TriggerInterval, "24h"
+	}
+	reason := strings.TrimSpace(out.Reason)
+	if reason == "" {
+		reason = fmt.Sprintf("%d 回手で依頼されています", distinctSessions(sigs))
+	}
+	return &Proposal{
+		Origin: OriginRepeatedTask, Target: TargetLoop,
+		Title: out.Name, Content: out.Prompt, Reason: reason,
+		TriggerType: string(tt), TriggerValue: tv,
+	}, nil
+}
+
+const loopPrompt = `ユーザーが、同じ型の作業を何度も手で依頼しています。これを Automation（繰り返し実行）にするための案を作ってください。
+
+- name: Automation の名前（短く）
+- prompt: 毎回エージェントに渡す依頼文。依頼ごとに変わる固有の値（PR 番号など）は含めず、一般形で、自己完結した指示にする
+- trigger_type: "interval"（trigger_value は 6h や 30m）または "cron"（5 フィールド、例 0 9 * * 1-5）。%[2]s
+- 依頼の頻度や性質から、合うトリガーを選ぶ
+
+## プロジェクト
+%[1]s
+
+## 手で依頼された作業
+%[3]s
+JSON だけを出力する（前置き・コードフェンス不要）。
+{"name":"…","prompt":"…","trigger_type":"interval|cron|queue","trigger_value":"…","reason":"なぜこのトリガーか。一文"}
 `

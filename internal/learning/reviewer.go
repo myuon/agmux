@@ -61,9 +61,15 @@ type Reviewer struct {
 	// Proactive reports whether proactive_suggestions is on (and learning_inbox
 	// with it). When off, no signals are requested, stored or matched.
 	Proactive func() bool
+	// LoopsEnabled reports whether the experimental loops feature is on
+	// (queue triggers are only offered then).
+	LoopsEnabled func() bool
 	// OnSuggestion is called when a repeated pattern produced a proposal.
 	// summary is the cluster's representative summary, n the session count.
 	OnSuggestion func(p *Proposal, summary string, n int)
+	// CreateAutomation creates a disabled Automation for an accepted loop
+	// proposal and returns its ID.
+	CreateAutomation func(name, prompt, projectPath, triggerType, triggerValue string) (string, error)
 
 	mu      sync.Mutex
 	running map[string]bool
