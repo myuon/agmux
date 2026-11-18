@@ -24,6 +24,26 @@ export interface ChoiceCard {
   createdAt: string;
 }
 
+export interface SuggestionRuleInfo {
+  id: string;
+  trigger: string;
+  detector?: string;
+  target: string;
+  source: "builtin" | "global" | "project";
+  condition?: string;
+  question: string;
+  cooldown: string;
+  projectPath?: string;
+  recentCards: number;
+}
+
+export interface SuggestionRules {
+  rules: SuggestionRuleInfo[];
+  errors: string[];
+  recentCards: number;
+  windowDays: number;
+}
+
 export interface ExperimentalFeature {
   name: string;
   title: string;
@@ -314,6 +334,9 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ enabled }),
     }),
+
+  // Needs proactive_suggestions and choice_cards: 404 while either is off.
+  listSuggestionRules: () => request<SuggestionRules>("/suggestions/rules"),
 
   // Experimental "choice_cards" only: 404 while the feature is off.
   listChoiceCards: (sessionId: string) =>

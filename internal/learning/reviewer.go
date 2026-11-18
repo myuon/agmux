@@ -464,3 +464,43 @@ func ParseProposals(raw string) ([]*Proposal, error) {
 
 // Store returns the proposal store.
 func (r *Reviewer) Store() *Store { return r.store }
+
+// TranscriptTail returns the end of a session's conversation (at most
+// maxRunes runes), for cheap condition checks. It only reads the tail of the
+// stream file.
+func (r *Reviewer) TranscriptTail(sessionID string, maxRunes int) (string, error) {
+	sess, err := r.loadSession(sessionID)
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(r.streamsDir, sess.id+".jsonl")
+	st, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	const window = 400 * 1024
+	var offset int64
+	if st.Size() > window {
+		// Align to a line start: skip the partial line at the cut.
+		f, err := os.Open(path)
+		if err != nil {
+			return "", err
+		}
+		buf := make([]byte, window)
+		n, _ := f.ReadAt(buf, st.Size()-window)
+		_ = f.Close()
+		if i := bytes.IndexByte(buf[:n], '\n'); i >= 0 {
+			offset = st.Size() - window + int64(i) + 1
+		} else {
+			return "", nil
+		}
+	}
+	text, _, err := r.readTranscript(sess, offset)
+	if err != nil {
+		return "", err
+	}
+	return tailRunes(text, maxRunes), nil
+}

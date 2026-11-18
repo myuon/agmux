@@ -91,18 +91,22 @@ func (s *Server) initLearning() {
 		return a.ID, nil
 	}
 	r.OnSuggestion = func(p *learning.Proposal, summary string, n int) {
-		msg := suggestionMessage(p, summary, n)
-		if err := s.saveNotification(p.SessionID, "notification", msg); err != nil {
-			slog.Error("failed to save learning suggestion notification", "error", err)
+		// A rule card (which notifies by itself) replaces the plain
+		// notification; the proposal stays in the inbox either way.
+		if !s.suggestSignalCluster(p, summary, n) {
+			msg := suggestionMessage(p, summary, n)
+			if err := s.saveNotification(p.SessionID, "notification", msg); err != nil {
+				slog.Error("failed to save learning suggestion notification", "error", err)
+			}
+			s.hub.Broadcast(Message{
+				Type: "agent_notification",
+				Data: map[string]interface{}{
+					"sessionId":   p.SessionID,
+					"sessionName": p.SessionName,
+					"message":     msg,
+				},
+			})
 		}
-		s.hub.Broadcast(Message{
-			Type: "agent_notification",
-			Data: map[string]interface{}{
-				"sessionId":   p.SessionID,
-				"sessionName": p.SessionName,
-				"message":     msg,
-			},
-		})
 		s.hub.Broadcast(Message{Type: "learning_proposals", Data: map[string]interface{}{"sessionId": p.SessionID, "count": 1}})
 	}
 	s.learning = r

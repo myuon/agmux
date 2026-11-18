@@ -50,6 +50,7 @@ type Server struct {
 	logger           *slog.Logger
 	escalations      *EscalationStore
 	choice           choiceState
+	suggest          suggestState
 	permissions     *PermissionStore
 	otelReceiver     *otel.Receiver
 	sqlDB            *sql.DB
@@ -85,6 +86,7 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 	}
 	s.initSearch()
 	s.initLearning()
+	s.initSuggestions()
 
 	// Wire real-time stream updates via WebSocket
 	sessions.SetOnNewLines(func(sessionID string, newLines []string, total int) {
@@ -108,6 +110,7 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 
 	// Wire real-time status change updates via WebSocket
 	sessions.SetOnStatusChange(func(sessionID string, status session.Status, lastError string) {
+		s.suggestStatusChange(sessionID, status)
 		data := map[string]interface{}{
 			"sessionId": sessionID,
 			"status":    string(status),
@@ -274,6 +277,7 @@ func (s *Server) setupRoutes() {
 		s.mountArtifacts(r)
 		s.mountSecrets(r)
 		s.mountChoiceCards(r)
+		r.Get("/suggestions/rules", s.listSuggestionRules)
 
 	})
 
@@ -868,6 +872,7 @@ func (s *Server) completeGoal(w http.ResponseWriter, r *http.Request) {
 	}
 	if cgResult.ParentGoal == nil {
 		s.maybeReviewLearning(id)
+		s.suggestGoalCompleted(id, req.Report)
 	}
 
 	// Broadcast goal_completed notification via WebSocket
