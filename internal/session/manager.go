@@ -52,8 +52,8 @@ type Manager struct {
 	onContextUsage     func(sessionID string, contextTokens, contextWindow int64)
 	onNameChange       func(sessionID, name string)
 	// titleGenerator overrides the auto-title generator (nil = claude -p haiku).
-	titleGenerator TitleGenerator
-	backgroundTasks    *BackgroundTaskStore
+	titleGenerator  TitleGenerator
+	backgroundTasks *BackgroundTaskStore
 	// autoStop tracks automation-created sessions that are still "armed" for
 	// auto-stop (see automation_autostop.go). Presence in the map means armed;
 	// the value is the max-runtime fallback timer. In-memory only.
@@ -586,6 +586,7 @@ type CreateOpts struct {
 	EphemeralTimeoutSeconds *int   // timeout in seconds for ephemeral sessions
 	AutomationID            string // ID of the automation that created this session (empty for manual sessions)
 	AutoName                bool   // name is a UI default; auto-title it from the first user message (#770)
+	CreatedBySessionID      string // session that created this one (AGMUX_SESSION_ID); recorded for project membership (#805)
 }
 
 // initialCreateStatus returns the status a freshly created session must be
@@ -622,6 +623,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	ephemeral := false
 	var ephemeralTimeoutSeconds *int
 	automationID := ""
+	createdBySessionID := ""
 	autoName := false
 	if len(opts) > 0 {
 		if opts[0].Provider != "" {
@@ -636,6 +638,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		ephemeralTimeoutSeconds = opts[0].EphemeralTimeoutSeconds
 		automationID = opts[0].AutomationID
 		autoName = opts[0].AutoName
+		createdBySessionID = opts[0].CreatedBySessionID
 	}
 
 	// Validate parent session exists when creating a sub-session
@@ -751,6 +754,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		ParentSessionID:         parentSessionID,
 		RoleTemplate:            roleTemplate,
 		AutomationID:            automationID,
+		CreatedBySessionID:      createdBySessionID,
 		EphemeralTimeoutSeconds: ephemeralTimeoutSeconds,
 		CreatedAt:               now,
 		UpdatedAt:               now,
@@ -765,9 +769,9 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		s.NameSource = NameSourceDefault
 	}
 	if _, err := m.db.Exec(
-		`INSERT INTO sessions (id, name, name_source, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, role_template, automation_id, holder_pid, ephemeral_timeout_seconds, completion_report, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		s.ID, s.Name, s.NameSource, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, s.AutomationID, holderPID, s.EphemeralTimeoutSeconds, s.CompletionReport, s.CreatedAt, s.UpdatedAt,
+		`INSERT INTO sessions (id, name, name_source, project_path, initial_prompt, tmux_session, status, type, output_mode, provider, model, system_prompt, parent_session_id, role_template, automation_id, created_by_session_id, holder_pid, ephemeral_timeout_seconds, completion_report, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		s.ID, s.Name, s.NameSource, s.ProjectPath, s.InitialPrompt, "", string(s.Status), string(s.Type), "stream", string(s.Provider), s.Model, s.SystemPrompt, s.ParentSessionID, s.RoleTemplate, s.AutomationID, s.CreatedBySessionID, holderPID, s.EphemeralTimeoutSeconds, s.CompletionReport, s.CreatedAt, s.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
@@ -891,7 +895,7 @@ func (m *Manager) UpdateStatusWithHolderPIDClear(id string, status Status) error
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, name_source, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
+		`SELECT id, name, name_source, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, created_by_session_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -906,9 +910,10 @@ func (m *Manager) List() ([]Session, error) {
 		var sessionType string
 		var providerStr string
 		var prompt, systemPrompt, parentSessionID, roleTemplate, automationID, currentTask, goal, goalsJSON, lastError, completionReport sql.NullString
+		var createdBy string
 		var conversationStartedInt int
 		var ephemeralTimeoutSeconds sql.NullInt64
-		if err := rows.Scan(&s.ID, &s.Name, &s.NameSource, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.NameSource, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &createdBy, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.ConversationStarted = conversationStartedInt != 0
@@ -933,6 +938,7 @@ func (m *Manager) List() ([]Session, error) {
 		if automationID.Valid {
 			s.AutomationID = automationID.String
 		}
+		s.CreatedBySessionID = createdBy
 		if currentTask.Valid {
 			s.CurrentTask = currentTask.String
 		}
@@ -965,12 +971,13 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var sessionType string
 	var providerStr string
 	var prompt, systemPrompt, parentSessionID, roleTemplate, automationID, currentTask, goal, goalsJSON, lastError, completionReport sql.NullString
+	var createdBy string
 	var conversationStartedInt int
 	var ephemeralTimeoutSeconds sql.NullInt64
 	err := m.db.QueryRow(
-		`SELECT id, name, name_source, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
+		`SELECT id, name, name_source, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, created_by_session_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.NameSource, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.NameSource, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &createdBy, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -999,6 +1006,7 @@ func (m *Manager) Get(id string) (*Session, error) {
 	if automationID.Valid {
 		s.AutomationID = automationID.String
 	}
+	s.CreatedBySessionID = createdBy
 	if currentTask.Valid {
 		s.CurrentTask = currentTask.String
 	}

@@ -82,6 +82,12 @@ func (r *Reviewer) Reject(id int64) (*Proposal, error) {
 			return nil, err
 		}
 	}
+	if p.ClusterID > 0 {
+		// Never suggest this repeated pattern again.
+		if err := r.store.setClusterState(p.ClusterID, clusterDismissed); err != nil {
+			return nil, err
+		}
+	}
 	return r.store.Get(id)
 }
 

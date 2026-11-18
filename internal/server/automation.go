@@ -33,6 +33,8 @@ type automationRequest struct {
 	// "" clears it.
 	WatchMetric    *string `json:"watchMetric,omitempty"`
 	WatchDirection *string `json:"watchDirection,omitempty"`
+	// CreatedBySessionID records the creating session on create (#805).
+	CreatedBySessionID string `json:"createdBySessionId,omitempty"`
 }
 
 // checkLoopFeatures rejects queue triggers and safety valves while the
@@ -130,6 +132,8 @@ func (s *Server) createAutomation(w http.ResponseWriter, r *http.Request) {
 		ProjectPath:    req.ProjectPath,
 		Model:          deref(req.Model),
 		Enabled:        req.Enabled,
+
+		CreatedBySessionID: req.CreatedBySessionID,
 	})
 	if err != nil {
 		// Store.Create only fails on validation errors or DB errors; treat

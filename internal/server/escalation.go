@@ -134,6 +134,19 @@ func (es *EscalationStore) GetBySession(sessionID string) *Escalation {
 	return nil
 }
 
+// Pending returns a snapshot of all unresolved escalations.
+func (es *EscalationStore) Pending() []Escalation {
+	es.mu.Lock()
+	defer es.mu.Unlock()
+	var out []Escalation
+	for _, esc := range es.escalations {
+		if !esc.Resolved {
+			out = append(out, *esc)
+		}
+	}
+	return out
+}
+
 // MarkTimedOut marks an escalation as timed out with an auto-response.
 func (es *EscalationStore) MarkTimedOut(id, autoResponse string) {
 	es.mu.Lock()

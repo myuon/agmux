@@ -427,6 +427,29 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: created_by_session_id on sessions (#805). The session (from
+	// AGMUX_SESSION_ID) that created this session; used to attach it to the
+	// creator's project when the creator is a project coordinator.
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN created_by_session_id TEXT NOT NULL DEFAULT ''`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
+	// Migration: projects table (#805, experimental "projects"). A project is
+	// implied by sessions.project_path; a row exists only to record its
+	// coordinator.
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS projects (
+			path TEXT PRIMARY KEY,
+			coordinator_session_id TEXT NOT NULL DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
 	// Migration: create automations table
 	// trigger_type is 'interval' (trigger_value = Go duration, e.g. "30m")
 	// or 'cron' (trigger_value = standard 5-field cron expression).
@@ -477,6 +500,12 @@ func migrate(db *sql.DB) error {
 		if err != nil && !isAlterTableDuplicate(err) {
 			return err
 		}
+	}
+
+	// Migration: created_by_session_id on automations (#805).
+	_, err = db.Exec(`ALTER TABLE automations ADD COLUMN created_by_session_id TEXT NOT NULL DEFAULT ''`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
 	}
 
 	// Migration: create automation_runs table (execution history)

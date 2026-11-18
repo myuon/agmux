@@ -63,6 +63,22 @@ func (s *Store) FindRunBySession(sessionID string) (*Run, error) {
 	return r, nil
 }
 
+// LatestReport returns the report of the newest run that has one, or nil.
+func (s *Store) LatestReport(automationID string) (*Report, error) {
+	var runID int64
+	err := s.db.QueryRow(
+		`SELECT r.id FROM automation_runs r JOIN automation_run_reports p ON p.run_id = r.id
+		 WHERE r.automation_id = ? ORDER BY r.fired_at DESC, r.id DESC LIMIT 1`, automationID,
+	).Scan(&runID)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("latest report: %w", err)
+	}
+	return s.getReport(runID)
+}
+
 // SaveReport stores the report for a run, overwriting any previous one.
 func (s *Store) SaveReport(runID int64, metrics map[string]float64, summary string, links []ReportLink) (*Report, error) {
 	if metrics == nil {
