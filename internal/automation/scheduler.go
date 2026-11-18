@@ -3,6 +3,7 @@ package automation
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,6 +33,9 @@ type Scheduler struct {
 	// Notify delivers a watchdog notification (may be nil). sessionID is the
 	// latest run session (may be empty).
 	Notify func(a Automation, sessionID, message string)
+	// OnLimitStop is called when a safety valve (max runs / deadline)
+	// disabled an automation (may be nil). It is not a user notification.
+	OnLimitStop func(a Automation, message string)
 
 	mu     sync.Mutex
 	stopCh chan struct{}
@@ -171,6 +175,9 @@ func (s *Scheduler) enforceLimits(a Automation, now time.Time) bool {
 		s.logger.Warn("automation scheduler: record disable reason failed", "automationId", a.ID, "error", err)
 	}
 	s.logger.Info("automation disabled by safety valve", "automationId", a.ID, "name", a.Name, "reason", reason)
+	if s.OnLimitStop != nil {
+		s.OnLimitStop(a, fmt.Sprintf("Automation「%s」(id: %s) を停止しました（安全弁）: %s", a.Name, a.ID, strings.TrimPrefix(reason, "disabled: ")))
+	}
 	return true
 }
 

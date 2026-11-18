@@ -280,6 +280,8 @@ func serveCmd() *cobra.Command {
 			autoRunner := automation.NewRunner(autoStore, mgr, logger)
 			autoScheduler := automation.NewScheduler(autoStore, autoRunner, logger)
 			autoScheduler.Notify = func(a automation.Automation, sessionID, message string) {
+				// Copy to the project coordinator (no-op unless projects is on).
+				srv.NoticeAutomation(a, message)
 				if err := server.SaveNotification(database, sessionID, "notification", message); err != nil {
 					logger.Error("failed to save automation watchdog notification", "error", err)
 				}
@@ -292,6 +294,7 @@ func serveCmd() *cobra.Command {
 					},
 				})
 			}
+			autoScheduler.OnLimitStop = srv.NoticeAutomation
 			autoScheduler.Start()
 			// Stop is idempotent; the defer covers error-return paths (frontend
 			// load / listen / Serve errors) that bypass the graceful-shutdown
