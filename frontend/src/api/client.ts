@@ -27,6 +27,16 @@ export interface SessionSearchResult {
   snippet: string;
 }
 
+export interface LearningSignal {
+  id: number;
+  sessionId: string;
+  sessionName?: string;
+  kind: "correction" | "task";
+  summary: string;
+  excerpt: string;
+  createdAt: string;
+}
+
 export interface LearningProposal {
   id: number;
   sessionId: string;
@@ -43,6 +53,9 @@ export interface LearningProposal {
   error?: string;
   createdAt: string;
   decidedAt?: string;
+  origin?: "repeated_correction";
+  clusterId?: number;
+  evidence?: LearningSignal[];
 }
 
 export interface SecretUsage {
