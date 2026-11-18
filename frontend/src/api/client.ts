@@ -353,6 +353,16 @@ export const api = {
 
   getAutomation: (id: string) => request<Automation>(`/automations/${id}`),
 
+  // Experimental "projects" (#805): 404 while the feature is off.
+  listProjects: () => request<ProjectSummary[]>("/projects"),
+  getProject: (path: string) =>
+    request<ProjectDetail>(`/projects/${encodeURIComponent(path)}`),
+  setProjectCoordinator: (path: string, sessionId: string) =>
+    request<ProjectDetail>(`/projects/${encodeURIComponent(path)}/coordinator`, {
+      method: "PUT",
+      body: JSON.stringify({ sessionId }),
+    }),
+
   createAutomation: (data: AutomationInput) =>
     request<Automation>("/automations", {
       method: "POST",
@@ -454,6 +464,44 @@ export interface AutomationSummary {
   }[];
   feeders: AutomationRef[];
   feeds: AutomationRef[];
+}
+
+// Mirrors the Go projectSummary / projectDetail (internal/server/projects.go).
+export interface ProjectSummary {
+  path: string;
+  name: string;
+  coordinator: { id: string; name: string; status: string } | null;
+  activeSessions: number;
+  automations: { running: number; waiting: number; stopped: number };
+  pendingEscalations: number;
+  lastUpdatedAt: string | null;
+}
+
+export interface ProjectAutomation {
+  id: string;
+  name: string;
+  enabled: boolean;
+  triggerType: string;
+  state: "running" | "waiting" | "stopped";
+  lastRunAt: string | null;
+  nextFireAt: string | null;
+  // loops only
+  pendingTasks?: number;
+  stoppedReason?: string;
+  latestReport?: { metrics: Record<string, number>; summary: string } | null;
+}
+
+export interface ProjectDetail extends ProjectSummary {
+  sessions: {
+    id: string;
+    name: string;
+    status: string;
+    type: string;
+    projectPath: string;
+    updatedAt: string;
+  }[];
+  automationList: ProjectAutomation[];
+  escalations: { id: string; sessionId: string; message: string }[];
 }
 
 export interface Automation {
