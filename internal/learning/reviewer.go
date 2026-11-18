@@ -58,6 +58,13 @@ type Reviewer struct {
 	// OnProposals is called after a review produced at least one proposal.
 	OnProposals func(sessionID, sessionName string, n int)
 
+	// Proactive reports whether proactive_suggestions is on (and learning_inbox
+	// with it). When off, no signals are requested, stored or matched.
+	Proactive func() bool
+	// OnSuggestion is called when a repeated pattern produced a proposal.
+	// summary is the cluster's representative summary, n the session count.
+	OnSuggestion func(p *Proposal, summary string, n int)
+
 	mu      sync.Mutex
 	running map[string]bool
 }
@@ -179,6 +186,10 @@ func (r *Reviewer) Review(ctx context.Context, sessionID string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	var signals []*Signal
+	if r.proactiveOn() {
+		signals = ParseSignals(raw)
+	}
 	for _, p := range proposals {
 		p.SessionID, p.SessionName, p.ProjectPath = sess.id, sess.name, sess.projectPath
 		if err := r.store.Insert(p); err != nil {
@@ -187,6 +198,9 @@ func (r *Reviewer) Review(ctx context.Context, sessionID string) (int, error) {
 	}
 	if err := r.store.SetReviewOffset(sessionID, newOffset); err != nil {
 		return 0, err
+	}
+	if len(signals) > 0 && r.proactiveOn() {
+		r.processSignals(ctx, sess, signals)
 	}
 	if len(proposals) > 0 && r.OnProposals != nil {
 		r.OnProposals(sess.id, sess.name, len(proposals))
@@ -307,8 +321,13 @@ func (r *Reviewer) buildPrompt(sess *sessionInfo, transcript string) (string, er
 		prior.WriteString("(なし)\n")
 	}
 
+	signalsPart := ""
+	if r.proactiveOn() {
+		signalsPart = signalsInstruction
+	}
 	return fmt.Sprintf(reviewPrompt,
 		maxProposalsPerReview,
+		signalsPart,
 		sess.projectPath,
 		readOr(filepath.Join(sess.projectPath, "CLAUDE.md"), "(CLAUDE.md なし)", maxClaudeMDRunes),
 		listSkills(sess.projectPath),
@@ -342,7 +361,7 @@ JSON だけを出力する。前置きや説明、コードフェンスは不要
 
 - target が skill の場合、name が既存スキルと同じなら既存の SKILL.md への追記、違えば新規スキルになる
 - target が memory の場合、content は1つの事実。feedback/project なら **Why:** と **How to apply:** の行を付ける
-
+%s
 ## プロジェクト
 %s
 
@@ -382,16 +401,7 @@ func slugify(s string) string {
 
 // ParseProposals parses and validates the reviewer output.
 func ParseProposals(raw string) ([]*Proposal, error) {
-	raw = strings.TrimSpace(raw)
-	if m := codeFence.FindStringSubmatch(raw); m != nil {
-		raw = m[1]
-	}
-	if i := strings.Index(raw, "{"); i > 0 {
-		raw = raw[i:]
-	}
-	if i := strings.LastIndex(raw, "}"); i >= 0 && i < len(raw)-1 {
-		raw = raw[:i+1]
-	}
+	raw = extractJSON(raw)
 	var out struct {
 		Proposals []struct {
 			Target     string `json:"target"`

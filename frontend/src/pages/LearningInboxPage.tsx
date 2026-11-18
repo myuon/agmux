@@ -33,6 +33,30 @@ const statusLabel: Record<LearningProposal["status"], string> = {
   failed: "失敗",
 };
 
+function Evidence({ p }: { p: LearningProposal }) {
+  const items = p.evidence ?? [];
+  if (!p.origin || items.length === 0) return null;
+  const sessions = new Set(items.map((g) => g.sessionId)).size;
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded px-3 py-2 space-y-2" data-testid="evidence">
+      <div className="text-xs font-medium text-amber-800">
+        {sessions} セッションで同じ趣旨の指摘がありました（{items.length} 回）
+      </div>
+      <ul className="space-y-1.5">
+        {items.map((g) => (
+          <li key={g.id} className="text-xs text-gray-700">
+            <Link to={`/sessions/${g.sessionId}`} className="text-blue-600 hover:underline">
+              {g.sessionName || g.sessionId}
+            </Link>
+            <span className="ml-1">{g.summary}</span>
+            {g.excerpt && <blockquote className="mt-0.5 border-l-2 border-amber-300 pl-2 text-gray-500">{g.excerpt}</blockquote>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function projectName(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? path;
 }
@@ -90,6 +114,7 @@ function ProposalCard({ p, onChange }: { p: LearningProposal; onChange: (p: Lear
       )}
 
       {p.reason && <p className="text-sm text-gray-600">{p.reason}</p>}
+      <Evidence p={p} />
 
       <div className="text-xs text-gray-400 flex flex-wrap gap-x-3">
         <span>{projectName(p.projectPath)}</span>

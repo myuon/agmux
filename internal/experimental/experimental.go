@@ -37,6 +37,11 @@ var Features = []Feature{
 		Title:       "ループ",
 		Description: "Automation を残タスクがある限り回すループとして使えるようにします。残タスクリスト、各回の結果記録、ダッシュボードが使えるようになります。",
 	},
+	{
+		Name:        "proactive_suggestions",
+		Title:       "先回りの提案",
+		Description: "複数のセッションにまたがる繰り返しを検知し、『何度も指摘されている注意点をハーネスに書く？』『手で繰り返している作業をループにする？』を通知で聞きます。学びの受信箱が有効なときだけ動きます。",
+	},
 }
 
 // Lookup returns the feature with the given name.
