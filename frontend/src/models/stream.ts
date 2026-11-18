@@ -56,6 +56,7 @@ export type StreamDisplayItem =
   | { kind: "thinking"; text: string }
   | { kind: "system_event"; eventType: string; label: string; detail?: string }
   | { kind: "rate_limit"; rateLimitType: string; status: string; resetsAt: number; utilization?: number; isUsingOverage?: boolean; overageStatus?: string }
+  | { kind: "choice_card"; cardId: string }
   | { kind: "api_retry"; attempt: number; maxRetries: number; retryDelayMs: number; errorStatus?: number; error?: string }
   | { kind: "result"; isError: boolean; result: string; subtype: string; numTurns?: number; durationMs?: number; costUsd?: number; terminalReason?: string; errors?: string[] };
 
@@ -566,6 +567,14 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
         if (typeof rawSys.subtype === "string" && rawSys.subtype.startsWith("task_")) {
           const toolUseId = resolveTaskToolUseId(rawSys, taskInfoMap);
           if (toolUseId && allToolUseIds.has(toolUseId)) continue;
+        }
+      }
+      // Synthetic entry spliced in by ChoiceCardsStream (never in the real stream).
+      {
+        const rawSys = entry as unknown as Record<string, unknown>;
+        if (rawSys.subtype === "choice_card" && typeof rawSys.card_id === "string") {
+          groups.push({ role: "system", items: [{ kind: "choice_card", cardId: rawSys.card_id }] });
+          continue;
         }
       }
       const sysItem = parseSystemEvent(entry);

@@ -47,6 +47,11 @@ var Features = []Feature{
 		Title:       "プロジェクト単位の表示",
 		Description: "セッションをプロジェクト（リポジトリ）単位にまとめ、各プロジェクトのコーディネーター（メインのセッション）を中心に表示します。コーディネーターは配下のループや Automation の状態をツールで把握でき、停止などの知らせを受け取ります。",
 	},
+	{
+		Name:        "choice_cards",
+		Title:       "選択肢カード",
+		Description: "エージェントや提案ルールが、会話を止めずに選択肢のボタンを出せるようにします。ボタンを押すか、普通に返信するかを選べます。",
+	},
 }
 
 // Lookup returns the feature with the given name.

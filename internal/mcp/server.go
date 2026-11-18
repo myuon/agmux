@@ -393,7 +393,7 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 						"required": []string{"tool_name", "input"},
 					},
 				},
-			}, loopToolDefs()...)),
+			}, append(loopToolDefs(), offerChoicesToolDef())...)),
 		}, nil
 
 	case "tools/call":
@@ -470,6 +470,8 @@ func (s *Server) callTool(name string, args json.RawMessage) (interface{}, *json
 		return s.handleLoopTaskDone(args)
 	case "loop_report":
 		return s.handleLoopReport(args)
+	case "offer_choices":
+		return s.handleOfferChoices(args)
 	default:
 		return nil, &jsonRPCError{Code: -32602, Message: "unknown tool: " + name}
 	}

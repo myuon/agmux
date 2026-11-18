@@ -49,7 +49,8 @@ type Server struct {
 	port             int
 	logger           *slog.Logger
 	escalations      *EscalationStore
-	permissions      *PermissionStore
+	choice           choiceState
+	permissions     *PermissionStore
 	otelReceiver     *otel.Receiver
 	sqlDB            *sql.DB
 	automations      *automation.Store
@@ -272,6 +273,7 @@ func (s *Server) setupRoutes() {
 		s.mountRemoteBrowser(r)
 		s.mountArtifacts(r)
 		s.mountSecrets(r)
+		s.mountChoiceCards(r)
 
 	})
 

@@ -17,6 +17,8 @@ interface SessionCardProps {
   onClick?: () => void;
   actions?: React.ReactNode;
   completionReport?: string;
+  /** Small marker shown next to the title (e.g. open choice cards). */
+  badge?: React.ReactNode;
 }
 
 /**
@@ -45,6 +47,7 @@ export function SessionCard({
   onClick,
   actions,
   completionReport,
+  badge,
 }: SessionCardProps) {
   const vtn = (suffix: string) => id ? { viewTransitionName: `session-${suffix}-${id}` } : undefined;
   const label = type === "controller" ? null : projectLabel(projectPath);
@@ -84,6 +87,7 @@ export function SessionCard({
             {provider.charAt(0).toUpperCase() + provider.slice(1)}
           </Chip>
         )}
+        {badge}
         <span className="text-xs text-gray-400 ml-auto shrink-0 flex items-center gap-1.5">
           <span style={vtn("status")}>{status}</span>
           <span>·</span>

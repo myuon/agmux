@@ -11,6 +11,19 @@ export interface Artifact {
   updatedAt: string;
 }
 
+// ChoiceCard mirrors `ChoiceCard` in internal/server/choice_cards.go.
+export interface ChoiceCard {
+  id: string;
+  sessionId: string;
+  prompt: string;
+  choices: { id: string; label: string; action: { type: string } }[];
+  source: "agent" | "rule";
+  status: "open" | "answered" | "dismissed";
+  answer?: string;
+  streamOffset: number;
+  createdAt: string;
+}
+
 export interface ExperimentalFeature {
   name: string;
   title: string;
@@ -301,6 +314,21 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ enabled }),
     }),
+
+  // Experimental "choice_cards" only: 404 while the feature is off.
+  listChoiceCards: (sessionId: string) =>
+    request<{ cards: ChoiceCard[] }>(`/sessions/${sessionId}/choice-cards`),
+
+  listOpenChoiceCards: () => request<{ cards: ChoiceCard[] }>("/choice-cards"),
+
+  answerChoiceCard: (cardId: string, choiceId: string) =>
+    request<ChoiceCard>(`/choice-cards/${cardId}/answer`, {
+      method: "POST",
+      body: JSON.stringify({ choiceId }),
+    }),
+
+  dismissChoiceCard: (cardId: string) =>
+    request<ChoiceCard>(`/choice-cards/${cardId}/dismiss`, { method: "POST", body: "{}" }),
 
   updateConfig: (data: AppConfig) =>
     request<{ status: string }>("/config", {

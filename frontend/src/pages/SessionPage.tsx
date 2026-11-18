@@ -25,6 +25,7 @@ import { api, type DiffFile, type PromptTemplate } from "../api/client";
 import { StatusDot } from "../components/StatusBadge";
 import { setActiveSessionName } from "../activeSession";
 import { useWebSocket } from "../hooks/useWebSocket";
+import { ChoiceCardsStream } from "../components/session/ChoiceCards";
 import { StreamOutputView, ActiveTasksPanel } from "../components/session/StreamOutputView";
 import { ArtifactList } from "../components/session/ArtifactList";
 import { ForkPanel } from "../components/session/ForkPanel";
@@ -1329,10 +1330,14 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         </div>
       ) : (
         <div className="flex flex-col flex-1 min-h-0">
-          <StreamOutputView lines={streamLines} partialText={partialText} thinkingTokens={thinkingTokens} className="flex-1 min-h-0" sessionId={sessionId} pendingPermission={pendingPermission ?? undefined} onPermissionResponded={() => { setPendingPermission(null); }} provider={session?.provider ?? undefined} sessionActive={session?.status === "working"} toolProgress={toolProgress} hasOlderHistory={historyStart > 0} loadingOlderHistory={loadingOlder} onLoadOlderHistory={loadOlderHistory} onAnswer={async (text) => {
+          <ChoiceCardsStream sessionId={sessionId} lines={streamLines} historyStart={historyStart}>
+            {(lines) => (
+          <StreamOutputView lines={lines} partialText={partialText} thinkingTokens={thinkingTokens} className="flex-1 min-h-0" sessionId={sessionId} pendingPermission={pendingPermission ?? undefined} onPermissionResponded={() => { setPendingPermission(null); }} provider={session?.provider ?? undefined} sessionActive={session?.status === "working"} toolProgress={toolProgress} hasOlderHistory={historyStart > 0} loadingOlderHistory={loadingOlder} onLoadOlderHistory={loadOlderHistory} onAnswer={async (text) => {
             if (!sessionId) return;
             await api.sendToSession(sessionId, text);
           }} />
+            )}
+          </ChoiceCardsStream>
           {activeTasks.length > 0 && (
             <div className="shrink-0 pt-2 px-4 sm:px-8 -mx-4 sm:-mx-8">
               <ActiveTasksPanel tasks={activeTasks} sessionId={sessionId} lines={streamLines} sessionActive={session?.status === "working"} toolProgress={toolProgress} />
