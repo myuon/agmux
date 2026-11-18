@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/myuon/agmux/internal/automation"
 	"github.com/myuon/agmux/internal/config"
 	"github.com/myuon/agmux/internal/db"
 	"github.com/myuon/agmux/internal/experimental"
@@ -70,7 +71,55 @@ func (s *Server) initLearning() {
 		})
 		s.hub.Broadcast(Message{Type: "learning_proposals", Data: map[string]interface{}{"sessionId": sessionID, "count": n}})
 	}
+	r.Proactive = func() bool {
+		return experimental.Enabled(learning.FeatureName) && experimental.Enabled(learning.ProactiveFeatureName)
+	}
+	r.LoopsEnabled = func() bool { return experimental.Enabled(automation.FeatureLoops) }
+	r.CreateAutomation = func(name, prompt, projectPath, triggerType, triggerValue string) (string, error) {
+		// Created disabled; the person reviews it and enables it.
+		a, err := s.automations.Create(automation.CreateParams{
+			Name:         name,
+			Prompt:       prompt,
+			TriggerType:  automation.TriggerType(triggerType),
+			TriggerValue: triggerValue,
+			ProjectPath:  projectPath,
+			Enabled:      false,
+		})
+		if err != nil {
+			return "", err
+		}
+		return a.ID, nil
+	}
+	r.OnSuggestion = func(p *learning.Proposal, summary string, n int) {
+		msg := suggestionMessage(p, summary, n)
+		if err := s.saveNotification(p.SessionID, "notification", msg); err != nil {
+			slog.Error("failed to save learning suggestion notification", "error", err)
+		}
+		s.hub.Broadcast(Message{
+			Type: "agent_notification",
+			Data: map[string]interface{}{
+				"sessionId":   p.SessionID,
+				"sessionName": p.SessionName,
+				"message":     msg,
+			},
+		})
+		s.hub.Broadcast(Message{Type: "learning_proposals", Data: map[string]interface{}{"sessionId": p.SessionID, "count": 1}})
+	}
 	s.learning = r
+}
+
+func suggestionMessage(p *learning.Proposal, summary string, n int) string {
+	switch p.Origin {
+	case learning.OriginRepeatedCorrection:
+		return fmt.Sprintf("提案があります: 何回も指摘されている『%s』をハーネスに書きますか？", summary)
+	case learning.OriginRepeatedTask:
+		return fmt.Sprintf("提案があります: 『%s』を%d回手で頼んでいます。ループにしますか？", summary, n)
+	}
+	return fmt.Sprintf("提案があります: %s", p.Title)
+}
+
+func (s *Server) proactiveEnabled() bool {
+	return s.learningEnabled() && experimental.Enabled(learning.ProactiveFeatureName)
 }
 
 func (s *Server) learningEnabled() bool {
@@ -102,13 +151,27 @@ func (s *Server) listLearningProposals(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	if !s.proactiveEnabled() {
+		// Proactive suggestions are invisible while their feature is off.
+		kept := ps[:0]
+		for _, p := range ps {
+			if p.Origin == "" {
+				kept = append(kept, p)
+			}
+		}
+		ps = kept
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"proposals": ps})
 }
 
-func proposalID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+func (s *Server) proposalID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "pid"), 10, 64)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid proposal id")
+		return 0, false
+	}
+	if p, err := s.learning.Store().Get(id); err == nil && p.Origin != "" && !s.proactiveEnabled() {
+		writeError(w, http.StatusNotFound, "proactive_suggestions is disabled")
 		return 0, false
 	}
 	return id, true
@@ -118,7 +181,7 @@ func (s *Server) acceptLearningProposal(w http.ResponseWriter, r *http.Request) 
 	if !s.requireLearning(w) {
 		return
 	}
-	id, ok := proposalID(w, r)
+	id, ok := s.proposalID(w, r)
 	if !ok {
 		return
 	}
@@ -138,7 +201,7 @@ func (s *Server) rejectLearningProposal(w http.ResponseWriter, r *http.Request) 
 	if !s.requireLearning(w) {
 		return
 	}
-	id, ok := proposalID(w, r)
+	id, ok := s.proposalID(w, r)
 	if !ok {
 		return
 	}

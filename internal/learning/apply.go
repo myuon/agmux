@@ -45,6 +45,21 @@ func (r *Reviewer) Accept(id int64, content string) (*Proposal, error) {
 		if err := r.store.Decide(id, StatusApplying, p.Content, sid, ""); err != nil {
 			return nil, err
 		}
+	case TargetLoop:
+		if r.CreateAutomation == nil {
+			return nil, fmt.Errorf("cannot create automation")
+		}
+		// Always created disabled: the person reviews it before enabling.
+		aid, err := r.CreateAutomation(p.Title, p.Content, p.ProjectPath, p.TriggerType, p.TriggerValue)
+		if err != nil {
+			return nil, err
+		}
+		if err := r.store.Decide(id, StatusApplied, p.Content, "", ""); err != nil {
+			return nil, err
+		}
+		if err := r.store.SetAutomation(id, aid); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("unknown target: %s", p.Target)
 	}
@@ -60,6 +75,18 @@ func (r *Reviewer) Reject(id int64) (*Proposal, error) {
 	}
 	if err := r.store.Decide(id, StatusRejected, p.Content, "", ""); err != nil {
 		return nil, err
+	}
+	if p.ClusterID > 0 {
+		// Never suggest this repeated pattern again.
+		if err := r.store.setClusterState(p.ClusterID, clusterDismissed); err != nil {
+			return nil, err
+		}
+	}
+	if p.ClusterID > 0 {
+		// Never suggest this repeated pattern again.
+		if err := r.store.setClusterState(p.ClusterID, clusterDismissed); err != nil {
+			return nil, err
+		}
 	}
 	return r.store.Get(id)
 }

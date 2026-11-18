@@ -6,6 +6,7 @@ const targetLabel: Record<LearningProposal["target"], string> = {
   claude_md: "CLAUDE.md",
   skill: "スキル",
   memory: "メモリ",
+  loop: "ループ",
 };
 
 function targetPath(p: LearningProposal): string {
@@ -16,10 +17,13 @@ function targetPath(p: LearningProposal): string {
       return `.claude/skills/${p.name}/SKILL.md`;
     case "memory":
       return `memory/${p.name}.md（${p.memoryType ?? "project"}）`;
+    case "loop":
+      return `Automation（${p.triggerType} ${p.triggerValue}）`;
   }
 }
 
 function applyNote(p: LearningProposal): string {
+  if (p.target === "loop") return "採用すると無効の Automation を作ります。中身を確認してから有効にしてください";
   return p.target === "memory"
     ? "採用するとメモリに直接書き込みます"
     : "採用すると反映用のセッションが起動し、PR を作ります";
@@ -32,6 +36,56 @@ const statusLabel: Record<LearningProposal["status"], string> = {
   rejected: "却下",
   failed: "失敗",
 };
+
+function Evidence({ p }: { p: LearningProposal }) {
+  const items = p.evidence ?? [];
+  if (!p.origin || items.length === 0) return null;
+  const sessions = new Set(items.map((g) => g.sessionId)).size;
+  const heading =
+    p.origin === "repeated_task"
+      ? `${sessions} セッションで同じ型の作業を手で依頼しています`
+      : `${sessions} セッションで同じ趣旨の指摘がありました（${items.length} 回）`;
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded px-3 py-2 space-y-2" data-testid="evidence">
+      <div className="text-xs font-medium text-amber-800">{heading}</div>
+      <ul className="space-y-1.5">
+        {items.map((g) => (
+          <li key={g.id} className="text-xs text-gray-700">
+            <Link to={`/sessions/${g.sessionId}`} className="text-blue-600 hover:underline">
+              {g.sessionName || g.sessionId}
+            </Link>
+            <span className="ml-1">{g.summary}</span>
+            {g.excerpt && <blockquote className="mt-0.5 border-l-2 border-amber-300 pl-2 text-gray-500">{g.excerpt}</blockquote>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function Evidence({ p }: { p: LearningProposal }) {
+  const items = p.evidence ?? [];
+  if (!p.origin || items.length === 0) return null;
+  const sessions = new Set(items.map((g) => g.sessionId)).size;
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded px-3 py-2 space-y-2" data-testid="evidence">
+      <div className="text-xs font-medium text-amber-800">
+        {sessions} セッションで同じ趣旨の指摘がありました（{items.length} 回）
+      </div>
+      <ul className="space-y-1.5">
+        {items.map((g) => (
+          <li key={g.id} className="text-xs text-gray-700">
+            <Link to={`/sessions/${g.sessionId}`} className="text-blue-600 hover:underline">
+              {g.sessionName || g.sessionId}
+            </Link>
+            <span className="ml-1">{g.summary}</span>
+            {g.excerpt && <blockquote className="mt-0.5 border-l-2 border-amber-300 pl-2 text-gray-500">{g.excerpt}</blockquote>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function projectName(path: string): string {
   return path.split("/").filter(Boolean).pop() ?? path;
@@ -90,12 +144,18 @@ function ProposalCard({ p, onChange }: { p: LearningProposal; onChange: (p: Lear
       )}
 
       {p.reason && <p className="text-sm text-gray-600">{p.reason}</p>}
+      <Evidence p={p} />
 
       <div className="text-xs text-gray-400 flex flex-wrap gap-x-3">
         <span>{projectName(p.projectPath)}</span>
         <Link to={`/sessions/${p.sessionId}`} className="text-blue-600 hover:underline">
           {p.sessionName || p.sessionId} の会話から
         </Link>
+        {p.automationId && (
+          <Link to={`/automations/${p.automationId}`} className="text-blue-600 hover:underline">
+            作成した Automation を開く（無効）
+          </Link>
+        )}
         {p.applySessionId && (
           <Link to={`/sessions/${p.applySessionId}`} className="text-blue-600 hover:underline">
             反映用セッションを開く
