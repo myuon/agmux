@@ -491,16 +491,51 @@ func ConnectToHolder(sessionID string) (net.Conn, error) {
 //
 // The hello message, when present, is consumed from the connection: callers
 // should NOT see it in their subsequent reads.
+//
+// Startup wait: the socket is normally expected within holderConnectTimeout.
+// When expectedPID > 0 and that process is still alive after the timeout, the
+// wait is extended up to holderConnectMaxTimeout so a slow-starting holder is
+// not given up on (and killed by the caller). Conversely, if the expected
+// holder is our child and has already exited, we fail immediately.
 func ConnectToHolderExpectingPID(sessionID string, expectedPID int) (net.Conn, error) {
 	sockPath := SocketPath(sessionID)
 
-	deadline := time.Now().Add(15 * time.Second)
+	start := time.Now()
+	deadline := start.Add(holderConnectTimeout)
+	maxDeadline := start.Add(holderConnectMaxTimeout)
+	extended := false
 	var lastErr error
 	mismatchAttempts := 0
-	for time.Now().Before(deadline) {
+	for {
+		if !time.Now().Before(deadline) {
+			// The base timeout has passed. If the holder we spawned is still
+			// alive it is most likely just slow to start (e.g. the machine is
+			// under memory pressure and the exec of the agmux binary takes a
+			// while), so keep waiting up to holderConnectMaxTimeout instead of
+			// giving up and killing a holder that would have come up.
+			if expectedPID > 0 && time.Now().Before(maxDeadline) && IsHolderAlive(expectedPID) {
+				if !extended {
+					slog.Warn("holder: socket not ready within timeout but holder is alive; waiting longer",
+						"sessionId", sessionID, "pid", expectedPID, "waited", time.Since(start).Round(time.Millisecond))
+					extended = true
+				}
+				deadline = maxDeadline
+			} else {
+				break
+			}
+		}
+
 		conn, err := net.Dial("unix", sockPath)
 		if err != nil {
 			lastErr = err
+			// If the holder we spawned has already exited, it will never
+			// listen. Fail fast instead of waiting for the full timeout.
+			if expectedPID > 0 {
+				if exited, status := reapIfExited(expectedPID); exited {
+					return nil, fmt.Errorf("connect to holder socket %s expecting pid %d: holder exited before listening (%s): %w",
+						sockPath, expectedPID, status, err)
+				}
+			}
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
@@ -587,6 +622,35 @@ func ConnectToHolderExpectingPID(sessionID string, expectedPID int) (net.Conn, e
 		lastErr = fmt.Errorf("timeout")
 	}
 	return nil, fmt.Errorf("connect to holder socket %s expecting pid %d: %w", sockPath, expectedPID, lastErr)
+}
+
+// holderConnectTimeout is how long ConnectToHolderExpectingPID waits for the
+// holder socket in the normal case. holderConnectMaxTimeout is the upper bound
+// it may extend to while the expected holder process is still alive.
+// Variables (not consts) so tests can shorten them.
+var (
+	holderConnectTimeout    = 15 * time.Second
+	holderConnectMaxTimeout = 60 * time.Second
+)
+
+// reapIfExited reports whether pid is a child of this process that has
+// already exited, reaping it (so it does not linger as a zombie) when so.
+// It returns false when pid is still running or is not our child (ECHILD),
+// e.g. a holder adopted from a previous daemon.
+func reapIfExited(pid int) (bool, string) {
+	var ws syscall.WaitStatus
+	wpid, err := syscall.Wait4(pid, &ws, syscall.WNOHANG, nil)
+	if err != nil || wpid != pid {
+		return false, ""
+	}
+	switch {
+	case ws.Exited():
+		return true, fmt.Sprintf("exit code %d", ws.ExitStatus())
+	case ws.Signaled():
+		return true, fmt.Sprintf("signal %v", ws.Signal())
+	default:
+		return true, ws.StopSignal().String()
+	}
 }
 
 // isReadTimeout reports whether err is a net.Conn read deadline / timeout.
