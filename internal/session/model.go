@@ -15,12 +15,12 @@ type RecentProject struct {
 type Status string
 
 const (
-	StatusIdle         Status = "idle"           // Initial state / turn complete, waiting for user
-	StatusWorking      Status = "working"        // AI is working
-	StatusPaused       Status = "paused"         // User explicitly stopped the session
-	StatusExited       Status = "exited"         // Process died unexpectedly
-	StatusWaitingInput Status = "waiting_input"  // Waiting for user input (escalation/permission)
-	StatusArchived     Status = "archived"       // Session has been archived
+	StatusIdle         Status = "idle"          // Initial state / turn complete, waiting for user
+	StatusWorking      Status = "working"       // AI is working
+	StatusPaused       Status = "paused"        // User explicitly stopped the session
+	StatusExited       Status = "exited"        // Process died unexpectedly
+	StatusWaitingInput Status = "waiting_input" // Waiting for user input (escalation/permission)
+	StatusArchived     Status = "archived"      // Session has been archived
 )
 
 type SessionType string
@@ -33,36 +33,39 @@ const (
 )
 
 type Session struct {
-	ID              string       `json:"id"`
-	Name            string       `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
 	// NameSource tracks how Name was set: "manual", "default" (waiting for
 	// auto-title), "generating" or "auto". See NameSource* constants.
-	NameSource      string       `json:"nameSource,omitempty"`
-	ProjectPath     string       `json:"projectPath"`
-	InitialPrompt   string       `json:"initialPrompt,omitempty"`
-	SystemPrompt    string       `json:"systemPrompt,omitempty"`
-	Status          Status       `json:"status"`
-	Type            SessionType  `json:"type"`
-	Provider        ProviderName `json:"provider"`
-	CliSessionID    string       `json:"cliSessionId,omitempty"`
-	Model           string       `json:"model,omitempty"`
+	NameSource    string       `json:"nameSource,omitempty"`
+	ProjectPath   string       `json:"projectPath"`
+	InitialPrompt string       `json:"initialPrompt,omitempty"`
+	SystemPrompt  string       `json:"systemPrompt,omitempty"`
+	Status        Status       `json:"status"`
+	Type          SessionType  `json:"type"`
+	Provider      ProviderName `json:"provider"`
+	CliSessionID  string       `json:"cliSessionId,omitempty"`
+	Model         string       `json:"model,omitempty"`
 	// PendingModel is a model switch reserved while a turn was in progress.
 	// It is applied when the current turn completes (see SwitchModel).
-	PendingModel    string       `json:"pendingModel,omitempty"`
-	ParentSessionID string       `json:"parentSessionId,omitempty"`
-	RoleTemplate    string       `json:"roleTemplate,omitempty"`
-	AutomationID    string       `json:"automationId,omitempty"`
-	CurrentTask     string       `json:"currentTask,omitempty"`
-	Goal            string       `json:"goal,omitempty"`
-	Goals           GoalStack    `json:"goals,omitempty"`
-	LastError       string       `json:"lastError,omitempty"`
-	HolderPID                int          `json:"holderPid,omitempty"`
-	ClearOffset              int64        `json:"clearOffset"`
-	ConversationStarted      bool         `json:"conversationStarted"`
-	EphemeralTimeoutSeconds  *int         `json:"ephemeralTimeoutSeconds,omitempty"`
-	CompletionReport         *string      `json:"completionReport,omitempty"`
-	CreatedAt                time.Time    `json:"createdAt"`
-	UpdatedAt                time.Time    `json:"updatedAt"`
+	PendingModel    string `json:"pendingModel,omitempty"`
+	ParentSessionID string `json:"parentSessionId,omitempty"`
+	RoleTemplate    string `json:"roleTemplate,omitempty"`
+	AutomationID    string `json:"automationId,omitempty"`
+	// CreatedBySessionID is the session (AGMUX_SESSION_ID) that created this
+	// one via the CLI / MCP / API. Empty for sessions created from the UI.
+	CreatedBySessionID      string    `json:"createdBySessionId,omitempty"`
+	CurrentTask             string    `json:"currentTask,omitempty"`
+	Goal                    string    `json:"goal,omitempty"`
+	Goals                   GoalStack `json:"goals,omitempty"`
+	LastError               string    `json:"lastError,omitempty"`
+	HolderPID               int       `json:"holderPid,omitempty"`
+	ClearOffset             int64     `json:"clearOffset"`
+	ConversationStarted     bool      `json:"conversationStarted"`
+	EphemeralTimeoutSeconds *int      `json:"ephemeralTimeoutSeconds,omitempty"`
+	CompletionReport        *string   `json:"completionReport,omitempty"`
+	CreatedAt               time.Time `json:"createdAt"`
+	UpdatedAt               time.Time `json:"updatedAt"`
 }
 
 type GoalEntry struct {

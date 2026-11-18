@@ -29,12 +29,12 @@ import (
 	"github.com/myuon/agmux/internal/automation"
 	"github.com/myuon/agmux/internal/browser"
 	"github.com/myuon/agmux/internal/config"
-	"github.com/myuon/agmux/internal/learning"
-	"github.com/myuon/agmux/internal/search"
 	"github.com/myuon/agmux/internal/db"
+	"github.com/myuon/agmux/internal/learning"
 	"github.com/myuon/agmux/internal/mcp"
 	"github.com/myuon/agmux/internal/otel"
 	"github.com/myuon/agmux/internal/redact"
+	"github.com/myuon/agmux/internal/search"
 	"github.com/myuon/agmux/internal/secret"
 	"github.com/myuon/agmux/internal/session"
 )
@@ -227,6 +227,9 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/notify", s.sendNotification)
 		r.Post("/sessions/broadcast", s.broadcastToSessions)
 		r.Post("/sessions/controller/restart", s.restartController)
+		r.Get("/projects", s.listProjects)
+		r.Get("/projects/{path}", s.getProject)
+		r.Put("/projects/{path}/coordinator", s.setProjectCoordinator)
 		r.Get("/automations", s.listAutomations)
 		r.Get("/automations/summary", s.listAutomationSummaries)
 		r.Post("/automations", s.createAutomation)
@@ -319,6 +322,8 @@ type createSessionRequest struct {
 	// AutoName marks Name as a UI default: the session is auto-titled from its
 	// first user message (#770).
 	AutoName bool `json:"autoName,omitempty"`
+	// CreatedBySessionID records the session that created this one (#805).
+	CreatedBySessionID string `json:"createdBySessionId,omitempty"`
 }
 
 type sendImageData struct {
@@ -377,7 +382,7 @@ func (s *Server) broadcastSessionUpdate() {
 
 // filterAutomationSessions removes sessions created by automations from the
 // default session list; they are reachable via the automation run history
-// instead. Manual sessions may have automation_id stored as either NULL or ''
+// instead. Manual sessions may have automation_id stored as either NULL or ”
 // (see #671 review), but both deserialize to an empty string, so a non-empty
 // check covers both. Always returns a non-nil slice.
 func filterAutomationSessions(sessions []session.Session) []session.Session {
@@ -417,7 +422,7 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
-	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model, FullAuto: req.AutoApprove, SystemPrompt: req.SystemPrompt, ParentSessionID: req.ParentSessionID, RoleTemplate: req.RoleTemplate, Ephemeral: req.Ephemeral, EphemeralTimeoutSeconds: req.EphemeralTimeoutSeconds, AutoName: req.AutoName})
+	sess, err := s.sessions.Create(req.Name, req.ProjectPath, req.Prompt, req.Worktree, session.CreateOpts{Provider: session.ProviderName(req.Provider), Model: req.Model, FullAuto: req.AutoApprove, SystemPrompt: req.SystemPrompt, ParentSessionID: req.ParentSessionID, RoleTemplate: req.RoleTemplate, Ephemeral: req.Ephemeral, EphemeralTimeoutSeconds: req.EphemeralTimeoutSeconds, AutoName: req.AutoName, CreatedBySessionID: req.CreatedBySessionID})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -429,9 +434,9 @@ func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
 
 type sessionResponse struct {
 	*session.Session
-	GithubURL  string      `json:"githubUrl,omitempty"`
-	Branch     string      `json:"branch,omitempty"`
-	PullRequests []prInfo  `json:"pullRequests,omitempty"`
+	GithubURL    string   `json:"githubUrl,omitempty"`
+	Branch       string   `json:"branch,omitempty"`
+	PullRequests []prInfo `json:"pullRequests,omitempty"`
 }
 
 type prInfo struct {
@@ -1463,15 +1468,15 @@ type configTemplateJSON struct {
 }
 
 type configJSON struct {
-	Server          configServerJSON           `json:"server"`
-	Daemon          configDaemonJSON           `json:"daemon"`
-	Session         configSessionJSON          `json:"session"`
-	Claude          configClaudeJSON           `json:"claude"`
-	DevMode         bool                       `json:"devMode"`
-	Prompts         *configPromptsJSON         `json:"prompts,omitempty"`
-	Templates       []configTemplateJSON       `json:"templates"`
+	Server          configServerJSON        `json:"server"`
+	Daemon          configDaemonJSON        `json:"daemon"`
+	Session         configSessionJSON       `json:"session"`
+	Claude          configClaudeJSON        `json:"claude"`
+	DevMode         bool                    `json:"devMode"`
+	Prompts         *configPromptsJSON      `json:"prompts,omitempty"`
+	Templates       []configTemplateJSON    `json:"templates"`
 	PromptTemplates []config.PromptTemplate `json:"promptTemplates"`
-	ConfigPath      string                     `json:"configPath,omitempty"`
+	ConfigPath      string                  `json:"configPath,omitempty"`
 }
 
 type configPromptsJSON struct {
