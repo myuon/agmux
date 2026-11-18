@@ -647,7 +647,9 @@ func (s *Server) handleCreateAutomation(args json.RawMessage) (interface{}, *jso
 		enabled = *input.Enabled
 	}
 
-	created, err := s.apiCreateAutomation(input.Name, input.Prompt, input.TriggerType, input.TriggerValue, input.ProjectPath, input.Model, enabled, input.MaxRuns, input.Until, input.WatchMetric, input.WatchDirection)
+	// Record the calling session so the automation joins its project (#805).
+	createdBy, _ := s.resolveSessionID(args)
+	created, err := s.apiCreateAutomation(input.Name, input.Prompt, input.TriggerType, input.TriggerValue, input.ProjectPath, input.Model, enabled, input.MaxRuns, input.Until, input.WatchMetric, input.WatchDirection, createdBy)
 	if err != nil {
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
 	}
@@ -670,10 +672,10 @@ type automationResponse struct {
 	Enabled      bool   `json:"enabled"`
 }
 
-func (s *Server) apiCreateAutomation(name, prompt, triggerType, triggerValue, projectPath, model string, enabled bool, maxRuns int, until, watchMetric, watchDirection string) (*automationResponse, error) {
+func (s *Server) apiCreateAutomation(name, prompt, triggerType, triggerValue, projectPath, model string, enabled bool, maxRuns int, until, watchMetric, watchDirection, createdBySessionID string) (*automationResponse, error) {
 	url := fmt.Sprintf("%s/api/automations", s.apiURL)
-	body := fmt.Sprintf(`{"name":%s,"prompt":%s,"triggerType":%s,"triggerValue":%s,"projectPath":%s,"model":%s,"enabled":%t,"maxRuns":%d,"until":%s,"watchMetric":%s,"watchDirection":%s}`,
-		jsonString(name), jsonString(prompt), jsonString(triggerType), jsonString(triggerValue), jsonString(projectPath), jsonString(model), enabled, maxRuns, jsonString(until), jsonString(watchMetric), jsonString(watchDirection))
+	body := fmt.Sprintf(`{"name":%s,"prompt":%s,"triggerType":%s,"triggerValue":%s,"projectPath":%s,"model":%s,"enabled":%t,"maxRuns":%d,"until":%s,"watchMetric":%s,"watchDirection":%s,"createdBySessionId":%s}`,
+		jsonString(name), jsonString(prompt), jsonString(triggerType), jsonString(triggerValue), jsonString(projectPath), jsonString(model), enabled, maxRuns, jsonString(until), jsonString(watchMetric), jsonString(watchDirection), jsonString(createdBySessionID))
 
 	req, err := http.NewRequest("POST", url, strings.NewReader(body))
 	if err != nil {

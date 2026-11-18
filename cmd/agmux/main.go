@@ -464,6 +464,9 @@ func sessionCreateCmd() *cobra.Command {
 				RoleTemplate:            templateName,
 				Ephemeral:               ephemeral,
 				EphemeralTimeoutSeconds: ephemeralTimeoutPtr,
+				// Recorded so a session created from a project coordinator
+				// belongs to that project (#805).
+				CreatedBySessionID: os.Getenv("AGMUX_SESSION_ID"),
 			})
 			if err != nil {
 				return err

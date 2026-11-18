@@ -58,8 +58,11 @@ type Automation struct {
 	WatchMetric string `json:"watchMetric,omitempty"`
 	// WatchDirection says which direction of WatchMetric is better.
 	WatchDirection WatchDirection `json:"watchDirection,omitempty"`
-	CreatedAt      time.Time      `json:"createdAt"`
-	UpdatedAt      time.Time      `json:"updatedAt"`
+	// CreatedBySessionID is the session (AGMUX_SESSION_ID) that created the
+	// automation via the CLI / MCP / API. Empty when created from the UI.
+	CreatedBySessionID string    `json:"createdBySessionId,omitempty"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
 // WatchDirection tells which direction of the watched metric is an improvement.
