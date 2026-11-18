@@ -23,6 +23,7 @@ func projectsEnabled() bool { return experimental.Enabled(featureProjects) }
 type projSession struct {
 	ID, Name, Status, Type, Path string
 	AutomationID, CreatedBy      string
+	Goal                         string
 	ParentID                     string
 	CreatedAt, UpdatedAt         time.Time
 }
@@ -60,7 +61,7 @@ func (s *Server) loadProjectModel() (*projectModel, error) {
 		stored:      map[string]string{},
 	}
 	rows, err := s.sqlDB.Query(
-		`SELECT id, name, status, type, project_path, COALESCE(automation_id, ''), created_by_session_id, COALESCE(parent_session_id, ''), created_at, updated_at
+		`SELECT id, name, status, type, project_path, COALESCE(automation_id, ''), created_by_session_id, COALESCE(parent_session_id, ''), COALESCE(goal, ''), created_at, updated_at
 		 FROM sessions WHERE type != 'controller' ORDER BY created_at ASC, id ASC`)
 	if err != nil {
 		return nil, err
@@ -68,7 +69,7 @@ func (s *Server) loadProjectModel() (*projectModel, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var p projSession
-		if err := rows.Scan(&p.ID, &p.Name, &p.Status, &p.Type, &p.Path, &p.AutomationID, &p.CreatedBy, &p.ParentID, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Status, &p.Type, &p.Path, &p.AutomationID, &p.CreatedBy, &p.ParentID, &p.Goal, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		m.sessions = append(m.sessions, p)

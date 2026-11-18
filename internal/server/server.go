@@ -64,6 +64,13 @@ type Server struct {
 	artifacts        *artifact.Store
 	secrets          *secret.Store
 	secretBackends   secret.Registry
+
+	// Notices for project coordinators, buffered until the coordinator is idle
+	// (in memory only; see project_status.go). noticeSend overrides delivery in
+	// tests.
+	noticeMu   sync.Mutex
+	notices    map[string][]string
+	noticeSend func(id, text string) error
 }
 
 func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.Logger, sqlDB *sql.DB, port int) *Server {
@@ -119,6 +126,11 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 			Type: "status_change",
 			Data: data,
 		})
+		// A coordinator that became idle receives the notices buffered while
+		// it was busy (no-op unless something was buffered).
+		if status == session.StatusIdle {
+			go s.flushNotices(sessionID)
+		}
 	})
 
 	// Session renames (manual or auto-title) refresh the session list.
@@ -228,6 +240,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/sessions/{id}/notify", s.sendNotification)
 		r.Post("/sessions/broadcast", s.broadcastToSessions)
 		r.Post("/sessions/controller/restart", s.restartController)
+		r.Get("/sessions/{id}/project-status", s.getSessionProjectStatus)
 		r.Get("/projects", s.listProjects)
 		r.Get("/projects/{path}", s.getProject)
 		r.Put("/projects/{path}/coordinator", s.setProjectCoordinator)
@@ -1000,6 +1013,9 @@ func (s *Server) createEscalation(w http.ResponseWriter, r *http.Request) {
 	if err := s.sessions.UpdateStatus(sessionID, session.StatusWaitingInput); err != nil {
 		slog.Error("failed to update session status to waiting_input", "error", err)
 	}
+
+	// Copy to the project's coordinator (projects feature only).
+	s.noticeEscalation(sessionID, req.Message)
 
 	// Broadcast WebSocket notification (after timeout is determined)
 	s.hub.Broadcast(Message{
