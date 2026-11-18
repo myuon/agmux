@@ -640,6 +640,28 @@ func migrate(db *sql.DB) error {
 	}
 	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_secret_usages_name_used_at ON secret_usages(secret_name, used_at)`)
 
+	// Migration: create choice_cards table (experimental choice_cards). Cards
+	// are shown in the conversation at stream_offset; choices is a JSON array of
+	// {id, label, action}. status: 'open' | 'answered' | 'dismissed'.
+	if _, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS choice_cards (
+			id TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL,
+			prompt TEXT NOT NULL,
+			choices TEXT NOT NULL DEFAULT '[]',
+			source TEXT NOT NULL DEFAULT 'agent',
+			rule_id TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'open',
+			answer TEXT NOT NULL DEFAULT '',
+			stream_offset INTEGER NOT NULL DEFAULT 0,
+			created_at TEXT NOT NULL,
+			answered_at TEXT
+		)
+	`); err != nil {
+		return err
+	}
+	_, _ = db.Exec(`CREATE INDEX IF NOT EXISTS idx_choice_cards_session ON choice_cards(session_id, created_at)`)
+
 	return nil
 }
 

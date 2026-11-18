@@ -9,6 +9,8 @@ import { SessionSearch } from "./SessionSearch";
 import { useExperimental } from "../hooks/useExperimental";
 import { api, type AutomationSummary } from "../api/client";
 import { LoopRow } from "./ui/LoopRow";
+import { ChoiceCardsBadge } from "./session/ChoiceCards";
+import { useOpenChoiceSessions } from "../hooks/useChoiceCards";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -47,6 +49,8 @@ export function SessionList({ sessions, onRestartController }: Props) {
   const selectedSessionId = sessionMatch?.params.id ?? null;
   const childrenMap = useMemo(() => buildChildrenMap(sessions), [sessions]);
   const searchEnabled = useExperimental("session_search");
+
+  const openChoiceSessions = useOpenChoiceSessions(sessions);
 
   const loopsEnabled = useExperimental("loops");
   const [loops, setLoops] = useState<AutomationSummary[]>([]);
@@ -150,6 +154,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
               isSubSession={depth > 0}
               isSelected={s.id === selectedSessionId}
               completionReport={s.completionReport}
+              badge={openChoiceSessions.has(s.id) ? <ChoiceCardsBadge /> : undefined}
               onClick={() => navigate(`/sessions/${s.id}`, { viewTransition: true } as never)}
               actions={
                 s.type === "controller" && (s.status === "paused" || s.status === "exited") ? (
