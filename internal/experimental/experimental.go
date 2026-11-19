@@ -52,6 +52,11 @@ var Features = []Feature{
 		Title:       "選択肢カード",
 		Description: "エージェントや提案ルールが、会話を止めずに選択肢のボタンを出せるようにします。ボタンを押すか、普通に返信するかを選べます。",
 	},
+	{
+		Name:        "claude_relogin",
+		Title:       "Claude の再ログイン",
+		Description: "Claude のログイン切れを検知して画面上部に知らせ、その間は Automation の発火を止めます。スマホからでも、ホストで claude auth login を起動して表示される URL で承認し、コードを貼れば再ログインできます。",
+	},
 }
 
 // Lookup returns the feature with the given name.

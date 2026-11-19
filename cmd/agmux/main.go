@@ -219,6 +219,16 @@ func serveCmd() *cobra.Command {
 			srv.SetVersion(version, commit, buildDate)
 			srv.SetAllowedHosts(cfg.Server.AllowedHosts)
 
+			// Claude login-loss detection and remote re-login (experimental
+			// "claude_relogin"; everything is a no-op while it is off). The
+			// hook must be set before sessions are recovered or spawned.
+			claudeAuthMon := srv.InitClaudeAuth(cfg.Session.ClaudeCommand)
+			if m, ok := mgr.(interface {
+				SetOnClaudeLoginRequired(func(sessionID, reason string))
+			}); ok {
+				m.SetOnClaudeLoginRequired(srv.ReportClaudeLoginRequired)
+			}
+
 			// Remote browser (dedicated Chrome). Profile lives under the agmux
 			// data dir, which honors $HOME.
 			rbCfg := browser.Config{
@@ -295,6 +305,7 @@ func serveCmd() *cobra.Command {
 				})
 			}
 			autoScheduler.OnLimitStop = srv.NoticeAutomation
+			autoScheduler.LoginRequired = claudeAuthMon.Required
 			autoScheduler.Start()
 			// Stop is idempotent; the defer covers error-return paths (frontend
 			// load / listen / Serve errors) that bypass the graceful-shutdown

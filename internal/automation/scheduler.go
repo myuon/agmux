@@ -36,6 +36,9 @@ type Scheduler struct {
 	// OnLimitStop is called when a safety valve (max runs / deadline)
 	// disabled an automation (may be nil). It is not a user notification.
 	OnLimitStop func(a Automation, message string)
+	// LoginRequired reports that Claude has lost its login (may be nil).
+	// While it returns true, due automations are skipped instead of fired.
+	LoginRequired func() bool
 
 	mu     sync.Mutex
 	stopCh chan struct{}
@@ -119,7 +122,17 @@ func (s *Scheduler) Tick(now time.Time) {
 		return
 	}
 	loopsOn := experimental.Enabled(FeatureLoops)
+	loginRequired := s.LoginRequired != nil && s.LoginRequired()
 	for _, a := range automations {
+		if loginRequired {
+			// Firing now would only fail, and a run of failures would make
+			// the loop watchdog stop the automation. Record a skip instead.
+			if a.TriggerType == TriggerQueue && !loopsOn {
+				continue
+			}
+			s.skipForLogin(a, now)
+			continue
+		}
 		if loopsOn && s.enforceLimits(a, now) {
 			continue
 		}
@@ -146,6 +159,30 @@ func (s *Scheduler) Tick(now time.Time) {
 		// so a single tick can never double-fire the same automation.
 		s.runner.Run(a, now)
 	}
+}
+
+// LoginSkipMessage is the run message recorded while Claude needs a login.
+const LoginSkipMessage = "Claude のログイン切れのためスキップ"
+
+// skipForLogin records a skipped run for a due automation while Claude needs
+// a login. A queue trigger is due again on every tick once its wait has
+// passed, so it is recorded only once per outage.
+func (s *Scheduler) skipForLogin(a Automation, now time.Time) {
+	due, err := s.isDue(a, now)
+	if err != nil || !due {
+		return
+	}
+	if a.TriggerType == TriggerQueue {
+		if last, err := s.store.LatestRun(a.ID); err == nil && last != nil &&
+			last.Status == RunSkipped && last.Message == LoginSkipMessage {
+			return
+		}
+	}
+	if _, err := s.store.InsertRun(Run{AutomationID: a.ID, FiredAt: now, Status: RunSkipped, Message: LoginSkipMessage}); err != nil {
+		s.logger.Warn("automation scheduler: record login skip failed", "automationId", a.ID, "error", err)
+		return
+	}
+	s.logger.Info("automation skipped: claude login required", "automationId", a.ID, "name", a.Name)
 }
 
 // enforceLimits disables the automation when MaxRuns / Until is reached and

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	gonanoid "github.com/matoous/go-nanoid/v2"
+	"github.com/myuon/agmux/internal/claudeauth"
 	"github.com/myuon/agmux/internal/db"
 )
 
@@ -51,6 +52,9 @@ type Manager struct {
 	onSessionEnd       func(sessionID string)
 	onContextUsage     func(sessionID string, contextTokens, contextWindow int64)
 	onNameChange       func(sessionID, name string)
+	// onClaudeLoginRequired fires when a claude session's CLI reports that
+	// its login is gone (see internal/claudeauth). nil = not wired.
+	onClaudeLoginRequired func(sessionID, reason string)
 	// titleGenerator overrides the auto-title generator (nil = claude -p haiku).
 	titleGenerator  TitleGenerator
 	backgroundTasks *BackgroundTaskStore
@@ -1316,7 +1320,18 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProces
 	// Wrap onNewLines so we can update the background_tasks DB table per line.
 	bgStore := m.backgroundTasks
 	upstream := m.onNewLines
+	loginHook := m.onClaudeLoginRequired
+	isClaude := sp.ProviderName() == ProviderClaude
 	sp.SetOnNewLines(func(sid string, newLines []string, total int) {
+		if loginHook != nil && isClaude {
+			for _, line := range newLines {
+				if ok, reason := claudeauth.ResultLineIndicatesLoginRequired([]byte(line)); ok {
+					m.logger.Warn("claude CLI reported a lost login", "sessionId", sid)
+					loginHook(sid, reason)
+					break
+				}
+			}
+		}
 		if bgStore != nil {
 			for _, line := range newLines {
 				if err := bgStore.ApplyLine(sid, []byte(line)); err != nil {
@@ -1407,6 +1422,12 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProces
 			"sessionId", sid,
 			"exitError", errMsg,
 		)
+		if loginHook != nil && isClaude {
+			if ok, reason := claudeLoginLostAtExit(sid, errMsg); ok {
+				m.logger.Warn("claude CLI exited because its login is gone", "sessionId", sid)
+				loginHook(sid, reason)
+			}
+		}
 		if err := m.UpdateStatusWithError(sid, StatusExited, errMsg); err != nil {
 			m.logger.Error("failed to update status after process exit", "sessionId", sid, "error", err)
 		}
@@ -1415,6 +1436,42 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProces
 		delete(m.streamProcesses, sid)
 		m.streamMu.Unlock()
 	})
+}
+
+// SetOnClaudeLoginRequired registers the hook fired when a claude session's
+// CLI reports a lost login. Must be called before sessions are spawned or
+// recovered.
+func (m *Manager) SetOnClaudeLoginRequired(fn func(sessionID, reason string)) {
+	m.onClaudeLoginRequired = fn
+}
+
+// claudeLoginLostAtExit checks the CLI's exit message and its stderr in the
+// holder log (only the part written since the CLI was last started).
+func claudeLoginLostAtExit(sessionID, exitMsg string) (bool, string) {
+	if claudeauth.TextIndicatesLoginRequired(exitMsg) {
+		return true, exitMsg
+	}
+	return claudeauth.HolderLogIndicatesLoginRequired(readHolderLogTail(sessionID, 32<<10))
+}
+
+// readHolderLogTail returns up to max bytes from the end of the holder log.
+func readHolderLogTail(sessionID string, max int64) string {
+	f, err := os.Open(HolderLogPath(sessionID))
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return ""
+	}
+	off := st.Size() - max
+	if off < 0 {
+		off = 0
+	}
+	buf := make([]byte, st.Size()-off)
+	n, _ := f.ReadAt(buf, off)
+	return string(buf[:n])
 }
 
 // IsStreamProcessAlive returns true if a stream process exists and has not exited.

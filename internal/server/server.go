@@ -65,6 +65,7 @@ type Server struct {
 	artifacts        *artifact.Store
 	secrets          *secret.Store
 	secretBackends   secret.Registry
+	claudeAuth       *claudeAuth
 
 	// Notices for project coordinators, buffered until the coordinator is idle
 	// (in memory only; see project_status.go). noticeSend overrides delivery in
@@ -291,6 +292,12 @@ func (s *Server) setupRoutes() {
 		s.mountSecrets(r)
 		s.mountChoiceCards(r)
 		r.Get("/suggestions/rules", s.listSuggestionRules)
+		r.Get("/claude-auth/status", s.getClaudeAuthStatus)
+		r.Post("/claude-auth/login/start", s.startClaudeLogin)
+		r.Post("/claude-auth/login/code", s.submitClaudeLoginCode)
+		r.Post("/claude-auth/login/cancel", s.cancelClaudeLogin)
+		r.Post("/claude-auth/resume", s.resumeClaudeSession)
+		r.Post("/claude-auth/dismiss", s.dismissClaudeSession)
 
 	})
 

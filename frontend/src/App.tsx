@@ -13,6 +13,7 @@ import { FileText, Globe, Inbox, KeyRound, MoreHorizontal } from "lucide-react";
 import { useExperimental } from "./hooks/useExperimental";
 import { ActionMenu, ActionMenuItem } from "./components/ui/ActionMenu";
 import { BroadcastModal } from "./components/BroadcastModal";
+import { ClaudeLogin } from "./components/ClaudeLogin";
 
 // Register service worker for mobile notifications
 if ("serviceWorker" in navigator) {
@@ -704,7 +705,12 @@ export function AppShell() {
 // Root App component: provides global notifications
 function App() {
   useGlobalNotifications();
-  return <Outlet />;
+  return (
+    <>
+      <ClaudeLogin />
+      <Outlet />
+    </>
+  );
 }
 
 export default App;
