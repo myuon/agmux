@@ -10,13 +10,15 @@ export function SystemEventRow({ label, detail }: { label: string; detail?: stri
 
   return (
     <div
-      className={`flex ${collapsible && expanded ? "items-start" : "items-center"} gap-2 py-1 px-3 text-xs text-gray-500 border-y border-dashed border-gray-200`}
+      className={`flex flex-wrap ${collapsible && expanded ? "items-start" : "items-center"} gap-2 py-1 px-3 text-xs text-gray-500 border-y border-dashed border-gray-200`}
     >
-      <span className="shrink-0 text-gray-400">{"⟡"}</span>
-      <span className="shrink-0">{label}</span>
+      <span className="min-w-0 break-words">
+        <span className="mr-2 text-gray-400">{"⟡"}</span>
+        {label}
+      </span>
       {detail && (
         <span
-          className={`text-gray-400 ${collapsible ? (expanded ? "min-w-0 flex-1 whitespace-pre-wrap break-words" : "min-w-0 flex-1 truncate") : ""}`}
+          className={`text-gray-400 ${collapsible ? (expanded ? "min-w-0 basis-full whitespace-pre-wrap break-words" : "min-w-0 flex-1 basis-24 truncate") : ""}`}
         >
           {detail}
         </span>

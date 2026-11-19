@@ -291,6 +291,25 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
     };
   }
 
+  // Hook lifecycle events. Successful runs are noise; only a failed hook is
+  // surfaced so the user can notice it (e.g. a SessionStart hook crashing).
+  if (subtype === "hook_started") {
+    return null;
+  }
+  if (subtype === "hook_response") {
+    if (raw.outcome !== "error") return null;
+    const hookName = typeof raw.hook_name === "string" && raw.hook_name ? raw.hook_name : "不明";
+    const exitCode = typeof raw.exit_code === "number" ? ` (exit ${raw.exit_code})` : "";
+    const pick = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+    const output = pick(raw.stderr) || pick(raw.output) || pick(raw.stdout);
+    return {
+      kind: "system_event",
+      eventType: "hook_error",
+      label: `⚠ フック ${hookName} が失敗しました${exitCode}`,
+      detail: output || undefined,
+    };
+  }
+
   if (subtype === "task_notification") {
     const status = raw.status as string;
     const summary = (raw.summary as string) || "";
