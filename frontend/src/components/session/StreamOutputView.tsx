@@ -21,7 +21,7 @@ const roleStyles: Record<string, { bg: string; label: string; text: string }> = 
 type StreamViewMode = "markdown" | "json";
 
 // Known top-level entry types that the markdown view supports
-const KNOWN_ENTRY_TYPES = new Set(["user", "assistant", "system", "rate_limit_event", "result", "tool_progress"]);
+const KNOWN_ENTRY_TYPES = new Set(["user", "assistant", "system", "rate_limit_event", "result", "tool_progress", "command_lifecycle"]);
 
 // Build a one-line summary for a stream entry (used in JSON view)
 function summarizeEntry(line: unknown): { type: string; subtype?: string; summary: string; isUnknown: boolean } {
@@ -92,6 +92,14 @@ function summarizeEntry(line: unknown): { type: string; subtype?: string; summar
     const elapsed = typeof raw.elapsed_time_seconds === "number" ? `${raw.elapsed_time_seconds}s` : "";
     const parentId = typeof raw.parent_tool_use_id === "string" ? raw.parent_tool_use_id.slice(0, 12) : "";
     const parts = [toolName, elapsed, parentId].filter((p) => p.length > 0);
+    return { type, summary: parts.join(" "), isUnknown };
+  }
+
+  if (type === "command_lifecycle") {
+    const parts: string[] = [];
+    if (typeof raw.state === "string") parts.push(`state=${raw.state}`);
+    if (typeof raw.wakeup_source === "string") parts.push(`wakeup_source=${raw.wakeup_source}`);
+    if (typeof raw.command_uuid === "string") parts.push(`command=${raw.command_uuid.slice(0, 8)}`);
     return { type, summary: parts.join(" "), isUnknown };
   }
 
