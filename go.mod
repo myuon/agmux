@@ -18,6 +18,8 @@ require (
 	google.golang.org/protobuf v1.36.11
 )
 
+require github.com/creack/pty v1.1.24
+
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2 // indirect

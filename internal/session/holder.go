@@ -171,6 +171,11 @@ func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []str
 	return nil
 }
 
+// HolderLogPath is where the holder's and the CLI's stdout/stderr go.
+func HolderLogPath(sessionID string) string {
+	return filepath.Join(SocketDir(), "..", "logs", sessionID+".log")
+}
+
 type holder struct {
 	sessionID  string
 	cmd        *exec.Cmd
@@ -419,9 +424,8 @@ func SpawnHolder(sessionID string, cmdArgs []string, projectPath string, env []s
 	}
 
 	// Redirect holder's stdout/stderr to a log file for debugging
-	holderLogDir := filepath.Join(SocketDir(), "..", "logs")
-	os.MkdirAll(holderLogDir, 0700)
-	logPath := filepath.Join(holderLogDir, sessionID+".log")
+	logPath := HolderLogPath(sessionID)
+	os.MkdirAll(filepath.Dir(logPath), 0700)
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return 0, fmt.Errorf("open holder log: %w", err)

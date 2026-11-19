@@ -108,6 +108,24 @@ export interface SecretUsage {
   usedAt: string;
 }
 
+export type ClaudeLoginPhase = "idle" | "starting" | "waiting_code" | "verifying" | "succeeded" | "failed";
+
+export interface ClaudeLoginStatus {
+  phase: ClaudeLoginPhase;
+  url?: string;
+  message?: string;
+  startedAt?: string;
+  expiresAt?: string;
+}
+
+export interface ClaudeAuthStatus {
+  loginRequired: boolean;
+  since?: string;
+  reason?: string;
+  stoppedSessions: { id: string; name: string; status: string }[];
+  login: ClaudeLoginStatus;
+}
+
 async function request<T>(
   path: string,
   options?: RequestInit
@@ -328,6 +346,19 @@ export const api = {
 
   listExperimental: () =>
     request<{ features: ExperimentalFeature[] }>("/experimental"),
+
+  // Claude re-login (experimental claude_relogin): 404 while it is off.
+  getClaudeAuthStatus: () => request<ClaudeAuthStatus>("/claude-auth/status"),
+  startClaudeLogin: () =>
+    request<ClaudeLoginStatus>("/claude-auth/login/start", { method: "POST" }),
+  submitClaudeLoginCode: (code: string) =>
+    request<ClaudeLoginStatus>("/claude-auth/login/code", { method: "POST", body: JSON.stringify({ code }) }),
+  cancelClaudeLogin: () =>
+    request<ClaudeLoginStatus>("/claude-auth/login/cancel", { method: "POST" }),
+  resumeClaudeSession: (sessionId: string) =>
+    request<ClaudeAuthStatus>("/claude-auth/resume", { method: "POST", body: JSON.stringify({ sessionId }) }),
+  dismissClaudeSession: (sessionId: string) =>
+    request<ClaudeAuthStatus>("/claude-auth/dismiss", { method: "POST", body: JSON.stringify({ sessionId }) }),
 
   setExperimental: (name: string, enabled: boolean) =>
     request<{ features: ExperimentalFeature[] }>(`/experimental/${encodeURIComponent(name)}`, {

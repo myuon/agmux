@@ -9,6 +9,7 @@ import { ToggleButton } from "../components/ui/ToggleButton";
 import { AlertBanner } from "../components/ui/AlertBanner";
 import { PermissionStatus } from "../components/ui/PermissionStatus";
 import { SecondaryButton } from "../components/ui/SecondaryButton";
+import { openClaudeLogin } from "../lib/claudeAuth";
 
 export function ConfigPage() {
   const navigate = useNavigate();
@@ -273,6 +274,15 @@ function ExperimentalSection() {
             </ToggleButton>
           </Field>
           {f.description && <p className="text-xs text-gray-500">{f.description}</p>}
+          {f.name === "claude_relogin" && f.enabled && (
+            <button
+              type="button"
+              onClick={openClaudeLogin}
+              className="text-xs px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+            >
+              Claude に再ログイン
+            </button>
+          )}
         </div>
       ))}
     </Section>
