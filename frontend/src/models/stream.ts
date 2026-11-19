@@ -291,6 +291,20 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
     };
   }
 
+  // CLI informational messages (e.g. tag=hook_no_verdict when a PreToolUse
+  // hook timed out). `content` is the human-readable text; `level` is
+  // info/warning/error.
+  if (subtype === "informational") {
+    const content = typeof raw.content === "string" ? raw.content.trim() : "";
+    if (!content) return null;
+    const level = typeof raw.level === "string" ? raw.level : "";
+    return {
+      kind: "system_event",
+      eventType: "informational",
+      label: level === "warning" || level === "error" ? `⚠ ${content}` : content,
+    };
+  }
+
   if (subtype === "task_notification") {
     const status = raw.status as string;
     const summary = (raw.summary as string) || "";
