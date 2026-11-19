@@ -78,6 +78,7 @@ func newClaudeAuthTestServer(t *testing.T) (*Server, *authSessions, *claudeauth.
 			return stub, nil
 		},
 		func(context.Context) (bool, error) { return true, nil },
+		func() (claudeauth.Process, error) { return nil, errors.New("setup-token is not used here") },
 	)
 	return s, sess, mon, stub
 }

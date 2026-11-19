@@ -104,6 +104,8 @@ func (p *ClaudeProvider) BuildStreamCommand(opts StreamOpts) *exec.Cmd {
 	cmd.Env = append(cmd.Env, "GIT_TERMINAL_PROMPT=0")
 	// Lets tools run by the agent (e.g. `agmux secret exec`) identify the session.
 	cmd.Env = appendAgmuxSessionEnv(cmd.Env, opts)
+	// The long-lived token, when one is set up (#833).
+	cmd.Env = appendClaudeExtraEnv(cmd.Env)
 	return cmd
 }
 

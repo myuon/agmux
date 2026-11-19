@@ -13,11 +13,21 @@ import (
 
 // CLIStarter returns a Starter that runs `<claudeCommand> auth login` in a PTY.
 func CLIStarter(claudeCommand string) Starter {
+	return cliStarter(claudeCommand, "auth", "login")
+}
+
+// CLISetupTokenStarter returns a Starter that runs `<claudeCommand> setup-token`
+// in a PTY.
+func CLISetupTokenStarter(claudeCommand string) Starter {
+	return cliStarter(claudeCommand, "setup-token")
+}
+
+func cliStarter(claudeCommand string, args ...string) Starter {
 	if claudeCommand == "" {
 		claudeCommand = "claude"
 	}
 	return func() (Process, error) {
-		cmd := exec.Command(claudeCommand, "auth", "login")
+		cmd := exec.Command(claudeCommand, args...)
 		cmd.Env = loginEnv()
 		// A wide terminal keeps the URL on one line.
 		f, err := pty.StartWithSize(cmd, &pty.Winsize{Rows: 40, Cols: 4000})
@@ -36,7 +46,7 @@ func loginEnv() []string {
 	var env []string
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
-		if k == "CLAUDECODE" || k == "CLAUDE_CODE_ENTRYPOINT" || k == "BROWSER" {
+		if k == "CLAUDECODE" || k == "CLAUDE_CODE_ENTRYPOINT" || k == "BROWSER" || k == TokenSecretName {
 			continue
 		}
 		env = append(env, kv)

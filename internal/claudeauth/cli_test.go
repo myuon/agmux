@@ -24,6 +24,17 @@ if [ "$1 $2" = "auth status" ]; then
   if [ -f "$0.ok" ]; then echo '{"loggedIn":true}'; exit 0; fi
   echo '{"loggedIn":false}'; exit 1
 fi
+if [ "$1" = "setup-token" ]; then
+  printf "Browser didn't open? Use the URL below to sign in\r\n\r\nhttps://claude.com/cai/oauth/authorize?code=true&state=t\r\n\r\nPaste code here if prompted\r\n"
+  read code
+  if [ "$code" = "good" ]; then
+    printf "Long-lived authentication token created successfully!\r\n\r\nYour OAuth token (valid for 1 year):\r\n\r\n%s%s\r\n\r\nStore this token securely.\r\n" "sk-ant-" "oat01-faketoken_0123456789abcdefghij"
+  else
+    printf "OAuth error: That code wasn't accepted.\r\n\r\nPress Enter to retry.\r\n"
+  fi
+  read again
+  exit 0
+fi
 exit 2
 `
 
@@ -64,4 +75,30 @@ func TestCLI_RejectedCodeThroughPTY(t *testing.T) {
 	require.NoError(t, err)
 	st := waitPhase(t, f, PhaseFailed)
 	assert.Contains(t, st.Message, "Couldn't log in")
+}
+
+func TestCLI_SetupTokenThroughPTY(t *testing.T) {
+	bin := writeFakeClaude(t)
+	var saved string
+	f := NewTokenFlow(CLISetupTokenStarter(bin), func(tok string) error { saved = tok; return nil }, nil)
+	st, err := f.Start(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, PhaseWaitingCode, st.Phase, st.Message)
+	assert.Equal(t, "https://claude.com/cai/oauth/authorize?code=true&state=t", st.URL)
+
+	_, err = f.SubmitCode("good")
+	require.NoError(t, err)
+	waitPhase(t, f, PhaseSucceeded)
+	assert.Equal(t, "sk-ant-"+"oat01-faketoken_0123456789abcdefghij", saved)
+}
+
+func TestCLI_SetupTokenRejectedThroughPTY(t *testing.T) {
+	bin := writeFakeClaude(t)
+	f := NewTokenFlow(CLISetupTokenStarter(bin), func(string) error { t.Error("nothing must be saved"); return nil }, nil)
+	_, err := f.Start(context.Background())
+	require.NoError(t, err)
+	_, err = f.SubmitCode("bad")
+	require.NoError(t, err)
+	st := waitPhase(t, f, PhaseFailed)
+	assert.Contains(t, st.Message, "That code wasn't accepted")
 }

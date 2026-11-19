@@ -22,16 +22,19 @@ const claudeResumeMessage = "Claude のログインが切れていたため中�
 type claudeAuth struct {
 	monitor *claudeauth.Monitor
 	flow    *claudeauth.LoginFlow
+	token   *claudeauth.LoginFlow // `claude setup-token` (claude_token.go)
+	now     func() time.Time      // for tests; nil = time.Now
 }
 
 // InitClaudeAuth sets up login-loss detection and the re-login flow using the
 // given claude command, and returns the monitor so the session manager and
 // the automation scheduler can be wired to it.
 func (s *Server) InitClaudeAuth(claudeCommand string) *claudeauth.Monitor {
-	return s.initClaudeAuth(claudeauth.CLIStarter(claudeCommand), claudeauth.CLIStatusChecker(claudeCommand))
+	return s.initClaudeAuth(claudeauth.CLIStarter(claudeCommand), claudeauth.CLIStatusChecker(claudeCommand),
+		claudeauth.CLISetupTokenStarter(claudeCommand))
 }
 
-func (s *Server) initClaudeAuth(start claudeauth.Starter, check claudeauth.StatusChecker) *claudeauth.Monitor {
+func (s *Server) initClaudeAuth(start claudeauth.Starter, check claudeauth.StatusChecker, tokenStart claudeauth.Starter) *claudeauth.Monitor {
 	mon := claudeauth.NewMonitor(func() bool { return experimental.Enabled(claudeauth.FeatureName) })
 	flow := claudeauth.NewLoginFlow(start, check, func() {
 		s.logger.Info("claude re-login completed")
@@ -40,7 +43,12 @@ func (s *Server) initClaudeAuth(start claudeauth.Starter, check claudeauth.Statu
 	mon.SetOnChange(func(st claudeauth.State, becameRequired bool) {
 		s.onClaudeAuthChange(st, becameRequired)
 	})
-	s.claudeAuth = &claudeAuth{monitor: mon, flow: flow}
+	token := claudeauth.NewTokenFlow(tokenStart, s.saveClaudeToken, func() {
+		// Sessions started from now on use the token.
+		mon.Clear()
+		s.broadcastClaudeAuth()
+	})
+	s.claudeAuth = &claudeAuth{monitor: mon, flow: flow, token: token}
 	return mon
 }
 
@@ -89,6 +97,7 @@ type claudeAuthStatusResponse struct {
 	Reason          string                 `json:"reason,omitempty"`
 	StoppedSessions []claudeAuthSession    `json:"stoppedSessions"`
 	Login           claudeauth.LoginStatus `json:"login"`
+	Token           claudeTokenInfo        `json:"token"`
 }
 
 func (s *Server) claudeAuthStatus() claudeAuthStatusResponse {
@@ -98,6 +107,7 @@ func (s *Server) claudeAuthStatus() claudeAuthStatusResponse {
 		Reason:          st.Reason,
 		StoppedSessions: []claudeAuthSession{},
 		Login:           s.claudeAuth.flow.Status(),
+		Token:           s.claudeTokenInfo(),
 	}
 	if !st.Since.IsZero() {
 		since := st.Since
@@ -136,9 +146,14 @@ func (s *Server) startClaudeLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.claudeAuthReady(w) {
 		return
 	}
+	s.startFlow(w, r, s.claudeAuth.flow)
+}
+
+// startFlow starts flow (login or setup-token) and returns its status.
+func (s *Server) startFlow(w http.ResponseWriter, r *http.Request, flow *claudeauth.LoginFlow) {
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
-	st, err := s.claudeAuth.flow.Start(ctx)
+	st, err := flow.Start(ctx)
 	if errors.Is(err, claudeauth.ErrBusy) {
 		writeJSON(w, http.StatusConflict, st)
 		return
@@ -154,6 +169,11 @@ func (s *Server) submitClaudeLoginCode(w http.ResponseWriter, r *http.Request) {
 	if !s.claudeAuthReady(w) {
 		return
 	}
+	s.submitFlowCode(w, r, s.claudeAuth.flow)
+}
+
+// submitFlowCode types the code from the body into flow's CLI.
+func (s *Server) submitFlowCode(w http.ResponseWriter, r *http.Request, flow *claudeauth.LoginFlow) {
 	var req struct {
 		Code string `json:"code"`
 	}
@@ -161,7 +181,7 @@ func (s *Server) submitClaudeLoginCode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	st, err := s.claudeAuth.flow.SubmitCode(req.Code)
+	st, err := flow.SubmitCode(req.Code)
 	req.Code = ""
 	switch {
 	case errors.Is(err, claudeauth.ErrBadCode):
