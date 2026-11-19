@@ -276,7 +276,7 @@ func (s *Scheduler) watchdog(a Automation, now time.Time) bool {
 	}
 
 	// 4. stagnation of the watched metric: once per (metric, best value).
-	stagnated, best := false, 0.0
+	stagnated, best, latest, worse := false, 0.0, 0.0, false
 	if a.WatchMetric != "" {
 		pts, err := s.store.MetricHistory(a.ID, a.WatchMetric)
 		if err != nil {
@@ -303,6 +303,8 @@ func (s *Scheduler) watchdog(a Automation, now time.Time) bool {
 				}
 			}
 			stagnated = !improved
+			latest = pts[len(pts)-1].Value
+			worse = better(best, latest)
 			// A latest value that has reached the target cannot improve
 			// further, so it is not stagnation.
 			if a.WatchTarget != nil && WatchTargetReached(a.WatchDirection, *a.WatchTarget, pts[len(pts)-1].Value) {
@@ -312,7 +314,11 @@ func (s *Scheduler) watchdog(a Automation, now time.Time) bool {
 	}
 	token := int64(math.Float64bits(best))
 	if transition(watchStagnated, stagnated, token) {
-		notify(fmt.Sprintf("Automation「%s」: 指標 %s が直近 %d 回で最良値 %g を更新していません", a.Name, a.WatchMetric, n, best))
+		if worse {
+			notify(fmt.Sprintf("Automation「%s」: 指標 %s が悪化しています（それまでの最良 %g → 最新 %g、直近 %d 回で最良を更新していません）", a.Name, a.WatchMetric, best, latest, n))
+		} else {
+			notify(fmt.Sprintf("Automation「%s」: 指標 %s が直近 %d 回で最良値 %g を更新していません（最新 %g）", a.Name, a.WatchMetric, n, best, latest))
+		}
 	}
 	return false
 }
