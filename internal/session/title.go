@@ -156,6 +156,7 @@ func (m *Manager) claudeTitleGenerator(ctx context.Context, message string) (str
 			cmd.Env = append(cmd.Env, env)
 		}
 	}
+	cmd.Env = appendClaudeExtraEnv(cmd.Env)
 	cmd.Stdin = strings.NewReader(fmt.Sprintf(autoTitlePrompt, message))
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

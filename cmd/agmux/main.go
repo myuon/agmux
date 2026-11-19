@@ -228,6 +228,10 @@ func serveCmd() *cobra.Command {
 			}); ok {
 				m.SetOnClaudeLoginRequired(srv.ReportClaudeLoginRequired)
 			}
+			// The long-lived token (claude setup-token, #833) is passed to every
+			// claude session as CLAUDE_CODE_OAUTH_TOKEN while the feature is on.
+			session.SetClaudeEnvSource(srv.ClaudeSessionEnv)
+			srv.StartClaudeTokenWatcher(context.Background())
 
 			// Remote browser (dedicated Chrome). Profile lives under the agmux
 			// data dir, which honors $HOME.

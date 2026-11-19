@@ -124,6 +124,17 @@ export interface ClaudeAuthStatus {
   reason?: string;
   stoppedSessions: { id: string; name: string; status: string }[];
   login: ClaudeLoginStatus;
+  token?: ClaudeTokenInfo;
+}
+
+// The long-lived token (claude setup-token). The value itself is never sent.
+export interface ClaudeTokenInfo {
+  present: boolean;
+  createdAt?: string;
+  expiresAt?: string;
+  expiringSoon: boolean;
+  expired: boolean;
+  flow: ClaudeLoginStatus;
 }
 
 async function request<T>(
@@ -359,6 +370,14 @@ export const api = {
     request<ClaudeAuthStatus>("/claude-auth/resume", { method: "POST", body: JSON.stringify({ sessionId }) }),
   dismissClaudeSession: (sessionId: string) =>
     request<ClaudeAuthStatus>("/claude-auth/dismiss", { method: "POST", body: JSON.stringify({ sessionId }) }),
+  startClaudeToken: () =>
+    request<ClaudeLoginStatus>("/claude-auth/token/start", { method: "POST" }),
+  submitClaudeTokenCode: (code: string) =>
+    request<ClaudeLoginStatus>("/claude-auth/token/code", { method: "POST", body: JSON.stringify({ code }) }),
+  cancelClaudeToken: () =>
+    request<ClaudeLoginStatus>("/claude-auth/token/cancel", { method: "POST" }),
+  deleteClaudeToken: () =>
+    request<ClaudeAuthStatus>("/claude-auth/token", { method: "DELETE" }),
 
   setExperimental: (name: string, enabled: boolean) =>
     request<{ features: ExperimentalFeature[] }>(`/experimental/${encodeURIComponent(name)}`, {

@@ -80,6 +80,18 @@ type LoginFlow struct {
 	check     StatusChecker
 	onSuccess func()
 
+	// Token mode (`claude setup-token`, see token.go): the attempt ends when
+	// the CLI prints the token, which is handed to saveToken instead of
+	// being checked with check.
+	token     bool
+	saveToken func(token string) error
+	label     string // the command, for messages
+
+	// SubmitDelay, when set, separates the code from the Enter key: the
+	// setup-token screen takes a code typed together with "\r" as a paste
+	// and does not submit it.
+	SubmitDelay time.Duration
+
 	// Timeout is the lifetime of one attempt (default DefaultLoginTimeout).
 	Timeout time.Duration
 	// URLWait bounds how long Start waits for the URL (default 30s).
@@ -104,7 +116,7 @@ type LoginFlow struct {
 
 // NewLoginFlow creates a flow. onSuccess runs after the CLI confirms the login.
 func NewLoginFlow(start Starter, check StatusChecker, onSuccess func()) *LoginFlow {
-	return &LoginFlow{start: start, check: check, onSuccess: onSuccess, phase: PhaseIdle, now: time.Now}
+	return &LoginFlow{start: start, check: check, onSuccess: onSuccess, phase: PhaseIdle, now: time.Now, label: "claude auth login"}
 }
 
 func (f *LoginFlow) timeout() time.Duration {
@@ -143,7 +155,7 @@ func (f *LoginFlow) Start(ctx context.Context) (LoginStatus, error) {
 	}
 	proc, err := f.start()
 	if err != nil {
-		f.phase, f.message, f.url = PhaseFailed, "claude auth login を起動できませんでした: "+err.Error(), ""
+		f.phase, f.message, f.url = PhaseFailed, f.label+" を起動できませんでした: "+err.Error(), ""
 		st := f.statusLocked()
 		f.mu.Unlock()
 		return st, nil
@@ -172,7 +184,7 @@ func (f *LoginFlow) Start(ctx context.Context) (LoginStatus, error) {
 	select {
 	case <-urlReady:
 	case <-t.C:
-		f.abort(gen, "claude auth login が認証 URL を出しませんでした。")
+		f.abort(gen, f.label+" が認証 URL を出しませんでした。")
 	case <-ctx.Done():
 	}
 	return f.Status(), nil
@@ -196,7 +208,7 @@ func (f *LoginFlow) SubmitCode(code string) (LoginStatus, error) {
 	f.url = ""
 	f.mu.Unlock()
 
-	if _, err := proc.Write([]byte(code + "\r")); err != nil {
+	if err := f.typeCode(proc, code); err != nil {
 		f.abort(gen, "コードを送れませんでした。もう一度やり直してください。")
 		return f.Status(), nil
 	}
@@ -209,10 +221,27 @@ func (f *LoginFlow) SubmitCode(code string) (LoginStatus, error) {
 		stuck := f.gen == gen && f.phase == PhaseVerifying
 		f.mu.Unlock()
 		if stuck {
-			f.abort(gen, "ログインの完了を確認できませんでした。もう一度やり直してください。")
+			msg := "ログインの完了を確認できませんでした。もう一度やり直してください。"
+			if f.token {
+				msg = TokenUnreadableMessage
+			}
+			f.abort(gen, msg)
 		}
 	})
 	return f.Status(), nil
+}
+
+func (f *LoginFlow) typeCode(proc Process, code string) error {
+	if f.SubmitDelay <= 0 {
+		_, err := proc.Write([]byte(code + "\r"))
+		return err
+	}
+	if _, err := proc.Write([]byte(code)); err != nil {
+		return err
+	}
+	time.Sleep(f.SubmitDelay)
+	_, err := proc.Write([]byte("\r"))
+	return err
 }
 
 // Cancel stops the current attempt.
@@ -261,9 +290,11 @@ const maxOutput = 64 << 10
 
 func (f *LoginFlow) readLoop(gen int, proc Process) {
 	buf := make([]byte, 4096)
+	decided := false // token mode: the result is known; only drain the PTY
 	for {
 		n, err := proc.Read(buf)
-		if n > 0 {
+		if n > 0 && !decided {
+			var tok, fail string
 			f.mu.Lock()
 			if f.gen == gen {
 				f.output = append(f.output, buf[:n]...)
@@ -280,15 +311,29 @@ func (f *LoginFlow) readLoop(gen int, proc Process) {
 						}
 					}
 				}
+				if f.token && f.phase == PhaseVerifying {
+					tok, fail = scanSetupToken(string(f.output))
+				}
 			}
 			f.mu.Unlock()
+			if tok != "" || fail != "" {
+				// Done: the CLI may wait for a key press (e.g. "Press
+				// Enter to retry."), so kill it instead of waiting. Keep
+				// reading until the PTY closes: on macOS a process cannot
+				// finish exiting while its terminal output is not drained.
+				decided = true
+				_ = proc.Kill()
+				f.finishToken(gen, tok, fail)
+			}
 		}
 		if err != nil {
 			break
 		}
 	}
 	waitErr := proc.Wait()
-	f.finish(gen, waitErr)
+	if !decided {
+		f.finish(gen, waitErr)
+	}
 }
 
 // finish handles the CLI's exit.
@@ -299,9 +344,21 @@ func (f *LoginFlow) finish(gen int, waitErr error) {
 		return
 	}
 	out := string(f.output)
+	if f.token {
+		f.mu.Unlock()
+		tok, fail := ExtractSetupToken(out), ""
+		if tok == "" {
+			fail = TokenUnreadableMessage
+			if m := setupTokenFailure(out); m != "" {
+				fail = m
+			}
+		}
+		f.finishToken(gen, tok, fail)
+		return
+	}
 	if waitErr != nil {
 		f.phase, f.url = PhaseFailed, ""
-		f.message = failureMessage(out)
+		f.message = failureMessage(out, f.label)
 		f.endLocked()
 		f.mu.Unlock()
 		return
@@ -352,12 +409,12 @@ func ExtractLoginURL(out string) string {
 
 // failureMessage picks the CLI's own explanation of a failed login. It never
 // returns the line the code was echoed on, nor anything with a URL.
-func failureMessage(out string) string {
+func failureMessage(out, label string) string {
 	for _, l := range strings.Split(StripANSI(out), "\n") {
 		l = strings.TrimSpace(strings.ReplaceAll(l, "\r", ""))
 		if strings.HasPrefix(l, "Couldn't log in") && !strings.Contains(l, "http") {
 			return l
 		}
 	}
-	return "claude auth login が失敗しました。もう一度やり直してください。"
+	return label + " が失敗しました。もう一度やり直してください。"
 }

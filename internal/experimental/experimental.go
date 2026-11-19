@@ -55,7 +55,7 @@ var Features = []Feature{
 	{
 		Name:        "claude_relogin",
 		Title:       "Claude の再ログイン",
-		Description: "Claude のログイン切れを検知して画面上部に知らせ、その間は Automation の発火を止めます。スマホからでも、ホストで claude auth login を起動して表示される URL で承認し、コードを貼れば再ログインできます。",
+		Description: "Claude のログイン切れを検知して画面上部に知らせ、その間は Automation の発火を止めます。スマホからでも、ホストで claude auth login を起動して表示される URL で承認し、コードを貼れば再ログインできます。同じ手順で claude setup-token の長期トークン（期限1年）を作ると、シークレット CLAUDE_CODE_OAUTH_TOKEN に保存され、claude のセッションに渡されます（期限の2週間前に通知します）。",
 	},
 }
 

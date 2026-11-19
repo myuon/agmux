@@ -4,7 +4,8 @@ import { api } from "../api/client";
 import type { ClaudeAuthStatus, ClaudeLoginStatus } from "../api/client";
 import { useExperimental } from "../hooks/useExperimental";
 import { useWebSocket } from "../hooks/useWebSocket";
-import { OPEN_CLAUDE_LOGIN_EVENT } from "../lib/claudeAuth";
+import { OPEN_CLAUDE_LOGIN_EVENT, OPEN_CLAUDE_TOKEN_EVENT, formatDay } from "../lib/claudeAuth";
+import { ClaudeTokenDialog } from "./ClaudeTokenDialog";
 import { Modal } from "./ui/Modal";
 
 const ACTIVE_PHASES = new Set(["starting", "waiting_code", "verifying"]);
@@ -20,6 +21,7 @@ export function ClaudeLogin() {
 function ClaudeLoginInner() {
   const [status, setStatus] = useState<ClaudeAuthStatus | null>(null);
   const [open, setOpen] = useState(false);
+  const [tokenOpen, setTokenOpen] = useState(false);
   // The banner can be hidden until the state changes again.
   const [hiddenKey, setHiddenKey] = useState<string | null>(null);
 
@@ -33,8 +35,16 @@ function ClaudeLoginInner() {
       setOpen(true);
       load();
     };
+    const onOpenToken = () => {
+      setTokenOpen(true);
+      load();
+    };
     window.addEventListener(OPEN_CLAUDE_LOGIN_EVENT, onOpen);
-    return () => window.removeEventListener(OPEN_CLAUDE_LOGIN_EVENT, onOpen);
+    window.addEventListener(OPEN_CLAUDE_TOKEN_EVENT, onOpenToken);
+    return () => {
+      window.removeEventListener(OPEN_CLAUDE_LOGIN_EVENT, onOpen);
+      window.removeEventListener(OPEN_CLAUDE_TOKEN_EVENT, onOpenToken);
+    };
   }, [load]);
 
   useWebSocket(
@@ -44,31 +54,57 @@ function ClaudeLoginInner() {
     }, [load]),
   );
 
-  if (!status) return <ClaudeLoginDialog open={open} onClose={() => setOpen(false)} status={null} setStatus={setStatus} reload={load} />;
+  if (!status)
+    return (
+      <>
+        <ClaudeLoginDialog open={open} onClose={() => setOpen(false)} status={null} setStatus={setStatus} reload={load} />
+        <ClaudeTokenDialog open={tokenOpen} onClose={() => setTokenOpen(false)} status={null} setStatus={setStatus} reload={load} />
+      </>
+    );
 
   const stopped = status.stoppedSessions.length;
-  const bannerKey = status.loginRequired ? `required:${status.since ?? ""}` : stopped > 0 ? `stopped:${stopped}` : null;
+  const token = status.token;
+  const tokenExpiring = !!token?.present && token.expiringSoon;
+  const kind: "required" | "token" | "stopped" | null = status.loginRequired
+    ? "required"
+    : tokenExpiring
+      ? "token"
+      : stopped > 0
+        ? "stopped"
+        : null;
+  const bannerKey =
+    kind === "required"
+      ? `required:${status.since ?? ""}`
+      : kind === "token"
+        ? `token:${token?.expiresAt ?? ""}`
+        : kind === "stopped"
+          ? `stopped:${stopped}`
+          : null;
   const showBanner = bannerKey !== null && bannerKey !== hiddenKey;
+  const bannerColor =
+    kind === "required" ? "bg-red-600 text-white" : kind === "token" ? "bg-amber-500 text-gray-900" : "bg-emerald-600 text-white";
 
   return (
     <>
       {showBanner && (
         <div
           role="alert"
-          className={`fixed top-0 inset-x-0 z-40 px-3 py-2 text-sm shadow-md flex items-center gap-2 ${
-            status.loginRequired ? "bg-red-600 text-white" : "bg-emerald-600 text-white"
-          }`}
+          className={`fixed top-0 inset-x-0 z-40 px-3 py-2 text-sm shadow-md flex items-center gap-2 ${bannerColor}`}
         >
           <span className="flex-1 min-w-0 leading-snug">
-            {status.loginRequired
+            {kind === "required"
               ? "Claude のログインが切れています"
-              : `再ログインしました。止まったセッションが ${stopped} 件あります`}
+              : kind === "token"
+                ? token?.expired
+                  ? `Claude の長期トークンの期限が切れています（期限 ${formatDay(token?.expiresAt)}）`
+                  : `Claude の長期トークンの期限が近づいています（期限 ${formatDay(token?.expiresAt)}）`
+                : `再ログインしました。止まったセッションが ${stopped} 件あります`}
           </span>
           <button
-            onClick={() => setOpen(true)}
+            onClick={() => (kind === "token" ? setTokenOpen(true) : setOpen(true))}
             className="shrink-0 rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-900 hover:bg-gray-100"
           >
-            {status.loginRequired ? "再ログイン" : "確認"}
+            {kind === "required" ? "再ログイン" : kind === "token" ? "作り直す" : "確認"}
           </button>
           <button
             onClick={() => setHiddenKey(bannerKey)}
@@ -81,6 +117,7 @@ function ClaudeLoginInner() {
         </div>
       )}
       <ClaudeLoginDialog open={open} onClose={() => setOpen(false)} status={status} setStatus={setStatus} reload={load} />
+      <ClaudeTokenDialog open={tokenOpen} onClose={() => setTokenOpen(false)} status={status} setStatus={setStatus} reload={load} />
     </>
   );
 }

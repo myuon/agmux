@@ -298,6 +298,10 @@ func (s *Server) setupRoutes() {
 		r.Post("/claude-auth/login/cancel", s.cancelClaudeLogin)
 		r.Post("/claude-auth/resume", s.resumeClaudeSession)
 		r.Post("/claude-auth/dismiss", s.dismissClaudeSession)
+		r.Post("/claude-auth/token/start", s.startClaudeToken)
+		r.Post("/claude-auth/token/code", s.submitClaudeTokenCode)
+		r.Post("/claude-auth/token/cancel", s.cancelClaudeToken)
+		r.Delete("/claude-auth/token", s.deleteClaudeToken)
 
 	})
 
