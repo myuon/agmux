@@ -18,7 +18,7 @@ require (
 	google.golang.org/protobuf v1.36.11
 )
 
-require github.com/creack/pty v1.1.24 // indirect
+require github.com/creack/pty v1.1.24
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
