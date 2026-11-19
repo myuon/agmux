@@ -227,9 +227,29 @@ export function parseStreamContentBlocks(entry: StreamEntry): StreamContentBlock
 }
 
 // Parse a system event entry into a display item, or return null if not displayable
+/**
+ * System subtypes that are intentionally not shown in the stream. They are
+ * internal state notifications from the CLI with nothing for the user to act
+ * on. Listing them here (instead of silently falling through) records the
+ * decision: the session-monitoring scanner treats subtypes in this set as
+ * handled, not as unsupported.
+ */
+export const HIDDEN_SYSTEM_SUBTYPES = new Set([
+  "background_tasks_changed",
+  "vcs_state_changed",
+  "commands_changed",
+  "code_change_published",
+  "thinking_tokens",
+  "hook_started",
+]);
+
 function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
   const raw = entry as unknown as Record<string, unknown>;
   const subtype = raw.subtype as string | undefined;
+
+  if (subtype && HIDDEN_SYSTEM_SUBTYPES.has(subtype)) {
+    return null;
+  }
 
   if (subtype === "compact_boundary") {
     const meta = raw.compact_metadata as { trigger?: string; pre_tokens?: number } | undefined;
