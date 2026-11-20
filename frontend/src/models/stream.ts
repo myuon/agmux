@@ -241,6 +241,8 @@ export const HIDDEN_SYSTEM_SUBTYPES = new Set([
   "code_change_published",
   "thinking_tokens",
   "hook_started",
+  // CLI のテレメトリ的な通知（例: iOS 開発コマンドの検出 kind=ios_app）。ユーザーが見る情報はない
+  "dev_intent",
 ]);
 
 function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
