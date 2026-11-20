@@ -145,3 +145,28 @@ export function isSecureInput(manual: boolean, detected: boolean): boolean {
 export function sinkInputType(secure: boolean): "text" | "password" {
   return secure ? "password" : "text";
 }
+
+export type ViewportMode = "desktop" | "mobile";
+
+export const VIEWPORT_STORAGE_KEY = "agmux.remoteBrowser.viewport";
+/** Clients narrower than this default to the mobile viewport. */
+export const MOBILE_BREAKPOINT_PX = 768;
+/** CSS width of the emulated mobile viewport (must match the server). */
+export const MOBILE_VIEWPORT_WIDTH = 390;
+
+/** The saved choice wins; otherwise narrow clients start in mobile mode. */
+export function initialViewportMode(saved: string | null, clientWidth: number): ViewportMode {
+  if (saved === "desktop" || saved === "mobile") return saved;
+  return clientWidth < MOBILE_BREAKPOINT_PX ? "mobile" : "desktop";
+}
+
+/**
+ * CSS height to request for the mobile viewport so that a 390px-wide frame
+ * fills the frame area (areaWidth x areaHeight on screen) without
+ * letterboxing. Returns 0 (= server default) before the area is laid out.
+ * The server clamps the value.
+ */
+export function mobileViewportHeight(areaWidth: number, areaHeight: number): number {
+  if (!(areaWidth > 0) || !(areaHeight > 0)) return 0;
+  return Math.round((MOBILE_VIEWPORT_WIDTH * areaHeight) / areaWidth);
+}

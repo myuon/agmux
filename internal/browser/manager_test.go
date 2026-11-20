@@ -30,6 +30,7 @@ type fakeChrome struct {
 	ignoreStop bool // ignore Browser.close (simulates a hung Chrome)
 	profile    string
 	calls      []string // page-target methods in order
+	callParams []map[string]any
 	pages      int
 	closeCalls int
 }
@@ -114,6 +115,7 @@ func newFakeChrome(t *testing.T, profile string) *fakeChrome {
 			}
 			f.mu.Lock()
 			f.calls = append(f.calls, req.Method)
+			f.callParams = append(f.callParams, req.Params)
 			f.mu.Unlock()
 			if req.ID != 0 {
 				c.WriteJSON(map[string]any{"id": req.ID, "result": map[string]any{}})

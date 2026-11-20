@@ -68,6 +68,11 @@ type UserTab struct {
 	lastURL   []byte
 	lastFocus []byte
 
+	// viewportMu serializes viewport changes; viewport is the applied state
+	// (zero value = desktop, no overrides).
+	viewportMu sync.Mutex
+	viewport   viewportState
+
 	// evalFn overrides Runtime.evaluate (tests).
 	evalFn func(ctx context.Context, expr string) (json.RawMessage, error)
 }
@@ -258,7 +263,7 @@ func (t *UserTab) unsubscribe(s *Subscription) {
 
 // InputMessage is a client->server message. Only fields relevant to Type are used.
 type InputMessage struct {
-	Type string `json:"type"` // tap | scroll | key | text | navigate | back | reload
+	Type string `json:"type"` // tap | scroll | key | text | navigate | back | reload | viewport
 
 	X      float64 `json:"x"`
 	Y      float64 `json:"y"`
@@ -273,6 +278,9 @@ type InputMessage struct {
 	Modifiers int    `json:"modifiers"`
 
 	URL string `json:"url"`
+
+	Mode   string `json:"mode"`   // viewport: desktop | mobile
+	Height int    `json:"height"` // viewport (mobile): CSS height, 0 = default
 }
 
 // ErrInvalidInput marks a rejected client message.
@@ -330,6 +338,8 @@ func (t *UserTab) HandleInput(ctx context.Context, m InputMessage) error {
 	case "reload":
 		_, err := t.cdp.Call(ctx, "Page.reload", nil)
 		return err
+	case "viewport":
+		return t.SetViewport(ctx, m.Mode, m.Height)
 	}
 	return fmt.Errorf("%w: unknown type", ErrInvalidInput)
 }
