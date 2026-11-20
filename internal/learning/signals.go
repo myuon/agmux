@@ -176,17 +176,25 @@ func distinctSessions(sigs []*Signal) int {
 	return len(seen)
 }
 
-// extractJSON trims code fences and surrounding prose around a JSON object.
+// extractJSON finds the first JSON object in the reviewer output, skipping
+// code fences, surrounding prose and anything (tags, more text, a second
+// object) after it. When no object decodes, the trimmed output is returned so
+// the caller's json.Unmarshal reports the error.
 func extractJSON(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if m := codeFence.FindStringSubmatch(raw); m != nil {
 		raw = m[1]
 	}
-	if i := strings.Index(raw, "{"); i > 0 {
-		raw = raw[i:]
-	}
-	if i := strings.LastIndex(raw, "}"); i >= 0 && i < len(raw)-1 {
-		raw = raw[:i+1]
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '{' {
+			continue
+		}
+		dec := json.NewDecoder(strings.NewReader(raw[i:]))
+		var obj map[string]json.RawMessage
+		if err := dec.Decode(&obj); err != nil {
+			continue
+		}
+		return raw[i : i+int(dec.InputOffset())]
 	}
 	return raw
 }
