@@ -168,3 +168,24 @@ func TestParseProposalsTolerant(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestParseProposalsTrailingAndLeadingNoise(t *testing.T) {
+	cases := []string{
+		// trailing tags containing braces after the object
+		`{"proposals":[{"target":"claude_md","title":"t","content":"c"}]}` + "\n<note>{x}</note>",
+		// a brace in leading prose that is not JSON
+		"{メモ} 以下が結果です\n" + `{"proposals":[{"target":"claude_md","title":"t","content":"c"}]}`,
+		// two objects: the first one wins
+		`{"proposals":[{"target":"claude_md","title":"t","content":"c"}]}` + "\n" + `{"proposals":[]}`,
+	}
+	for _, c := range cases {
+		ps, err := ParseProposals(c)
+		if err != nil || len(ps) != 1 || ps[0].Title != "t" {
+			t.Fatalf("input %q: got %v %v", c, ps, err)
+		}
+	}
+	_, err := ParseProposals("<transcript>続きです</transcript>")
+	if err == nil || !strings.Contains(err.Error(), "<transcript>") {
+		t.Fatalf("expected error quoting output, got %v", err)
+	}
+}
