@@ -1,15 +1,31 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Check, Keyboard, KeyRound, Loader2, Play, RotateCw, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Keyboard,
+  KeyRound,
+  Loader2,
+  Monitor,
+  Play,
+  RotateCw,
+  Smartphone,
+  X,
+} from "lucide-react";
 import { api } from "../api/client";
 import {
+  initialViewportMode,
   isSecureInput,
   mapClientToPage,
+  mobileViewportHeight,
   normalizeUrl,
   parseFocusMessage,
   parseLoginRequestParams,
   screenDeltaToPage,
   sinkInputType,
+  VIEWPORT_STORAGE_KEY,
+  type ViewportMode,
 } from "../lib/remoteBrowser";
 
 interface RemoteBrowserStatus {
@@ -35,6 +51,24 @@ async function fetchStatus(): Promise<RemoteBrowserStatus> {
 }
 
 type LoginState = "loading" | "pending" | "gone" | "completed" | "cancelled";
+
+function loadViewportMode(): ViewportMode {
+  let saved: string | null = null;
+  try {
+    saved = localStorage.getItem(VIEWPORT_STORAGE_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+  return initialViewportMode(saved, window.innerWidth);
+}
+
+function saveViewportMode(mode: ViewportMode) {
+  try {
+    localStorage.setItem(VIEWPORT_STORAGE_KEY, mode);
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 export function RemoteBrowserPage() {
   const location = useLocation();
@@ -68,6 +102,27 @@ export function RemoteBrowserPage() {
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   }, []);
+
+  // Viewport (PC / mobile) of the remote tab. Sent on every connect; the
+  // server ignores it when the tab is already in that mode.
+  const [viewportMode, setViewportMode] = useState<ViewportMode>(loadViewportMode);
+  const viewportModeRef = useRef(viewportMode);
+  const frameAreaRef = useRef<HTMLDivElement | null>(null);
+  const sendViewport = useCallback(
+    (mode: ViewportMode) => {
+      const r = frameAreaRef.current?.getBoundingClientRect();
+      const height = mode === "mobile" && r ? mobileViewportHeight(r.width, r.height) : 0;
+      send({ type: "viewport", mode, height });
+    },
+    [send],
+  );
+  const changeViewport = (mode: ViewportMode) => {
+    if (mode === viewportModeRef.current) return;
+    viewportModeRef.current = mode;
+    setViewportMode(mode);
+    saveViewportMode(mode);
+    sendViewport(mode);
+  };
 
   // Browser-login request: look up the pending request (reason) for the bar.
   const loginEscalationId = loginReq?.escalationId;
@@ -119,6 +174,7 @@ export function RemoteBrowserPage() {
       ws.onopen = () => {
         backoff = 1000;
         setConn("connected");
+        sendViewport(viewportModeRef.current);
       };
       ws.onmessage = (ev) => {
         let msg: { type?: string; data?: string; url?: string; metadata?: FrameMeta };
@@ -165,7 +221,7 @@ export function RemoteBrowserPage() {
       wsRef.current = null;
       ws?.close();
     };
-  }, [running]);
+  }, [running, sendViewport]);
 
   const start = async () => {
     setStarting(true);
@@ -427,9 +483,40 @@ export function RemoteBrowserPage() {
         </Link>
         <h1 className="text-sm font-semibold text-gray-800">Remote Browser</h1>
         {running && (
-          <span className="ml-auto flex items-center gap-1.5 text-xs text-gray-500" data-testid="rb-conn" data-state={conn}>
+          <div
+            role="group"
+            aria-label="表示モード"
+            className="ml-auto flex items-center rounded-lg border border-gray-300 p-0.5"
+            data-testid="rb-viewport"
+            data-mode={viewportMode}
+          >
+            {(
+              [
+                ["desktop", "PC", Monitor],
+                ["mobile", "スマホ", Smartphone],
+              ] as const
+            ).map(([mode, label, Icon]) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => changeViewport(mode)}
+                aria-pressed={viewportMode === mode}
+                title={`${label}表示`}
+                className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md ${
+                  viewportMode === mode ? "bg-blue-600 text-white" : "text-gray-600 hover:bg-gray-100"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {running && (
+          <span className="flex items-center gap-1.5 text-xs text-gray-500" data-testid="rb-conn" data-state={conn} title={connLabel}>
             <span className={`h-2 w-2 rounded-full ${connColor}`} />
-            {connLabel}
+            {/* Dot only on narrow screens: the header also holds the PC/mobile switch. */}
+            <span className="hidden sm:inline">{connLabel}</span>
           </span>
         )}
       </header>
@@ -532,7 +619,7 @@ export function RemoteBrowserPage() {
             </button>
           </form>
 
-          <div className="relative flex-1 min-h-0 bg-gray-100">
+          <div ref={frameAreaRef} className="relative flex-1 min-h-0 bg-gray-100">
             {frameSrc ? (
               <img
                 ref={imgRef}

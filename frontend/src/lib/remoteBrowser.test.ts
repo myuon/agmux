@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  initialViewportMode,
   isSecureInput,
   loginRequestPath,
+  mobileViewportHeight,
   loginUrlHost,
   mapClientToPage,
   normalizeUrl,
@@ -101,5 +103,29 @@ describe("password mode helpers", () => {
   it("chooses the sink type", () => {
     expect(sinkInputType(true)).toBe("password");
     expect(sinkInputType(false)).toBe("text");
+  });
+});
+
+describe("initialViewportMode", () => {
+  it("uses the saved choice", () => {
+    expect(initialViewportMode("desktop", 375)).toBe("desktop");
+    expect(initialViewportMode("mobile", 1440)).toBe("mobile");
+  });
+  it("falls back to the client width", () => {
+    expect(initialViewportMode(null, 375)).toBe("mobile");
+    expect(initialViewportMode(null, 767)).toBe("mobile");
+    expect(initialViewportMode(null, 768)).toBe("desktop");
+    expect(initialViewportMode("bogus", 1440)).toBe("desktop");
+  });
+});
+
+describe("mobileViewportHeight", () => {
+  it("matches the frame area's aspect ratio", () => {
+    expect(mobileViewportHeight(390, 650)).toBe(650);
+    expect(mobileViewportHeight(195, 400)).toBe(800);
+  });
+  it("returns 0 before layout", () => {
+    expect(mobileViewportHeight(0, 600)).toBe(0);
+    expect(mobileViewportHeight(390, 0)).toBe(0);
   });
 });
