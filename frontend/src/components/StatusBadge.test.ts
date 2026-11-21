@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { lampClass, lampLabel, statusDots } from "./StatusBadge";
+import { READ_RING, lampClass, lampLabel, statusDots } from "./StatusBadge";
 
 describe("lampClass (#859)", () => {
-  it("hides the lamp of an idle session that has been read", () => {
-    expect(lampClass("idle", false)).toBe("bg-transparent");
-    expect(lampClass("idle", undefined)).toBe("bg-transparent");
+  it("shows a faint ring for an idle session that has been read", () => {
+    expect(lampClass("idle", false)).toBe(READ_RING);
+    expect(lampClass("idle", undefined)).toBe(READ_RING);
     expect(lampLabel("idle", false)).toBeUndefined();
   });
 
