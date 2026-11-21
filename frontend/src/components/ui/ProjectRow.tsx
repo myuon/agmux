@@ -20,8 +20,7 @@ interface ProjectRowProps {
 
 
 function dotClass(status: string, unread?: boolean): string {
-  const base = lampClass(status, unread);
-  return status === "working" ? `${base} animate-pulse` : base;
+  return lampClass(status, unread);
 }
 
 /** One project in the session list: the coordinator is the main character. */
