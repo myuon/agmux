@@ -461,11 +461,6 @@ func sessionCreateCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("resolve project path: %w", err)
 			}
-			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
-			if err != nil {
-				return err
-			}
-			defer database.Close()
 			if !ephemeral && ephemeralTimeout > 0 {
 				return fmt.Errorf("--timeout requires --ephemeral")
 			}
@@ -473,6 +468,40 @@ func sessionCreateCmd() *cobra.Command {
 			if ephemeral && ephemeralTimeout > 0 {
 				ephemeralTimeoutPtr = &ephemeralTimeout
 			}
+			// Create through the running daemon so that it owns the holder
+			// connection and sees the turn's result event. An in-process
+			// Manager here exits with the CLI, leaving nobody reading the
+			// stream: the session stayed "working" forever and its ephemeral
+			// timeout never fired.
+			ref, err := createViaDaemon(daemonBaseURL(cfg), daemonCreateRequest{
+				Name:                    args[0],
+				ProjectPath:             absPath,
+				Prompt:                  prompt,
+				Worktree:                worktree,
+				Provider:                provider,
+				Model:                   model,
+				AutoApprove:             autoApprove,
+				SystemPrompt:            systemPrompt,
+				ParentSessionID:         parentSessionID,
+				RoleTemplate:            templateName,
+				Ephemeral:               ephemeral,
+				EphemeralTimeoutSeconds: ephemeralTimeoutPtr,
+				CreatedBySessionID:      os.Getenv("AGMUX_SESSION_ID"),
+			})
+			if err == nil {
+				fmt.Printf("Created session: %s (id: %s)\n", ref.Name, ref.ID)
+				return nil
+			}
+			if !errors.Is(err, errServerUnreachable) {
+				return err
+			}
+			// No daemon running: create in-process. The next daemon start
+			// adopts the live holder (RecoverStreamProcesses).
+			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
+			if err != nil {
+				return err
+			}
+			defer database.Close()
 			sess, err := mgr.Create(args[0], absPath, prompt, worktree, session.CreateOpts{
 				Provider:                session.ProviderName(provider),
 				Model:                   model,
@@ -549,6 +578,15 @@ func sessionForkCmd() *cobra.Command {
 			cfg, err := config.Load()
 			if err != nil {
 				return fmt.Errorf("load config: %w", err)
+			}
+			// Fork through the daemon for the same reason as session create.
+			ref, err := forkViaDaemon(daemonBaseURL(cfg), args[0], !noContext, forkPrompt)
+			if err == nil {
+				fmt.Printf("Forked session: %s (id: %s)\n", ref.Name, ref.ID)
+				return nil
+			}
+			if !errors.Is(err, errServerUnreachable) {
+				return err
 			}
 			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
