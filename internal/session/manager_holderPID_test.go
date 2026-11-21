@@ -46,6 +46,8 @@ func newTestDB(t *testing.T) *sql.DB {
 			conversation_started INTEGER NOT NULL DEFAULT 0,
 			ephemeral_timeout_seconds INTEGER,
 			completion_report TEXT,
+			last_turn_completed_at INTEGER NOT NULL DEFAULT 0,
+			last_read_at INTEGER NOT NULL DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)

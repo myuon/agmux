@@ -435,6 +435,19 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: read/unread state of sessions (#859). Both are Unix
+	// milliseconds; 0 means never. A session is unread when its last turn
+	// completed after the user last opened it. Existing rows start at 0/0,
+	// i.e. read, so the migration does not light up every old session.
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN last_turn_completed_at INTEGER NOT NULL DEFAULT 0`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN last_read_at INTEGER NOT NULL DEFAULT 0`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: projects table (#805, experimental "projects"). A project is
 	// implied by sessions.project_path; a row exists only to record its
 	// coordinator.

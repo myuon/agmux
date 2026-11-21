@@ -43,9 +43,9 @@ function ForkStreamPanel({ fork }: { fork: Session }) {
       }
     }
     if (msg.type === "status_change") {
-      const data = msg.data as { sessionId: string; status: Session["status"] };
+      const data = msg.data as { sessionId: string; status: Session["status"]; unread?: boolean };
       if (data.sessionId === fork.id) {
-        setForkSession((prev) => ({ ...prev, status: data.status }));
+        setForkSession((prev) => ({ ...prev, status: data.status, unread: data.unread ?? prev.unread }));
       }
     }
   }, [fork.id]);
@@ -55,7 +55,7 @@ function ForkStreamPanel({ fork }: { fork: Session }) {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 shrink-0">
-        <StatusDot status={forkSession.status} />
+        <StatusDot status={forkSession.status} unread={forkSession.unread} />
         <Link
           to={`/sessions/${fork.id}`}
           className="text-sm font-medium text-blue-600 hover:underline truncate"
@@ -154,7 +154,7 @@ export function ForkPanel({ sessionId }: { sessionId: string }) {
                         : "text-gray-600 hover:bg-gray-100"
                     }`}
                   >
-                    <StatusDot status={fork.status} />
+                    <StatusDot status={fork.status} unread={fork.unread} />
                     <span className="max-w-[120px] truncate">{fork.name}</span>
                   </button>
                 ))}
@@ -186,7 +186,7 @@ export function ForkPanel({ sessionId }: { sessionId: string }) {
                 : "text-gray-600 hover:bg-gray-100"
             }`}
           >
-            <StatusDot status={fork.status} />
+            <StatusDot status={fork.status} unread={fork.unread} />
             <span className="max-w-[140px] truncate">{fork.name}</span>
           </button>
         ))}

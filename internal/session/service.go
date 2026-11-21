@@ -34,6 +34,11 @@ type SessionService interface {
 
 	// UpdateStatus updates the session status.
 	UpdateStatus(id string, status Status) error
+	// MarkRead records that the user has seen the session now (#859).
+	MarkRead(id string) error
+	// IsUnread reports whether the session has a completed turn the user has
+	// not seen yet (#859).
+	IsUnread(id string) bool
 	// Rename sets the session name explicitly (disables auto-titling).
 	Rename(id, name string) error
 	// SetOnNameChange sets a callback fired after a session's name changes.

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { AutomationSummary } from "../../api/client";
 import { Chip } from "./Chip";
-import { statusDots } from "../StatusBadge";
+import { lampClass } from "../StatusBadge";
 
 interface LoopRowProps {
   loop: AutomationSummary;
@@ -92,7 +92,7 @@ export function LoopRow({ loop, feeders = [], nested, timeAgo, onOpenLoop, onOpe
                   onClick={() => onOpenSession(r.sessionId)}
                   className="w-full flex items-center gap-2 text-left text-xs text-gray-600 hover:bg-gray-50 rounded px-1 py-0.5"
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${(statusDots as Record<string, string>)[r.sessionStatus] ?? "bg-gray-300"}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${lampClass(r.sessionStatus, r.sessionUnread)}`} />
                   <span className="truncate min-w-0">{r.sessionName || r.sessionId}</span>
                   <span className="ml-auto shrink-0 text-gray-400">{timeAgo(r.firedAt)}</span>
                 </button>
