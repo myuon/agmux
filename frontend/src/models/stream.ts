@@ -343,6 +343,21 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
     };
   }
 
+  // The CLI could not persist some session data (e.g. the transcript) to disk,
+  // typically because the disk is full (error_code=ENOSPC). Surface it as a
+  // warning so the user knows the session may not be resumable.
+  if (subtype === "session_writes_lost") {
+    const errorCode = typeof raw.error_code === "string" && raw.error_code ? raw.error_code : "";
+    const lost = Array.isArray(raw.lost) ? raw.lost.filter((v): v is string => typeof v === "string") : [];
+    const what = lost.length > 0 ? lost.join(", ") : "セッションのデータ";
+    return {
+      kind: "system_event",
+      eventType: "session_writes_lost",
+      label: `⚠ ${what} を保存できませんでした${errorCode ? ` (${errorCode})` : ""}`,
+      detail: errorCode === "ENOSPC" ? "ディスクの空き容量が不足しています" : undefined,
+    };
+  }
+
   if (subtype === "task_notification") {
   const status = raw.status as string;
   const summary = (raw.summary as string) || "";
