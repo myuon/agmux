@@ -1,12 +1,15 @@
 import type { Session } from "../types/session";
 
+// Only "needs your attention" lamps are colored: unread (blue, see lampClass)
+// and waiting_input (orange). Everything else is muted gray; working pulses so
+// activity is still visible without drawing the eye.
 export const statusDots: Record<Session["status"], string> = {
-  working: "bg-green-500",
+  working: "bg-gray-400 animate-pulse",
   idle: "bg-blue-500",
-  paused: "bg-yellow-500",
-  exited: "bg-gray-400",
+  paused: "bg-gray-300",
+  exited: "bg-gray-300",
   waiting_input: "bg-orange-500",
-  archived: "bg-slate-400",
+  archived: "bg-gray-200",
 };
 
 export const READ_RING = "bg-transparent border border-gray-300";
