@@ -9,14 +9,17 @@ export const statusDots: Record<Session["status"], string> = {
   archived: "bg-slate-400",
 };
 
+export const READ_RING = "bg-transparent border border-gray-300";
+
 /**
  * Background class of a status lamp (#859). An idle session the user has
- * already seen gets no lamp (transparent, so the row layout keeps its width);
+ * already seen gets a faint hollow ring instead of a filled lamp, so rows keep
+ * their alignment without leaving an odd blank;
  * an idle session with an unseen finished turn keeps the blue lamp, which now
  * reads as "unread". Other statuses are unchanged.
  */
 export function lampClass(status: string, unread?: boolean): string {
-  if (status === "idle" && !unread) return "bg-transparent";
+  if (status === "idle" && !unread) return READ_RING;
   return (statusDots as Record<string, string>)[status] ?? "bg-gray-300";
 }
 
