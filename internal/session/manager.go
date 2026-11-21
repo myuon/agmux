@@ -313,6 +313,10 @@ func (m *Manager) RecoverStreamProcesses() {
 	}
 	defer rows.Close()
 
+	// Turn ends found in stream files are applied after the rows are closed:
+	// the turn-end callback writes to the DB.
+	var replayed []replayedTurnEnd
+
 	for rows.Next() {
 		var id, projectPath, providerStr, dbCliSessionID, dbModel string
 		var dbSystemPrompt sql.NullString
@@ -393,6 +397,7 @@ func (m *Manager) RecoverStreamProcesses() {
 				m.killStaleHolder(id)
 			} else {
 				m.wireSessionIDCallback(id, sp)
+				replayed = m.claimReplayedTurnEnd(id, sp, Status(recStatus), replayed)
 				sp.StartReadLoop()
 				m.streamMu.Lock()
 				m.streamProcesses[id] = sp
@@ -409,6 +414,7 @@ func (m *Manager) RecoverStreamProcesses() {
 			continue
 		}
 		m.wireSessionIDCallback(id, sp)
+		replayed = m.claimReplayedTurnEnd(id, sp, Status(recStatus), replayed)
 		sp.StartReadLoop()
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
@@ -421,9 +427,66 @@ func (m *Manager) RecoverStreamProcesses() {
 	if err := rows.Err(); err != nil {
 		m.logger.Error("recover stream processes: rows iteration error", "error", err)
 	}
+	rows.Close()
+	for _, r := range replayed {
+		m.applyReplayedTurnEnd(r)
+	}
 
 	// Recover ephemeral timeout goroutines for active ephemeral sessions
 	m.recoverEphemeralTimeouts()
+}
+
+// replayedTurnEnd is a turn end found in a stream file at recovery that is
+// still to be applied (see claimReplayedTurnEnd).
+type replayedTurnEnd struct {
+	id  string
+	sp  *HolderStreamProcess
+	end TurnEnd
+}
+
+// claimReplayedTurnEnd handles a turn that ended while no daemon was
+// connected to the holder (#855). The holder keeps the CLI running and keeps
+// writing the stream file across a daemon restart, but it does not buffer
+// lines for a client that is not connected, so a result event emitted during
+// the restart reaches only the file and the session would stay working
+// forever. When the stream file loaded at recovery ends with a finished turn
+// and the session is still recorded as working, the turn end is appended to
+// pending, to be applied by applyReplayedTurnEnd.
+//
+// Must be called after wireSessionIDCallback and before StartReadLoop: it
+// tells sp to ignore the same event if it is also read from the socket, so
+// the turn end is never handled twice.
+func (m *Manager) claimReplayedTurnEnd(id string, sp *HolderStreamProcess, status Status, pending []replayedTurnEnd) []replayedTurnEnd {
+	if status != StatusWorking {
+		return pending
+	}
+	end := sp.ReplayedTurnEnd()
+	if end == TurnEndNone {
+		return pending
+	}
+	sp.MarkReplayedTurnEndHandled()
+	return append(pending, replayedTurnEnd{id: id, sp: sp, end: end})
+}
+
+// applyReplayedTurnEnd runs the turn-end callbacks wired by
+// wireSessionIDCallback as if the event had arrived live: idle status,
+// conversation_started, automation auto-stop, pending model switch.
+func (m *Manager) applyReplayedTurnEnd(r replayedTurnEnd) {
+	r.sp.mu.RLock()
+	onComplete, onFailed := r.sp.onTurnComplete, r.sp.onTurnFailed
+	r.sp.mu.RUnlock()
+	m.logger.Info("recover: stream file ends with a finished turn while status is working, applying turn end",
+		"sessionId", r.id, "turnEnd", r.end)
+	switch r.end {
+	case TurnEndComplete:
+		if onComplete != nil {
+			onComplete(r.id)
+		}
+	case TurnEndFailed:
+		if onFailed != nil {
+			onFailed(r.id)
+		}
+	}
 }
 
 // ephemeralTimeoutEntry holds the data scanned from a single row in recoverEphemeralTimeouts.
