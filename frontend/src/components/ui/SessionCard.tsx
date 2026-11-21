@@ -6,6 +6,8 @@ interface SessionCardProps {
   id?: string;
   name: string;
   status: Session["status"];
+  /** A finished turn the user has not seen yet (#859). */
+  unread?: boolean;
   type?: string;
   provider?: string;
   roleTemplate?: string;
@@ -36,6 +38,7 @@ export function SessionCard({
   id,
   name,
   status,
+  unread,
   type,
   provider,
   roleTemplate,
@@ -62,7 +65,7 @@ export function SessionCard({
       className={`text-left w-full border rounded-lg px-3 py-2 transition-shadow cursor-pointer ${isSelected ? "bg-blue-50 border-blue-400 shadow-sm" : "bg-white hover:shadow-sm"} ${isSubSession && !isSelected ? "border-blue-200 border-l-blue-400 border-l-2" : ""} ${isSubSession && isSelected ? "border-l-2" : ""} ${!isSubSession && !isSelected ? "border-gray-200" : ""}`}
     >
       <div className="flex items-center gap-2">
-        <span className="inline-flex shrink-0" style={vtn("dot")}><StatusDot status={status} /></span>
+        <span className="inline-flex shrink-0" style={vtn("dot")}><StatusDot status={status} unread={unread} /></span>
         <span className="min-w-0 flex items-baseline gap-1.5">
           <span className="font-medium text-sm truncate" style={vtn("name")}>
             {name}

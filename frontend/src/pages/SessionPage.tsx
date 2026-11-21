@@ -23,6 +23,7 @@ import { ActionMenu, ActionMenuItem } from "../components/ui/ActionMenu";
 import type { Session } from "../types/session";
 import { api, type DiffFile, type PromptTemplate } from "../api/client";
 import { StatusDot } from "../components/StatusBadge";
+import { useMarkSessionRead } from "../hooks/useMarkSessionRead";
 import { setActiveSessionName } from "../activeSession";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { ChoiceCardsStream } from "../components/session/ChoiceCards";
@@ -309,6 +310,10 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
   const learningEnabled = useExperimental("learning_inbox");
 
   const [session, setSession] = useState<Session | null>(initialSession);
+  // Viewing the screen reads the session (#859); a turn that ends while it is
+  // open is read too.
+  const clearUnread = useCallback(() => setSession((prev) => (prev && prev.unread ? { ...prev, unread: false } : prev)), []);
+  useMarkSessionRead(sessionId, session?.unread, clearUnread);
   const [message, setMessage] = useState("");
   const [inputMode, setInputMode] = useState<"chat" | "command">("chat");
   const [streamLines, setStreamLines] = useState<unknown[]>(deferred.streamOutput.lines);
@@ -492,9 +497,9 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       }
     }
     if (msg.type === "status_change") {
-      const data = msg.data as { sessionId: string; status: Session["status"]; lastError?: string };
+      const data = msg.data as { sessionId: string; status: Session["status"]; lastError?: string; unread?: boolean };
       if (data.sessionId === sessionId) {
-        setSession(prev => prev ? { ...prev, status: data.status, ...(data.lastError !== undefined ? { lastError: data.lastError } : {}) } : prev);
+        setSession(prev => prev ? { ...prev, status: data.status, ...(data.lastError !== undefined ? { lastError: data.lastError } : {}), ...(data.unread !== undefined ? { unread: data.unread } : {}) } : prev);
         // Clear the thinking indicator when the turn ends without an
         // assistant/result event (e.g. the CLI process died mid-thinking)
         if (data.status !== "working") {
@@ -1108,7 +1113,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         )}
         {session ? (
           <>
-            <span className="inline-flex shrink-0" style={{ viewTransitionName: `session-dot-${session.id}` }}><StatusDot status={session.status} /></span>
+            <span className="inline-flex shrink-0" style={{ viewTransitionName: `session-dot-${session.id}` }}><StatusDot status={session.status} unread={session.unread} /></span>
             {editingName ? (
               <input
                 autoFocus

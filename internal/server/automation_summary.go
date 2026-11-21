@@ -21,10 +21,12 @@ const (
 
 // automationRunSummary is one recent run (one "turn" of the loop).
 type automationRunSummary struct {
-	RunID         int64     `json:"runId"`
-	SessionID     string    `json:"sessionId"`
-	SessionName   string    `json:"sessionName"`
-	SessionStatus string    `json:"sessionStatus"`
+	RunID         int64  `json:"runId"`
+	SessionID     string `json:"sessionId"`
+	SessionName   string `json:"sessionName"`
+	SessionStatus string `json:"sessionStatus"`
+	// SessionUnread: the run's session finished a turn the user has not seen (#859).
+	SessionUnread bool      `json:"sessionUnread"`
 	FiredAt       time.Time `json:"firedAt"`
 }
 
@@ -106,7 +108,7 @@ func (s *Server) buildAutomationSummary(a automation.Automation, now time.Time) 
 	sum.PendingTasks = pending
 
 	rows, err := s.sqlDB.Query(
-		`SELECT r.id, r.session_id, COALESCE(s.name, ''), COALESCE(s.status, ''), r.fired_at, s.updated_at
+		`SELECT r.id, r.session_id, COALESCE(s.name, ''), COALESCE(s.status, ''), COALESCE(s.last_turn_completed_at > s.last_read_at, 0), r.fired_at, s.updated_at
 		 FROM automation_runs r LEFT JOIN sessions s ON s.id = r.session_id
 		 WHERE r.automation_id = ? AND r.session_id IS NOT NULL AND r.session_id != ''
 		 ORDER BY r.fired_at DESC, r.id DESC LIMIT ?`, a.ID, summaryRecentRuns)
@@ -118,7 +120,7 @@ func (s *Server) buildAutomationSummary(a automation.Automation, now time.Time) 
 	for rows.Next() {
 		var rs automationRunSummary
 		var updated sql.NullTime
-		if err := rows.Scan(&rs.RunID, &rs.SessionID, &rs.SessionName, &rs.SessionStatus, &rs.FiredAt, &updated); err != nil {
+		if err := rows.Scan(&rs.RunID, &rs.SessionID, &rs.SessionName, &rs.SessionStatus, &rs.SessionUnread, &rs.FiredAt, &updated); err != nil {
 			return sum, err
 		}
 		if len(sum.RecentRuns) == 0 {

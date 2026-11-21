@@ -140,11 +140,13 @@ function StatusBadgePreview() {
         {statuses.map((s) => (
           <StatusBadge key={s} status={s} />
         ))}
+        <StatusBadge status="idle" unread />
       </div>
       <div className="flex gap-3 items-center mt-2">
         {statuses.map((s) => (
           <StatusDot key={s} status={s} />
         ))}
+        <StatusDot status="idle" unread />
       </div>
     </PreviewSection>
   );

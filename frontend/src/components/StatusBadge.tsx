@@ -9,14 +9,39 @@ export const statusDots: Record<Session["status"], string> = {
   archived: "bg-slate-400",
 };
 
-export function StatusDot({ status }: { status: Session["status"] }) {
-  return <span className={`w-2 h-2 rounded-full shrink-0 ${statusDots[status]}`} />;
+/**
+ * Background class of a status lamp (#859). An idle session the user has
+ * already seen gets no lamp (transparent, so the row layout keeps its width);
+ * an idle session with an unseen finished turn keeps the blue lamp, which now
+ * reads as "unread". Other statuses are unchanged.
+ */
+export function lampClass(status: string, unread?: boolean): string {
+  if (status === "idle" && !unread) return "bg-transparent";
+  return (statusDots as Record<string, string>)[status] ?? "bg-gray-300";
 }
 
-export function StatusBadge({ status }: { status: Session["status"] }) {
+/** Accessible label of a lamp: only the unread lamp needs one. */
+export function lampLabel(status: string, unread?: boolean): string | undefined {
+  return status === "idle" && unread ? "未読" : undefined;
+}
+
+export function StatusDot({ status, unread }: { status: Session["status"]; unread?: boolean }) {
+  const label = lampLabel(status, unread);
+  return (
+    <span
+      className={`w-2 h-2 rounded-full shrink-0 ${lampClass(status, unread)}`}
+      data-unread={label ? "true" : undefined}
+      role={label ? "img" : undefined}
+      aria-label={label}
+      title={label}
+    />
+  );
+}
+
+export function StatusBadge({ status, unread }: { status: Session["status"]; unread?: boolean }) {
   return (
     <span className="inline-flex items-center gap-1.5">
-      <StatusDot status={status} />
+      <StatusDot status={status} unread={unread} />
       <span className="text-xs text-gray-500">{status}</span>
     </span>
   );

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type ProjectAutomation, type ProjectDetail } from "../api/client";
 import { Chip } from "./ui/Chip";
-import { statusDots } from "./StatusBadge";
+import { lampClass } from "./StatusBadge";
 import { formatNum, Sparkline } from "./LoopDashboard";
 
 const stateLabel = { running: "実行中", waiting: "待機中", stopped: "停止" } as const;
@@ -202,7 +202,7 @@ export function ProjectPanel({
                   to={`/sessions/${s.id}`}
                   className="flex items-center gap-2 text-sm text-gray-700 rounded px-1.5 py-1 hover:bg-gray-100"
                 >
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${(statusDots as Record<string, string>)[s.status] ?? "bg-gray-300"}`} />
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${lampClass(s.status, s.unread)}`} />
                   <span className="truncate min-w-0">{s.name || s.id}</span>
                   <span className="ml-auto shrink-0 text-xs text-gray-400">{timeAgo(s.updatedAt)}</span>
                 </Link>

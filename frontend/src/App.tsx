@@ -434,11 +434,17 @@ function useSessions() {
       setSessions(newSessions);
     }
     if (msg.type === "status_change") {
-      const data = msg.data as { sessionId: string; status: Session["status"]; lastError?: string };
+      const data = msg.data as { sessionId: string; status: Session["status"]; lastError?: string; unread?: boolean };
       setSessions(prev => prev.map(s =>
         s.id === data.sessionId
-          ? { ...s, status: data.status, lastError: data.lastError ?? s.lastError }
+          ? { ...s, status: data.status, lastError: data.lastError ?? s.lastError, unread: data.unread ?? s.unread }
           : s
+      ));
+    }
+    if (msg.type === "session_read") {
+      const data = msg.data as { sessionId: string; unread: boolean };
+      setSessions(prev => prev.map(s =>
+        s.id === data.sessionId && s.unread !== data.unread ? { ...s, unread: data.unread } : s
       ));
     }
   }, []);

@@ -64,8 +64,11 @@ type Session struct {
 	ConversationStarted     bool      `json:"conversationStarted"`
 	EphemeralTimeoutSeconds *int      `json:"ephemeralTimeoutSeconds,omitempty"`
 	CompletionReport        *string   `json:"completionReport,omitempty"`
-	CreatedAt               time.Time `json:"createdAt"`
-	UpdatedAt               time.Time `json:"updatedAt"`
+	// Unread is true when the last turn completed after the user last opened
+	// the session screen (#859). See MarkRead / turnCompletedSet.
+	Unread    bool      `json:"unread"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 type GoalEntry struct {
