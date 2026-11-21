@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { AutomationSummary, ProjectDetail } from "../../api/client";
 import { ProjectSummaryLine } from "../ProjectSummaryLine";
 import { LoopRow } from "./LoopRow";
+import { statusDots } from "../StatusBadge";
 
 interface ProjectRowProps {
   project: ProjectDetail;
@@ -17,13 +18,11 @@ interface ProjectRowProps {
   onOpenSession: (id: string) => void;
 }
 
-const sessionDot: Record<string, string> = {
-  working: "bg-blue-500 animate-pulse",
-  waiting_input: "bg-orange-400",
-  idle: "bg-green-500",
-  exited: "bg-red-400",
-  paused: "bg-gray-400",
-};
+
+function dotClass(status: string): string {
+  const base = (statusDots as Record<string, string>)[status] ?? "bg-gray-300";
+  return status === "working" ? `${base} animate-pulse` : base;
+}
 
 /** One project in the session list: the coordinator is the main character. */
 export function ProjectRow({
@@ -66,7 +65,7 @@ export function ProjectRow({
       >
         <div className="flex items-center gap-2">
           <span
-            className={`w-2 h-2 rounded-full shrink-0 ${coord ? (sessionDot[coord.status] ?? "bg-gray-300") : "bg-gray-300"}`}
+            className={`w-2 h-2 rounded-full shrink-0 ${coord ? (dotClass(coord.status)) : "bg-gray-300"}`}
           />
           <span className="text-gray-500 text-sm shrink-0" title="Project">
             ▣
@@ -121,7 +120,7 @@ export function ProjectRow({
               onClick={() => onOpenSession(s.id)}
               className="w-full flex items-center gap-2 text-left text-xs border border-gray-200 rounded-lg bg-white px-3 py-1.5 hover:shadow-sm"
             >
-              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${sessionDot[s.status] ?? "bg-gray-300"}`} />
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotClass(s.status)}`} />
               <span className="truncate min-w-0">{s.name || s.id}</span>
               <span className="ml-auto shrink-0 text-gray-400">{timeAgo(s.updatedAt)}</span>
             </button>
