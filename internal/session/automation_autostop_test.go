@@ -3,6 +3,7 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -56,7 +57,7 @@ func TestAutoStop_AutomationSessionStopsAfterTurn(t *testing.T) {
 	m, rec := autoStopTestManager(t)
 	id, fh := createAutoSession(t, m, rec, "auto-1")
 	fh.emitTurnComplete(t)
-	waitStatus(t, m, id, StatusPaused)
+	waitStatus(t, m, id, StatusArchived)
 	select {
 	case <-fh.stopped:
 	case <-time.After(2 * time.Second):
@@ -68,6 +69,51 @@ func TestAutoStop_AutomationSessionStopsAfterTurn(t *testing.T) {
 	var pid int
 	if err := m.db.QueryRow("SELECT holder_pid FROM sessions WHERE id = ?", id).Scan(&pid); err != nil || pid != 0 {
 		t.Errorf("holder_pid = %d (err %v), want 0", pid, err)
+	}
+}
+
+// Auto-stop archives the session through the regular archive path, so status
+// observers see archived and the session-end hook fires (#857).
+func TestAutoStop_ArchivesAndFiresHooks(t *testing.T) {
+	m, rec := autoStopTestManager(t)
+	var mu sync.Mutex
+	var statuses []Status
+	ended := map[string]int{}
+	m.SetOnStatusChange(func(id string, st Status, _ string) {
+		mu.Lock()
+		statuses = append(statuses, st)
+		mu.Unlock()
+	})
+	m.SetOnSessionEnd(func(id string) {
+		mu.Lock()
+		ended[id]++
+		mu.Unlock()
+	})
+	id, fh := createAutoSession(t, m, rec, "auto-1")
+	fh.emitTurnComplete(t)
+	waitStatus(t, m, id, StatusArchived)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(statuses) == 0 || statuses[len(statuses)-1] != StatusArchived {
+		t.Errorf("status changes = %v, want last archived", statuses)
+	}
+	if ended[id] == 0 {
+		t.Error("session-end hook did not fire")
+	}
+	if m.isAutoStopArmed(id) {
+		t.Error("still armed after auto-stop")
+	}
+}
+
+// A manual Stop of an automation session keeps the paused status.
+func TestAutoStop_ManualStopStaysPaused(t *testing.T) {
+	m, rec := autoStopTestManager(t)
+	id, _ := createAutoSession(t, m, rec, "auto-1")
+	if err := m.Stop(id); err != nil {
+		t.Fatal(err)
+	}
+	if s, _ := m.Get(id); s.Status != StatusPaused {
+		t.Fatalf("status = %s, want paused", s.Status)
 	}
 }
 
@@ -98,7 +144,7 @@ func TestAutoStop_WaitsForBackgroundTasks(t *testing.T) {
 	// Task finishes; the CLI runs a follow-up turn that ends.
 	writeLine(t, fh, `{"type":"system","subtype":"task_notification","task_id":"t1"}`)
 	writeLine(t, fh, `{"type":"result","subtype":"success"}`)
-	waitStatus(t, m, id, StatusPaused)
+	waitStatus(t, m, id, StatusArchived)
 }
 
 func TestAutoStop_TaskStartedDuringDelayBlocksStop(t *testing.T) {
@@ -109,7 +155,7 @@ func TestAutoStop_TaskStartedDuringDelayBlocksStop(t *testing.T) {
 	waitStatus(t, m, id, StatusIdle)
 	writeLine(t, fh, `{"type":"system","subtype":"task_started","task_id":"t9"}`)
 	time.Sleep(600 * time.Millisecond)
-	if s, _ := m.Get(id); s.Status == StatusPaused {
+	if s, _ := m.Get(id); s.Status == StatusArchived {
 		t.Fatal("stopped while a background task was running")
 	}
 }
@@ -138,7 +184,7 @@ func TestAutoStop_UserMessageDuringDelayCancelsStop(t *testing.T) {
 		t.Fatalf("SendKeys: %v", err)
 	}
 	time.Sleep(600 * time.Millisecond)
-	if s, _ := m.Get(id); s.Status == StatusPaused {
+	if s, _ := m.Get(id); s.Status == StatusArchived {
 		t.Fatal("stopped although the user sent a message during the delay")
 	}
 }
@@ -147,7 +193,7 @@ func TestAutoStop_ReconnectAndRestartDisarm(t *testing.T) {
 	m, rec := autoStopTestManager(t)
 	id, fh := createAutoSession(t, m, rec, "auto-1")
 	fh.emitTurnComplete(t)
-	waitStatus(t, m, id, StatusPaused)
+	waitStatus(t, m, id, StatusArchived)
 	if m.isAutoStopArmed(id) {
 		t.Fatal("still armed after stop")
 	}
@@ -187,7 +233,7 @@ func TestAutoStop_FailedTurnStops(t *testing.T) {
 	m, rec := autoStopTestManager(t)
 	id, fh := createAutoSession(t, m, rec, "auto-1")
 	writeLine(t, fh, `{"type":"result","subtype":"error_during_execution"}`)
-	waitStatus(t, m, id, StatusPaused)
+	waitStatus(t, m, id, StatusArchived)
 }
 
 func TestAutoStop_AlreadyStoppedIsHarmless(t *testing.T) {
@@ -215,7 +261,7 @@ func TestAutoStop_MaxRuntimeFallback(t *testing.T) {
 	id, fh := createAutoSession(t, m, rec, "auto-1")
 	// A task that never finishes: turn-complete never fires.
 	writeLine(t, fh, `{"type":"system","subtype":"task_started","task_id":"stuck"}`)
-	waitStatus(t, m, id, StatusPaused)
+	waitStatus(t, m, id, StatusArchived)
 }
 
 func writeStreamFile(t *testing.T, id string) string {
@@ -245,7 +291,7 @@ func TestAutoStop_FallbackKeepsHealthyLongRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Status == StatusPaused {
+	if s.Status == StatusArchived {
 		t.Fatalf("session with recent output was stopped by the fallback")
 	}
 	if !m.isAutoStopArmed(id) {
@@ -261,5 +307,5 @@ func TestAutoStop_FallbackStopsAfterSilence(t *testing.T) {
 	id, _ := createAutoSession(t, m, rec, "auto-silent")
 	writeStreamFile(t, id)
 	// First check sees recent output and rechecks later; by then it is silent.
-	waitStatus(t, m, id, StatusPaused)
+	waitStatus(t, m, id, StatusArchived)
 }

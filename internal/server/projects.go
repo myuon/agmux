@@ -416,6 +416,11 @@ func (s *Server) buildProject(m *projectModel, d *projectData, detail bool, now 
 	}
 	if detail {
 		for _, p := range d.archived {
+			// Automation runs are archived by auto-stop (#857); like the
+			// active ones they are reached from the loop, not listed here.
+			if p.AutomationID != "" {
+				continue
+			}
 			pd.ArchivedSessions = append(pd.ArchivedSessions, projectSession{
 				ID: p.ID, Name: p.Name, Status: p.Status, Type: p.Type, ProjectPath: p.Path,
 				CreatedBySessionID: p.CreatedBy, ParentSessionID: p.ParentID,

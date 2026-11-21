@@ -196,6 +196,13 @@ func TestProjects_ArchivedMembersGrouped(t *testing.T) {
 	if len(d.ArchivedSessions) != 2 || len(d.Sessions) != 0 {
 		t.Fatalf("archived=%d sessions=%d", len(d.ArchivedSessions), len(d.Sessions))
 	}
+	// Automation runs archived by auto-stop (#857) are reached from the loop,
+	// so they do not join the archived fold.
+	addSess(t, s, "run1", p, 3, map[string]string{"automation": "auto-1", "status": "archived"})
+	d = getProjectDetail(t, s, p)
+	if len(d.ArchivedSessions) != 2 {
+		t.Fatalf("archived=%d, want 2 (automation run excluded)", len(d.ArchivedSessions))
+	}
 	// A project made only of archived sessions does not appear.
 	addSess(t, s, "lonely", "/work/other", 3, map[string]string{"status": "archived"})
 	if rec := doJSON(t, s, http.MethodGet, projURL("/work/other"), ""); rec.Code != http.StatusNotFound {

@@ -531,7 +531,7 @@ func TestScheduler_StartStop(t *testing.T) {
 	sched.Stop()
 }
 
-// An auto-stopped session (#748) is paused, which is not active: the next
+// A paused session (manual Stop; auto-stop before #857) is not active: the next
 // fire must create a new session, while a still-working one keeps skipping.
 func TestRunner_PausedPreviousSessionDoesNotBlock(t *testing.T) {
 	store := newTestStore(t)
@@ -547,6 +547,29 @@ func TestRunner_PausedPreviousSessionDoesNotBlock(t *testing.T) {
 	assert.Equal(t, RunSkipped, r.Run(*a, time.Now()).Status)
 
 	sessions.setStatus("sess-1", session.StatusPaused)
+	run := r.Run(*a, time.Now())
+	assert.Equal(t, RunSuccess, run.Status)
+	assert.Equal(t, "sess-2", run.SessionID)
+	assert.Len(t, sessions.created, 2)
+}
+
+// Since #857 an auto-stopped session is archived instead of paused; archived
+// is not active either, so the next fire must create a new session.
+func TestRunner_ArchivedPreviousSessionDoesNotBlock(t *testing.T) {
+	store := newTestStore(t)
+	sessions := newFakeSessions()
+	r := newTestRunner(t, store, sessions)
+
+	a, err := store.Create(CreateParams{
+		Name: "auto-archived", Prompt: "p", TriggerType: TriggerInterval, TriggerValue: "30m", Enabled: true,
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, RunSuccess, r.Run(*a, time.Now()).Status)
+	assert.Equal(t, RunSkipped, r.Run(*a, time.Now()).Status)
+
+	sessions.setStatus("sess-1", session.StatusArchived)
+	assert.True(t, r.SessionStopped("sess-1"))
 	run := r.Run(*a, time.Now())
 	assert.Equal(t, RunSuccess, run.Status)
 	assert.Equal(t, "sess-2", run.SessionID)
