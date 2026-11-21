@@ -67,6 +67,9 @@ type UserTab struct {
 	lastFrame []byte
 	lastURL   []byte
 	lastFocus []byte
+	// editNode is the backend node id of the editable field the user last
+	// tapped (0 = none); text is inserted there (see textinput.go).
+	editNode int64
 
 	// viewportMu serializes viewport changes; viewport is the applied state
 	// (zero value = desktop, no overrides).
@@ -75,6 +78,8 @@ type UserTab struct {
 
 	// evalFn overrides Runtime.evaluate (tests).
 	evalFn func(ctx context.Context, expr string) (json.RawMessage, error)
+	// callFn overrides cdp.Call for the text-input path (tests).
+	callFn func(ctx context.Context, method string, params any) (json.RawMessage, error)
 }
 
 func newUserTab(ctx context.Context, port int, targetID string, logger *slog.Logger) (*UserTab, error) {
@@ -148,6 +153,7 @@ func (t *UserTab) onEvent(method string, params json.RawMessage) {
 		t.mu.Lock()
 		t.lastURL = msg
 		t.lastFocus = nil // stale after navigation
+		t.editNode = 0
 		t.broadcastLocked(msg)
 		t.mu.Unlock()
 		t.scheduleFocusCheck()
@@ -293,9 +299,12 @@ func (t *UserTab) HandleInput(ctx context.Context, m InputMessage) error {
 		if err := t.mouse(ctx, "mousePressed", m.X, m.Y); err != nil {
 			return err
 		}
-		err := t.mouse(ctx, "mouseReleased", m.X, m.Y)
+		if err := t.mouse(ctx, "mouseReleased", m.X, m.Y); err != nil {
+			return err
+		}
+		t.afterTap(ctx, m.X, m.Y)
 		t.scheduleFocusCheck()
-		return err
+		return nil
 	case "scroll":
 		_, err := t.cdp.Call(ctx, "Input.dispatchMouseEvent", map[string]any{
 			"type": "mouseWheel", "x": m.X, "y": m.Y, "deltaX": m.DeltaX, "deltaY": m.DeltaY,
@@ -324,8 +333,7 @@ func (t *UserTab) HandleInput(ctx context.Context, m InputMessage) error {
 		if m.Text == "" || len(m.Text) > maxTextLen {
 			return fmt.Errorf("%w: bad text length", ErrInvalidInput)
 		}
-		_, err := t.cdp.Call(ctx, "Input.insertText", map[string]any{"text": m.Text})
-		return err
+		return t.insertText(ctx, m.Text)
 	case "navigate":
 		if err := validateNavigateURL(m.URL); err != nil {
 			return err
@@ -345,7 +353,7 @@ func (t *UserTab) HandleInput(ctx context.Context, m InputMessage) error {
 }
 
 func (t *UserTab) mouse(ctx context.Context, typ string, x, y float64) error {
-	_, err := t.cdp.Call(ctx, "Input.dispatchMouseEvent", map[string]any{
+	_, err := t.call(ctx, "Input.dispatchMouseEvent", map[string]any{
 		"type": typ, "x": x, "y": y, "button": "left", "clickCount": 1,
 	})
 	return err
