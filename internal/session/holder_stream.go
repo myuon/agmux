@@ -659,6 +659,10 @@ func (sp *HolderStreamProcess) readLoop() {
 		if ev.Type == "system" {
 			switch ev.Subtype {
 			case "task_started":
+				// The same task ID can be started again (e.g. a resumed
+				// subagent). Forget its earlier completion so the next
+				// completion is counted too (#866).
+				delete(completedTaskIDs, ev.TaskID)
 				sp.mu.Lock()
 				prev := sp.runningTasks
 				sp.runningTasks++
