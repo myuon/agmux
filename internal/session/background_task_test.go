@@ -211,16 +211,52 @@ func TestBackgroundTaskStore_DismissedTaskIsNotResurrected(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, tasks, 0, "dismissed task must not be resurrected by late task_progress")
 
-	// And a fresh task_started for the same id is also blocked (tombstone).
+	// A fresh task_started for the same id revives it as a new task.
 	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_started","task_id":"t","task_type":"local_agent"}`)))
 	tasks, err = store.List("s")
 	require.NoError(t, err)
-	assert.Len(t, tasks, 0, "dismissed task must stay hidden even when re-started")
+	assert.Len(t, tasks, 1, "re-started task must be shown again")
+}
+
+func TestBackgroundTaskStore_RestartedTaskWithSameIDIsListed(t *testing.T) {
+	store := newTestBgStore(t)
+
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_started","task_id":"x","task_type":"local_agent","run_id":"r1"}`)))
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_progress","task_id":"x","last_tool_name":"Bash"}`)))
+	tasks, err := store.List("s")
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	require.NotEmpty(t, tasks[0].ToolCallHistory)
+
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_notification","task_id":"x","status":"completed"}`)))
+	tasks, err = store.List("s")
+	require.NoError(t, err)
+	require.Len(t, tasks, 0)
+
+	// Same task_id starts again with a different run_id.
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_started","task_id":"x","task_type":"local_agent","run_id":"r2"}`)))
+	tasks, err = store.List("s")
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, "x", tasks[0].TaskID)
+	assert.Empty(t, tasks[0].ToolCallHistory, "history from the earlier run must be reset")
+	assert.Empty(t, tasks[0].LastToolName)
+}
+
+func TestBackgroundTaskStore_LateProgressAfterCompletionIsNotResurrected(t *testing.T) {
+	store := newTestBgStore(t)
+
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_started","task_id":"x","task_type":"local_agent"}`)))
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_notification","task_id":"x","status":"completed"}`)))
+	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_progress","task_id":"x","last_tool_name":"Bash"}`)))
+	tasks, err := store.List("s")
+	require.NoError(t, err)
+	assert.Len(t, tasks, 0)
 }
 
 // TestBackgroundTaskStore_DismissBeforeAnyTaskStarted creates a tombstone
-// for an unknown task_id and verifies that a subsequent task_started /
-// task_progress for that id is still suppressed.
+// for an unknown task_id and verifies that a subsequent task_started still
+// creates the task (a start always begins a fresh run).
 func TestBackgroundTaskStore_DismissBeforeAnyTaskStarted(t *testing.T) {
 	store := newTestBgStore(t)
 
@@ -229,7 +265,7 @@ func TestBackgroundTaskStore_DismissBeforeAnyTaskStarted(t *testing.T) {
 
 	tasks, err := store.List("s")
 	require.NoError(t, err)
-	assert.Len(t, tasks, 0)
+	assert.Len(t, tasks, 1)
 }
 
 // TestBackgroundTaskStore_ConcurrentApplyLine simulates two goroutines
