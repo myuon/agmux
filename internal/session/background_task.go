@@ -188,6 +188,15 @@ func (s *BackgroundTaskStore) ApplyLine(sessionID string, line []byte) error {
 				task.LastToolInput = input
 			}
 		}
+		// A task_started always begins a fresh run. The CLI may reuse the same
+		// task_id (e.g. a resumed subagent), so drop any earlier row, including
+		// its tombstone and stale history/output, before inserting.
+		if _, err := s.db.Exec(
+			`DELETE FROM background_tasks WHERE session_id = ? AND task_id = ?`,
+			sessionID, ev.TaskID,
+		); err != nil {
+			return fmt.Errorf("reset background task: %w", err)
+		}
 		return s.upsertTask(sessionID, task)
 
 	case "task_progress":
