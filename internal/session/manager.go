@@ -313,6 +313,10 @@ func (m *Manager) RecoverStreamProcesses() {
 	}
 	defer rows.Close()
 
+	// Turn ends found in stream files are applied after the rows are closed:
+	// the turn-end callback writes to the DB.
+	var replayed []replayedTurnEnd
+
 	for rows.Next() {
 		var id, projectPath, providerStr, dbCliSessionID, dbModel string
 		var dbSystemPrompt sql.NullString
@@ -393,6 +397,7 @@ func (m *Manager) RecoverStreamProcesses() {
 				m.killStaleHolder(id)
 			} else {
 				m.wireSessionIDCallback(id, sp)
+				replayed = m.claimReplayedTurnEnd(id, sp, Status(recStatus), replayed)
 				sp.StartReadLoop()
 				m.streamMu.Lock()
 				m.streamProcesses[id] = sp
@@ -409,6 +414,7 @@ func (m *Manager) RecoverStreamProcesses() {
 			continue
 		}
 		m.wireSessionIDCallback(id, sp)
+		replayed = m.claimReplayedTurnEnd(id, sp, Status(recStatus), replayed)
 		sp.StartReadLoop()
 		m.streamMu.Lock()
 		m.streamProcesses[id] = sp
@@ -421,9 +427,66 @@ func (m *Manager) RecoverStreamProcesses() {
 	if err := rows.Err(); err != nil {
 		m.logger.Error("recover stream processes: rows iteration error", "error", err)
 	}
+	rows.Close()
+	for _, r := range replayed {
+		m.applyReplayedTurnEnd(r)
+	}
 
 	// Recover ephemeral timeout goroutines for active ephemeral sessions
 	m.recoverEphemeralTimeouts()
+}
+
+// replayedTurnEnd is a turn end found in a stream file at recovery that is
+// still to be applied (see claimReplayedTurnEnd).
+type replayedTurnEnd struct {
+	id  string
+	sp  *HolderStreamProcess
+	end TurnEnd
+}
+
+// claimReplayedTurnEnd handles a turn that ended while no daemon was
+// connected to the holder (#855). The holder keeps the CLI running and keeps
+// writing the stream file across a daemon restart, but it does not buffer
+// lines for a client that is not connected, so a result event emitted during
+// the restart reaches only the file and the session would stay working
+// forever. When the stream file loaded at recovery ends with a finished turn
+// and the session is still recorded as working, the turn end is appended to
+// pending, to be applied by applyReplayedTurnEnd.
+//
+// Must be called after wireSessionIDCallback and before StartReadLoop: it
+// tells sp to ignore the same event if it is also read from the socket, so
+// the turn end is never handled twice.
+func (m *Manager) claimReplayedTurnEnd(id string, sp *HolderStreamProcess, status Status, pending []replayedTurnEnd) []replayedTurnEnd {
+	if status != StatusWorking {
+		return pending
+	}
+	end := sp.ReplayedTurnEnd()
+	if end == TurnEndNone {
+		return pending
+	}
+	sp.MarkReplayedTurnEndHandled()
+	return append(pending, replayedTurnEnd{id: id, sp: sp, end: end})
+}
+
+// applyReplayedTurnEnd runs the turn-end callbacks wired by
+// wireSessionIDCallback as if the event had arrived live: idle status,
+// conversation_started, automation auto-stop, pending model switch.
+func (m *Manager) applyReplayedTurnEnd(r replayedTurnEnd) {
+	r.sp.mu.RLock()
+	onComplete, onFailed := r.sp.onTurnComplete, r.sp.onTurnFailed
+	r.sp.mu.RUnlock()
+	m.logger.Info("recover: stream file ends with a finished turn while status is working, applying turn end",
+		"sessionId", r.id, "turnEnd", r.end)
+	switch r.end {
+	case TurnEndComplete:
+		if onComplete != nil {
+			onComplete(r.id)
+		}
+	case TurnEndFailed:
+		if onFailed != nil {
+			onFailed(r.id)
+		}
+	}
 }
 
 // ephemeralTimeoutEntry holds the data scanned from a single row in recoverEphemeralTimeouts.
@@ -890,7 +953,8 @@ func (m *Manager) cancelEphemeralTimeout(sessionID string) {
 
 // UpdateStatusWithHolderPIDClear updates the session status and clears holder_pid atomically.
 func (m *Manager) UpdateStatusWithHolderPIDClear(id string, status Status) error {
-	_, err := m.db.Exec("UPDATE sessions SET status = ?, holder_pid = 0, updated_at = ? WHERE id = ?", string(status), time.Now(), id)
+	now := time.Now()
+	_, err := m.db.Exec("UPDATE sessions SET "+turnCompletedSet+", status = ?, holder_pid = 0, updated_at = ? WHERE id = ?", turnCompletedArgs(status, now, string(status), now, id)...)
 	if err == nil {
 		m.fireStatusChange(id, status, "")
 	}
@@ -899,7 +963,7 @@ func (m *Manager) UpdateStatusWithHolderPIDClear(id string, status Status) error
 
 func (m *Manager) List() ([]Session, error) {
 	rows, err := m.db.Query(
-		`SELECT id, name, name_source, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, created_by_session_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
+		`SELECT id, name, name_source, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, created_by_session_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, (last_turn_completed_at > last_read_at), created_at, updated_at
 		 FROM sessions ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -917,7 +981,7 @@ func (m *Manager) List() ([]Session, error) {
 		var createdBy string
 		var conversationStartedInt int
 		var ephemeralTimeoutSeconds sql.NullInt64
-		if err := rows.Scan(&s.ID, &s.Name, &s.NameSource, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &createdBy, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Name, &s.NameSource, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &createdBy, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.Unread, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
 		}
 		s.ConversationStarted = conversationStartedInt != 0
@@ -979,9 +1043,9 @@ func (m *Manager) Get(id string) (*Session, error) {
 	var conversationStartedInt int
 	var ephemeralTimeoutSeconds sql.NullInt64
 	err := m.db.QueryRow(
-		`SELECT id, name, name_source, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, created_by_session_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, created_at, updated_at
+		`SELECT id, name, name_source, project_path, initial_prompt, system_prompt, status, type, provider, cli_session_id, model, pending_model, parent_session_id, role_template, automation_id, created_by_session_id, current_task, goal, goals, last_error, holder_pid, clear_offset, conversation_started, ephemeral_timeout_seconds, completion_report, (last_turn_completed_at > last_read_at), created_at, updated_at
 		 FROM sessions WHERE id = ?`, id,
-	).Scan(&s.ID, &s.Name, &s.NameSource, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &createdBy, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.CreatedAt, &s.UpdatedAt)
+	).Scan(&s.ID, &s.Name, &s.NameSource, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &createdBy, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.Unread, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("session not found: %s", id)
 	}
@@ -2067,7 +2131,8 @@ func (m *Manager) CreateController(projectPath string) (*Session, error) {
 }
 
 func (m *Manager) UpdateStatus(id string, status Status) error {
-	_, err := m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ?", string(status), time.Now(), id)
+	now := time.Now()
+	_, err := m.db.Exec("UPDATE sessions SET "+turnCompletedSet+", status = ?, updated_at = ? WHERE id = ?", turnCompletedArgs(status, now, string(status), now, id)...)
 	if err == nil {
 		m.fireStatusChange(id, status, "")
 	}
@@ -2076,7 +2141,8 @@ func (m *Manager) UpdateStatus(id string, status Status) error {
 
 // UpdateStatusWithError updates the session status and records the last error message.
 func (m *Manager) UpdateStatusWithError(id string, status Status, lastError string) error {
-	_, err := m.db.Exec("UPDATE sessions SET status = ?, last_error = ?, holder_pid = 0, updated_at = ? WHERE id = ?", string(status), lastError, time.Now(), id)
+	now := time.Now()
+	_, err := m.db.Exec("UPDATE sessions SET "+turnCompletedSet+", status = ?, last_error = ?, holder_pid = 0, updated_at = ? WHERE id = ?", turnCompletedArgs(status, now, string(status), lastError, now, id)...)
 	if err == nil {
 		m.fireStatusChange(id, status, lastError)
 	}

@@ -26,6 +26,7 @@ type projSession struct {
 	AutomationID, CreatedBy      string
 	Goal                         string
 	ParentID                     string
+	Unread                       bool
 	CreatedAt, UpdatedAt         time.Time
 }
 
@@ -77,7 +78,7 @@ func (s *Server) loadProjectModel() (*projectModel, error) {
 		explicit:    map[string]bool{},
 	}
 	rows, err := s.sqlDB.Query(
-		`SELECT id, name, status, type, project_path, COALESCE(automation_id, ''), created_by_session_id, COALESCE(parent_session_id, ''), COALESCE(goal, ''), created_at, updated_at
+		`SELECT id, name, status, type, project_path, COALESCE(automation_id, ''), created_by_session_id, COALESCE(parent_session_id, ''), COALESCE(goal, ''), last_turn_completed_at > last_read_at, created_at, updated_at
 		 FROM sessions WHERE type != 'controller' ORDER BY created_at ASC, id ASC`)
 	if err != nil {
 		return nil, err
@@ -85,7 +86,7 @@ func (s *Server) loadProjectModel() (*projectModel, error) {
 	defer rows.Close()
 	for rows.Next() {
 		var p projSession
-		if err := rows.Scan(&p.ID, &p.Name, &p.Status, &p.Type, &p.Path, &p.AutomationID, &p.CreatedBy, &p.ParentID, &p.Goal, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Status, &p.Type, &p.Path, &p.AutomationID, &p.CreatedBy, &p.ParentID, &p.Goal, &p.Unread, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
 		m.sessions = append(m.sessions, p)
@@ -301,6 +302,7 @@ type projectCoordinator struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
 	Status string `json:"status"`
+	Unread bool   `json:"unread"`
 }
 
 type projectAutomationCounts struct {
@@ -310,10 +312,13 @@ type projectAutomationCounts struct {
 }
 
 type projectSummary struct {
-	Path               string                  `json:"path"`
-	Name               string                  `json:"name"`
-	Coordinator        *projectCoordinator     `json:"coordinator"`
-	ActiveSessions     int                     `json:"activeSessions"`
+	Path           string              `json:"path"`
+	Name           string              `json:"name"`
+	Coordinator    *projectCoordinator `json:"coordinator"`
+	ActiveSessions int                 `json:"activeSessions"`
+	// UnreadSessions counts idle members (not the coordinator, not automation
+	// runs) whose finished turn the user has not seen yet (#859).
+	UnreadSessions     int                     `json:"unreadSessions"`
 	Automations        projectAutomationCounts `json:"automations"`
 	PendingEscalations int                     `json:"pendingEscalations"`
 	LastUpdatedAt      *time.Time              `json:"lastUpdatedAt"`
@@ -327,6 +332,7 @@ type projectSession struct {
 	ProjectPath        string    `json:"projectPath"`
 	CreatedBySessionID string    `json:"createdBySessionId,omitempty"`
 	ParentSessionID    string    `json:"parentSessionId,omitempty"`
+	Unread             bool      `json:"unread"`
 	CreatedAt          time.Time `json:"createdAt"`
 	UpdatedAt          time.Time `json:"updatedAt"`
 }
@@ -394,7 +400,7 @@ func (s *Server) buildProject(m *projectModel, d *projectData, detail bool, now 
 		}
 	}
 	if d.coordinator != nil {
-		sum.Coordinator = &projectCoordinator{ID: d.coordinator.ID, Name: d.coordinator.Name, Status: d.coordinator.Status}
+		sum.Coordinator = &projectCoordinator{ID: d.coordinator.ID, Name: d.coordinator.Name, Status: d.coordinator.Status, Unread: d.coordinator.Unread}
 		touch(d.coordinator.UpdatedAt)
 	}
 	pd := &projectDetail{Sessions: []projectSession{}, ArchivedSessions: []projectSession{}, AutomationList: []projectAutomation{}, Escalations: s.projectEscalations(m, d.path)}
@@ -405,20 +411,28 @@ func (s *Server) buildProject(m *projectModel, d *projectData, detail bool, now 
 		if isActiveSessionStatus(p.Status) {
 			sum.ActiveSessions++
 		}
+		if p.AutomationID == "" && p.Status == "idle" && p.Unread {
+			sum.UnreadSessions++
+		}
 		touch(p.UpdatedAt)
 		if detail && p.AutomationID == "" {
 			pd.Sessions = append(pd.Sessions, projectSession{
 				ID: p.ID, Name: p.Name, Status: p.Status, Type: p.Type, ProjectPath: p.Path,
-				CreatedBySessionID: p.CreatedBy, ParentSessionID: p.ParentID,
+				CreatedBySessionID: p.CreatedBy, ParentSessionID: p.ParentID, Unread: p.Unread,
 				CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 			})
 		}
 	}
 	if detail {
 		for _, p := range d.archived {
+			// Automation runs are archived by auto-stop (#857); like the
+			// active ones they are reached from the loop, not listed here.
+			if p.AutomationID != "" {
+				continue
+			}
 			pd.ArchivedSessions = append(pd.ArchivedSessions, projectSession{
 				ID: p.ID, Name: p.Name, Status: p.Status, Type: p.Type, ProjectPath: p.Path,
-				CreatedBySessionID: p.CreatedBy, ParentSessionID: p.ParentID,
+				CreatedBySessionID: p.CreatedBy, ParentSessionID: p.ParentID, Unread: p.Unread,
 				CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt,
 			})
 		}

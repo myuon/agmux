@@ -20,6 +20,9 @@ export function ProjectSummaryLine({ project, loops }: { project: ProjectSummary
     });
   }
   if (project.activeSessions > 0) parts.push({ text: `作業中 ${project.activeSessions}` });
+  if ((project.unreadSessions ?? 0) > 0) {
+    parts.push({ text: `未読 ${project.unreadSessions}`, className: "text-blue-600 font-medium" });
+  }
   if (project.pendingEscalations > 0) {
     parts.push({ text: `返事待ち ${project.pendingEscalations}`, className: "text-orange-600 font-medium" });
   }

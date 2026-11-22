@@ -174,6 +174,136 @@ type HolderStreamProcess struct {
 	onHolderRestart  func(sessionID string, newPID int)
 	onContextUsage   func(sessionID string, contextTokens, contextWindow int64)
 	runningTasks     int
+
+	// replayedTurnEnd is the turn end found at the tail of the stream file
+	// when it was loaded (see loadExistingLines / ReplayedTurnEnd), and
+	// replayedTurnEndLine is the raw line of that event.
+	replayedTurnEnd     TurnEnd
+	replayedTurnEndLine string
+	// handledTurnEndLine is set by MarkReplayedTurnEndHandled. The holder
+	// writes a line to the file before it broadcasts it, so a line written
+	// just after the daemon connected can be both loaded from the file and
+	// read from the socket; readLoop skips the turn callbacks for that one
+	// line so a turn end the caller already applied is not handled twice.
+	handledTurnEndLine string
+}
+
+// TurnEnd describes how the last turn recorded in a stream file ended.
+type TurnEnd int
+
+const (
+	// TurnEndNone: the stream does not end with a finished turn (a turn is in
+	// progress, or nothing was recorded).
+	TurnEndNone TurnEnd = iota
+	// TurnEndComplete: the last turn ended with a successful result
+	// (Claude "result"/"success", Codex "turn.completed").
+	TurnEndComplete
+	// TurnEndFailed: the last turn ended with a non-success result.
+	TurnEndFailed
+)
+
+// turnEndTracker follows turn boundaries over raw stream lines, mirroring
+// the rules readLoop uses to fire onTurnComplete / onTurnFailed: a result
+// only ends the turn when no background task is running, and any later user
+// or assistant event means a new turn has started.
+//
+// Unlike readLoop, which counts tasks from the moment it connected, the
+// tracker sees the whole file, where some tasks never report an end (the CLI
+// was restarted while they ran) and task IDs can be reused. To keep such
+// leftovers from blocking every later turn, only tasks started since the
+// previous result are considered, tracked per start.
+type turnEndTracker struct {
+	openTasks map[string]int // task_id -> starts not yet ended, since the last result
+	end       TurnEnd
+	endLine   string
+}
+
+func (t *turnEndTracker) apply(line []byte) {
+	ev := parseStreamEvent(line)
+	switch ev.Type {
+	case "system":
+		switch ev.Subtype {
+		case "task_started":
+			if t.openTasks == nil {
+				t.openTasks = make(map[string]int)
+			}
+			t.openTasks[ev.TaskID]++
+		case "task_notification":
+			t.taskDone(ev.TaskID)
+		case "task_updated":
+			var patch struct {
+				Status string `json:"status"`
+			}
+			if len(ev.Patch) > 0 && json.Unmarshal(ev.Patch, &patch) == nil {
+				switch patch.Status {
+				case "completed", "failed", "killed":
+					t.taskDone(ev.TaskID)
+				}
+			}
+		}
+	case "result":
+		if len(t.openTasks) == 0 {
+			if ev.Subtype == "success" {
+				t.end = TurnEndComplete
+			} else {
+				t.end = TurnEndFailed
+			}
+			t.endLine = string(line)
+		}
+		t.openTasks = nil
+	case "turn.completed":
+		t.end = TurnEndComplete
+		t.endLine = string(line)
+	case "user", "assistant", "turn.started":
+		t.end = TurnEndNone
+		t.endLine = ""
+	}
+}
+
+func (t *turnEndTracker) taskDone(taskID string) {
+	n, ok := t.openTasks[taskID]
+	if !ok {
+		return
+	}
+	if n <= 1 {
+		delete(t.openTasks, taskID)
+	} else {
+		t.openTasks[taskID] = n - 1
+	}
+}
+
+// ReplayedTurnEnd reports how the last turn in the stream file ended, as
+// seen when the file was loaded at start/reconnect. A holder keeps running
+// (and writing the stream file) while the daemon is down, so a turn can end
+// with nobody connected to receive the result event; the caller uses this to
+// apply the turn end it missed (#855).
+func (sp *HolderStreamProcess) ReplayedTurnEnd() TurnEnd {
+	sp.mu.RLock()
+	defer sp.mu.RUnlock()
+	return sp.replayedTurnEnd
+}
+
+// MarkReplayedTurnEndHandled records that the caller applied the turn end
+// reported by ReplayedTurnEnd, so the same event arriving again over the
+// socket does not fire onTurnComplete / onTurnFailed a second time. Call it
+// before StartReadLoop.
+func (sp *HolderStreamProcess) MarkReplayedTurnEndHandled() {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.handledTurnEndLine = sp.replayedTurnEndLine
+}
+
+// consumeHandledTurnEndLine reports whether line is the turn-end line the
+// caller already applied, and forgets it so only the first copy received
+// from the socket is treated as a duplicate.
+func (sp *HolderStreamProcess) consumeHandledTurnEndLine(line string) bool {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	if sp.handledTurnEndLine == "" || sp.handledTurnEndLine != line {
+		return false
+	}
+	sp.handledTurnEndLine = ""
+	return true
 }
 
 // usageInfo is a minimal struct for parsing token usage from an assistant
@@ -361,11 +491,13 @@ func (sp *HolderStreamProcess) loadExistingLines(sessionID string, clearOffset i
 	// replaced them) is turned into the same replacement line the holder
 	// writes, so the line count matches the live path.
 	reader := NewStreamLineReader(f, sp.streamOpts.SessionID, "stream-file:load")
+	var turns turnEndTracker
 	for {
 		line, _, err := reader.Next()
 		if err != nil {
 			break
 		}
+		turns.apply(line)
 		// Normalize lines from JSONL (holder writes raw lines)
 		normalizedLines := sp.provider.NormalizeStreamLine(line)
 		for _, normalized := range normalizedLines {
@@ -382,6 +514,9 @@ func (sp *HolderStreamProcess) loadExistingLines(sessionID string, clearOffset i
 			sp.lines = append(sp.lines, normalizedStr)
 		}
 	}
+
+	sp.replayedTurnEnd = turns.end
+	sp.replayedTurnEndLine = turns.endLine
 
 	// Drop any per-session normalization state left over from replay (e.g.
 	// cursor thinking deltas whose `completed` never arrived because the
@@ -518,6 +653,9 @@ func (sp *HolderStreamProcess) readLoop() {
 
 		// Track background tasks and detect turn completion.
 		ev := parseStreamEvent([]byte(line))
+		// A turn end already loaded from the stream file (and applied by the
+		// caller through ReplayedTurnEnd) must not be handled again.
+		alreadyReplayed := (ev.Type == "result" || ev.Type == "turn.completed") && sp.consumeHandledTurnEndLine(line)
 		if ev.Type == "system" {
 			switch ev.Subtype {
 			case "task_started":
@@ -589,7 +727,9 @@ func (sp *HolderStreamProcess) readLoop() {
 					}
 				}
 			}
-			if ev.Subtype == "success" {
+			if alreadyReplayed {
+				// handled from the stream file at load time
+			} else if ev.Subtype == "success" {
 				sp.mu.RLock()
 				idle := sp.runningTasks == 0
 				tcb := sp.onTurnComplete
@@ -611,7 +751,7 @@ func (sp *HolderStreamProcess) readLoop() {
 			sp.mu.RLock()
 			tcb := sp.onTurnComplete
 			sp.mu.RUnlock()
-			if tcb != nil {
+			if tcb != nil && !alreadyReplayed {
 				tcb(sp.streamOpts.SessionID)
 			}
 		}

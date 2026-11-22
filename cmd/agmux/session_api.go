@@ -103,3 +103,47 @@ func broadcastViaDaemon(baseURL, text, filter string) ([]daemonBroadcastResult, 
 	err := daemonPost(baseURL, "/api/sessions/broadcast", map[string]string{"text": text, "filter": filter}, &out)
 	return out.Results, err
 }
+
+// daemonCreateRequest mirrors the daemon's POST /api/sessions body
+// (server.createSessionRequest).
+type daemonCreateRequest struct {
+	Name                    string `json:"name"`
+	ProjectPath             string `json:"projectPath"`
+	Prompt                  string `json:"prompt,omitempty"`
+	Worktree                bool   `json:"worktree,omitempty"`
+	Provider                string `json:"provider,omitempty"`
+	Model                   string `json:"model,omitempty"`
+	AutoApprove             bool   `json:"autoApprove,omitempty"`
+	SystemPrompt            string `json:"systemPrompt,omitempty"`
+	ParentSessionID         string `json:"parentSessionId,omitempty"`
+	RoleTemplate            string `json:"roleTemplate,omitempty"`
+	Ephemeral               bool   `json:"ephemeral,omitempty"`
+	EphemeralTimeoutSeconds *int   `json:"ephemeralTimeoutSeconds,omitempty"`
+	CreatedBySessionID      string `json:"createdBySessionId,omitempty"`
+}
+
+// daemonSessionRef is the part of the daemon's session JSON the CLI prints.
+type daemonSessionRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// createViaDaemon creates a session through the running daemon. Whoever
+// creates a session is the one that reads its holder's stream (result event ->
+// idle, ephemeral timeout, auto-title). An in-process Manager in the
+// short-lived CLI exits right after Create, so nobody saw the result event and
+// the session stayed "working" until the daemon was restarted.
+func createViaDaemon(baseURL string, req daemonCreateRequest) (daemonSessionRef, error) {
+	var out daemonSessionRef
+	err := daemonPost(baseURL, "/api/sessions", req, &out)
+	return out, err
+}
+
+// forkViaDaemon forks a session through the running daemon, for the same
+// reason as createViaDaemon.
+func forkViaDaemon(baseURL, id string, preserveContext bool, prompt string) (daemonSessionRef, error) {
+	var out daemonSessionRef
+	body := map[string]interface{}{"preserveContext": preserveContext, "prompt": prompt}
+	err := daemonPost(baseURL, "/api/sessions/"+id+"/fork", body, &out)
+	return out, err
+}

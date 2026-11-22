@@ -224,6 +224,7 @@ export function SessionList({ sessions, onRestartController }: Props) {
               id={s.id}
               name={s.name}
               status={s.status}
+              unread={s.unread}
               type={s.type}
               provider={s.provider}
               roleTemplate={s.roleTemplate}

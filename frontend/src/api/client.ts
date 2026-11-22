@@ -201,6 +201,10 @@ export const api = {
 
   getSession: (id: string) => request<Session>(`/sessions/${id}`),
 
+  /** Mark the session as seen by the user (#859). */
+  markSessionRead: (id: string) =>
+    request<{ status: string; unread: boolean }>(`/sessions/${id}/read`, { method: "POST" }),
+
   stopSession: (id: string) =>
     request<{ status: string }>(`/sessions/${id}/stop`, { method: "POST" }),
 
@@ -561,6 +565,7 @@ export interface AutomationSummary {
     sessionId: string;
     sessionName: string;
     sessionStatus: string;
+    sessionUnread?: boolean;
     firedAt: string;
   }[];
   feeders: AutomationRef[];
@@ -571,8 +576,10 @@ export interface AutomationSummary {
 export interface ProjectSummary {
   path: string;
   name: string;
-  coordinator: { id: string; name: string; status: string } | null;
+  coordinator: { id: string; name: string; status: string; unread?: boolean } | null;
   activeSessions: number;
+  /** Idle members (not the coordinator) with a finished turn not seen yet (#859). */
+  unreadSessions?: number;
   automations: { running: number; waiting: number; stopped: number };
   pendingEscalations: number;
   lastUpdatedAt: string | null;
@@ -599,6 +606,7 @@ export interface ProjectDetail extends ProjectSummary {
     status: string;
     type: string;
     projectPath: string;
+    unread?: boolean;
     updatedAt: string;
   }[];
   automationList: ProjectAutomation[];

@@ -434,11 +434,17 @@ function useSessions() {
       setSessions(newSessions);
     }
     if (msg.type === "status_change") {
-      const data = msg.data as { sessionId: string; status: Session["status"]; lastError?: string };
+      const data = msg.data as { sessionId: string; status: Session["status"]; lastError?: string; unread?: boolean };
       setSessions(prev => prev.map(s =>
         s.id === data.sessionId
-          ? { ...s, status: data.status, lastError: data.lastError ?? s.lastError }
+          ? { ...s, status: data.status, lastError: data.lastError ?? s.lastError, unread: data.unread ?? s.unread }
           : s
+      ));
+    }
+    if (msg.type === "session_read") {
+      const data = msg.data as { sessionId: string; unread: boolean };
+      setSessions(prev => prev.map(s =>
+        s.id === data.sessionId && s.unread !== data.unread ? { ...s, unread: data.unread } : s
       ));
     }
   }, []);
@@ -451,6 +457,8 @@ function useSessions() {
 // Desktop 3-pane layout: left (session list) + center (outlet) + right (notifications)
 export function DesktopLayout() {
   const { sessions, loadSessions } = useSessions();
+  // Archived sessions are returned by the API but not shown in the list.
+  const activeSessionCount = sessions.filter((s) => s.status !== "archived").length;
   const [error, setError] = useState<string | null>(null);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [devMode, setDevMode] = useState(false);
@@ -521,7 +529,7 @@ export function DesktopLayout() {
           <div className="w-72 shrink-0 border-r border-gray-200 bg-white flex flex-col min-h-0">
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-100 shrink-0">
               <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                Sessions ({sessions.length})
+                Sessions ({activeSessionCount})
               </h2>
               <button
                 onClick={toggleLeft}
@@ -591,6 +599,8 @@ export function DesktopLayout() {
 // Mobile Dashboard — session list + notifications with tab switcher
 export function Dashboard() {
   const { sessions, loadSessions } = useSessions();
+  // Archived sessions are returned by the API but not shown in the list.
+  const activeSessionCount = sessions.filter((s) => s.status !== "archived").length;
   const [error, setError] = useState<string | null>(null);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [devMode, setDevMode] = useState(false);
@@ -641,7 +651,7 @@ export function Dashboard() {
           }`}
           onClick={() => setSearchParams({})}
         >
-          Sessions ({sessions.length})
+          Sessions ({activeSessionCount})
         </button>
         <button
           className={`flex-1 py-2 text-sm font-medium ${

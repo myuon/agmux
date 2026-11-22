@@ -11,9 +11,12 @@ import (
 // Automation auto-stop (#748).
 //
 // A session created by an Automation (AutomationID != "") is "armed" at
-// creation. When its turn ends it is stopped through the normal Stop path
-// (status paused, holder + CLI gone, stream file and cliSessionId kept, so it
-// can be resumed). Without this every run left an idle holder + CLI behind.
+// creation. When its turn ends it is stopped like Stop does (holder + CLI gone,
+// stream file and cliSessionId kept, so it can be resumed), but the status
+// becomes archived instead of paused (#857): the run is reachable from the
+// loop's run history, so it should not pile up as a paused session. A manual
+// Stop still leaves the session paused. Without this every run left an idle
+// holder + CLI behind.
 //
 // The armed state is in-memory only (Manager.autoStop):
 //   - any user-originated SendKeys, Reconnect or Restart disarms the session,
@@ -137,9 +140,23 @@ func (m *Manager) tryAutoStop(id string, fallback bool) {
 		}
 	}
 	m.logger.Info("auto-stopping automation session", "sessionId", id, "fallback", fallback)
-	if err := m.Stop(id); err != nil {
+	if err := m.stopAndArchive(id); err != nil {
 		m.logger.Warn("auto-stop failed", "sessionId", id, "error", err)
 	}
+}
+
+// stopAndArchive stops the session like Stop but leaves it archived instead of
+// paused. The status goes through UpdateStatusWithHolderPIDClear, the same
+// path as the ephemeral archive, so status observers and the session-end hook
+// fire as they do for any archive.
+func (m *Manager) stopAndArchive(id string) error {
+	if _, err := m.Get(id); err != nil {
+		return err
+	}
+	m.cancelEphemeralTimeout(id)
+	m.disarmAutoStop(id)
+	m.stopStreamProcess(id)
+	return m.UpdateStatusWithHolderPIDClear(id, StatusArchived)
 }
 
 func (m *Manager) autoStopIdle() time.Duration {

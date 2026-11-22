@@ -78,3 +78,111 @@ func TestBroadcastViaDaemon_DecodesResults(t *testing.T) {
 		t.Errorf("results = %+v", res)
 	}
 }
+
+// The mm-live-alert watcher runs
+// `agmux session create mm-live-alert --ephemeral --timeout 300 --model ... -p <dir> -m <prompt>`.
+// That must reach the daemon's POST /api/sessions with the field names the
+// daemon decodes (server.createSessionRequest), so the daemon owns the
+// holder connection and turns the session idle on the result event.
+func TestCreateViaDaemon_PostsCreateRequest(t *testing.T) {
+	var gotPath string
+	var got map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"qdhYx","name":"mm-live-alert","status":"working","type":"ephemeral"}`))
+	}))
+	defer srv.Close()
+
+	timeout := 300
+	ref, err := createViaDaemon(srv.URL, daemonCreateRequest{
+		Name:                    "mm-live-alert",
+		ProjectPath:             "/tmp/crypto-agent-lab",
+		Prompt:                  "notify once and exit",
+		Provider:                "claude",
+		Model:                   "claude-haiku-5-5",
+		AutoApprove:             true,
+		Ephemeral:               true,
+		EphemeralTimeoutSeconds: &timeout,
+		CreatedBySessionID:      "eFvsn",
+	})
+	if err != nil {
+		t.Fatalf("createViaDaemon: %v", err)
+	}
+	if ref.ID != "qdhYx" || ref.Name != "mm-live-alert" {
+		t.Errorf("ref = %+v", ref)
+	}
+	if gotPath != "/api/sessions" {
+		t.Errorf("path = %q, want /api/sessions", gotPath)
+	}
+	want := map[string]interface{}{
+		"name":                    "mm-live-alert",
+		"projectPath":             "/tmp/crypto-agent-lab",
+		"prompt":                  "notify once and exit",
+		"provider":                "claude",
+		"model":                   "claude-haiku-5-5",
+		"autoApprove":             true,
+		"ephemeral":               true,
+		"ephemeralTimeoutSeconds": float64(300),
+		"createdBySessionId":      "eFvsn",
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("body[%q] = %v, want %v", k, got[k], v)
+		}
+	}
+}
+
+func TestCreateViaDaemon_ConnectionRefusedIsUnreachable(t *testing.T) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := l.Addr().String()
+	_ = l.Close()
+
+	_, err = createViaDaemon("http://"+addr, daemonCreateRequest{Name: "x", ProjectPath: "/tmp"})
+	if !errors.Is(err, errServerUnreachable) {
+		t.Fatalf("err = %v, want errServerUnreachable", err)
+	}
+}
+
+func TestCreateViaDaemon_ReturnsDaemonError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":"start holder: boom"}`))
+	}))
+	defer srv.Close()
+
+	_, err := createViaDaemon(srv.URL, daemonCreateRequest{Name: "x", ProjectPath: "/tmp"})
+	if err == nil || err.Error() != "start holder: boom" {
+		t.Fatalf("err = %v, want daemon error message", err)
+	}
+	if errors.Is(err, errServerUnreachable) {
+		t.Error("daemon error must not fall back to in-process create (would create a second session)")
+	}
+}
+
+func TestForkViaDaemon_PostsForkRequest(t *testing.T) {
+	var gotPath string
+	var got map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"new01","name":"orig (fork)"}`))
+	}))
+	defer srv.Close()
+
+	ref, err := forkViaDaemon(srv.URL, "abcde", false, "continue")
+	if err != nil {
+		t.Fatalf("forkViaDaemon: %v", err)
+	}
+	if gotPath != "/api/sessions/abcde/fork" || got["preserveContext"] != false || got["prompt"] != "continue" {
+		t.Errorf("path=%q body=%v", gotPath, got)
+	}
+	if ref.ID != "new01" {
+		t.Errorf("ref = %+v", ref)
+	}
+}

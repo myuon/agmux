@@ -122,6 +122,7 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 		data := map[string]interface{}{
 			"sessionId": sessionID,
 			"status":    string(status),
+			"unread":    s.sessions.IsUnread(sessionID),
 		}
 		if lastError != "" {
 			data["lastError"] = lastError
@@ -214,6 +215,7 @@ func (s *Server) setupRoutes() {
 		r.Patch("/sessions/{id}", s.updateSession)
 		r.Delete("/sessions/{id}", s.deleteSession)
 		r.Post("/sessions/{id}/stop", s.stopSession)
+		r.Post("/sessions/{id}/read", s.markSessionRead)
 		r.Post("/sessions/{id}/send", s.sendToSession)
 		r.Post("/sessions/{id}/exec", s.execInSession)
 		r.Put("/sessions/{id}/context", s.updateSessionContext)
@@ -574,6 +576,21 @@ func (s *Server) forkSession(w http.ResponseWriter, r *http.Request) {
 	s.recordSessionAction(sess.ID, "session_fork", "forked from "+id)
 	s.broadcastSessionUpdate()
 	writeJSON(w, http.StatusCreated, sess)
+}
+
+// markSessionRead records that the user opened the session screen (#859) and
+// tells every client, so the unread lamp goes off on other devices too.
+func (s *Server) markSessionRead(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := s.sessions.MarkRead(id); err != nil {
+		writeError(w, http.StatusNotFound, err.Error())
+		return
+	}
+	s.hub.Broadcast(Message{
+		Type: "session_read",
+		Data: map[string]interface{}{"sessionId": id, "unread": false},
+	})
+	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok", "unread": false})
 }
 
 func (s *Server) stopSession(w http.ResponseWriter, r *http.Request) {

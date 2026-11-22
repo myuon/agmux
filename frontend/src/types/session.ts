@@ -21,6 +21,8 @@ export interface Session {
   conversationStarted?: boolean;
   ephemeralTimeoutSeconds?: number;
   completionReport?: string;
+  /** A finished turn the user has not seen yet (#859). */
+  unread?: boolean;
   createdAt: string;
   updatedAt: string;
   githubUrl?: string;

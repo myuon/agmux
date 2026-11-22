@@ -2,17 +2,11 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, type ProjectAutomation, type ProjectDetail } from "../api/client";
 import { Chip } from "./ui/Chip";
+import { lampClass } from "./StatusBadge";
 import { formatNum, Sparkline } from "./LoopDashboard";
 
 const stateLabel = { running: "実行中", waiting: "待機中", stopped: "停止" } as const;
 const stateChip = { running: "blue", waiting: "gray", stopped: "red" } as const;
-const sessionDot: Record<string, string> = {
-  working: "bg-blue-500",
-  waiting_input: "bg-orange-400",
-  idle: "bg-green-500",
-  exited: "bg-red-400",
-  paused: "bg-gray-400",
-};
 
 export function timeAgo(dateStr: string): string {
   const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
@@ -208,7 +202,7 @@ export function ProjectPanel({
                   to={`/sessions/${s.id}`}
                   className="flex items-center gap-2 text-sm text-gray-700 rounded px-1.5 py-1 hover:bg-gray-100"
                 >
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${sessionDot[s.status] ?? "bg-gray-300"}`} />
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${lampClass(s.status, s.unread)}`} />
                   <span className="truncate min-w-0">{s.name || s.id}</span>
                   <span className="ml-auto shrink-0 text-xs text-gray-400">{timeAgo(s.updatedAt)}</span>
                 </Link>
