@@ -19,6 +19,11 @@ interface ProjectRowProps {
 }
 
 
+/** Split automations into [not stopped, stopped], keeping order (#873). */
+export function splitStopped<T extends { state: string }>(items: T[]): [T[], T[]] {
+  return [items.filter((i) => i.state !== "stopped"), items.filter((i) => i.state === "stopped")];
+}
+
 function dotClass(status: string, unread?: boolean): string {
   return lampClass(status, unread);
 }
@@ -37,6 +42,7 @@ export function ProjectRow({
 }: ProjectRowProps) {
   const [open, setOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
+  const [showStopped, setShowStopped] = useState(false);
   const coord = project.coordinator;
   const coordId = coord?.id;
   const subs = project.sessions.filter((s) => s.id !== coordId && s.status !== "archived");
@@ -44,6 +50,23 @@ export function ProjectRow({
   const loopIds = new Set(loops.map((l) => l.id));
   // Automations that have no loop summary (loops off, or hidden as noise) get a plain row.
   const plainAutos = project.automationList.filter((a) => !loopIds.has(a.id));
+  const [activeLoops, stoppedLoops] = splitStopped(loops);
+  const [activeAutos, stoppedAutos] = splitStopped(plainAutos);
+  const stoppedCount = stoppedLoops.length + stoppedAutos.length;
+  const renderPlainAuto = (a: AutomationSummary | ProjectDetail["automationList"][number]) => (
+    <button
+      key={a.id}
+      type="button"
+      onClick={() => onOpenLoop(a.id)}
+      className="w-full flex items-center gap-2 text-left text-xs border border-gray-200 rounded-lg bg-white px-3 py-1.5 hover:shadow-sm"
+    >
+      <span className="text-purple-600">↻</span>
+      <span className="truncate min-w-0">{a.name}</span>
+      <span className={`ml-auto shrink-0 ${a.state === "stopped" ? "text-red-600" : "text-gray-500"}`}>
+        {a.state === "stopped" ? "停止" : a.state === "running" ? "実行中" : "待機中"}
+      </span>
+    </button>
+  );
   const hasChildren = subs.length > 0 || archived.length > 0 || loops.length > 0 || plainAutos.length > 0;
   const alert = project.pendingEscalations > 0 || project.automations.stopped > 0;
   return (
@@ -95,23 +118,30 @@ export function ProjectRow({
       </div>
       {open && (
         <div className="mt-1 ml-3 pl-2 border-l border-gray-200 flex flex-col gap-1">
-          {loops.map((l) => (
+          {activeLoops.map((l) => (
             <LoopRow key={l.id} loop={l} timeAgo={timeAgo} onOpenLoop={onOpenLoop} onOpenSession={onOpenSession} />
           ))}
-          {plainAutos.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              onClick={() => onOpenLoop(a.id)}
-              className="w-full flex items-center gap-2 text-left text-xs border border-gray-200 rounded-lg bg-white px-3 py-1.5 hover:shadow-sm"
-            >
-              <span className="text-purple-600">↻</span>
-              <span className="truncate min-w-0">{a.name}</span>
-              <span className={`ml-auto shrink-0 ${a.state === "stopped" ? "text-red-600" : "text-gray-500"}`}>
-                {a.state === "stopped" ? "停止" : a.state === "running" ? "実行中" : "待機中"}
-              </span>
-            </button>
-          ))}
+          {activeAutos.map(renderPlainAuto)}
+          {stoppedCount > 0 && (
+            <>
+              <button
+                type="button"
+                aria-expanded={showStopped}
+                onClick={() => setShowStopped((v) => !v)}
+                className="text-left text-xs text-gray-400 hover:text-gray-600 px-1 py-0.5"
+              >
+                {showStopped ? "▾" : "▸"} 停止中 {stoppedCount}件
+              </button>
+              {showStopped && (
+                <>
+                  {stoppedLoops.map((l) => (
+                    <LoopRow key={l.id} loop={l} timeAgo={timeAgo} onOpenLoop={onOpenLoop} onOpenSession={onOpenSession} />
+                  ))}
+                  {stoppedAutos.map(renderPlainAuto)}
+                </>
+              )}
+            </>
+          )}
           {subs.map((s) => (
             <button
               key={s.id}
