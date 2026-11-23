@@ -99,6 +99,13 @@ type recoverFixture struct {
 
 func newRecoverFixture(t *testing.T, status Status, lines ...string) *recoverFixture {
 	t.Helper()
+	return newRecoverFixtureArmed(t, status, false, lines...)
+}
+
+// newRecoverFixtureArmed is newRecoverFixture for an Automation run whose
+// auto_stop_armed flag in the DB is `armed` (#872).
+func newRecoverFixtureArmed(t *testing.T, status Status, armed bool, lines ...string) *recoverFixture {
+	t.Helper()
 	t.Setenv("TMPDIR", shortTempDir(t))
 	t.Setenv("HOME", t.TempDir())
 
@@ -120,10 +127,16 @@ func newRecoverFixture(t *testing.T, status Status, lines ...string) *recoverFix
 	t.Cleanup(func() { sqlDB.Close() })
 	sqlDB.SetMaxOpenConns(1)
 	now := time.Now()
+	// An armed run is recorded past its first turn (conversation_started = 1),
+	// the case the old first-turn-only re-arm missed.
+	automationID, armedInt, started := "", 0, 0
+	if armed {
+		automationID, armedInt, started = "auto-1", 1, 1
+	}
 	if _, err := sqlDB.Exec(
-		`INSERT INTO sessions (id, name, project_path, tmux_session, status, type, output_mode, provider, model, cli_session_id, holder_pid, conversation_started, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		f.id, "rec", "/tmp", "", string(status), "worker", "stream", "claude", "opus", "cli-1", proc.Pid, 0, now, now,
+		`INSERT INTO sessions (id, name, project_path, tmux_session, status, type, output_mode, provider, model, cli_session_id, holder_pid, conversation_started, automation_id, auto_stop_armed, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		f.id, "rec", "/tmp", "", string(status), "worker", "stream", "claude", "opus", "cli-1", proc.Pid, started, automationID, armedInt, now, now,
 	); err != nil {
 		t.Fatalf("insert session: %v", err)
 	}
@@ -132,6 +145,7 @@ func newRecoverFixture(t *testing.T, status Status, lines ...string) *recoverFix
 		logger:          slog.Default(),
 		streamProcesses: make(map[string]*HolderStreamProcess),
 		deletingSet:     make(map[string]struct{}),
+		autoStopDelay:   50 * time.Millisecond,
 	}
 	f.m.SetOnStatusChange(func(_ string, s Status, _ string) {
 		f.mu.Lock()

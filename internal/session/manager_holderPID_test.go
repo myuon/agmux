@@ -48,6 +48,7 @@ func newTestDB(t *testing.T) *sql.DB {
 			completion_report TEXT,
 			last_turn_completed_at INTEGER NOT NULL DEFAULT 0,
 			last_read_at INTEGER NOT NULL DEFAULT 0,
+			auto_stop_armed INTEGER NOT NULL DEFAULT 0,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)

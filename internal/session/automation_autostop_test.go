@@ -1,8 +1,10 @@
 package session
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -308,4 +310,110 @@ func TestAutoStop_FallbackStopsAfterSilence(t *testing.T) {
 	writeStreamFile(t, id)
 	// First check sees recent output and rechecks later; by then it is silent.
 	waitStatus(t, m, id, StatusArchived)
+}
+
+func autoStopArmedInDB(t *testing.T, m *Manager, id string) bool {
+	t.Helper()
+	var v int
+	if err := m.db.QueryRow("SELECT auto_stop_armed FROM sessions WHERE id = ?", id).Scan(&v); err != nil {
+		t.Fatal(err)
+	}
+	return v != 0
+}
+
+// The armed state is persisted, so it is still known after an agmux restart
+// (#872); a user interaction clears it in the DB too.
+func TestAutoStop_ArmedStatePersisted(t *testing.T) {
+	m, rec := autoStopTestManager(t)
+	id, _ := createAutoSession(t, m, rec, "auto-1")
+	if !autoStopArmedInDB(t, m, id) {
+		t.Fatal("automation session should be armed in the DB")
+	}
+	if err := m.SendKeys(id, "hello"); err != nil {
+		t.Fatalf("SendKeys: %v", err)
+	}
+	if autoStopArmedInDB(t, m, id) {
+		t.Fatal("SendKeys must disarm in the DB")
+	}
+
+	plain, _ := createAutoSession(t, m, rec, "")
+	if autoStopArmedInDB(t, m, plain) {
+		t.Fatal("non-automation session must not be armed")
+	}
+
+	stopped, _ := createAutoSession(t, m, rec, "auto-1")
+	if err := m.Stop(stopped); err != nil {
+		t.Fatal(err)
+	}
+	if autoStopArmedInDB(t, m, stopped) {
+		t.Fatal("Stop must disarm in the DB")
+	}
+}
+
+// closeOnStop makes the fixture's fake holder exit (close its connection) when
+// it receives the stop control message, as a real holder does.
+func (f *recoverFixture) closeOnStop() {
+	conn := f.conn
+	go func() {
+		sc := bufio.NewScanner(conn)
+		for sc.Scan() {
+			if strings.Contains(sc.Text(), `"action":"stop"`) {
+				conn.Close()
+				return
+			}
+		}
+	}()
+}
+
+// An armed run that was idle when agmux restarted is stopped and archived
+// right after recovery (#872).
+func TestAutoStop_RecoverArchivesIdleArmed(t *testing.T) {
+	f := newRecoverFixtureArmed(t, StatusIdle, true, recInit, recUser, recAssistant, recResult)
+	f.closeOnStop()
+	waitStatus(t, f.m, f.id, StatusArchived)
+	if autoStopArmedInDB(t, f.m, f.id) {
+		t.Error("still armed in the DB after auto-stop")
+	}
+}
+
+// A run that was disarmed before the restart stays a normal session.
+func TestAutoStop_RecoverSkipsDisarmed(t *testing.T) {
+	f := newRecoverFixtureArmed(t, StatusIdle, false, recInit, recUser, recAssistant, recResult)
+	time.Sleep(400 * time.Millisecond)
+	if st, _ := f.status(t); st != StatusIdle {
+		t.Fatalf("status = %s, want idle (disarmed before restart)", st)
+	}
+	if f.m.isAutoStopArmed(f.id) {
+		t.Error("disarmed session was re-armed")
+	}
+}
+
+// An armed run past its first turn that was working at the restart is
+// re-armed and stopped when its turn ends.
+func TestAutoStop_RecoverRearmsWorkingPastFirstTurn(t *testing.T) {
+	f := newRecoverFixtureArmed(t, StatusWorking, true, recInit, recUser, recAssistant)
+	f.closeOnStop()
+	if !f.m.isAutoStopArmed(f.id) {
+		t.Fatal("armed working session was not re-armed")
+	}
+	if _, err := f.conn.Write([]byte(recResult + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	waitStatus(t, f.m, f.id, StatusArchived)
+}
+
+// A turn end written while agmux was down also stops an armed run.
+func TestAutoStop_RecoverReplayedTurnEndStopsArmed(t *testing.T) {
+	f := newRecoverFixtureArmed(t, StatusWorking, true, recInit, recUser, recAssistant, recResult)
+	f.closeOnStop()
+	waitStatus(t, f.m, f.id, StatusArchived)
+}
+
+// An armed run waiting for input at the restart is left alone.
+func TestAutoStop_RecoverKeepsWaitingInput(t *testing.T) {
+	f := newRecoverFixtureArmed(t, StatusWaitingInput, true, recInit, recUser, recAssistant, recResult)
+	time.Sleep(400 * time.Millisecond)
+	if st, _ := f.status(t); st != StatusWaitingInput {
+		t.Fatalf("status = %s, want waiting_input", st)
+	}
 }

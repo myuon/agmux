@@ -448,6 +448,16 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: auto_stop_armed on sessions (#872). 1 = an Automation run that
+	// is still armed to stop and archive itself when its turn ends; 0 = not
+	// armed (non-automation session, or disarmed by user interaction / Stop).
+	// Persisted so the armed state survives an agmux restart. Existing rows
+	// default to 0 so past runs are never stopped retroactively.
+	_, err = db.Exec(`ALTER TABLE sessions ADD COLUMN auto_stop_armed INTEGER NOT NULL DEFAULT 0`)
+	if err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: projects table (#805, experimental "projects"). A project is
 	// implied by sessions.project_path; a row exists only to record its
 	// coordinator.

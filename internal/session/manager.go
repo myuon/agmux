@@ -305,7 +305,7 @@ func (m *Manager) RecoverStreamProcesses() {
 		m.logger.Error("recover stream processes: reset auto-title state failed", "error", err)
 	}
 	rows, err := m.db.Query(
-		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid, clear_offset, conversation_started, COALESCE(automation_id, ''), status FROM sessions WHERE holder_pid > 0`,
+		`SELECT id, project_path, provider, cli_session_id, model, system_prompt, holder_pid, clear_offset, conversation_started, auto_stop_armed, status FROM sessions WHERE holder_pid > 0`,
 	)
 	if err != nil {
 		m.logger.Error("recover stream processes: query failed", "error", err)
@@ -316,24 +316,23 @@ func (m *Manager) RecoverStreamProcesses() {
 	// Turn ends found in stream files are applied after the rows are closed:
 	// the turn-end callback writes to the DB.
 	var replayed []replayedTurnEnd
+	// Automation runs still armed for auto-stop (#872). Armed after the rows
+	// are closed: armAutoStop writes to the DB.
+	var rearm []string
+	var rearmIdle []string
 
 	for rows.Next() {
 		var id, projectPath, providerStr, dbCliSessionID, dbModel string
 		var dbSystemPrompt sql.NullString
 		var holderPID int
 		var clearOffset int64
-		var conversationStartedInt int
-		var recAutomationID, recStatus string
-		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt, &holderPID, &clearOffset, &conversationStartedInt, &recAutomationID, &recStatus); err != nil {
+		var conversationStartedInt, autoStopArmedInt int
+		var recStatus string
+		if err := rows.Scan(&id, &projectPath, &providerStr, &dbCliSessionID, &dbModel, &dbSystemPrompt, &holderPID, &clearOffset, &conversationStartedInt, &autoStopArmedInt, &recStatus); err != nil {
 			m.logger.Error("recover stream processes: scan failed", "error", err)
 			continue
 		}
 		conversationStarted := conversationStartedInt != 0
-		// Re-arm automation auto-stop only for a session still inside its
-		// first turn (see automation_autostop.go: restart behavior).
-		if recAutomationID != "" && !conversationStarted && Status(recStatus) == StatusWorking {
-			m.armAutoStop(id)
-		}
 
 		// Skip sessions currently being deleted to avoid spawning a new holder
 		// in the window between Delete() killing the old holder and removing the DB record.
@@ -343,6 +342,18 @@ func (m *Manager) RecoverStreamProcesses() {
 		if isDeleting {
 			m.logger.Info("recover: skipping session currently being deleted", "sessionId", id)
 			continue
+		}
+
+		// Re-arm automation auto-stop for a session recorded as armed (see
+		// automation_autostop.go: restart behavior).
+		if autoStopArmedInt != 0 {
+			switch Status(recStatus) {
+			case StatusWorking:
+				rearm = append(rearm, id)
+			case StatusIdle:
+				rearm = append(rearm, id)
+				rearmIdle = append(rearmIdle, id)
+			}
 		}
 
 		provider := m.getProvider(ProviderName(providerStr))
@@ -428,8 +439,18 @@ func (m *Manager) RecoverStreamProcesses() {
 		m.logger.Error("recover stream processes: rows iteration error", "error", err)
 	}
 	rows.Close()
+	// Arm before applying replayed turn ends, so a turn that ended while agmux
+	// was down stops the run like a live turn end does.
+	for _, id := range rearm {
+		m.armAutoStop(id)
+	}
 	for _, r := range replayed {
 		m.applyReplayedTurnEnd(r)
+	}
+	// An armed run that is already idle finished its turn before the stop
+	// fired: stop it now, through the same checks as a turn end.
+	for _, id := range rearmIdle {
+		m.scheduleAutoStop(id)
 	}
 
 	// Recover ephemeral timeout goroutines for active ephemeral sessions
