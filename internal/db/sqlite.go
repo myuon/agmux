@@ -366,6 +366,8 @@ func migrate(db *sql.DB) error {
 			output TEXT,
 			usage_input_tokens INTEGER,
 			usage_output_tokens INTEGER,
+			-- tool_call_history is no longer written or read (#877); kept for
+			-- compatibility with existing databases.
 			tool_call_history TEXT NOT NULL DEFAULT '[]',
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (session_id, task_id)

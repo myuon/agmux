@@ -27,7 +27,6 @@ type BackgroundTask struct {
 	LastToolInput   interface{}              `json:"lastToolInput,omitempty"`
 	Output          string                   `json:"output,omitempty"`
 	Usage           *BackgroundTaskUsage     `json:"usage,omitempty"`
-	ToolCallHistory []BackgroundTaskToolCall `json:"toolCallHistory"`
 	// OwnedBySubagent is true when the task was started by a subagent rather
 	// than the main agent (task_started.owned_by_subagent). Such tasks are
 	// excluded from List.
@@ -40,13 +39,6 @@ type BackgroundTaskUsage struct {
 	OutputTokens *int `json:"outputTokens,omitempty"`
 }
 
-// BackgroundTaskToolCall is one entry in the tool call history.
-type BackgroundTaskToolCall struct {
-	ToolName    string `json:"toolName"`
-	Description string `json:"description,omitempty"`
-	Timestamp   string `json:"timestamp,omitempty"`
-}
-
 // BackgroundTaskStore manages background_tasks rows in SQLite.
 // Detection mirrors frontend `extractActiveTasks` in
 // frontend/src/models/stream.ts.
@@ -55,7 +47,7 @@ type BackgroundTaskStore struct {
 	// mu guards the in-memory pendingToolUseInputs map.
 	mu sync.Mutex
 	// applyMu serializes ApplyLine to make read-modify-write
-	// (`getTask` -> append history -> `upsertTask`) safe across goroutines.
+	// (`getTask` -> merge progress -> `upsertTask`) safe across goroutines.
 	// Holding this around the SQL calls is acceptable: lines arrive from a
 	// single holder reader in the common case, and concurrent rebuild +
 	// live-update paths are rare and per-session.
@@ -123,7 +115,7 @@ func (s *BackgroundTaskStore) ApplyLine(sessionID string, line []byte) error {
 		return nil
 	}
 
-	// Serialize to make read-modify-write of tool_call_history race-free when
+	// Serialize to make read-modify-write of a task row race-free when
 	// multiple goroutines feed lines for the same session (e.g. RebuildFromJSONL
 	// vs live `onNewLines`).
 	s.applyMu.Lock()
@@ -179,7 +171,6 @@ func (s *BackgroundTaskStore) ApplyLine(sessionID string, line []byte) error {
 			ToolUseID:       ev.ToolUse,
 			Description:     ev.Desc,
 			StartedAt:       ev.Time,
-			ToolCallHistory: []BackgroundTaskToolCall{},
 			OwnedBySubagent: ev.OwnedBySubagent,
 		}
 		if ev.ToolUse != "" {
@@ -216,8 +207,7 @@ func (s *BackgroundTaskStore) ApplyLine(sessionID string, line []byte) error {
 				TaskID:          ev.TaskID,
 				TaskType:        taskType,
 				AgentID:         ev.AgentID,
-				ToolCallHistory: []BackgroundTaskToolCall{},
-				OwnedBySubagent: ev.OwnedBySubagent,
+					OwnedBySubagent: ev.OwnedBySubagent,
 			}
 		}
 		if ev.OwnedBySubagent {
@@ -230,14 +220,6 @@ func (s *BackgroundTaskStore) ApplyLine(sessionID string, line []byte) error {
 			existing.ToolUseID = ev.ToolUse
 		}
 		if ev.LastTool != "" {
-			last := lastToolCall(existing.ToolCallHistory)
-			if last == nil || last.ToolName != ev.LastTool || last.Description != ev.Desc {
-				existing.ToolCallHistory = append(existing.ToolCallHistory, BackgroundTaskToolCall{
-					ToolName:    ev.LastTool,
-					Description: ev.Desc,
-					Timestamp:   ev.Time,
-				})
-			}
 			existing.LastToolName = ev.LastTool
 		}
 		if len(ev.LastIn) > 0 {
@@ -292,13 +274,6 @@ func (s *BackgroundTaskStore) ApplyLine(sessionID string, line []byte) error {
 	return nil
 }
 
-func lastToolCall(h []BackgroundTaskToolCall) *BackgroundTaskToolCall {
-	if len(h) == 0 {
-		return nil
-	}
-	return &h[len(h)-1]
-}
-
 // isJSONNullOrEmpty reports whether the raw JSON value is empty or the
 // literal `null`. Used to mirror the frontend's `b.input != null` guard.
 func isJSONNullOrEmpty(raw json.RawMessage) bool {
@@ -329,7 +304,7 @@ func (s *BackgroundTaskStore) List(sessionID string) ([]BackgroundTask, error) {
 		`SELECT task_id, task_type, agent_id, description, started_at,
 		        last_tool_name, last_tool_input, output,
 		        usage_input_tokens, usage_output_tokens,
-		        tool_call_history, tool_use_id
+		        tool_use_id
 		 FROM background_tasks
 		 WHERE session_id = ? AND dismissed_at IS NULL
 		   AND COALESCE(owned_by_subagent, 0) = 0
@@ -346,13 +321,12 @@ func (s *BackgroundTaskStore) List(sessionID string) ([]BackgroundTask, error) {
 		var t BackgroundTask
 		var agentID, desc, startedAt, lastToolName, lastToolInput, output sql.NullString
 		var inTok, outTok sql.NullInt64
-		var history string
 		var toolUseID sql.NullString
 		if err := rows.Scan(
 			&t.TaskID, &t.TaskType, &agentID, &desc, &startedAt,
 			&lastToolName, &lastToolInput, &output,
 			&inTok, &outTok,
-			&history, &toolUseID,
+			&toolUseID,
 		); err != nil {
 			return nil, fmt.Errorf("scan background task: %w", err)
 		}
@@ -391,12 +365,6 @@ func (s *BackgroundTaskStore) List(sessionID string) ([]BackgroundTask, error) {
 				u.OutputTokens = &v
 			}
 			t.Usage = u
-		}
-		if history != "" {
-			_ = json.Unmarshal([]byte(history), &t.ToolCallHistory)
-		}
-		if t.ToolCallHistory == nil {
-			t.ToolCallHistory = []BackgroundTaskToolCall{}
 		}
 		tasks = append(tasks, t)
 	}
@@ -536,7 +504,7 @@ func (s *BackgroundTaskStore) getTask(sessionID, taskID string) (*BackgroundTask
 		`SELECT task_id, task_type, agent_id, description, started_at,
 		        last_tool_name, last_tool_input, output,
 		        usage_input_tokens, usage_output_tokens,
-		        tool_call_history, tool_use_id, COALESCE(owned_by_subagent, 0)
+		        tool_use_id, COALESCE(owned_by_subagent, 0)
 		 FROM background_tasks
 		 WHERE session_id = ? AND task_id = ? AND dismissed_at IS NULL`,
 		sessionID, taskID,
@@ -544,13 +512,12 @@ func (s *BackgroundTaskStore) getTask(sessionID, taskID string) (*BackgroundTask
 	var t BackgroundTask
 	var agentID, desc, startedAt, lastToolName, lastToolInput, output sql.NullString
 	var inTok, outTok sql.NullInt64
-	var history string
 	var toolUseID sql.NullString
 	err := row.Scan(
 		&t.TaskID, &t.TaskType, &agentID, &desc, &startedAt,
 		&lastToolName, &lastToolInput, &output,
 		&inTok, &outTok,
-		&history, &toolUseID, &t.OwnedBySubagent,
+		&toolUseID, &t.OwnedBySubagent,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -594,23 +561,10 @@ func (s *BackgroundTaskStore) getTask(sessionID, taskID string) (*BackgroundTask
 		}
 		t.Usage = u
 	}
-	if history != "" {
-		_ = json.Unmarshal([]byte(history), &t.ToolCallHistory)
-	}
-	if t.ToolCallHistory == nil {
-		t.ToolCallHistory = []BackgroundTaskToolCall{}
-	}
 	return &t, nil
 }
 
 func (s *BackgroundTaskStore) upsertTask(sessionID string, t BackgroundTask) error {
-	if t.ToolCallHistory == nil {
-		t.ToolCallHistory = []BackgroundTaskToolCall{}
-	}
-	historyJSON, err := json.Marshal(t.ToolCallHistory)
-	if err != nil {
-		return fmt.Errorf("marshal history: %w", err)
-	}
 	var lastInputJSON sql.NullString
 	if t.LastToolInput != nil {
 		b, err := json.Marshal(t.LastToolInput)
@@ -629,13 +583,13 @@ func (s *BackgroundTaskStore) upsertTask(sessionID string, t BackgroundTask) err
 	}
 	// Skip if the task has been dismissed (tombstone present) so a delayed
 	// task_progress event cannot resurrect a dismissed row.
-	_, err = s.db.Exec(
+	_, err := s.db.Exec(
 		`INSERT INTO background_tasks (
 			session_id, task_id, task_type, agent_id, description, started_at,
 			last_tool_name, last_tool_input, output,
-			usage_input_tokens, usage_output_tokens, tool_call_history,
+			usage_input_tokens, usage_output_tokens,
 			tool_use_id, owned_by_subagent, updated_at
-		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		 ON CONFLICT(session_id, task_id) DO UPDATE SET
 			task_type = excluded.task_type,
 			agent_id = excluded.agent_id,
@@ -646,7 +600,6 @@ func (s *BackgroundTaskStore) upsertTask(sessionID string, t BackgroundTask) err
 			output = excluded.output,
 			usage_input_tokens = excluded.usage_input_tokens,
 			usage_output_tokens = excluded.usage_output_tokens,
-			tool_call_history = excluded.tool_call_history,
 			tool_use_id = COALESCE(NULLIF(excluded.tool_use_id, ''), background_tasks.tool_use_id),
 			owned_by_subagent = MAX(excluded.owned_by_subagent, COALESCE(background_tasks.owned_by_subagent, 0)),
 			updated_at = CURRENT_TIMESTAMP
@@ -654,7 +607,7 @@ func (s *BackgroundTaskStore) upsertTask(sessionID string, t BackgroundTask) err
 		sessionID, t.TaskID, t.TaskType,
 		nullableString(t.AgentID), nullableString(t.Description), nullableString(t.StartedAt),
 		nullableString(t.LastToolName), lastInputJSON, nullableString(t.Output),
-		inTok, outTok, string(historyJSON),
+		inTok, outTok,
 		nullableString(t.ToolUseID), boolToInt(t.OwnedBySubagent),
 	)
 	if err != nil {

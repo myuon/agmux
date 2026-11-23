@@ -729,7 +729,6 @@ export interface BackgroundTaskDTO {
   lastToolInput?: unknown;
   output?: string;
   usage?: { inputTokens?: number; outputTokens?: number };
-  toolCallHistory: { toolName: string; description?: string; timestamp?: string }[];
 }
 
 export interface RecentProject {
