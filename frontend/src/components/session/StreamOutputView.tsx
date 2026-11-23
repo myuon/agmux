@@ -489,13 +489,14 @@ function ActiveTaskItem({ task, onDismiss, sessionId, sessionActive, toolProgres
               <div className="text-gray-700 text-xs mt-0.5">{task.description}</div>
             </div>
           )}
-          {task.taskType === "local_agent" && task.toolUseId ? (
+          {task.taskType === "local_agent" ? (
             <div>
               <span className="text-gray-400 text-[10px] uppercase tracking-wide">Subagent Thread</span>
               <div className="mt-1">
                 <SubagentThreadView
                   sessionId={sessionId}
-                  parentToolUseId={task.toolUseId}
+                  parentToolUseId={task.toolUseId ?? task.taskId}
+                  agentId={task.taskId}
                   live
                   sessionActive={sessionActive}
                   toolProgress={toolProgress}

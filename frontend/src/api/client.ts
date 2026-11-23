@@ -245,10 +245,13 @@ export const api = {
     ),
 
   // Full (non-truncated) stream lines of the subagent thread spawned by the
-  // given Agent/Task tool_use id, including nested subagents.
-  getSubagentStream: (id: string, parentToolUseId: string) =>
+  // given Agent/Task tool_use id, including nested subagents. agentId (the
+  // task id) lets the server find the transcript of a background subagent
+  // resumed by SendMessage, whose task tool_use id differs from the spawning one.
+  getSubagentStream: (id: string, parentToolUseId: string, agentId?: string) =>
     request<{ lines: unknown[]; total: number }>(
-      `/sessions/${id}/stream/subagent?parentToolUseId=${encodeURIComponent(parentToolUseId)}`
+      `/sessions/${id}/stream/subagent?parentToolUseId=${encodeURIComponent(parentToolUseId)}` +
+        (agentId ? `&agentId=${encodeURIComponent(agentId)}` : "")
     ),
 
   getStreamOutputDelta: (id: string, after: number) =>
