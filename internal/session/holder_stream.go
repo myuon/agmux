@@ -373,7 +373,7 @@ func StartHolderStreamProcess(opts StreamOpts, provider Provider) (*HolderStream
 	cmdArgs := append([]string{cmd.Path}, cmd.Args[1:]...)
 
 	// Spawn the holder process
-	pid, err := SpawnHolder(opts.SessionID, cmdArgs, opts.ProjectPath, cmd.Env)
+	pid, err := SpawnHolder(opts.SessionID, cmdArgs, opts.ProjectPath, cmd.Env, provider.IsOneShot())
 	if err != nil {
 		return nil, fmt.Errorf("spawn holder: %w", err)
 	}
@@ -1135,7 +1135,7 @@ func (sp *HolderStreamProcess) restartForCodex(message, cliSessionID string) err
 	cmd.Env = sp.provider.AppendOTelEnv(cmd.Env, 0)
 	cmdArgs := append([]string{cmd.Path}, cmd.Args[1:]...)
 
-	pid, err := SpawnHolder(opts.SessionID, cmdArgs, opts.ProjectPath, cmd.Env)
+	pid, err := SpawnHolder(opts.SessionID, cmdArgs, opts.ProjectPath, cmd.Env, sp.provider.IsOneShot())
 	if err != nil {
 		return fmt.Errorf("spawn holder for codex resume: %w", err)
 	}

@@ -43,7 +43,12 @@ type HolderControlMessage struct {
 
 // RunHolder is the main entry point for the holder subprocess.
 // It starts the CLI process, listens on a Unix socket, and manages the lifecycle.
-func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []string) error {
+//
+// closeStdin closes the child's stdin right after start so it sees EOF. It is
+// for one-shot CLIs (Codex/Cursor) that take the prompt as an argument and
+// never receive input through stdin; since Codex 0.171.0 `codex exec` appends
+// piped stdin to the prompt and would otherwise block forever on an open pipe.
+func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []string, closeStdin bool) error {
 	if err := os.MkdirAll(SocketDir(), 0700); err != nil {
 		return fmt.Errorf("create socket dir: %w", err)
 	}
@@ -85,6 +90,14 @@ func RunHolder(sessionID string, cmdArgs []string, projectPath string, env []str
 	}
 
 	slog.Info("holder: CLI process started", "pid", cmd.Process.Pid, "sessionId", sessionID)
+
+	if closeStdin {
+		// Later h.stdin.Close() calls (stop/restart/SIGTERM) are harmless:
+		// the pipe wrapper's Close is idempotent apart from an ignored error.
+		if err := stdinPipe.Close(); err != nil {
+			slog.Warn("holder: close child stdin failed", "error", err, "sessionId", sessionID)
+		}
+	}
 
 	// Set up Unix socket listener
 	listener, err := net.Listen("unix", sockPath)
@@ -390,9 +403,23 @@ func (h *holder) handleControl(msg HolderControlMessage) {
 	}
 }
 
+// buildHolderArgs builds the `agmux holder` argument list. All holder flags
+// must precede "--"; everything after it is the wrapped CLI command.
+func buildHolderArgs(sessionID string, cmdArgs []string, projectPath, agmuxDir string, closeStdin bool) []string {
+	args := []string{"holder", "--session-id", sessionID, "--project-path", projectPath}
+	if agmuxDir != "" {
+		args = append(args, "--agmux-dir", agmuxDir)
+	}
+	if closeStdin {
+		args = append(args, "--close-stdin")
+	}
+	args = append(args, "--")
+	return append(args, cmdArgs...)
+}
+
 // SpawnHolder starts a new holder process that is detached from the current process group.
 // It returns the PID of the holder process.
-func SpawnHolder(sessionID string, cmdArgs []string, projectPath string, env []string) (int, error) {
+func SpawnHolder(sessionID string, cmdArgs []string, projectPath string, env []string, closeStdin bool) (int, error) {
 	if err := os.MkdirAll(SocketDir(), 0700); err != nil {
 		return 0, fmt.Errorf("create socket dir: %w", err)
 	}
@@ -407,12 +434,8 @@ func SpawnHolder(sessionID string, cmdArgs []string, projectPath string, env []s
 	// --agmux-dir is an identification marker so that a reaper of one agmux
 	// instance does not kill holders belonging to another instance (e.g. an
 	// isolated dev server running with a different HOME). See ReapOrphanHolders.
-	holderArgs := []string{"holder", "--session-id", sessionID, "--project-path", projectPath}
-	if agmuxDir, err := db.AgmuxDir(); err == nil {
-		holderArgs = append(holderArgs, "--agmux-dir", agmuxDir)
-	}
-	holderArgs = append(holderArgs, "--")
-	holderArgs = append(holderArgs, cmdArgs...)
+	agmuxDir, _ := db.AgmuxDir()
+	holderArgs := buildHolderArgs(sessionID, cmdArgs, projectPath, agmuxDir, closeStdin)
 
 	cmd := exec.Command(agmuxBin, holderArgs...)
 	cmd.Env = env
