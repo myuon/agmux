@@ -1487,6 +1487,7 @@ func holderCmd() *cobra.Command {
 	var sessionID string
 	var projectPath string
 	var agmuxDir string
+	var closeStdin bool
 
 	cmd := &cobra.Command{
 		Use:    "holder",
@@ -1509,7 +1510,7 @@ func holderCmd() *cobra.Command {
 			// Collect environment from current process
 			env := os.Environ()
 
-			return session.RunHolder(sessionID, cmdArgs, projectPath, env)
+			return session.RunHolder(sessionID, cmdArgs, projectPath, env, closeStdin)
 		},
 	}
 
@@ -1519,6 +1520,7 @@ func holderCmd() *cobra.Command {
 	// reaper (ReapOrphanHolders) distinguish holders belonging to this agmux
 	// instance from those of another instance. The holder itself does not use it.
 	cmd.Flags().StringVar(&agmuxDir, "agmux-dir", "", "Agmux data directory of the owning instance (identification marker)")
+	cmd.Flags().BoolVar(&closeStdin, "close-stdin", false, "Close the CLI's stdin right after start (for one-shot CLIs such as Codex that read stdin when it is piped)")
 	// Allow passing arbitrary args after "--"
 	cmd.Flags().SetInterspersed(false)
 
