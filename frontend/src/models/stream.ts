@@ -73,14 +73,6 @@ export interface BackgroundTaskInfo {
   outputFile?: string;
 }
 
-// Tool call history entry for tracking sub-agent activity
-export interface ToolCallHistoryEntry {
-  toolName: string;
-  input?: unknown;
-  description?: string;
-  timestamp?: string;
-}
-
 // Active task tracking for sub-agents and background tasks
 export interface ActiveTask {
   taskId: string;
@@ -95,7 +87,6 @@ export interface ActiveTask {
   lastToolInput?: unknown;
   output?: string;
   usage?: { inputTokens?: number; outputTokens?: number };
-  toolCallHistory: ToolCallHistoryEntry[];
 }
 
 export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
@@ -144,7 +135,7 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
       const taskType = raw.task_type as string;
       const toolUseId = raw.tool_use_id as string | undefined;
       if (taskId) {
-        const task: ActiveTask = { taskId, taskType: taskType || "unknown", toolCallHistory: [] };
+        const task: ActiveTask = { taskId, taskType: taskType || "unknown" };
         if (raw.agent_id) task.agentId = raw.agent_id as string;
         if (toolUseId) task.toolUseId = toolUseId;
         if (raw.description) task.description = raw.description as string;
@@ -162,26 +153,13 @@ export function extractActiveTasks(entries: StreamEntry[]): ActiveTask[] {
       if (taskId) {
         if (!tasks.has(taskId)) {
           const taskType = (raw.task_type as string) || "unknown";
-          const task: ActiveTask = { taskId, taskType, toolCallHistory: [] };
+          const task: ActiveTask = { taskId, taskType };
           if (raw.agent_id) task.agentId = raw.agent_id as string;
           tasks.set(taskId, task);
         }
         const task = tasks.get(taskId)!;
         if (raw.description) task.description = raw.description as string;
-        // Track tool call history: append when last_tool_name changes
-        if (raw.last_tool_name) {
-          const newToolName = raw.last_tool_name as string;
-          const newDescription = raw.description as string | undefined;
-          const lastEntry = task.toolCallHistory[task.toolCallHistory.length - 1];
-          if (!lastEntry || lastEntry.toolName !== newToolName || lastEntry.description !== newDescription) {
-            task.toolCallHistory.push({
-              toolName: newToolName,
-              description: newDescription,
-              timestamp: raw.timestamp as string | undefined,
-            });
-          }
-          task.lastToolName = newToolName;
-        }
+        if (raw.last_tool_name) task.lastToolName = raw.last_tool_name as string;
         if (raw.last_tool_input !== undefined) task.lastToolInput = raw.last_tool_input;
         if (raw.output) task.output = raw.output as string;
         if (raw.usage) {

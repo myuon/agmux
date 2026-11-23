@@ -548,11 +548,6 @@ function ActiveTasksPanelPreview() {
       lastToolName: "Grep",
       lastToolInput: { pattern: "export function", path: "src/" },
       usage: { inputTokens: 12500, outputTokens: 3200 },
-      toolCallHistory: [
-        { toolName: "Read", description: "Reading /src/index.ts" },
-        { toolName: "Glob", description: "Finding **/*.ts" },
-        { toolName: "Grep", description: "Searching for export function in src/" },
-      ],
     },
     {
       taskId: "task-ghi-789",
@@ -562,9 +557,6 @@ function ActiveTasksPanelPreview() {
       lastToolInput: { command: "npm test --watch" },
       output: "Tests: 42 passed, 1 failed",
       usage: { inputTokens: 800, outputTokens: 1500 },
-      toolCallHistory: [
-        { toolName: "Bash", description: "Running npm test --watch" },
-      ],
     },
   ];
 
@@ -587,10 +579,6 @@ function ActiveTasksPanelPreview() {
               lastToolName: "Read",
               lastToolInput: { file_path: "internal/db/sqlite.go" },
               usage: { inputTokens: 8200, outputTokens: 1800 },
-              toolCallHistory: [
-                { toolName: "Grep", description: "Searching for CREATE TABLE" },
-                { toolName: "Read", description: "Reading internal/db/sqlite.go" },
-              ],
             },
             {
               taskId: "task-pqr-003",
@@ -600,11 +588,6 @@ function ActiveTasksPanelPreview() {
               lastToolName: "Edit",
               lastToolInput: { file_path: "internal/server/server.go" },
               usage: { inputTokens: 15000, outputTokens: 4500 },
-              toolCallHistory: [
-                { toolName: "Grep", description: "Searching for SendKeys" },
-                { toolName: "Read", description: "Reading internal/session/manager.go" },
-                { toolName: "Edit", description: "Editing internal/server/server.go" },
-              ],
             },
             {
               taskId: "task-vwx-005",
@@ -613,9 +596,6 @@ function ActiveTasksPanelPreview() {
               lastToolName: "Bash",
               lastToolInput: { command: "git diff main...HEAD" },
               usage: { inputTokens: 5000, outputTokens: 2000 },
-              toolCallHistory: [
-                { toolName: "Bash", description: "Running git diff" },
-              ],
             },
           ]} />
         </div>

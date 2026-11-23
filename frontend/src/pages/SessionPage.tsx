@@ -50,7 +50,6 @@ function dtoToActiveTask(dto: BackgroundTaskDTO): ActiveTask {
     lastToolInput: dto.lastToolInput,
     output: dto.output,
     usage: dto.usage,
-    toolCallHistory: dto.toolCallHistory ?? [],
   };
 }
 

@@ -73,31 +73,6 @@ func TestBackgroundTaskStore_TaskProgressUpdatesFields(t *testing.T) {
 	assert.Equal(t, 100, *task.Usage.InputTokens)
 	require.NotNil(t, task.Usage.OutputTokens)
 	assert.Equal(t, 50, *task.Usage.OutputTokens)
-	require.Len(t, task.ToolCallHistory, 1)
-	assert.Equal(t, "Bash", task.ToolCallHistory[0].ToolName)
-}
-
-func TestBackgroundTaskStore_TaskProgressDeduplicatesHistory(t *testing.T) {
-	store := newTestBgStore(t)
-
-	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_started","task_id":"t","task_type":"local_agent"}`)))
-
-	// Same tool name and description -> no new history entry
-	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_progress","task_id":"t","last_tool_name":"Read","description":"d1"}`)))
-	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_progress","task_id":"t","last_tool_name":"Read","description":"d1"}`)))
-	// Same tool name but different description -> new entry
-	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_progress","task_id":"t","last_tool_name":"Read","description":"d2"}`)))
-	// Different tool name -> new entry
-	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_progress","task_id":"t","last_tool_name":"Bash"}`)))
-
-	tasks, err := store.List("s")
-	require.NoError(t, err)
-	require.Len(t, tasks, 1)
-	assert.Equal(t, []BackgroundTaskToolCall{
-		{ToolName: "Read", Description: "d1"},
-		{ToolName: "Read", Description: "d2"},
-		{ToolName: "Bash"},
-	}, tasks[0].ToolCallHistory)
 }
 
 func TestBackgroundTaskStore_TaskStartedResolvesToolUseInput(t *testing.T) {
@@ -226,7 +201,7 @@ func TestBackgroundTaskStore_RestartedTaskWithSameIDIsListed(t *testing.T) {
 	tasks, err := store.List("s")
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
-	require.NotEmpty(t, tasks[0].ToolCallHistory)
+	require.Equal(t, "Bash", tasks[0].LastToolName)
 
 	require.NoError(t, store.ApplyLine("s", []byte(`{"type":"system","subtype":"task_notification","task_id":"x","status":"completed"}`)))
 	tasks, err = store.List("s")
@@ -239,7 +214,6 @@ func TestBackgroundTaskStore_RestartedTaskWithSameIDIsListed(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
 	assert.Equal(t, "x", tasks[0].TaskID)
-	assert.Empty(t, tasks[0].ToolCallHistory, "history from the earlier run must be reset")
 	assert.Empty(t, tasks[0].LastToolName)
 }
 
@@ -270,8 +244,8 @@ func TestBackgroundTaskStore_DismissBeforeAnyTaskStarted(t *testing.T) {
 
 // TestBackgroundTaskStore_ConcurrentApplyLine simulates two goroutines
 // (e.g. RebuildFromJSONL and a live onNewLines callback) appending
-// task_progress entries concurrently. Without serialization the
-// tool_call_history would lose entries via read-modify-write race.
+// task_progress entries concurrently. Serialization keeps the read-modify-write
+// of the task row consistent: the final row reflects one of the last updates.
 func TestBackgroundTaskStore_ConcurrentApplyLine(t *testing.T) {
 	store := newTestBgStore(t)
 
@@ -299,11 +273,9 @@ func TestBackgroundTaskStore_ConcurrentApplyLine(t *testing.T) {
 	tasks, err := store.List("s")
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
-	// Expect exactly 2*N appended history entries (every line has a unique
-	// last_tool_name so dedup never drops anything). Without the mutex this
-	// would frequently come out short.
-	assert.Equal(t, 2*N, len(tasks[0].ToolCallHistory),
-		"expected %d history entries, got %d", 2*N, len(tasks[0].ToolCallHistory))
+	last := tasks[0].LastToolName
+	assert.True(t, last == fmt.Sprintf("A%d", N-1) || last == fmt.Sprintf("B%d", N-1),
+		"unexpected last tool name %q", last)
 }
 
 // TestBackgroundTaskStore_RebuildFromJSONL writes a JSONL file with
@@ -341,8 +313,7 @@ func TestBackgroundTaskStore_RebuildFromJSONL(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, tasks, 1)
 	assert.Equal(t, "t-late", tasks[0].TaskID)
-	require.Len(t, tasks[0].ToolCallHistory, 1)
-	assert.Equal(t, "Bash", tasks[0].ToolCallHistory[0].ToolName)
+	assert.Equal(t, "Bash", tasks[0].LastToolName)
 
 	// Missing JSONL file must not error.
 	require.NoError(t, os.Remove(jsonlPath))

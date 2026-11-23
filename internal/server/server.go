@@ -1324,6 +1324,21 @@ func (s *Server) clearSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
+// readSubagentTranscript reads the Claude CLI's on-disk transcript of the
+// subagent spawned by parentToolUseID. Returns nil when unavailable.
+func (s *Server) readSubagentTranscript(id, parentToolUseID string) []string {
+	sess, err := s.sessions.Get(id)
+	if err != nil || sess == nil || sess.Provider != session.ProviderClaude || sess.CliSessionID == "" {
+		return nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	dir := session.ClaudeSubagentsDir(home, sess.ProjectPath, sess.CliSessionID)
+	return session.ReadSubagentTranscriptLines(dir, parentToolUseID)
+}
+
 // getSubagentStream returns the full (non-truncated) set of stream lines that
 // belong to the subagent thread spawned by the given Agent/Task tool_use id,
 // including nested subagents.
@@ -1342,6 +1357,11 @@ func (s *Server) getSubagentStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filtered := session.FilterSubagentLines(lines, parentToolUseID)
+	if len(filtered) == 0 {
+		// Background subagents do not emit their messages into the stream-json;
+		// the Claude CLI writes them to a per-subagent transcript instead.
+		filtered = s.readSubagentTranscript(id, parentToolUseID)
+	}
 
 	result := make([]json.RawMessage, 0, len(filtered))
 	for _, line := range filtered {

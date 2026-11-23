@@ -21,15 +21,13 @@ function toEntries(lines: unknown[]): StreamEntry[] {
 
 // Renders the conversation of a subagent (lines whose parent_tool_use_id is
 // parentToolUseId) with the same item components as the main timeline.
-export function SubagentThreadView({ sessionId, parentToolUseId, live, sessionActive, toolProgress, emptyFallback }: {
+export function SubagentThreadView({ sessionId, parentToolUseId, live, sessionActive, toolProgress }: {
   sessionId?: string;
   parentToolUseId: string;
   // Whether the subagent may still produce lines (re-fetch on parent stream updates)
   live?: boolean;
   sessionActive?: boolean;
   toolProgress?: Record<string, number>;
-  // Rendered instead of the thread when it has no lines (e.g. background agents)
-  emptyFallback?: React.ReactNode;
 }) {
   const parentLines = useContext(StreamLinesContext);
   const [fetched, setFetched] = useState<unknown[] | null>(null);
@@ -75,7 +73,7 @@ export function SubagentThreadView({ sessionId, parentToolUseId, live, sessionAc
       : <p className="text-xs text-gray-400">Loading subagent thread...</p>;
   }
   if (lines.length === 0) {
-    return <>{emptyFallback ?? <p className="text-xs text-gray-400">No subagent activity recorded</p>}</>;
+    return <p className="text-xs text-gray-400">No subagent activity recorded</p>;
   }
 
   return (
