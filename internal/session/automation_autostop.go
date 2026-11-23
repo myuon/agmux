@@ -18,7 +18,9 @@ import (
 // Stop still leaves the session paused. Without this every run left an idle
 // holder + CLI behind.
 //
-// The armed state is in-memory only (Manager.autoStop):
+// The armed state lives in memory (Manager.autoStop, which also holds the
+// max-runtime timer) and is mirrored to sessions.auto_stop_armed in the DB
+// (#872), so it survives an agmux restart:
 //   - any user-originated SendKeys, Reconnect or Restart disarms the session,
 //     so a session someone interacts with becomes a normal session;
 //   - Stop / Delete disarm it as well.
@@ -30,11 +32,15 @@ import (
 // never finish, but only once they have produced no output for
 // autoStopIdleWindow, so a long but healthy run is not killed mid-turn.
 //
-// Restart: running holders survive an agmux restart but the armed set does
-// not. RecoverStreamProcesses re-arms only sessions that are still in their
-// first turn (conversation_started = 0 and status working). An already idle
-// automation session is never re-armed, because we cannot tell whether the user
-// resumed it; leaving one idle is preferred over killing one in use.
+// Restart: running holders survive an agmux restart, and so does the armed
+// flag in the DB. RecoverStreamProcesses re-arms every session recorded as
+// armed whose status is working or idle, whatever turn it is in. A working one
+// is stopped when its turn ends (including a turn end that happened while
+// agmux was down, see claimReplayedTurnEnd). An idle one finished its turn
+// while agmux was down or before the stop fired, so it is scheduled for the
+// usual turn-end auto-stop right after recovery; tryAutoStop still leaves it
+// alone if a background task is running or it went to waiting_input. A session
+// the user touched was disarmed in the DB and is never re-armed.
 
 const (
 	// defaultAutoStopDelay gives the holder time to flush the final output
@@ -63,6 +69,21 @@ func (m *Manager) armAutoStop(id string) {
 		old.Stop()
 	}
 	m.autoStop[id] = time.AfterFunc(maxRuntime, func() { m.tryAutoStop(id, true) })
+	m.persistAutoStopArmed(id, true)
+}
+
+// persistAutoStopArmed mirrors the armed state to sessions.auto_stop_armed.
+func (m *Manager) persistAutoStopArmed(id string, armed bool) {
+	if m.db == nil {
+		return
+	}
+	v := 0
+	if armed {
+		v = 1
+	}
+	if _, err := m.db.Exec("UPDATE sessions SET auto_stop_armed = ? WHERE id = ? AND auto_stop_armed != ?", v, id, v); err != nil {
+		m.logger.Warn("failed to persist auto-stop state", "sessionId", id, "armed", armed, "error", err)
+	}
 }
 
 func (m *Manager) isAutoStopArmed(id string) bool {
@@ -82,6 +103,7 @@ func (m *Manager) disarmAutoStop(id string) {
 		}
 		delete(m.autoStop, id)
 	}
+	m.persistAutoStopArmed(id, false)
 }
 
 // scheduleAutoStop is called when a turn ends. It is a no-op for sessions that
