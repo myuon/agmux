@@ -21,9 +21,11 @@ function toEntries(lines: unknown[]): StreamEntry[] {
 
 // Renders the conversation of a subagent (lines whose parent_tool_use_id is
 // parentToolUseId) with the same item components as the main timeline.
-export function SubagentThreadView({ sessionId, parentToolUseId, live, sessionActive, toolProgress }: {
+export function SubagentThreadView({ sessionId, parentToolUseId, agentId, live, sessionActive, toolProgress }: {
   sessionId?: string;
   parentToolUseId: string;
+  // Task id of the subagent; used to locate its on-disk transcript
+  agentId?: string;
   // Whether the subagent may still produce lines (re-fetch on parent stream updates)
   live?: boolean;
   sessionActive?: boolean;
@@ -44,7 +46,7 @@ export function SubagentThreadView({ sessionId, parentToolUseId, live, sessionAc
   useEffect(() => {
     if (!sessionId) return;
     let cancelled = false;
-    api.getSubagentStream(sessionId, parentToolUseId)
+    api.getSubagentStream(sessionId, parentToolUseId, agentId)
       .then((resp) => {
         if (cancelled) return;
         setFetched(resp.lines);
@@ -55,7 +57,7 @@ export function SubagentThreadView({ sessionId, parentToolUseId, live, sessionAc
         setError(e instanceof Error ? e.message : String(e));
       });
     return () => { cancelled = true; };
-  }, [sessionId, parentToolUseId, refreshKey]);
+  }, [sessionId, parentToolUseId, agentId, refreshKey]);
 
   const lines = useMemo(() => {
     if (sessionId) return fetched;

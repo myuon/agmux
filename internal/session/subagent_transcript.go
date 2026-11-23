@@ -53,12 +53,23 @@ type transcriptStreamLine struct {
 // included with their own parent_tool_use_id. Lines are ordered by timestamp.
 // Missing or unreadable files yield an empty result.
 func ReadSubagentTranscriptLines(subagentsDir, parentToolUseID string) []string {
+	return ReadSubagentTranscriptLinesByAgent(subagentsDir, parentToolUseID, "")
+}
+
+var agentIDRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// ReadSubagentTranscriptLinesByAgent is ReadSubagentTranscriptLines, but when
+// agentID (the task id) is given, the transcript agent-<agentID>.jsonl is used
+// for parentToolUseID even if no meta.json records that tool_use id. This
+// covers background subagents resumed by SendMessage: their task events carry
+// the SendMessage tool_use id while the meta keeps the original Agent one.
+func ReadSubagentTranscriptLinesByAgent(subagentsDir, parentToolUseID, agentID string) []string {
 	result := []string{}
 	if parentToolUseID == "" || subagentsDir == "" {
 		return result
 	}
 	metas, err := filepath.Glob(filepath.Join(subagentsDir, "agent-*.meta.json"))
-	if err != nil || len(metas) == 0 {
+	if err != nil {
 		return result
 	}
 	// toolUseId -> transcript path
@@ -73,6 +84,12 @@ func ReadSubagentTranscriptLines(subagentsDir, parentToolUseID string) []string 
 			continue
 		}
 		transcripts[m.ToolUseID] = strings.TrimSuffix(metaPath, ".meta.json") + ".jsonl"
+	}
+	if agentID != "" && agentIDRe.MatchString(agentID) {
+		path := filepath.Join(subagentsDir, "agent-"+agentID+".jsonl")
+		if _, err := os.Stat(path); err == nil {
+			transcripts[parentToolUseID] = path
+		}
 	}
 
 	type entry struct {

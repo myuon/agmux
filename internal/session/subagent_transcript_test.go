@@ -101,3 +101,24 @@ func TestReadSubagentTranscriptLines_MissingReturnsEmpty(t *testing.T) {
 	require.NoError(t, os.Remove(filepath.Join(dir, "agent-a1.jsonl")))
 	assert.Empty(t, ReadSubagentTranscriptLines(dir, "toolu_parent"))
 }
+
+// A background subagent resumed by SendMessage reports task events with the
+// SendMessage tool_use id; the transcript must still be found via the agent id.
+func TestReadSubagentTranscriptLinesByAgent_ResumedBySendMessage(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "subagents")
+	writeSubagentFixture(t, dir, "a1", "toolu_original",
+		`{"type":"user","message":{"role":"user","content":"do it"},"timestamp":"2026-01-01T00:00:00Z"}`,
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ok"}]},"timestamp":"2026-01-01T00:00:01Z"}`,
+	)
+
+	assert.Empty(t, ReadSubagentTranscriptLines(dir, "toolu_sendmessage"))
+
+	got := decodeLines(t, ReadSubagentTranscriptLinesByAgent(dir, "toolu_sendmessage", "a1"))
+	require.Len(t, got, 2)
+	for _, l := range got {
+		assert.Equal(t, "toolu_sendmessage", l["parent_tool_use_id"])
+	}
+
+	assert.Empty(t, ReadSubagentTranscriptLinesByAgent(dir, "toolu_x", "../a1"))
+	assert.Empty(t, ReadSubagentTranscriptLinesByAgent(dir, "toolu_x", "missing"))
+}
