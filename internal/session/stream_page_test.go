@@ -48,7 +48,7 @@ func TestPageLinesBefore_OverFilteredFileLines(t *testing.T) {
 	writeStreamFixture(t, sessionID, streamFixtureWithTransients)
 
 	m := &Manager{}
-	all, err := m.readStreamFile(sessionID, 0, 0)
+	all, err := m.readStreamFile(sessionID, 0, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

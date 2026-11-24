@@ -1871,7 +1871,7 @@ func (m *Manager) GetStreamLines(id string, limit int) ([]string, int, error) {
 	}
 
 	// Fallback: read all lines from file, then truncate to limit
-	allLines, err := m.readStreamFile(id, 0, s.ClearOffset)
+	allLines, err := m.readStreamFile(id, 0, s.ClearOffset, m.getProvider(s.Provider))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1882,7 +1882,11 @@ func (m *Manager) GetStreamLines(id string, limit int) ([]string, int, error) {
 	return allLines, total, nil
 }
 
-func (m *Manager) readStreamFile(id string, limit int, clearOffset int64) ([]string, error) {
+// readStreamFile reads the session's raw JSONL file. When p is non-nil each
+// line is normalized by the provider, the same as the live path
+// (HolderStreamProcess) does on load, so e.g. Codex events of an exited
+// session are returned in the Claude-compatible form the frontend renders.
+func (m *Manager) readStreamFile(id string, limit int, clearOffset int64, p Provider) ([]string, error) {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
 		return nil, err
@@ -1914,10 +1918,9 @@ func (m *Manager) readStreamFile(id string, limit int, clearOffset int64) ([]str
 		// Skip transient lines (stream_event, thinking_tokens): the raw JSONL
 		// file contains everything the holder wrote, but history readers must
 		// apply the same filter as the live path (HolderStreamProcess).
-		if isTransientStreamLine(b) {
-			continue
+		for _, nl := range normalizeFileLine(p, b) {
+			lines = append(lines, string(nl))
 		}
-		lines = append(lines, string(b))
 	}
 
 	if limit > 0 && len(lines) > limit {
@@ -1944,7 +1947,7 @@ func (m *Manager) GetStreamLinesAfter(id string, after int) ([]string, int, erro
 	}
 
 	// Fallback: read from file
-	lines, err := m.readStreamFileAfter(id, after, s.ClearOffset)
+	lines, err := m.readStreamFileAfter(id, after, s.ClearOffset, m.getProvider(s.Provider))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1987,7 +1990,7 @@ func (m *Manager) GetStreamLinesBefore(id string, before, limit int) ([]string, 
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	allLines, err := m.readStreamFile(id, 0, s.ClearOffset)
+	allLines, err := m.readStreamFile(id, 0, s.ClearOffset, m.getProvider(s.Provider))
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -1995,7 +1998,7 @@ func (m *Manager) GetStreamLinesBefore(id string, before, limit int) ([]string, 
 	return page, start, len(allLines), nil
 }
 
-func (m *Manager) readStreamFileAfter(id string, after int, clearOffset int64) ([]string, error) {
+func (m *Manager) readStreamFileAfter(id string, after int, clearOffset int64, p Provider) ([]string, error) {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
 		return nil, err
@@ -2025,15 +2028,34 @@ func (m *Manager) readStreamFileAfter(id string, after int, clearOffset int64) (
 		}
 		// Skip transient lines so the `after` cursor counts the same filtered
 		// history as the live path (HolderStreamProcess.lines).
-		if isTransientStreamLine(b) {
-			continue
+		for _, nl := range normalizeFileLine(p, b) {
+			if lineIdx >= after {
+				lines = append(lines, string(nl))
+			}
+			lineIdx++
 		}
-		if lineIdx >= after {
-			lines = append(lines, string(b))
-		}
-		lineIdx++
 	}
 	return lines, nil
+}
+
+// normalizeFileLine applies the provider normalization (if p is non-nil) to a
+// raw line from the stream file and drops nil and transient lines, mirroring
+// HolderStreamProcess's handling of the same file.
+func normalizeFileLine(p Provider, b []byte) [][]byte {
+	var candidates [][]byte
+	if p != nil {
+		candidates = p.NormalizeStreamLine(b)
+	} else {
+		candidates = [][]byte{b}
+	}
+	out := candidates[:0]
+	for _, nl := range candidates {
+		if nl == nil || isTransientStreamLine(nl) {
+			continue
+		}
+		out = append(out, nl)
+	}
+	return out
 }
 
 // GetController returns the controller session if it exists.
