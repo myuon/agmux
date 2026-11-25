@@ -239,3 +239,67 @@ func TestListAllArtifacts(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
 	assert.Equal(t, id1, got[0].ID)
 }
+
+func patchArtifact(h http.Handler, id, body string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("PATCH", "/api/artifacts/"+id, strings.NewReader(body)))
+	return w
+}
+
+func TestPatchArtifactPinsAndListsFirst(t *testing.T) {
+	h, store, id1, hub := newUpdateTestServer(t)
+	src := filepath.Join(t.TempDir(), "b.html")
+	require.NoError(t, os.WriteFile(src, []byte("<p>b</p>"), 0o644))
+	id2, err := artifact.Publish(store.Dir(), src)
+	require.NoError(t, err)
+	_, err = store.Register("s1", id2, "T2", nil)
+	require.NoError(t, err)
+	drain(hub)
+
+	listIDs := func() []string {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", "/api/artifacts", nil))
+		require.Equal(t, 200, w.Code)
+		var got []artifact.Artifact
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &got))
+		var ids []string
+		for _, a := range got {
+			ids = append(ids, a.ID)
+		}
+		return ids
+	}
+	assert.Equal(t, []string{id2, id1}, listIDs())
+
+	w := patchArtifact(h, id1, `{"pinned":true}`)
+	require.Equal(t, 200, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), `"pinned":true`)
+	assert.Equal(t, []string{id1, id2}, listIDs())
+	var broadcast bool
+	for _, m := range drain(hub) {
+		if m.Type == "artifact_pinned" {
+			broadcast = true
+		}
+	}
+	assert.True(t, broadcast, "artifact_pinned broadcast")
+
+	require.Equal(t, 200, patchArtifact(h, id1, `{"pinned":false}`).Code)
+	assert.Equal(t, []string{id2, id1}, listIDs())
+
+	assert.Equal(t, 400, patchArtifact(h, id1, `{}`).Code)
+	assert.Equal(t, 400, patchArtifact(h, id1, `nope`).Code)
+	assert.Equal(t, 404, patchArtifact(h, strings.Repeat("0", 32), `{"pinned":true}`).Code)
+}
+
+func TestCreateAndUpdateArtifactPinned(t *testing.T) {
+	h, store, id, _ := newUpdateTestServer(t)
+	// PUT with pinned pins/unpins; omitted keeps it.
+	require.Equal(t, 200, putArtifact(h, id, `{"pinned":true}`).Code)
+	a, _ := store.Get(id)
+	assert.True(t, a.Pinned)
+	require.Equal(t, 200, putArtifact(h, id, `{"title":"X"}`).Code)
+	a, _ = store.Get(id)
+	assert.True(t, a.Pinned, "omitted keeps pinned")
+	require.Equal(t, 200, putArtifact(h, id, `{"pinned":false}`).Code)
+	a, _ = store.Get(id)
+	assert.False(t, a.Pinned)
+}

@@ -1,3 +1,5 @@
+import type { Artifact } from "../api/client";
+
 /**
  * URL of the raw (sandboxed) HTML of an artifact. `updatedAt` is appended as a
  * cache-busting query param: changing it changes the iframe `src`, which makes
@@ -20,3 +22,18 @@ export function parseArtifactUrl(href: string | undefined | null): string | null
   const m = ARTIFACT_URL_RE.exec(href.trim());
   return m ? m[1] : null;
 }
+
+/** Pinned artifacts first, then most recently updated first. */
+export function sortArtifacts(list: Artifact[]): Artifact[] {
+  return [...list].sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    return Date.parse(b.updatedAt || b.createdAt) - Date.parse(a.updatedAt || a.createdAt);
+  });
+}
+
+export const ARTIFACT_WS_TYPES = [
+  "artifact_created",
+  "artifact_updated",
+  "artifact_deleted",
+  "artifact_pinned",
+];

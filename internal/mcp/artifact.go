@@ -27,6 +27,8 @@ func (s *Server) handlePublishArtifact(args json.RawMessage) (interface{}, *json
 		ArtifactID string `json:"artifact_id"`
 		// DataFiles: nil = not given (keep on update), {} = clear.
 		DataFiles *map[string]string `json:"data_files"`
+		// Pinned: nil = not given (keep on update, unpinned on create).
+		Pinned *bool `json:"pinned"`
 	}
 	if err := json.Unmarshal(args, &input); err != nil {
 		return nil, &jsonRPCError{Code: -32602, Message: "invalid arguments"}
@@ -37,7 +39,7 @@ func (s *Server) handlePublishArtifact(args json.RawMessage) (interface{}, *json
 		return nil, &jsonRPCError{Code: -32602, Message: "path is required"}
 	}
 	if input.ArtifactID != "" {
-		return s.updateArtifact(sessionID, input.ArtifactID, input.Path, input.Title, input.DataFiles), nil
+		return s.updateArtifact(sessionID, input.ArtifactID, input.Path, input.Title, input.DataFiles, input.Pinned), nil
 	}
 	if input.Title == "" {
 		return nil, &jsonRPCError{Code: -32602, Message: "title is required"}
@@ -55,7 +57,7 @@ func (s *Server) handlePublishArtifact(args json.RawMessage) (interface{}, *json
 	if input.DataFiles != nil {
 		dataFiles = *input.DataFiles
 	}
-	viewPath, err := s.apiRegisterArtifact(sessionID, id, input.Title, dataFiles)
+	viewPath, err := s.apiRegisterArtifact(sessionID, id, input.Title, dataFiles, input.Pinned != nil && *input.Pinned)
 	if err != nil {
 		_ = artifact.RemoveFiles(dir, id)
 		return toolResult(fmt.Sprintf("Error: %v", err), true), nil
@@ -80,7 +82,7 @@ func dataFilesNote(id string, files map[string]string) string {
 // Order: check existence via the API (nothing written for unknown ids), swap
 // the file atomically (keeping a backup), tell the server, and roll the file
 // back if the server refuses so file and metadata stay consistent.
-func (s *Server) updateArtifact(sessionID, id, path, title string, dataFiles *map[string]string) interface{} {
+func (s *Server) updateArtifact(sessionID, id, path, title string, dataFiles *map[string]string, pinned *bool) interface{} {
 	if !artifact.ValidID(id) {
 		return toolResult("Error: artifact_id is invalid (expected the 32-character id returned when it was published)", true)
 	}
@@ -101,7 +103,7 @@ func (s *Server) updateArtifact(sessionID, id, path, title string, dataFiles *ma
 		}
 		return toolResult(fmt.Sprintf("Error: %v", err), true)
 	}
-	viewPath, err := s.apiUpdateArtifact(sessionID, id, title, dataFiles)
+	viewPath, err := s.apiUpdateArtifact(sessionID, id, title, dataFiles, pinned)
 	if err != nil {
 		if rbErr := rep.Rollback(); rbErr != nil {
 			return toolResult(fmt.Sprintf("Error: %v (previous content could not be restored: %v)", err, rbErr), true)
@@ -136,7 +138,7 @@ func (s *Server) apiCheckArtifact(id string) error {
 	return nil
 }
 
-func (s *Server) apiUpdateArtifact(sessionID, id, title string, dataFiles *map[string]string) (string, error) {
+func (s *Server) apiUpdateArtifact(sessionID, id, title string, dataFiles *map[string]string, pinned *bool) (string, error) {
 	payload := map[string]interface{}{"sessionId": sessionID}
 	if title != "" {
 		payload["title"] = title
@@ -148,6 +150,9 @@ func (s *Server) apiUpdateArtifact(sessionID, id, title string, dataFiles *map[s
 		}
 		payload["dataFiles"] = m
 	}
+	if pinned != nil {
+		payload["pinned"] = *pinned
+	}
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequest("PUT", fmt.Sprintf("%s/api/artifacts/%s", s.apiURL, url.PathEscape(id)), strings.NewReader(string(body)))
 	if err != nil {
@@ -157,10 +162,13 @@ func (s *Server) apiUpdateArtifact(sessionID, id, title string, dataFiles *map[s
 	return doArtifactRequest(req)
 }
 
-func (s *Server) apiRegisterArtifact(sessionID, id, title string, dataFiles map[string]string) (string, error) {
+func (s *Server) apiRegisterArtifact(sessionID, id, title string, dataFiles map[string]string, pinned bool) (string, error) {
 	payload := map[string]interface{}{"id": id, "title": title}
 	if len(dataFiles) > 0 {
 		payload["dataFiles"] = dataFiles
+	}
+	if pinned {
+		payload["pinned"] = true
 	}
 	body, _ := json.Marshal(payload)
 	u := fmt.Sprintf("%s/api/sessions/%s/artifacts", s.apiURL, sessionID)

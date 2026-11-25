@@ -117,3 +117,65 @@ func TestStoreDeleteOnlyWithinDir(t *testing.T) {
 	_, err = os.Stat(dir)
 	assert.NoError(t, err, "artifacts root survives")
 }
+
+func TestPinnedArtifactsListFirst(t *testing.T) {
+	d := t.TempDir()
+	sqlDB, err := db.Open(filepath.Join(d, "t.db"))
+	require.NoError(t, err)
+	defer sqlDB.Close()
+	dir := filepath.Join(d, "artifacts")
+	st := NewStore(sqlDB, dir)
+	src := writeFile(t, filepath.Join(d, "a.html"), "<p>x</p>")
+
+	var ids []string
+	for _, title := range []string{"A", "B", "C"} {
+		id, err := Publish(dir, src)
+		require.NoError(t, err)
+		a, err := st.Register("s1", id, title, nil)
+		require.NoError(t, err)
+		assert.False(t, a.Pinned)
+		ids = append(ids, id)
+	}
+	// Newest first without pins.
+	all, err := st.ListAll()
+	require.NoError(t, err)
+	assert.Equal(t, []string{ids[2], ids[1], ids[0]}, idsOf(all))
+
+	// Multiple pins; the oldest ones jump to the top, keeping the base order.
+	a, err := st.SetPinned(ids[0], true)
+	require.NoError(t, err)
+	assert.True(t, a.Pinned)
+	_, err = st.SetPinned(ids[1], true)
+	require.NoError(t, err)
+	all, err = st.ListAll()
+	require.NoError(t, err)
+	assert.Equal(t, []string{ids[1], ids[0], ids[2]}, idsOf(all))
+	per, err := st.List("s1")
+	require.NoError(t, err)
+	assert.Equal(t, []string{ids[1], ids[0], ids[2]}, idsOf(per))
+
+	// Pinning does not bump updated_at; Touch keeps the pin.
+	got, _ := st.Get(ids[0])
+	assert.Equal(t, got.CreatedAt, got.UpdatedAt)
+	touched, err := st.Touch(ids[0], "", nil)
+	require.NoError(t, err)
+	assert.True(t, touched.Pinned)
+
+	// Unpin.
+	a, err = st.SetPinned(ids[0], false)
+	require.NoError(t, err)
+	assert.False(t, a.Pinned)
+
+	_, err = st.SetPinned(strings.Repeat("0", 32), true)
+	assert.ErrorIs(t, err, ErrNotFound)
+	_, err = st.SetPinned("../x", true)
+	assert.ErrorIs(t, err, ErrNotFound)
+}
+
+func idsOf(list []Artifact) []string {
+	out := []string{}
+	for _, a := range list {
+		out = append(out, a.ID)
+	}
+	return out
+}

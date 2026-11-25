@@ -14,6 +14,7 @@ import { useExperimental } from "./hooks/useExperimental";
 import { ActionMenu, ActionMenuItem } from "./components/ui/ActionMenu";
 import { BroadcastModal } from "./components/BroadcastModal";
 import { ClaudeLogin } from "./components/ClaudeLogin";
+import { PinnedArtifacts } from "./components/PinnedArtifacts";
 
 // Register service worker for mobile notifications
 if ("serviceWorker" in navigator) {
@@ -642,6 +643,8 @@ export function Dashboard() {
           <button onClick={() => setError(null)} className="ml-2 text-red-500 hover:text-red-800">x</button>
         </div>
       )}
+
+      <PinnedArtifacts />
 
       {/* Mobile tab switcher */}
       <div className="flex border-b border-gray-200">

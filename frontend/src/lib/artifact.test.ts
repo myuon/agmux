@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { artifactRawUrl, parseArtifactUrl } from "./artifact";
+import { artifactRawUrl, parseArtifactUrl, sortArtifacts } from "./artifact";
 
 describe("artifactRawUrl", () => {
   const id = "a".repeat(32);
@@ -36,5 +36,26 @@ describe("parseArtifactUrl", () => {
     expect(parseArtifactUrl(`/artifacts/xyz`)).toBeNull();
     expect(parseArtifactUrl(`http://a.com/other/${artifactId}`)).toBeNull();
     expect(parseArtifactUrl(`/artifacts/${artifactId}0`)).toBeNull();
+  });
+});
+
+describe("sortArtifacts", () => {
+  const mk = (id: string, updatedAt: string, pinned = false) => ({
+    id,
+    sessionId: "s",
+    title: id,
+    createdAt: updatedAt,
+    updatedAt,
+    pinned,
+  });
+
+  it("puts pinned first, then newest first", () => {
+    const list = [
+      mk("new", "2026-01-03T00:00:00Z"),
+      mk("old-pinned", "2026-01-01T00:00:00Z", true),
+      mk("mid", "2026-01-02T00:00:00Z"),
+      mk("new-pinned", "2026-01-04T00:00:00Z", true),
+    ];
+    expect(sortArtifacts(list).map((a) => a.id)).toEqual(["new-pinned", "old-pinned", "new", "mid"]);
   });
 });

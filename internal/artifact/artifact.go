@@ -54,6 +54,8 @@ type Artifact struct {
 	UpdatedAt string `json:"updatedAt"`
 	// DataFiles lists the names fetchable at /artifacts/{id}/data/{name}.
 	DataFiles []string `json:"dataFiles,omitempty"`
+	// Pinned artifacts are listed before all others.
+	Pinned bool `json:"pinned"`
 
 	data *DataFiles
 }
@@ -61,13 +63,15 @@ type Artifact struct {
 // Data returns the registered data file mapping (nil when there is none).
 func (a *Artifact) Data() *DataFiles { return a.data }
 
-const selectCols = `id, session_id, title, created_at, COALESCE(NULLIF(updated_at, ''), created_at), data_files, data_root`
+const selectCols = `id, session_id, title, created_at, COALESCE(NULLIF(updated_at, ''), created_at), data_files, data_root, pinned`
 
 func scanArtifact(sc interface{ Scan(...any) error }) (Artifact, error) {
 	var a Artifact
 	var paths, root string
-	err := sc.Scan(&a.ID, &a.SessionID, &a.Title, &a.CreatedAt, &a.UpdatedAt, &paths, &root)
+	var pinned int
+	err := sc.Scan(&a.ID, &a.SessionID, &a.Title, &a.CreatedAt, &a.UpdatedAt, &paths, &root, &pinned)
 	if err == nil {
+		a.Pinned = pinned != 0
 		a.data = decodeDataFiles(paths, root)
 		a.DataFiles = a.data.Names()
 	}
@@ -327,18 +331,38 @@ func (s *Store) Touch(id, title string, data *DataFiles) (*Artifact, error) {
 	return s.Get(id)
 }
 
-// List returns a session's artifacts, newest first.
+// SetPinned pins or unpins an artifact without touching updated_at.
+func (s *Store) SetPinned(id string, pinned bool) (*Artifact, error) {
+	if !ValidID(id) {
+		return nil, ErrNotFound
+	}
+	v := 0
+	if pinned {
+		v = 1
+	}
+	res, err := s.db.Exec(`UPDATE artifacts SET pinned = ? WHERE id = ?`, v, id)
+	if err != nil {
+		return nil, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, ErrNotFound
+	}
+	return s.Get(id)
+}
+
+// List returns a session's artifacts, pinned first, then newest first.
 func (s *Store) List(sessionID string) ([]Artifact, error) {
-	rows, err := s.db.Query(`SELECT `+selectCols+` FROM artifacts WHERE session_id = ? ORDER BY created_at DESC, rowid DESC`, sessionID)
+	rows, err := s.db.Query(`SELECT `+selectCols+` FROM artifacts WHERE session_id = ? ORDER BY pinned DESC, created_at DESC, rowid DESC`, sessionID)
 	if err != nil {
 		return nil, err
 	}
 	return collectArtifacts(rows)
 }
 
-// ListAll returns every artifact across sessions, most recently updated first.
+// ListAll returns every artifact across sessions, pinned first, then most
+// recently updated first.
 func (s *Store) ListAll() ([]Artifact, error) {
-	rows, err := s.db.Query(`SELECT ` + selectCols + ` FROM artifacts ORDER BY julianday(COALESCE(NULLIF(updated_at, ''), created_at)) DESC, rowid DESC`)
+	rows, err := s.db.Query(`SELECT ` + selectCols + ` FROM artifacts ORDER BY pinned DESC, julianday(COALESCE(NULLIF(updated_at, ''), created_at)) DESC, rowid DESC`)
 	if err != nil {
 		return nil, err
 	}
