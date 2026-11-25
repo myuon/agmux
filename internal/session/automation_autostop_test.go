@@ -417,3 +417,17 @@ func TestAutoStop_RecoverKeepsWaitingInput(t *testing.T) {
 		t.Fatalf("status = %s, want waiting_input", st)
 	}
 }
+
+// A non-automation session created with AutoStop (learning inbox apply
+// sessions) is stopped and archived after its turn like an Automation run.
+func TestAutoStop_AutoStopOptArchivesAfterTurn(t *testing.T) {
+	m, rec := autoStopTestManager(t)
+	s, err := m.Create("apply", t.TempDir(), "do it", false, CreateOpts{AutoStop: true})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	rec.waitSpawn()
+	fh := rec.last()
+	fh.emitTurnComplete(t)
+	waitStatus(t, m, s.ID, StatusArchived)
+}

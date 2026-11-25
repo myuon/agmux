@@ -675,6 +675,10 @@ type CreateOpts struct {
 	AutomationID            string // ID of the automation that created this session (empty for manual sessions)
 	AutoName                bool   // name is a UI default; auto-title it from the first user message (#770)
 	CreatedBySessionID      string // session that created this one (AGMUX_SESSION_ID); recorded for project membership (#805)
+	// AutoStop arms the same turn-end stop-and-archive that Automation runs
+	// get, for one-shot sessions started by agmux itself (e.g. learning inbox
+	// apply sessions) that would otherwise stay idle forever.
+	AutoStop bool
 }
 
 // initialCreateStatus returns the status a freshly created session must be
@@ -713,6 +717,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 	automationID := ""
 	createdBySessionID := ""
 	autoName := false
+	autoStop := false
 	if len(opts) > 0 {
 		if opts[0].Provider != "" {
 			pn = opts[0].Provider
@@ -725,6 +730,7 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		ephemeral = opts[0].Ephemeral
 		ephemeralTimeoutSeconds = opts[0].EphemeralTimeoutSeconds
 		automationID = opts[0].AutomationID
+		autoStop = opts[0].AutoStop
 		autoName = opts[0].AutoName
 		createdBySessionID = opts[0].CreatedBySessionID
 	}
@@ -864,8 +870,9 @@ func (m *Manager) Create(name, projectPath, prompt string, worktree bool, opts .
 		return nil, fmt.Errorf("insert session: %w", err)
 	}
 
-	// Automation sessions stop themselves once their initial turn is done.
-	if automationID != "" && sp != nil {
+	// Automation sessions (and AutoStop sessions) stop themselves once their
+	// initial turn is done.
+	if (automationID != "" || autoStop) && sp != nil {
 		m.armAutoStop(id)
 	}
 
