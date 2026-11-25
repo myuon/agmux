@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -1061,6 +1062,9 @@ func (m *Manager) List() ([]Session, error) {
 	return sessions, rows.Err()
 }
 
+// ErrSessionNotFound is returned (wrapped) by Get when the id is unknown.
+var ErrSessionNotFound = errors.New("session not found")
+
 func (m *Manager) Get(id string) (*Session, error) {
 	var s Session
 	var status string
@@ -1075,7 +1079,7 @@ func (m *Manager) Get(id string) (*Session, error) {
 		 FROM sessions WHERE id = ?`, id,
 	).Scan(&s.ID, &s.Name, &s.NameSource, &s.ProjectPath, &prompt, &systemPrompt, &status, &sessionType, &providerStr, &s.CliSessionID, &s.Model, &s.PendingModel, &parentSessionID, &roleTemplate, &automationID, &createdBy, &currentTask, &goal, &goalsJSON, &lastError, &s.HolderPID, &s.ClearOffset, &conversationStartedInt, &ephemeralTimeoutSeconds, &completionReport, &s.Unread, &s.CreatedAt, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("session not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrSessionNotFound, id)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("query session: %w", err)

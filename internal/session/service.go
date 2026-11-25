@@ -16,6 +16,8 @@ type SessionService interface {
 	Fork(id string, preserveContext bool, initialPrompt string) (*Session, error)
 	// Stop stops a running session.
 	Stop(id string) error
+	// Archive stops the session and marks it archived (no-op if already archived).
+	Archive(id string) error
 	// Delete deletes a session.
 	Delete(id string) error
 

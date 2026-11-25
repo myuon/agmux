@@ -407,6 +407,7 @@ func sessionCmd() *cobra.Command {
 	cmd.AddCommand(sessionCreateCmd())
 	cmd.AddCommand(sessionListCmd())
 	cmd.AddCommand(sessionStopCmd())
+	cmd.AddCommand(sessionArchiveCmd())
 	cmd.AddCommand(sessionDeleteCmd())
 	cmd.AddCommand(sessionForkCmd())
 	cmd.AddCommand(sessionSendCmd())
@@ -664,6 +665,34 @@ func sessionStopCmd() *cobra.Command {
 				return err
 			}
 			fmt.Println("Session stopped.")
+			return nil
+		},
+	}
+}
+
+func sessionArchiveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "archive <id>...",
+		Short: "Stop and archive one or more sessions",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, _ := config.Load()
+			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			if err != nil {
+				return err
+			}
+			failed := 0
+			for _, id := range args {
+				if err := mgr.Archive(id); err != nil {
+					fmt.Fprintf(os.Stderr, "%s: %v\n", id, err)
+					failed++
+					continue
+				}
+				fmt.Printf("%s: archived\n", id)
+			}
+			if failed > 0 {
+				return fmt.Errorf("%d of %d sessions failed to archive", failed, len(args))
+			}
 			return nil
 		},
 	}
