@@ -175,6 +175,23 @@ func (m *Manager) stopAndArchive(id string) error {
 	if _, err := m.Get(id); err != nil {
 		return err
 	}
+	return m.archiveSession(id)
+}
+
+// Archive stops the session and leaves it archived. Archiving an already
+// archived session is a no-op. An unknown id wraps ErrSessionNotFound.
+func (m *Manager) Archive(id string) error {
+	s, err := m.Get(id)
+	if err != nil {
+		return err
+	}
+	if s.Status == StatusArchived {
+		return nil
+	}
+	return m.archiveSession(id)
+}
+
+func (m *Manager) archiveSession(id string) error {
 	m.cancelEphemeralTimeout(id)
 	m.disarmAutoStop(id)
 	m.stopStreamProcess(id)

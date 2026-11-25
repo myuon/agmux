@@ -2,6 +2,7 @@ package session
 
 import (
 	"bufio"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -430,4 +431,36 @@ func TestAutoStop_AutoStopOptArchivesAfterTurn(t *testing.T) {
 	fh := rec.last()
 	fh.emitTurnComplete(t)
 	waitStatus(t, m, s.ID, StatusArchived)
+}
+
+func TestArchive_StopsAndArchivesAndIsIdempotent(t *testing.T) {
+	m, rec := autoStopTestManager(t)
+	id, _ := createAutoSession(t, m, rec, "")
+
+	if err := m.Archive(id); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	s, err := m.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Status != StatusArchived || s.HolderPID != 0 {
+		t.Fatalf("want archived with no holder, got %+v", s)
+	}
+	m.streamMu.Lock()
+	_, running := m.streamProcesses[id]
+	m.streamMu.Unlock()
+	if running {
+		t.Fatal("stream process should be stopped")
+	}
+	if err := m.Archive(id); err != nil {
+		t.Fatalf("second Archive should be a no-op: %v", err)
+	}
+}
+
+func TestArchive_UnknownID(t *testing.T) {
+	m, _ := autoStopTestManager(t)
+	if err := m.Archive("nope"); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("want ErrSessionNotFound, got %v", err)
+	}
 }

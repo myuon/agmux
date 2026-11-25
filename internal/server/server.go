@@ -215,6 +215,7 @@ func (s *Server) setupRoutes() {
 		r.Patch("/sessions/{id}", s.updateSession)
 		r.Delete("/sessions/{id}", s.deleteSession)
 		r.Post("/sessions/{id}/stop", s.stopSession)
+		r.Post("/sessions/{id}/archive", s.archiveSession)
 		r.Post("/sessions/{id}/read", s.markSessionRead)
 		r.Post("/sessions/{id}/send", s.sendToSession)
 		r.Post("/sessions/{id}/exec", s.execInSession)
@@ -601,6 +602,21 @@ func (s *Server) stopSession(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordSessionAction(id, "session_stop", "")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "paused"})
+}
+
+func (s *Server) archiveSession(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := s.sessions.Archive(id); err != nil {
+		if errors.Is(err, session.ErrSessionNotFound) {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.recordSessionAction(id, "session_archive", "")
+	s.broadcastSessionUpdate()
+	writeJSON(w, http.StatusOK, map[string]string{"status": "archived"})
 }
 
 func (s *Server) sendToSession(w http.ResponseWriter, r *http.Request) {

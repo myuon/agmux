@@ -88,6 +88,7 @@ agmux session create <name> -p <path>       # セッション作成
 agmux session create <name> -p <path> -m "prompt"  # 初期プロンプト付き
 agmux session send <id> "message"           # メッセージ送信
 agmux session stop <id>                     # 停止
+agmux session archive <id>...               # 停止してアーカイブ（複数指定可）
 agmux session delete <id>                   # 削除
 ```
 
