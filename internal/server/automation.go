@@ -36,8 +36,10 @@ type automationRequest struct {
 	// WatchTarget is the goal of WatchMetric: a number, or null / "" to clear
 	// it on update. Absent keeps the stored value.
 	WatchTarget json.RawMessage `json:"watchTarget,omitempty"`
-	// CreatedBySessionID records the creating session on create (#805).
-	CreatedBySessionID string `json:"createdBySessionId,omitempty"`
+	// CreatedBySessionID records the creating session on create (#805). On
+	// update, omitting it keeps the stored value and "" clears it, so the
+	// automation is grouped by projectPath instead of the creator's project.
+	CreatedBySessionID *string `json:"createdBySessionId,omitempty"`
 }
 
 // checkLoopFeatures rejects queue triggers and safety valves while the
@@ -145,7 +147,7 @@ func (s *Server) createAutomation(w http.ResponseWriter, r *http.Request) {
 		Model:          deref(req.Model),
 		Enabled:        req.Enabled,
 
-		CreatedBySessionID: req.CreatedBySessionID,
+		CreatedBySessionID: deref(req.CreatedBySessionID),
 	})
 	if err != nil {
 		// Store.Create only fails on validation errors or DB errors; treat
@@ -207,6 +209,8 @@ func (s *Server) updateAutomation(w http.ResponseWriter, r *http.Request) {
 		ProjectPath:      req.ProjectPath,
 		Model:            req.Model,
 		Enabled:          req.Enabled,
+
+		CreatedBySessionID: req.CreatedBySessionID,
 	})
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

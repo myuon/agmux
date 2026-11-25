@@ -428,6 +428,37 @@ func TestAutomationCreate_RecordsCreatedBySessionID(t *testing.T) {
 	}
 }
 
+// PUT keeps createdBySessionId when omitted, and "" clears it so the
+// automation follows projectPath.
+func TestAutomationUpdate_CreatedBySessionID(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	s := newAutomationTestServer(t)
+	rec := doJSON(t, s, http.MethodPost, "/api/automations",
+		`{"name":"n","prompt":"p","triggerType":"interval","triggerValue":"1h","enabled":true,"createdBySessionId":"coord-1"}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("code %d: %s", rec.Code, rec.Body.String())
+	}
+	var a automation.Automation
+	if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ extra, want string }{
+		{``, "coord-1"},
+		{`,"createdBySessionId":"coord-2"`, "coord-2"},
+		{`,"createdBySessionId":""`, ""},
+	} {
+		rec := doJSON(t, s, http.MethodPut, "/api/automations/"+a.ID,
+			`{"name":"n","prompt":"p","triggerType":"interval","triggerValue":"1h","enabled":true`+tc.extra+`}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("code %d: %s", rec.Code, rec.Body.String())
+		}
+		got, err := s.automations.Get(a.ID)
+		if err != nil || got.CreatedBySessionID != tc.want {
+			t.Fatalf("%q: stored = %q, %v; want %q", tc.extra, got.CreatedBySessionID, err, tc.want)
+		}
+	}
+}
+
 func TestProjects_ListPerformance(t *testing.T) {
 	s := newProjectsTestServer(t, true)
 	for i := 0; i < 30; i++ {

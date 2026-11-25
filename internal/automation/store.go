@@ -125,6 +125,9 @@ type UpdateParams struct {
 	// Clearing the metric clears the target too.
 	WatchTarget      *float64
 	ClearWatchTarget bool
+	// CreatedBySessionID is optional: nil keeps the stored value, a pointer
+	// to "" clears it (the project then follows ProjectPath).
+	CreatedBySessionID *string
 }
 
 // Update replaces the editable fields of an automation.
@@ -187,9 +190,13 @@ func (s *Store) Update(id string, p UpdateParams) (*Automation, error) {
 	if p.Model != nil {
 		setModel, model = 1, strings.TrimSpace(*p.Model)
 	}
+	setCreatedBy, createdBy := 0, ""
+	if p.CreatedBySessionID != nil {
+		setCreatedBy, createdBy = 1, strings.TrimSpace(*p.CreatedBySessionID)
+	}
 	res, err := s.db.Exec(
-		`UPDATE automations SET name = ?, prompt = ?, trigger_type = ?, trigger_value = ?, project_path = ?, model = CASE WHEN ? = 1 THEN ? ELSE model END, max_runs = CASE WHEN ? = 1 THEN ? ELSE max_runs END, until = CASE WHEN ? = 1 THEN ? ELSE until END, watch_metric = CASE WHEN ? = 1 THEN ? ELSE watch_metric END, watch_direction = CASE WHEN ? = 1 THEN ? ELSE watch_direction END, watch_target = CASE WHEN ? = 1 THEN ? ELSE watch_target END, enabled = ?, updated_at = ? WHERE id = ?`,
-		p.Name, p.Prompt, string(p.TriggerType), p.TriggerValue, p.ProjectPath, setModel, model, setMax, maxRuns, setUntil, p.Until, boolToInt(setWatch), watchMetric, boolToInt(setWatch), string(watchDir), boolToInt(setWatch), watchTarget, boolToInt(p.Enabled), time.Now(), id,
+		`UPDATE automations SET name = ?, prompt = ?, trigger_type = ?, trigger_value = ?, project_path = ?, model = CASE WHEN ? = 1 THEN ? ELSE model END, max_runs = CASE WHEN ? = 1 THEN ? ELSE max_runs END, until = CASE WHEN ? = 1 THEN ? ELSE until END, watch_metric = CASE WHEN ? = 1 THEN ? ELSE watch_metric END, watch_direction = CASE WHEN ? = 1 THEN ? ELSE watch_direction END, watch_target = CASE WHEN ? = 1 THEN ? ELSE watch_target END, created_by_session_id = CASE WHEN ? = 1 THEN ? ELSE created_by_session_id END, enabled = ?, updated_at = ? WHERE id = ?`,
+		p.Name, p.Prompt, string(p.TriggerType), p.TriggerValue, p.ProjectPath, setModel, model, setMax, maxRuns, setUntil, p.Until, boolToInt(setWatch), watchMetric, boolToInt(setWatch), string(watchDir), boolToInt(setWatch), watchTarget, setCreatedBy, createdBy, boolToInt(p.Enabled), time.Now(), id,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("update automation: %w", err)
