@@ -1,15 +1,10 @@
 import { useCallback, useState } from "react";
 import { Link, useLoaderData, useNavigate } from "react-router-dom";
-import { FileText } from "lucide-react";
+import { FileText, Pin } from "lucide-react";
 import { api, type Artifact } from "../api/client";
 import type { Session } from "../types/session";
 import { useWebSocket } from "../hooks/useWebSocket";
-
-function sortArtifacts(list: Artifact[]): Artifact[] {
-  return [...list].sort((a, b) =>
-    Date.parse(b.updatedAt || b.createdAt) - Date.parse(a.updatedAt || a.createdAt),
-  );
-}
+import { ARTIFACT_WS_TYPES, sortArtifacts } from "../lib/artifact";
 
 // ArtifactsPage lists every published HTML artifact across sessions.
 export function ArtifactsPage() {
@@ -19,15 +14,19 @@ export function ArtifactsPage() {
     sessions: Session[];
   }>();
   const [artifacts, setArtifacts] = useState<Artifact[]>(sortArtifacts(initial));
+  const togglePin = (a: Artifact) => {
+    const pinned = !a.pinned;
+    // Optimistic: apply immediately, reload on failure.
+    setArtifacts((cur) => sortArtifacts(cur.map((x) => (x.id === a.id ? { ...x, pinned } : x))));
+    api.setArtifactPinned(a.id, pinned).catch(() => {
+      api.listAllArtifacts().then((l) => setArtifacts(sortArtifacts(l))).catch(() => {});
+    });
+  };
   const names = new Map(sessions.map((s) => [s.id, s.name]));
 
   useWebSocket(
     useCallback((msg: { type: string; data: unknown }) => {
-      if (
-        msg.type === "artifact_created" ||
-        msg.type === "artifact_updated" ||
-        msg.type === "artifact_deleted"
-      ) {
+      if (ARTIFACT_WS_TYPES.includes(msg.type)) {
         api.listAllArtifacts().then((l) => setArtifacts(sortArtifacts(l))).catch(() => {});
       }
     }, []),
@@ -47,13 +46,30 @@ export function ArtifactsPage() {
         ) : (
           artifacts.map((a) => (
             <div key={a.id} className="bg-white rounded-lg border border-gray-200 shadow-sm p-3 min-w-0">
-              <Link
-                to={`/artifacts/${a.id}`}
-                className="flex items-center gap-2 text-sm font-medium text-blue-700 hover:underline min-w-0"
-              >
-                <FileText size={14} className="shrink-0" />
-                <span className="truncate">{a.title}</span>
-              </Link>
+              <div className="flex items-center gap-2 min-w-0">
+                <Link
+                  to={`/artifacts/${a.id}`}
+                  className="flex flex-1 items-center gap-2 text-sm font-medium text-blue-700 hover:underline min-w-0"
+                >
+                  {a.pinned ? (
+                    <Pin size={14} className="shrink-0 fill-amber-400 text-amber-500" data-testid="artifact-pinned-mark" />
+                  ) : (
+                    <FileText size={14} className="shrink-0" />
+                  )}
+                  <span className="truncate">{a.title}</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => togglePin(a)}
+                  aria-pressed={!!a.pinned}
+                  aria-label={a.pinned ? "ピン留めを解除" : "ピン留めする"}
+                  title={a.pinned ? "ピン留めを解除" : "ピン留めする"}
+                  data-testid="artifact-pin-toggle"
+                  className={`shrink-0 p-1.5 rounded hover:bg-gray-100 ${a.pinned ? "text-amber-500" : "text-gray-400"}`}
+                >
+                  <Pin size={16} className={a.pinned ? "fill-amber-400" : ""} />
+                </button>
+              </div>
               <div className="mt-1 flex items-center gap-2 text-xs text-gray-500 min-w-0">
                 <Link to={`/sessions/${a.sessionId}`} className="truncate hover:underline min-w-0">
                   {names.get(a.sessionId) || a.sessionId}

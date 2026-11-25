@@ -636,6 +636,11 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Migration: pinned artifacts are listed first
+	if _, err = db.Exec(`ALTER TABLE artifacts ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`); err != nil && !isAlterTableDuplicate(err) {
+		return err
+	}
+
 	// Migration: create secrets table (METADATA ONLY — secret values are kept
 	// in a backend such as the macOS Keychain and must never be stored here).
 	// backend: 'keychain' | 'file' (| '1password' in the future, using ref).

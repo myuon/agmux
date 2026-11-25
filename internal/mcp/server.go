@@ -302,6 +302,10 @@ func (s *Server) handleMethod(method string, params json.RawMessage) (interface{
 								"type":        "string",
 								"description": "更新する公開済みアーティファクトの id（公開時の結果に表示される）。指定すると新規公開せず、その id の内容を path のファイルで差し替える",
 							},
+							"pinned": map[string]interface{}{
+								"type":        "boolean",
+								"description": "true にするとアーティファクトをピン留めし、一覧の先頭に固定してホーム画面からも1タップで開けるようにする。新規公開では true で公開と同時にピン留め（省略は未ピン留め）。artifact_id 指定時は true でピン留め、false で解除、省略すると現状のまま",
+							},
 							"data_files": map[string]interface{}{
 								"type":                 "object",
 								"description":          "HTML から毎回読み込めるデータファイル。名前 → 絶対パスのオブジェクト（例: {\"ideas.json\": \"/path/to/project/ideas.json\"}）。HTML からは自動注入されるヘルパーで await (await agmuxData(\"ideas.json\")).json() のように取得する。パスはシンボリックリンク解決後にこのセッションのプロジェクトディレクトリ内の通常ファイルである必要があり（~/.agmux 配下は不可）、満たさない場合はエラー。名前は [A-Za-z0-9._-]（先頭ドット不可）、最大 16 件。artifact_id 指定時は、指定すると登録内容を置き換え、省略すると既存のまま、{} で解除",

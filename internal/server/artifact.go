@@ -36,6 +36,7 @@ func (s *Server) mountArtifacts(r chi.Router) {
 	r.Post("/sessions/{id}/artifacts", s.createArtifact)
 	r.Get("/artifacts/{id}", s.getArtifact)
 	r.Put("/artifacts/{id}", s.updateArtifact)
+	r.Patch("/artifacts/{id}", s.patchArtifact)
 	r.Delete("/artifacts/{id}", s.deleteArtifact)
 }
 
@@ -110,6 +111,8 @@ type createArtifactRequest struct {
 	// DataFiles maps name → absolute path of files the artifact may fetch
 	// (see artifact.ResolveDataFiles for the restrictions).
 	DataFiles map[string]string `json:"dataFiles"`
+	// Pinned pins the artifact on creation.
+	Pinned bool `json:"pinned"`
 }
 
 // resolveArtifactData validates data files against the session's project dir.
@@ -154,6 +157,13 @@ func (s *Server) createArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Pinned {
+		if a, err = store.SetPinned(a.ID, true); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
 	url := "/artifacts/" + a.ID
 	message := "HTML を公開しました: " + a.Title
 	s.recordSessionAction(sessionID, "agent_notification", message)
@@ -184,6 +194,8 @@ type updateArtifactRequest struct {
 	// clears it); omitted or null keeps the current one. Paths are validated
 	// against the project dir of the session performing the update.
 	DataFiles *map[string]string `json:"dataFiles"`
+	// Pinned pins (true) or unpins (false) the artifact; omitted keeps it.
+	Pinned *bool `json:"pinned"`
 }
 
 // updateArtifact records that the content of an existing artifact was
@@ -238,6 +250,13 @@ func (s *Server) updateArtifact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Pinned != nil {
+		if a, err = store.SetPinned(a.ID, *req.Pinned); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+
 	url := "/artifacts/" + a.ID
 	message := "HTML を更新しました: " + a.Title
 	s.recordSessionAction(notifySession, "agent_notification", message)
@@ -255,6 +274,35 @@ func (s *Server) updateArtifact(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 	writeJSON(w, http.StatusOK, map[string]interface{}{"artifact": a, "url": url})
+}
+
+type patchArtifactRequest struct {
+	Pinned *bool `json:"pinned"`
+}
+
+// patchArtifact changes artifact flags (currently only pinned). It does not
+// touch updated_at nor notify the user.
+func (s *Server) patchArtifact(w http.ResponseWriter, r *http.Request) {
+	store := s.artifactStore(w)
+	if store == nil {
+		return
+	}
+	var req patchArtifactRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Pinned == nil {
+		writeError(w, http.StatusBadRequest, "pinned is required")
+		return
+	}
+	a, err := store.SetPinned(chi.URLParam(r, "id"), *req.Pinned)
+	if err != nil {
+		if errors.Is(err, artifact.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "artifact not found")
+		} else {
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	s.hub.Broadcast(Message{Type: "artifact_pinned", Data: a})
+	writeJSON(w, http.StatusOK, a)
 }
 
 func (s *Server) getArtifact(w http.ResponseWriter, r *http.Request) {

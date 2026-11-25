@@ -187,3 +187,44 @@ func TestPublishArtifactNewStillRequiresTitle(t *testing.T) {
 		t.Fatal("title must stay required without artifact_id")
 	}
 }
+
+func TestPublishArtifactPinnedParam(t *testing.T) {
+	// Update: true / false are forwarded, omitted is not.
+	api := &fakeArtifactAPI{}
+	s, id, _ := setupUpdate(t, api)
+	src := writeSrc(t, "a.html", "<p>new</p>")
+	for _, c := range []struct {
+		extra string
+		want  string
+	}{{`,"pinned":true`, `"pinned":true`}, {`,"pinned":false`, `"pinned":false`}, {``, ``}} {
+		res, _ := s.handlePublishArtifact([]byte(`{"path":"` + src + `","artifact_id":"` + id + `"` + c.extra + `}`))
+		if isErr(res) {
+			t.Fatalf("unexpected error: %s", toolText(t, res))
+		}
+		last := api.calls[len(api.calls)-1]
+		if c.want == "" && strings.Contains(last, "pinned") {
+			t.Fatalf("pinned should be omitted: %s", last)
+		}
+		if c.want != "" && !strings.Contains(last, c.want) {
+			t.Fatalf("want %s in %s", c.want, last)
+		}
+	}
+
+	// Create: pinned:true is sent with the registration; default omits it.
+	var bodies []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(b))
+		w.Write([]byte(`{"url":"/artifacts/abc"}`))
+	}))
+	defer ts.Close()
+	cs := NewServerForHTTP("sess-1", ts.URL)
+	for _, extra := range []string{`,"pinned":true`, ``} {
+		if res, _ := cs.handlePublishArtifact([]byte(`{"path":"` + src + `","title":"T"` + extra + `}`)); isErr(res) {
+			t.Fatalf("unexpected error: %s", toolText(t, res))
+		}
+	}
+	if !strings.Contains(bodies[0], `"pinned":true`) || strings.Contains(bodies[1], "pinned") {
+		t.Fatalf("bodies = %v", bodies)
+	}
+}

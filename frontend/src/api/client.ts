@@ -9,6 +9,7 @@ export interface Artifact {
   title: string;
   createdAt: string;
   updatedAt: string;
+  pinned: boolean;
 }
 
 // ChoiceCard mirrors `ChoiceCard` in internal/server/choice_cards.go.
@@ -530,6 +531,12 @@ export const api = {
     request<Artifact[]>(`/sessions/${sessionId}/artifacts`),
   listAllArtifacts: () => request<Artifact[]>("/artifacts"),
   getArtifact: (id: string) => request<Artifact>(`/artifacts/${id}`),
+  setArtifactPinned: (id: string, pinned: boolean) =>
+    request<Artifact>(`/artifacts/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pinned }),
+    }),
   deleteArtifact: (id: string) =>
     request<{ status: string }>(`/artifacts/${id}`, { method: "DELETE" }),
 
