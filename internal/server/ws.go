@@ -36,7 +36,7 @@ func NewHub(logger *slog.Logger) *Hub {
 		register:   make(chan *wsClient),
 		unregister: make(chan *wsClient),
 		logger:     logger.With("component", "ws"),
-		upgrader:   websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }},
+		upgrader:   websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }, EnableCompression: true},
 	}
 }
 

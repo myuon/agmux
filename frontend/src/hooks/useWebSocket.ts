@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
 interface WSMessage {
   type: string;
@@ -7,61 +7,102 @@ interface WSMessage {
 
 export type WSConnectionState = "connecting" | "connected" | "disconnected";
 
-export function useWebSocket(onMessage: (msg: WSMessage) => void) {
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const backoffRef = useRef(1000); // Start with 1s backoff
-  const [connectionState, setConnectionState] = useState<WSConnectionState>("connecting");
+// The app shares ONE WebSocket connection. It is opened when the first
+// subscriber mounts and closed when the last one unmounts (ref-counted).
+type MessageListener = (msg: WSMessage) => void;
+type StateListener = (state: WSConnectionState) => void;
 
-  const connect = useCallback(() => {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-    wsRef.current = ws;
+const messageListeners = new Set<MessageListener>();
+const stateListeners = new Set<StateListener>();
+let ws: WebSocket | null = null;
+let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+let backoff = 1000; // Start with 1s backoff
+let currentState: WSConnectionState = "connecting";
 
-    setConnectionState("connecting");
+function setState(state: WSConnectionState) {
+  currentState = state;
+  stateListeners.forEach((l) => l(state));
+}
 
-    ws.onopen = () => {
-      console.log("WebSocket connected");
-      backoffRef.current = 1000; // Reset backoff on successful connection
-      setConnectionState("connected");
-    };
+function connect() {
+  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+  ws = socket;
+  setState("connecting");
 
-    ws.onmessage = (event) => {
+  socket.onopen = () => {
+    console.log("WebSocket connected");
+    backoff = 1000; // Reset backoff on successful connection
+    setState("connected");
+  };
+
+  socket.onmessage = (event) => {
+    let msg: WSMessage;
+    try {
+      msg = JSON.parse(event.data) as WSMessage;
+    } catch {
+      console.error("Failed to parse WS message");
+      return;
+    }
+    messageListeners.forEach((l) => {
       try {
-        const msg = JSON.parse(event.data) as WSMessage;
-        onMessage(msg);
-      } catch {
-        console.error("Failed to parse WS message");
+        l(msg);
+      } catch (e) {
+        console.error("WS listener error", e);
       }
-    };
+    });
+  };
 
-    ws.onclose = () => {
-      // Only the socket we currently own may schedule a reconnect. When the
-      // effect cleanup closes a socket it clears the reconnect timer *before*
-      // close() and onclose fires afterwards, so an unguarded reconnect here
-      // would open an extra connection that nobody cleans up. That extra
-      // socket stays live next to the one the current effect created and
-      // delivers every message a second time to the same handler, which is
-      // how live stream lines ended up rendered twice (issue #709).
-      if (wsRef.current !== ws) return;
-      setConnectionState("disconnected");
-      const delay = backoffRef.current;
-      console.log(`WebSocket disconnected, reconnecting in ${delay}ms...`);
-      reconnectTimer.current = setTimeout(connect, delay);
-      // Exponential backoff: 1s -> 2s -> 4s -> 8s -> 16s -> 30s (max)
-      backoffRef.current = Math.min(backoffRef.current * 2, 30000);
-    };
-  }, [onMessage]);
+  socket.onclose = () => {
+    // Only the socket we currently own may schedule a reconnect (see #709):
+    // closing on last unsubscribe clears ws before onclose fires.
+    if (ws !== socket) return;
+    setState("disconnected");
+    const delay = backoff;
+    console.log(`WebSocket disconnected, reconnecting in ${delay}ms...`);
+    reconnectTimer = setTimeout(connect, delay);
+    // Exponential backoff: 1s -> 2s -> 4s -> 8s -> 16s -> 30s (max)
+    backoff = Math.min(backoff * 2, 30000);
+  };
+}
+
+function disconnect() {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = undefined;
+  const socket = ws;
+  ws = null;
+  backoff = 1000;
+  currentState = "connecting";
+  socket?.close();
+}
+
+function subscribeState(listener: StateListener) {
+  stateListeners.add(listener);
+  return () => {
+    stateListeners.delete(listener);
+  };
+}
+
+function getState() {
+  return currentState;
+}
+
+export function useWebSocket(onMessage: (msg: WSMessage) => void) {
+  const handlerRef = useRef(onMessage);
+  useEffect(() => {
+    handlerRef.current = onMessage;
+  });
+  const connectionState = useSyncExternalStore(subscribeState, getState);
 
   useEffect(() => {
-    connect();
+    const messageListener: MessageListener = (msg) => handlerRef.current(msg);
+    messageListeners.add(messageListener);
+    if (messageListeners.size === 1) connect();
     return () => {
-      clearTimeout(reconnectTimer.current);
-      const ws = wsRef.current;
-      wsRef.current = null;
-      ws?.close();
+      messageListeners.delete(messageListener);
+      if (messageListeners.size === 0) disconnect();
     };
-  }, [connect]);
+  }, []);
 
   return { connectionState };
 }
