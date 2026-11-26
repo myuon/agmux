@@ -105,7 +105,7 @@ func TestTrackHolderExit_ReapsZombieAndKeepsStatus(t *testing.T) {
 		t.Fatalf("start child: %v", err)
 	}
 	pid := child.Process.Pid
-	trackHolderExit(child.Process)
+	trackHolderExit("trackedholder", child.Process)
 
 	v, ok := spawnedHolderExits.Load(pid)
 	if !ok {

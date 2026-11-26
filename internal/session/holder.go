@@ -468,7 +468,7 @@ func SpawnHolder(sessionID string, cmdArgs []string, projectPath string, env []s
 	// zombie under the daemon. The holder is in its own session (Setsid), so
 	// waiting on it does not tie its lifetime to ours: if the daemon exits
 	// first, the holder is simply reparented and keeps running.
-	trackHolderExit(cmd.Process)
+	trackHolderExit(sessionID, cmd.Process)
 	logFile.Close()
 
 	return pid, nil
@@ -665,23 +665,48 @@ var (
 
 // holderExit records the exit of a holder spawned by this process.
 type holderExit struct {
-	done   chan struct{}
-	status string
+	sessionID string
+	done      chan struct{}
+	status    string
 }
 
 // spawnedHolderExits maps the PID of a holder spawned by this process to its
-// *holderExit. Entries are removed some time after the holder exits.
+// *holderExit. An exit record is kept until the same session spawns a new
+// holder (or the PID is reused by a newer holder of ours), so that a stale
+// holder_pid whose PID the OS has handed to an unrelated process is still
+// treated as dead by IsHolderAlive and never signalled.
 var spawnedHolderExits sync.Map
 
-// holderExitRetention is how long an exit record is kept after the holder
-// exits, so that reapIfExited can still report it during the connect wait.
-var holderExitRetention = 5 * time.Minute
+// holderExitObservers are called with (sessionID, pid) after a holder spawned
+// by this process has been reaped.
+var (
+	holderExitObserversMu sync.Mutex
+	holderExitObservers   []func(sessionID string, pid int)
+)
+
+// addHolderExitObserver registers fn to be called after a holder exit is
+// reaped. fn runs on the reaping goroutine.
+func addHolderExitObserver(fn func(sessionID string, pid int)) {
+	holderExitObserversMu.Lock()
+	holderExitObservers = append(holderExitObservers, fn)
+	holderExitObserversMu.Unlock()
+}
 
 // trackHolderExit waits for proc in the background so the exited holder is
 // reaped instead of remaining a zombie, and records its exit status for
-// reapIfExited.
-func trackHolderExit(proc *os.Process) {
-	e := &holderExit{done: make(chan struct{})}
+// reapIfExited and IsHolderAlive.
+func trackHolderExit(sessionID string, proc *os.Process) {
+	// The session is getting a new holder: exit records of its earlier
+	// holders are no longer needed (their PIDs are no longer in the DB).
+	spawnedHolderExits.Range(func(k, v any) bool {
+		old := v.(*holderExit)
+		if old.sessionID == sessionID && old.exited() {
+			spawnedHolderExits.CompareAndDelete(k, old)
+		}
+		return true
+	})
+
+	e := &holderExit{sessionID: sessionID, done: make(chan struct{})}
 	pid := proc.Pid
 	spawnedHolderExits.Store(pid, e)
 	go func() {
@@ -694,11 +719,37 @@ func trackHolderExit(proc *os.Process) {
 			e.status = state.String()
 		}
 		close(e.done)
-		slog.Info("holder reaped", "pid", pid, "status", e.status)
-		time.AfterFunc(holderExitRetention, func() {
-			spawnedHolderExits.CompareAndDelete(pid, e)
-		})
+		slog.Info("holder reaped", "pid", pid, "sessionId", sessionID, "status", e.status)
+
+		// The PID is free for reuse from now on. Skip the observers if a
+		// newer holder of ours already took this PID over.
+		if v, ok := spawnedHolderExits.Load(pid); !ok || v != e {
+			return
+		}
+		holderExitObserversMu.Lock()
+		observers := append([]func(string, int){}, holderExitObservers...)
+		holderExitObserversMu.Unlock()
+		for _, fn := range observers {
+			fn(sessionID, pid)
+		}
 	}()
+}
+
+func (e *holderExit) exited() bool {
+	select {
+	case <-e.done:
+		return true
+	default:
+		return false
+	}
+}
+
+// holderReaped reports whether pid belongs to a holder spawned by this
+// process that has already exited and been reaped. Such a PID may since have
+// been reused by an unrelated process.
+func holderReaped(pid int) bool {
+	v, ok := spawnedHolderExits.Load(pid)
+	return ok && v.(*holderExit).exited()
 }
 
 // reapIfExited reports whether pid is a child of this process that has
@@ -709,12 +760,10 @@ func trackHolderExit(proc *os.Process) {
 func reapIfExited(pid int) (bool, string) {
 	if v, ok := spawnedHolderExits.Load(pid); ok {
 		e := v.(*holderExit)
-		select {
-		case <-e.done:
+		if e.exited() {
 			return true, e.status
-		default:
-			return false, ""
 		}
+		return false, ""
 	}
 	var ws syscall.WaitStatus
 	wpid, err := syscall.Wait4(pid, &ws, syscall.WNOHANG, nil)
@@ -774,6 +823,11 @@ func readLineFromConn(conn net.Conn, maxBytes int) (string, error) {
 // IsHolderAlive checks if a holder process with the given PID is still running.
 func IsHolderAlive(pid int) bool {
 	if pid <= 0 {
+		return false
+	}
+	// A holder we spawned and already reaped is dead even if kill(pid, 0)
+	// succeeds: the OS may have reused its PID for an unrelated process.
+	if holderReaped(pid) {
 		return false
 	}
 	process, err := os.FindProcess(pid)
