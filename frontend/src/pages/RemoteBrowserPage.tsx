@@ -12,13 +12,23 @@ import {
   RotateCw,
   Smartphone,
   X,
+  ZoomOut,
 } from "lucide-react";
 import { api } from "../api/client";
 import {
+  containRect,
+  IDENTITY_ZOOM,
   initialViewportMode,
   isSecureInput,
+  isZoomed,
   mapClientToPage,
   mobileViewportHeight,
+  panZoom,
+  pinchZoom,
+  zoomAt,
+  zoomedRect,
+  type Point,
+  type ZoomState,
   normalizeUrl,
   parseFocusMessage,
   parseLoginRequestParams,
@@ -43,6 +53,8 @@ type ConnState = "connecting" | "connected" | "disconnected";
 const TAP_SLOP_PX = 10;
 const TAP_MAX_MS = 400;
 const SCROLL_INTERVAL_MS = 30;
+/** ctrl+wheel (trackpad pinch) zoom speed per wheel delta unit. */
+const WHEEL_ZOOM_SPEED = 0.01;
 
 async function fetchStatus(): Promise<RemoteBrowserStatus> {
   const res = await fetch("/api/remote-browser/status");
@@ -108,6 +120,16 @@ export function RemoteBrowserPage() {
   const [viewportMode, setViewportMode] = useState<ViewportMode>(loadViewportMode);
   const viewportModeRef = useRef(viewportMode);
   const frameAreaRef = useRef<HTMLDivElement | null>(null);
+
+  // Client-side zoom of the displayed frame (the remote viewport is unchanged).
+  const [zoom, setZoomState] = useState<ZoomState>(IDENTITY_ZOOM);
+  const zoomRef = useRef<ZoomState>(IDENTITY_ZOOM);
+  const setZoom = useCallback((z: ZoomState) => {
+    zoomRef.current = z;
+    setZoomState(z);
+  }, []);
+  const resetZoom = useCallback(() => setZoom(IDENTITY_ZOOM), [setZoom]);
+
   const sendViewport = useCallback(
     (mode: ViewportMode) => {
       const r = frameAreaRef.current?.getBoundingClientRect();
@@ -121,6 +143,7 @@ export function RemoteBrowserPage() {
     viewportModeRef.current = mode;
     setViewportMode(mode);
     saveViewportMode(mode);
+    resetZoom();
     sendViewport(mode);
   };
 
@@ -189,6 +212,10 @@ export function RemoteBrowserPage() {
           return;
         }
         if (msg.type === "frame" && msg.data && msg.metadata) {
+          const prev = metaRef.current;
+          if (prev && (prev.deviceWidth !== msg.metadata.deviceWidth || prev.deviceHeight !== msg.metadata.deviceHeight)) {
+            resetZoom();
+          }
           metaRef.current = msg.metadata;
           setFrameSrc(`data:image/jpeg;base64,${msg.data}`);
         } else if (msg.type === "url" && typeof msg.url === "string") {
@@ -221,7 +248,7 @@ export function RemoteBrowserPage() {
       wsRef.current = null;
       ws?.close();
     };
-  }, [running, sendViewport]);
+  }, [running, sendViewport, resetZoom]);
 
   const start = async () => {
     setStarting(true);
@@ -284,6 +311,7 @@ export function RemoteBrowserPage() {
   };
 
   // ---- gestures ----
+  // One-finger gesture (tap / drag). Cancelled when a second finger goes down.
   const gesture = useRef<{
     id: number;
     startX: number;
@@ -296,14 +324,38 @@ export function RemoteBrowserPage() {
     pendingDX: number;
     pendingDY: number;
   } | null>(null);
+  // All active pointers on the frame (client coordinates).
+  const pointers = useRef(new Map<number, Point>());
+  // Two-finger pinch in progress: zoom, midpoint (local) and distance at its start.
+  const pinch = useRef<{ start: ZoomState; mid: Point; dist: number } | null>(null);
+  // Set once a pinch starts; no tap/scroll is sent until all fingers are lifted.
+  const suppressRef = useRef(false);
 
+  // Untransformed frame area (the image fills it at 1x) and the drawn content in it.
+  const areaGeometry = () => {
+    const area = frameAreaRef.current;
+    const img = imgRef.current;
+    if (!area) return null;
+    const r = area.getBoundingClientRect();
+    const size = { width: r.width, height: r.height };
+    return {
+      rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+      size,
+      content: containRect(size, img?.naturalWidth ?? 0, img?.naturalHeight ?? 0),
+    };
+  };
+
+  // Client rect of the (possibly zoomed) image. Computed from the zoom state
+  // rather than getBoundingClientRect so it is not one render behind while
+  // panning; both agree for a uniform translate+scale, and object-contain
+  // letterboxing scales with the element, so mapClientToPage stays valid.
   const geometry = () => {
     const img = imgRef.current;
     const meta = metaRef.current;
-    if (!img || !meta || !img.naturalWidth) return null;
-    const r = img.getBoundingClientRect();
+    const area = areaGeometry();
+    if (!img || !meta || !img.naturalWidth || !area) return null;
     return {
-      rect: { left: r.left, top: r.top, width: r.width, height: r.height },
+      rect: zoomedRect(area.rect, zoomRef.current),
       iw: img.naturalWidth,
       ih: img.naturalHeight,
       dw: meta.deviceWidth,
@@ -324,9 +376,55 @@ export function RemoteBrowserPage() {
     send({ type: "scroll", x: at.x, y: at.y, deltaX: d.x, deltaY: d.y });
   };
 
+  // When zoomed, a drag pans the view first; only the rest scrolls the page.
+  const addDrag = (g: NonNullable<typeof gesture.current>, dx: number, dy: number) => {
+    const area = areaGeometry();
+    if (area && isZoomed(zoomRef.current)) {
+      const r = panZoom(zoomRef.current, dx, dy, area.size, area.content);
+      if (r.zoom.tx !== zoomRef.current.tx || r.zoom.ty !== zoomRef.current.ty) setZoom(r.zoom);
+      g.pendingDX += r.restX;
+      g.pendingDY += r.restY;
+    } else {
+      g.pendingDX += dx;
+      g.pendingDY += dy;
+    }
+  };
+
+  const pinchPoints = () => {
+    const area = areaGeometry();
+    const [a, b] = [...pointers.current.values()];
+    if (!area || !a || !b) return null;
+    return {
+      area,
+      mid: { x: (a.x + b.x) / 2 - area.rect.left, y: (a.y + b.y) / 2 - area.rect.top },
+      dist: Math.hypot(a.x - b.x, a.y - b.y),
+    };
+  };
+
+  const startPinch = () => {
+    const p = pinchPoints();
+    pinch.current = p ? { start: zoomRef.current, mid: p.mid, dist: p.dist } : null;
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
-    if (gesture.current) return;
     e.currentTarget.setPointerCapture(e.pointerId);
+    if (e.isPrimary) {
+      // First finger of a new gesture: drop anything left over from a pointer
+      // whose up/cancel was never delivered.
+      pointers.current.clear();
+      pinch.current = null;
+      suppressRef.current = false;
+      gesture.current = null;
+    }
+    pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.current.size >= 2) {
+      // Second finger: cancel the one-finger gesture (no tap) and pinch instead.
+      gesture.current = null;
+      suppressRef.current = true;
+      startPinch();
+      return;
+    }
+    if (gesture.current || suppressRef.current) return;
     gesture.current = {
       id: e.pointerId,
       startX: e.clientX,
@@ -342,12 +440,20 @@ export function RemoteBrowserPage() {
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch.current) {
+      const p = pinchPoints();
+      if (p) {
+        const pc = pinch.current;
+        setZoom(pinchZoom(pc.start, pc.mid, pc.dist, p.mid, p.dist, p.area.size, p.area.content));
+      }
+      return;
+    }
     const g = gesture.current;
     if (!g || g.id !== e.pointerId) return;
     if (!g.moved && Math.hypot(e.clientX - g.startX, e.clientY - g.startY) > TAP_SLOP_PX) g.moved = true;
     if (!g.moved) return;
-    g.pendingDX += e.clientX - g.lastX;
-    g.pendingDY += e.clientY - g.lastY;
+    addDrag(g, e.clientX - g.lastX, e.clientY - g.lastY);
     g.lastX = e.clientX;
     g.lastY = e.clientY;
     const now = Date.now();
@@ -357,13 +463,22 @@ export function RemoteBrowserPage() {
     }
   };
 
+  const releasePointer = (id: number) => {
+    if (!pointers.current.delete(id)) return;
+    if (pinch.current) {
+      if (pointers.current.size >= 2) startPinch();
+      else pinch.current = null;
+    }
+    if (pointers.current.size === 0) suppressRef.current = false;
+  };
+
   const onPointerUp = (e: React.PointerEvent) => {
+    releasePointer(e.pointerId);
     const g = gesture.current;
     if (!g || g.id !== e.pointerId) return;
     gesture.current = null;
     if (g.moved) {
-      g.pendingDX += e.clientX - g.lastX;
-      g.pendingDY += e.clientY - g.lastY;
+      addDrag(g, e.clientX - g.lastX, e.clientY - g.lastY);
       flushScroll(g, e.clientX, e.clientY);
       return;
     }
@@ -374,16 +489,38 @@ export function RemoteBrowserPage() {
     if (at) send({ type: "tap", x: at.x, y: at.y });
   };
 
-  const onPointerCancel = () => {
-    gesture.current = null;
+  const onPointerCancel = (e: React.PointerEvent) => {
+    releasePointer(e.pointerId);
+    if (gesture.current?.id === e.pointerId) gesture.current = null;
   };
 
-  const onWheel = (e: React.WheelEvent) => {
+  // Wheel: plain wheel scrolls the remote page; ctrl+wheel (trackpad pinch)
+  // zooms the frame. Attached natively because React wheel listeners are
+  // passive and could not stop the browser's own page zoom.
+  const onWheelRef = useRef<(e: WheelEvent) => void>(() => {});
+  onWheelRef.current = (e: WheelEvent) => {
+    if (e.ctrlKey) {
+      e.preventDefault();
+      const area = areaGeometry();
+      if (!area || !imgRef.current) return;
+      const anchor = { x: e.clientX - area.rect.left, y: e.clientY - area.rect.top };
+      const z = zoomRef.current;
+      setZoom(zoomAt(z, anchor, z.scale * Math.exp(-e.deltaY * WHEEL_ZOOM_SPEED), area.size, area.content));
+      return;
+    }
+    if (e.target !== imgRef.current) return;
     const geo = geometry();
     if (!geo) return;
     const at = mapClientToPage(e.clientX, e.clientY, geo.rect, geo.iw, geo.ih, geo.dw, geo.dh);
     if (at) send({ type: "scroll", x: at.x, y: at.y, deltaX: e.deltaX, deltaY: e.deltaY });
   };
+  useEffect(() => {
+    const el = frameAreaRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => onWheelRef.current(e);
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, [running]);
 
   // ---- keyboard ----
   const sendKey = (key: string, code: string, keyCode: number, text?: string) =>
@@ -619,7 +756,7 @@ export function RemoteBrowserPage() {
             </button>
           </form>
 
-          <div ref={frameAreaRef} className="relative flex-1 min-h-0 bg-gray-100">
+          <div ref={frameAreaRef} className="relative flex-1 min-h-0 bg-gray-100 overflow-hidden" data-testid="rb-frame-area">
             {frameSrc ? (
               <img
                 ref={imgRef}
@@ -631,10 +768,18 @@ export function RemoteBrowserPage() {
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
                 onPointerCancel={onPointerCancel}
-                onWheel={onWheel}
+                onLostPointerCapture={onPointerCancel}
                 onContextMenu={(e) => e.preventDefault()}
                 className="absolute inset-0 w-full h-full object-contain select-none"
-                style={{ touchAction: "none", WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
+                data-testid="rb-frame"
+                data-zoom={zoom.scale.toFixed(2)}
+                style={{
+                  touchAction: "none",
+                  WebkitTouchCallout: "none",
+                  WebkitUserSelect: "none",
+                  transformOrigin: "0 0",
+                  transform: isZoomed(zoom) ? `translate(${zoom.tx}px, ${zoom.ty}px) scale(${zoom.scale})` : undefined,
+                }}
               />
             ) : (
               <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">
@@ -651,6 +796,20 @@ export function RemoteBrowserPage() {
                 <KeyRound className="h-3.5 w-3.5" />
                 パスワード入力モード
               </div>
+            )}
+            {isZoomed(zoom) && (
+              <button
+                type="button"
+                onClick={resetZoom}
+                onMouseDown={(e) => e.preventDefault() /* keep the software keyboard open */}
+                className="absolute top-2 right-2 flex items-center gap-1 px-2 py-1 text-xs text-gray-700 bg-white/90 border border-gray-300 rounded-full shadow"
+                title="ズームをリセット"
+                aria-label="ズームをリセット"
+                data-testid="rb-zoom-reset"
+              >
+                <ZoomOut className="h-3.5 w-3.5" />
+                1x
+              </button>
             )}
           </div>
 
