@@ -225,6 +225,22 @@ export const HIDDEN_SYSTEM_SUBTYPES = new Set([
   "dev_intent",
 ]);
 
+// Labels a user text block the CLI marked isSynthetic.
+export function parseSyntheticUserText(text: string): StreamDisplayItem {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("This session is being continued from a previous conversation")) {
+    return { kind: "system_event", eventType: "compact_summary", label: "コンパクション後の要約", detail: trimmed };
+  }
+  const stopHook = trimmed.match(/^Stop hook feedback:\s*([\s\S]*)$/);
+  if (stopHook) {
+    return { kind: "system_event", eventType: "stop_hook_feedback", label: "Stop フックのフィードバック", detail: stopHook[1].trim() || undefined };
+  }
+  if (/^\[Image: original \d+x\d+/.test(trimmed)) {
+    return { kind: "system_event", eventType: "image_scale_note", label: "画像の縮尺注記", detail: trimmed };
+  }
+  return { kind: "system_event", eventType: "synthetic_user_text", label: "システムが追加したメッセージ", detail: trimmed };
+}
+
 function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
   const raw = entry as unknown as Record<string, unknown>;
   const subtype = raw.subtype as string | undefined;
@@ -863,6 +879,27 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
     } else if (entry.type === "user") {
       // Skip user text that was folded into a Skill tool call
       if (skillSkipIndices.has(idx)) {
+        continue;
+      }
+
+      // CLI-injected text (compaction summary, Stop hook feedback, image scale
+      // notes) is not something the user typed; show it as a system row.
+      if ((entry as { isSynthetic?: boolean }).isSynthetic) {
+        const texts = blocks.filter((b) => b.type === "text" && b.text).map((b) => b.text as string);
+        if (texts.length === 0 && typeof entry.message?.content === "string" && entry.message.content) {
+          texts.push(entry.message.content);
+        }
+        const sysItems: StreamDisplayItem[] = texts.map(parseSyntheticUserText);
+        for (const b of blocks) {
+          if (b.type === "image" && b.source) {
+            sysItems.push({ kind: "image", mediaType: b.source.media_type, data: b.source.data });
+          }
+        }
+        if (sysItems.length > 0) {
+          const last = groups[groups.length - 1];
+          if (last && last.role === "system") last.items.push(...sysItems);
+          else groups.push({ role: "system", items: sysItems });
+        }
         continue;
       }
 
