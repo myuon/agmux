@@ -218,6 +218,8 @@ export const HIDDEN_SYSTEM_SUBTYPES = new Set([
   "commands_changed",
   "code_change_published",
   "thinking_tokens",
+  // フック実行中の途中出力。成否は hook_response で出す（失敗時のみ表示）ので、途中経過は見せない
+  "hook_progress",
   "hook_started",
   // CLI のテレメトリ的な通知（例: iOS 開発コマンドの検出 kind=ios_app）。ユーザーが見る情報はない
   "dev_intent",
