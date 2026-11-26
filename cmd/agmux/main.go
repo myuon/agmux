@@ -655,12 +655,27 @@ func sessionStopCmd() *cobra.Command {
 		Short: "Stop a session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			id := args[0]
+			// Stop through the daemon: it owns the holder connection. An
+			// in-process Manager only updates the DB and leaves the holder
+			// running as an orphan.
+			err = stopViaDaemon(daemonBaseURL(cfg), id)
+			if err == nil {
+				fmt.Println("Session stopped.")
+				return nil
+			}
+			if !errors.Is(err, errServerUnreachable) {
+				return err
+			}
+			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
-			id := args[0]
+			defer database.Close()
 			if err := mgr.Stop(id); err != nil {
 				return err
 			}
@@ -676,14 +691,36 @@ func sessionArchiveCmd() *cobra.Command {
 		Short: "Stop and archive one or more sessions",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			cfg, err := config.Load()
 			if err != nil {
-				return err
+				return fmt.Errorf("load config: %w", err)
+			}
+			baseURL := daemonBaseURL(cfg)
+			// Archive through the daemon (see session stop). Fall back to an
+			// in-process Manager only when the daemon is not running.
+			var mgr session.SessionService
+			var database *sql.DB
+			defer func() {
+				if database != nil {
+					database.Close()
+				}
+			}()
+			archive := func(id string) error {
+				if mgr == nil {
+					err := archiveViaDaemon(baseURL, id)
+					if !errors.Is(err, errServerUnreachable) {
+						return err
+					}
+					mgr, database, err = initManager(cfg, cfg.Server.Port, nil)
+					if err != nil {
+						return err
+					}
+				}
+				return mgr.Archive(id)
 			}
 			failed := 0
 			for _, id := range args {
-				if err := mgr.Archive(id); err != nil {
+				if err := archive(id); err != nil {
 					fmt.Fprintf(os.Stderr, "%s: %v\n", id, err)
 					failed++
 					continue
@@ -708,12 +745,22 @@ func sessionRestartCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("load config: %w", err)
 			}
+			id := args[0]
+			// Restart through the daemon so it owns the new holder and reads
+			// its stream (see session stop).
+			err = restartViaDaemon(daemonBaseURL(cfg), id)
+			if err == nil {
+				fmt.Println("Session restarted.")
+				return nil
+			}
+			if !errors.Is(err, errServerUnreachable) {
+				return err
+			}
 			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
 			defer database.Close()
-			id := args[0]
 			if err := mgr.Restart(id); err != nil {
 				return err
 			}
