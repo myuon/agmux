@@ -12,11 +12,40 @@ import (
 type Message struct {
 	Type string      `json:"type"`
 	Data interface{} `json:"data"`
+
+	// onlySession, when set, restricts delivery to clients subscribed to that
+	// session (see BroadcastToSubscribers). Never serialized.
+	onlySession string
 }
 
 type wsClient struct {
 	conn *websocket.Conn
 	send chan []byte
+
+	subMu sync.RWMutex
+	subs  map[string]bool // session IDs subscribed for stream_update
+}
+
+func (c *wsClient) setSubscriptions(ids []string) {
+	set := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	c.subMu.Lock()
+	c.subs = set
+	c.subMu.Unlock()
+}
+
+func (c *wsClient) isSubscribed(id string) bool {
+	c.subMu.RLock()
+	defer c.subMu.RUnlock()
+	return c.subs[id]
+}
+
+// clientFrame is a text frame sent from the client.
+type clientFrame struct {
+	Type       string   `json:"type"`
+	SessionIDs []string `json:"sessionIds"`
 }
 
 type Hub struct {
@@ -64,6 +93,9 @@ func (h *Hub) Run() {
 			}
 			h.mu.RLock()
 			for client := range h.clients {
+				if msg.onlySession != "" && !client.isSubscribed(msg.onlySession) {
+					continue
+				}
 				select {
 				case client.send <- data:
 				default:
@@ -77,6 +109,17 @@ func (h *Hub) Run() {
 }
 
 func (h *Hub) Broadcast(msg Message) {
+	h.enqueue(msg)
+}
+
+// BroadcastToSubscribers sends msg only to clients that subscribed to
+// sessionID via a {"type":"subscribe","sessionIds":[...]} frame.
+func (h *Hub) BroadcastToSubscribers(sessionID string, msg Message) {
+	msg.onlySession = sessionID
+	h.enqueue(msg)
+}
+
+func (h *Hub) enqueue(msg Message) {
 	select {
 	case h.broadcast <- msg:
 	default:
@@ -116,9 +159,33 @@ func (c *wsClient) readPump(h *Hub) {
 		c.conn.Close()
 	}()
 	for {
-		_, _, err := c.conn.ReadMessage()
+		_, raw, err := c.conn.ReadMessage()
 		if err != nil {
 			break
 		}
+		var frame clientFrame
+		if json.Unmarshal(raw, &frame) != nil || frame.Type != "subscribe" {
+			continue
+		}
+		c.setSubscriptions(frame.SessionIDs)
+		// Ack so the client can catch up on lines it missed before the
+		// subscription became effective.
+		ack, err := json.Marshal(Message{Type: "subscribed", Data: map[string]interface{}{"sessionIds": frame.SessionIDs}})
+		if err == nil {
+			h.sendTo(c, ack)
+		}
+	}
+}
+
+// sendTo queues data for a single client, dropping it if the client is gone or slow.
+func (h *Hub) sendTo(c *wsClient, data []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if !h.clients[c] {
+		return
+	}
+	select {
+	case c.send <- data:
+	default:
 	}
 }

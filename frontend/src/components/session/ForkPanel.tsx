@@ -1,29 +1,46 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { Link } from "react-router-dom";
 import { ChevronDown, ChevronUp, X, GitBranch } from "lucide-react";
 import type { Session } from "../../types/session";
 import { api } from "../../api/client";
 import { StatusDot } from "../StatusBadge";
 import { StreamOutputView } from "./StreamOutputView";
-import { useWebSocket } from "../../hooks/useWebSocket";
+import { useWebSocket, useStreamSubscription } from "../../hooks/useWebSocket";
+import { useVisibleInterval } from "../../hooks/usePageVisible";
 
 function ForkStreamPanel({ fork }: { fork: Session }) {
   const [streamLines, setStreamLines] = useState<unknown[]>([]);
   const [partialText, setPartialText] = useState("");
   const [forkSession, setForkSession] = useState<Session>(fork);
 
+  // Number of persisted lines applied so far; used to drop duplicates between
+  // the initial fetch, catch-up fetches and live stream_update messages.
+  const cursorRef = useRef<number | null>(null);
+
   useEffect(() => {
     api.getStreamOutput(fork.id).then((r) => {
       setStreamLines(r.lines);
+      cursorRef.current = r.total;
     }).catch(() => {});
   }, [fork.id]);
+
+  const applyLines = useCallback((lines: unknown[], total: number) => {
+    let fresh = lines;
+    const cursor = cursorRef.current;
+    if (cursor !== null) {
+      const skip = Math.min(Math.max(cursor - (total - lines.length), 0), lines.length);
+      fresh = lines.slice(skip);
+    }
+    cursorRef.current = cursor === null ? total : Math.max(cursor, total);
+    return fresh;
+  }, []);
 
   const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === "stream_update") {
       const data = msg.data as { sessionId: string; lines: unknown[]; total: number };
       if (data.sessionId === fork.id && data.lines.length > 0) {
         const regular: unknown[] = [];
-        for (const line of data.lines) {
+        for (const line of applyLines(data.lines, data.total)) {
           const entry = line as Record<string, unknown>;
           if (entry.type === "stream_event") {
             const evt = entry.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
@@ -42,15 +59,33 @@ function ForkStreamPanel({ fork }: { fork: Session }) {
         }
       }
     }
+    if (msg.type === "subscribed") {
+      // Subscription became effective (open/reconnect/resume): catch up.
+      const data = msg.data as { sessionIds?: string[] };
+      const cursor = cursorRef.current;
+      if (data.sessionIds?.includes(fork.id) && cursor !== null) {
+        api.getStreamOutputDelta(fork.id, cursor).then((r) => {
+          if (r.total < cursor) {
+            return api.getStreamOutput(fork.id).then((full) => {
+              setStreamLines(full.lines);
+              cursorRef.current = full.total;
+            });
+          }
+          const fresh = applyLines(r.lines, r.total);
+          if (fresh.length > 0) setStreamLines((prev) => [...prev, ...fresh]);
+        }).catch(() => {});
+      }
+    }
     if (msg.type === "status_change") {
       const data = msg.data as { sessionId: string; status: Session["status"]; unread?: boolean };
       if (data.sessionId === fork.id) {
         setForkSession((prev) => ({ ...prev, status: data.status, unread: data.unread ?? prev.unread }));
       }
     }
-  }, [fork.id]);
+  }, [fork.id, applyLines]);
 
   useWebSocket(handleWsMessage);
+  useStreamSubscription(useMemo(() => [fork.id], [fork.id]));
 
   return (
     <div className="flex flex-col h-full">
@@ -99,20 +134,20 @@ export function ForkPanel({ sessionId }: { sessionId: string }) {
       }
     }).catch(() => {});
 
-    const interval = setInterval(() => {
-      api.listForkSessions(sessionId).then((forkList) => {
-        const prevIds = prevForksRef.current.map((f) => f.id);
-        const newIds = forkList.map((f) => f.id);
-        const hasNew = newIds.some((id) => !prevIds.includes(id));
-        setForks(forkList);
-        if (hasNew && forkList.length > 0) {
-          setSelectedForkId(forkList[forkList.length - 1].id);
-        }
-      }).catch(() => {});
-    }, 5000);
-
-    return () => clearInterval(interval);
   }, [sessionId, selectedForkId]);
+
+  // Paused while the tab is hidden.
+  useVisibleInterval(() => {
+    api.listForkSessions(sessionId).then((forkList) => {
+      const prevIds = prevForksRef.current.map((f) => f.id);
+      const newIds = forkList.map((f) => f.id);
+      const hasNew = newIds.some((id) => !prevIds.includes(id));
+      setForks(forkList);
+      if (hasNew && forkList.length > 0) {
+        setSelectedForkId(forkList[forkList.length - 1].id);
+      }
+    }).catch(() => {});
+  }, 5000);
 
   useEffect(() => {
     prevForksRef.current = forks;
