@@ -161,10 +161,43 @@ func (p *CodexProvider) NormalizeStreamLine(line []byte) [][]byte {
 	case "item.started":
 		// Skip in-progress events; they have no useful content yet.
 		return nil
+	case "turn.failed":
+		// e.g. {"type":"turn.failed","error":{"message":"You've hit your usage limit ..."}}
+		// Surface the reason as an error-level informational system event,
+		// which the frontend already renders.
+		if out := p.buildTurnFailed(line); out != nil {
+			return [][]byte{out}
+		}
+		return [][]byte{line}
 	default:
 		// thread.started, turn.started, turn.completed, etc. – keep as-is.
 		return [][]byte{line}
 	}
+}
+
+func (p *CodexProvider) buildTurnFailed(line []byte) []byte {
+	var ev struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(line, &ev) != nil {
+		return nil
+	}
+	content := "ターンが失敗しました"
+	if msg := strings.TrimSpace(ev.Error.Message); msg != "" {
+		content += ": " + msg
+	}
+	out, err := json.Marshal(map[string]string{
+		"type":    "system",
+		"subtype": "informational",
+		"level":   "error",
+		"content": content,
+	})
+	if err != nil {
+		return nil
+	}
+	return out
 }
 
 func (p *CodexProvider) normalizeItemCompleted(raw json.RawMessage, original []byte) []byte {

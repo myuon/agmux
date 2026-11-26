@@ -189,7 +189,7 @@ func TestReadStreamFileOversizedLine(t *testing.T) {
 	writeStreamFixture(t, "ov-1", oversizedFixture())
 
 	m := &Manager{}
-	lines, err := m.readStreamFile("ov-1", 0, 0)
+	lines, err := m.readStreamFile("ov-1", 0, 0, nil)
 	require.NoError(t, err)
 	require.Len(t, lines, 3)
 	for _, l := range lines {
@@ -200,7 +200,7 @@ func TestReadStreamFileOversizedLine(t *testing.T) {
 	assert.Contains(t, lines[2], "after")
 
 	// the `after` cursor counts the replacement as one line
-	after, err := m.readStreamFileAfter("ov-1", 2, 0)
+	after, err := m.readStreamFileAfter("ov-1", 2, 0, nil)
 	require.NoError(t, err)
 	require.Len(t, after, 1)
 	assert.Contains(t, after[0], "after")

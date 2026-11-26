@@ -45,7 +45,7 @@ func TestReadStreamFile_FiltersTransientLines(t *testing.T) {
 	writeStreamFixture(t, sessionID, streamFixtureWithTransients)
 
 	m := &Manager{}
-	lines, err := m.readStreamFile(sessionID, 0, 0)
+	lines, err := m.readStreamFile(sessionID, 0, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestReadStreamFile_FiltersTransientLines(t *testing.T) {
 	}
 
 	// The limit must apply to the filtered lines, not the raw file lines.
-	limited, err := m.readStreamFile(sessionID, 2, 0)
+	limited, err := m.readStreamFile(sessionID, 2, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestReadStreamFileAfter_FiltersTransientLines(t *testing.T) {
 	m := &Manager{}
 
 	// after=0 returns all filtered lines
-	all, err := m.readStreamFileAfter(sessionID, 0, 0)
+	all, err := m.readStreamFileAfter(sessionID, 0, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +98,7 @@ func TestReadStreamFileAfter_FiltersTransientLines(t *testing.T) {
 
 	// after=1 skips the filtered init line and returns assistant + result;
 	// transient lines must not consume cursor positions.
-	rest, err := m.readStreamFileAfter(sessionID, 1, 0)
+	rest, err := m.readStreamFileAfter(sessionID, 1, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,5 +112,37 @@ func TestReadStreamFileAfter_FiltersTransientLines(t *testing.T) {
 		if strings.Contains(l, "thinking_tokens") || strings.Contains(l, "stream_event") {
 			t.Errorf("transient line leaked through delta fallback read: %s", l)
 		}
+	}
+}
+
+func TestReadStreamFile_NormalizesCodexLines(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	sessionID := "test-fallback-codex"
+	writeStreamFixture(t, sessionID, `{"type":"thread.started","thread_id":"t1"}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"ls"}}
+{"type":"turn.failed","error":{"message":"You've hit your usage limit."}}
+`)
+
+	m := &Manager{}
+	p := NewCodexProvider("")
+	lines, err := m.readStreamFile(sessionID, 0, 0, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines (item.started dropped), got %d: %v", len(lines), lines)
+	}
+	if !strings.Contains(lines[1], `"subtype":"informational"`) || !strings.Contains(lines[1], "usage limit") {
+		t.Errorf("turn.failed not normalized: %s", lines[1])
+	}
+
+	after, err := m.readStreamFileAfter(sessionID, 1, 0, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after) != 1 || !strings.Contains(after[0], `"subtype":"informational"`) {
+		t.Errorf("after cursor should count normalized lines, got %v", after)
 	}
 }
