@@ -186,3 +186,50 @@ func TestForkViaDaemon_PostsForkRequest(t *testing.T) {
 		t.Errorf("ref = %+v", ref)
 	}
 }
+
+func TestLifecycleViaDaemon_PostsToEndpoints(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s", r.Method)
+		}
+		paths = append(paths, r.URL.Path)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer srv.Close()
+
+	if err := stopViaDaemon(srv.URL, "abcde"); err != nil {
+		t.Fatalf("stopViaDaemon: %v", err)
+	}
+	if err := archiveViaDaemon(srv.URL, "abcde"); err != nil {
+		t.Fatalf("archiveViaDaemon: %v", err)
+	}
+	if err := restartViaDaemon(srv.URL, "abcde"); err != nil {
+		t.Fatalf("restartViaDaemon: %v", err)
+	}
+	want := []string{"/api/sessions/abcde/stop", "/api/sessions/abcde/archive", "/api/sessions/abcde/restart"}
+	if len(paths) != len(want) {
+		t.Fatalf("paths = %v", paths)
+	}
+	for i := range want {
+		if paths[i] != want[i] {
+			t.Errorf("paths[%d] = %q, want %q", i, paths[i], want[i])
+		}
+	}
+}
+
+func TestArchiveViaDaemon_NotFoundIsNotUnreachable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"error":"session not found"}`))
+	}))
+	defer srv.Close()
+
+	err := archiveViaDaemon(srv.URL, "nope")
+	if err == nil || err.Error() != "session not found" {
+		t.Fatalf("err = %v", err)
+	}
+	if errors.Is(err, errServerUnreachable) {
+		t.Error("daemon error must not fall back to in-process archive")
+	}
+}
