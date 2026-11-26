@@ -80,8 +80,13 @@ func WorkspaceDir(sessionID string) (string, error) {
 	return workspaceDir, nil
 }
 
+// busyTimeoutMs is how long a statement waits for another connection's lock
+// before failing with "database is locked". The driver default (5s) was
+// exceeded under heavy load, dropping writes such as the CLI session ID.
+const busyTimeoutMs = 30000
+
 func Open(dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL")
+	db, err := sql.Open("sqlite3", fmt.Sprintf("%s?_journal_mode=WAL&_busy_timeout=%d", dbPath, busyTimeoutMs))
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}

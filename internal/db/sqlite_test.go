@@ -88,3 +88,17 @@ func TestMigrateIdempotent(t *testing.T) {
 	require.NoError(t, err)
 	db2.Close()
 }
+
+func TestOpenSetsBusyTimeout(t *testing.T) {
+	db, err := Open(filepath.Join(t.TempDir(), "test.db"))
+	require.NoError(t, err)
+	defer db.Close()
+
+	var timeout int
+	require.NoError(t, db.QueryRow("PRAGMA busy_timeout").Scan(&timeout))
+	assert.Equal(t, busyTimeoutMs, timeout)
+
+	var mode string
+	require.NoError(t, db.QueryRow("PRAGMA journal_mode").Scan(&mode))
+	assert.Equal(t, "wal", mode)
+}

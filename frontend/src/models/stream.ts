@@ -218,6 +218,8 @@ export const HIDDEN_SYSTEM_SUBTYPES = new Set([
   "commands_changed",
   "code_change_published",
   "thinking_tokens",
+  // フック実行中の途中出力。成否は hook_response で出す（失敗時のみ表示）ので、途中経過は見せない
+  "hook_progress",
   "hook_started",
   // CLI のテレメトリ的な通知（例: iOS 開発コマンドの検出 kind=ios_app）。ユーザーが見る情報はない
   "dev_intent",
@@ -335,6 +337,21 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
       eventType: "session_writes_lost",
       label: `⚠ ${what} を保存できませんでした${errorCode ? ` (${errorCode})` : ""}`,
       detail: errorCode === "ENOSPC" ? "ディスクの空き容量が不足しています" : undefined,
+    };
+  }
+
+  // The model refused the user's message and no fallback model was available
+  // (e.g. api_refusal_category=reasoning_extraction). Surface it as a warning
+  // with the API's explanation so the user knows why there was no reply.
+  if (subtype === "model_refusal_no_fallback") {
+    const explanation =
+      typeof raw.api_refusal_explanation === "string" ? raw.api_refusal_explanation.trim() : "";
+    const model = typeof raw.original_model === "string" && raw.original_model ? ` (${raw.original_model})` : "";
+    return {
+      kind: "system_event",
+      eventType: "model_refusal_no_fallback",
+      label: `⚠ メッセージがモデルに拒否されました${model}`,
+      detail: explanation || undefined,
     };
   }
 

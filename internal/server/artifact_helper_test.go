@@ -41,6 +41,8 @@ func TestInjectArtifactDataHelperPosition(t *testing.T) {
 	assert.Contains(t, tag, "/artifacts/"+id+"/data/")
 	assert.Contains(t, tag, "window.agmuxData")
 	assert.Contains(t, tag, `"agmux:data-request"`)
+	assert.Contains(t, tag, "window.agmuxOpenArtifact")
+	assert.Contains(t, tag, `"agmux:open-artifact"`)
 	assert.NotContains(t, tag, "__AGMUX_ARTIFACT_ID__")
 }
 
