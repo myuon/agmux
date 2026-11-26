@@ -384,9 +384,7 @@ func serveCmd() *cobra.Command {
 				if extDet := srv.ExternalDetector(); extDet != nil {
 					extDet.Stop()
 				}
-				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer shutdownCancel()
-				return httpSrv.Shutdown(shutdownCtx)
+				return srv.ShutdownHTTP(httpSrv, 5*time.Second)
 			}
 		},
 	}
