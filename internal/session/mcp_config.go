@@ -27,7 +27,7 @@ const defaultSystemPrompt = `あなたはagmuxで管理されているセッシ�
 - ユーザーに判断を仰ぎたいときや確認が必要なときは escalate ツールを使ってください。ブラウザ通知が送られ、ユーザーが応答するまで待機します
 - get_logged_in_browser で開いたサイトでログインページにリダイレクトされた（ログイン切れ）ときは、自分でログインしようとせず request_browser_login ツールでユーザーに再ログインを依頼してください。完了が返ったら自分のタブでページを開き直してログインできたか確認してください
 - API キーなどのシークレットが必要なときは、ユーザーに値をチャットで送らせず request_secret ツールで登録を依頼してください。値はあなたには渡されません。登録後は agmux secret exec --env NAME -- <cmd> で利用し、値を表示・出力しないでください
-- ユーザーに見せる HTML アーティファクトを作るときは frontend-design スキルを使い、スマホ（幅 390px）で読まれる前提で設計してください。完成したら publish_artifact で公開してください。開くたびに最新のデータ（プロジェクト内の JSON など）を表示したいときは、データを HTML に埋め込まず publish_artifact の data_files に登録し、HTML からは自動で注入される agmuxData ヘルパーで const res = await agmuxData("ideas.md"); await res.text()（JSON なら await res.json()）のように読み込んでください（直接 fetch("data/<name>") は認証プロキシ越しだと失敗します）
+- ユーザーに見せる HTML アーティファクトを作るときは frontend-design スキルを使い、スマホ（幅 390px）で読まれる前提で設計してください。完成したら publish_artifact で公開してください。開くたびに最新のデータ（プロジェクト内の JSON など）を表示したいときは、データを HTML に埋め込まず publish_artifact の data_files に登録し、HTML からは自動で注入される agmuxData ヘルパーで const res = await agmuxData("ideas.md"); await res.text()（JSON なら await res.json()）のように読み込んでください（直接 fetch("data/<name>") は認証プロキシ越しだと失敗します）。別のアーティファクトへのリンクは agmuxOpenArtifact("<id>") で開けます
 - 定期実行タスク（Automation）の作成を頼まれたとき、または会話の流れでAutomation化に合意できたときは create_automation ツールで作成してください。名前・トリガー・プロンプト内容が会話で明確に合意できていない場合は、escalate で確認してから作成してください`
 
 // writeMCPConfig generates a temporary MCP config JSON file for a session.

@@ -6,7 +6,9 @@ import (
 	"strings"
 )
 
-// artifactDataHelperJS defines window.agmuxData(name) inside artifacts that
+// artifactDataHelperJS defines window.agmuxData(name) (and
+// window.agmuxOpenArtifact(id), which posts {type: "agmux:open-artifact", id}
+// to the parent so it navigates to /artifacts/<id>) inside artifacts that
 // have data files. Behind an authenticating proxy (e.g. Cloudflare Access) a
 // fetch from the sandboxed, opaque-origin document is cross-site, so the auth
 // cookie is not sent and the request is redirected to a login page. The
@@ -45,6 +47,10 @@ window.addEventListener("message", function(e){
   if (!d.ok && !d.status) { p.reject(new Error(d.error || "agmuxData: request failed")); return; }
   p.resolve(wrap(d.ok, d.status, d.contentType, d.text));
 });
+window.agmuxOpenArtifact = function(id){
+  if (window.parent === window) return;
+  try { window.parent.postMessage({ type: "agmux:open-artifact", id: String(id) }, "*"); } catch (err) {}
+};
 window.agmuxData = function(name){
   name = String(name);
   if (window.parent === window) return direct(name);
