@@ -7,6 +7,7 @@ import { useWebSocket } from "../hooks/useWebSocket";
 import { ProjectPanel } from "../components/ProjectPanel";
 import { ProjectSummaryLine } from "../components/ProjectSummaryLine";
 import { SessionPage } from "./SessionPage";
+import { visibleInterval } from "../hooks/usePageVisible";
 
 /** Project detail, kept fresh by polling and session updates. */
 function useProject(path: string) {
@@ -23,8 +24,7 @@ function useProject(path: string) {
   }, [path]);
   useEffect(() => {
     load();
-    const t = setInterval(load, 15_000);
-    return () => clearInterval(t);
+    return visibleInterval(load, 15_000);
   }, [load]);
   useWebSocket(
     useCallback(

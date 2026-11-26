@@ -13,6 +13,7 @@ import { ChoiceCardsBadge } from "./session/ChoiceCards";
 import { useOpenChoiceSessions } from "../hooks/useChoiceCards";
 import { ProjectRow } from "./ui/ProjectRow";
 import { projectUrl } from "./ProjectSummaryLine";
+import { visibleInterval } from "../hooks/usePageVisible";
 
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -76,10 +77,10 @@ export function SessionList({ sessions, onRestartController }: Props) {
         })
         .catch(() => {});
     load();
-    const timer = setInterval(load, 30_000);
+    const stopPoll = visibleInterval(load, 30_000);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      stopPoll();
     };
     // Session updates (websocket) also change loop state, so reload on them.
   }, [loopsEnabled, sessions]);
@@ -122,11 +123,11 @@ export function SessionList({ sessions, onRestartController }: Props) {
     } else {
       first = setTimeout(load, 300);
     }
-    const timer = setInterval(load, 30_000);
+    const stopPoll = visibleInterval(load, 30_000);
     return () => {
       cancelled = true;
       if (first) clearTimeout(first);
-      clearInterval(timer);
+      stopPoll();
     };
   }, [projectsEnabled, sessions]);
   const projectMembers = useMemo(() => {

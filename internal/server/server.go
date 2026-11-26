@@ -106,7 +106,7 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 		for i, line := range newLines {
 			rawLines[i] = json.RawMessage(line)
 		}
-		hub.Broadcast(Message{
+		hub.BroadcastToSubscribers(sessionID, Message{
 			Type: "stream_update",
 			Data: map[string]interface{}{
 				"sessionId": sessionID,
