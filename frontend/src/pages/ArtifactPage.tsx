@@ -17,6 +17,13 @@ import { useArtifactDataRelay } from "../hooks/useArtifactDataRelay";
 // because its own fetch can't carry the auth cookie behind Cloudflare Access.
 export function ArtifactPage() {
   const { id } = useParams<{ id: string }>();
+  // The route component is reused when navigating /artifacts/A -> /artifacts/B
+  // (agmux:open-artifact, browser Back); keying by id resets all per-artifact
+  // state (artifact, missing, toast, iframe).
+  return <ArtifactView key={id} id={id} />;
+}
+
+function ArtifactView({ id }: { id: string | undefined }) {
   const navigate = useNavigate();
   const [artifact, setArtifact] = useState<Artifact | null>(null);
   const [missing, setMissing] = useState(false);
@@ -26,7 +33,18 @@ export function ArtifactPage() {
 
   useEffect(() => {
     if (!id) return;
-    api.getArtifact(id).then(setArtifact).catch(() => setMissing(true));
+    let cancelled = false;
+    api
+      .getArtifact(id)
+      .then((a) => {
+        if (!cancelled) setArtifact(a);
+      })
+      .catch(() => {
+        if (!cancelled) setMissing(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   // When this artifact is updated, take the new metadata. The new updatedAt
