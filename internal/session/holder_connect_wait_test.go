@@ -3,6 +3,7 @@ package session
 import (
 	"os/exec"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -89,5 +90,46 @@ func TestConnectToHolderExpectingPID_NoExtensionWhenHolderNotAlive(t *testing.T)
 	}
 	if elapsed := time.Since(start); elapsed > 3*time.Second {
 		t.Fatalf("should not extend wait for a dead pid, took %v", elapsed)
+	}
+}
+
+// A holder tracked by trackHolderExit (as SpawnHolder does) must be reaped
+// once it exits, so it does not linger as a zombie, while reapIfExited still
+// reports its exit status for the connect fail-fast path.
+func TestTrackHolderExit_ReapsZombieAndKeepsStatus(t *testing.T) {
+	t.Setenv("TMPDIR", shortTempDir(t))
+	shortenHolderConnectTimeouts(t, 10*time.Second, 20*time.Second)
+
+	child := exec.Command("sh", "-c", "exit 3")
+	if err := child.Start(); err != nil {
+		t.Fatalf("start child: %v", err)
+	}
+	pid := child.Process.Pid
+	trackHolderExit("trackedholder", child.Process)
+
+	v, ok := spawnedHolderExits.Load(pid)
+	if !ok {
+		t.Fatal("exit record not stored")
+	}
+	select {
+	case <-v.(*holderExit).done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("holder was not reaped")
+	}
+
+	// Already reaped: no zombie remains for this pid.
+	var ws syscall.WaitStatus
+	if _, err := syscall.Wait4(pid, &ws, syscall.WNOHANG, nil); err != syscall.ECHILD {
+		t.Fatalf("expected ECHILD after reap, got %v", err)
+	}
+
+	exited, status := reapIfExited(pid)
+	if !exited || status != "exit code 3" {
+		t.Fatalf("reapIfExited = %v, %q", exited, status)
+	}
+
+	_, err := ConnectToHolderExpectingPID("trackedholder", pid)
+	if err == nil || !strings.Contains(err.Error(), "holder exited before listening") || !strings.Contains(err.Error(), "exit code 3") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

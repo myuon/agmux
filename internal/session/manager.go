@@ -87,7 +87,7 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 	if systemPrompt == "" {
 		systemPrompt = defaultSystemPrompt
 	}
-	return &Manager{
+	m := &Manager{
 		db:               db,
 		claudeCommand:    claudeCommand,
 		codexCommand:     "codex",
@@ -100,6 +100,25 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 		ephemeralCancels: make(map[string]context.CancelFunc),
 		logger:           logger.With("component", "session_manager"),
 		backgroundTasks:  NewBackgroundTaskStore(db),
+	}
+	addHolderExitObserver(m.clearReapedHolderPID)
+	return m
+}
+
+// clearReapedHolderPID clears sessions.holder_pid once that holder has been
+// reaped. After the reap the OS may reuse the PID for an unrelated process,
+// so a holder_pid left behind (e.g. after a normal exit 0, which keeps the
+// session idle/running) could later make killStaleHolder or Delete signal
+// that process. The update is conditional on the PID so that a newer
+// holder's PID is never cleared. Status is not touched.
+func (m *Manager) clearReapedHolderPID(sessionID string, pid int) {
+	res, err := m.db.Exec("UPDATE sessions SET holder_pid = 0 WHERE id = ? AND holder_pid = ?", sessionID, pid)
+	if err != nil {
+		m.logger.Debug("clear reaped holder_pid failed", "sessionId", sessionID, "pid", pid, "error", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		m.logger.Info("cleared holder_pid of reaped holder", "sessionId", sessionID, "holderPid", pid)
 	}
 }
 
