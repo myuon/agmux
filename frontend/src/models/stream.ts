@@ -501,12 +501,6 @@ export function filterSubagentLines(lines: unknown[], parentToolUseId: string): 
   return result;
 }
 
-// rootParentToolUseId selects which thread is rendered at the top level:
-// - null (default): the main agent thread. Every entry with a non-null
-//   parent_tool_use_id belongs to some subagent and is excluded, regardless of
-//   whether the parent Agent tool_use is part of `entries`.
-// - "<tool_use_id>": the subagent thread spawned by that Agent tool_use.
-//   Entries of nested subagents are excluded the same way.
 const INTERRUPTED_RE = /^\[Request interrupted by user( for tool use)?\]$/;
 
 function interruptedEvent(text: string): StreamDisplayItem | null {
@@ -519,6 +513,12 @@ function interruptedEvent(text: string): StreamDisplayItem | null {
   };
 }
 
+// rootParentToolUseId selects which thread is rendered at the top level:
+// - null (default): the main agent thread. Every entry with a non-null
+//   parent_tool_use_id belongs to some subagent and is excluded, regardless of
+//   whether the parent Agent tool_use is part of `entries`.
+// - "<tool_use_id>": the subagent thread spawned by that Agent tool_use.
+//   Entries of nested subagents are excluded the same way.
 export function mergeStreamEntries(entries: StreamEntry[], partialText?: string, provider?: string, rootParentToolUseId: string | null = null): DisplayGroup[] {
   // First pass: collect all tool_results keyed by tool_use_id, and track Skill tool IDs
   const resultMap = new Map<string, string>();
