@@ -389,6 +389,22 @@ interface TaskInfoMap {
   taskToToolUse: Map<string, string>;
 }
 
+// result.origin of kind "peer": a message sent from another session.
+function parsePeerOrigin(origin: unknown): StreamDisplayItem | null {
+  if (!origin || typeof origin !== "object") return null;
+  const o = origin as Record<string, unknown>;
+  if (o.kind !== "peer") return null;
+  const body = typeof o.body === "string" ? o.body.trim() : "";
+  if (!body) return null;
+  const name = typeof o.name === "string" && o.name ? o.name : "";
+  return {
+    kind: "system_event",
+    eventType: "peer_message",
+    label: name ? `他のセッション（${name}）からのメッセージ` : "他のセッションからのメッセージ",
+    detail: body,
+  };
+}
+
 function collectTaskInfo(entries: StreamEntry[]): TaskInfoMap {
   const byToolUse = new Map<string, TaskInfo>();
   const taskToToolUse = new Map<string, string>();
@@ -715,6 +731,20 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
             groups.pop();
           }
         }
+      }
+      // A turn started by a message from another session (peer) has no user
+      // line; the message body arrives only in result.origin. Show it at the
+      // start of the turn, i.e. right after the previous result.
+      const peerItem = parsePeerOrigin(raw.origin);
+      if (peerItem) {
+        let insertAt = 0;
+        for (let gi = groups.length - 1; gi >= 0; gi--) {
+          if (groups[gi].items.some(i => i.kind === "result")) {
+            insertAt = gi + 1;
+            break;
+          }
+        }
+        groups.splice(insertAt, 0, { role: "system", items: [peerItem] });
       }
       groups.push({ role: "system", items: [item] });
       continue;
