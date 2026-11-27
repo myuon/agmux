@@ -1315,6 +1315,10 @@ func (sp *HolderStreamProcess) startPeriodicNotification() {
 	}()
 }
 
+// holderStopGracePeriod is how long Stop waits for the holder to exit after
+// sending the stop command before killing its process group.
+var holderStopGracePeriod = 5 * time.Second
+
 // Stop sends a stop command to the holder.
 func (sp *HolderStreamProcess) Stop() {
 	sp.stopPeriodicNotification()
@@ -1333,14 +1337,17 @@ func (sp *HolderStreamProcess) Stop() {
 	// Wait for holder to exit
 	select {
 	case <-sp.done:
-	case <-time.After(5 * time.Second):
-		// Force kill the holder process
+	case <-time.After(holderStopGracePeriod):
+		// Force kill the holder's whole process group. Killing only the
+		// holder leaves the CLI (its child, in the same group because the
+		// holder is spawned with Setsid) running as an orphan that keeps
+		// working and calling agmux with no one recording its output.
 		// Skip the kill if the holder was already reaped: its PID may now
 		// belong to an unrelated process.
 		if IsHolderAlive(sp.holderPID) {
-			slog.Warn("holder did not exit gracefully, killing", "pid", sp.holderPID)
-			if p, err := os.FindProcess(sp.holderPID); err == nil {
-				p.Kill()
+			slog.Warn("holder did not exit gracefully, killing process group", "pid", sp.holderPID)
+			if err := syscall.Kill(-sp.holderPID, syscall.SIGKILL); err != nil {
+				slog.Warn("kill holder process group failed", "pid", sp.holderPID, "error", err)
 			}
 		}
 		<-sp.done
