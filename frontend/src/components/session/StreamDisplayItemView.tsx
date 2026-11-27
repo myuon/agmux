@@ -25,6 +25,16 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermis
   if (item.kind === "text") {
     return <MarkdownText text={item.text} />;
   }
+  if (item.kind === "thinking" && item.narration) {
+    // Narration blocks are the CLI's summaries of the words between tool calls,
+    // so show them like body text with the same "· summarized" hint Claude Code uses.
+    return (
+      <div>
+        <MarkdownText text={item.text} />
+        <span className="text-xs text-gray-400"> · summarized</span>
+      </div>
+    );
+  }
   if (item.kind === "thinking") {
     return (
       <details className="text-xs text-gray-400">

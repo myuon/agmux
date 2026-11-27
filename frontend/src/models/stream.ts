@@ -53,7 +53,9 @@ export type StreamDisplayItem =
   | { kind: "text"; text: string }
   | { kind: "image"; mediaType: string; data: string }
   | { kind: "tool_call"; name: string; input: unknown; result?: string; resultImages?: Array<{ mediaType: string; data: string }>; toolUseId?: string; running?: boolean; isError?: boolean; backgroundTask?: BackgroundTaskInfo }
-  | { kind: "thinking"; text: string }
+  // narration: the CLI listed this block in narration_block_indexes — a server
+  // summary of the prose between tool calls, not the model's own reasoning.
+  | { kind: "thinking"; text: string; narration?: boolean }
   | { kind: "system_event"; eventType: string; label: string; detail?: string }
   | { kind: "rate_limit"; rateLimitType: string; status: string; resetsAt: number; utilization?: number; isUsingOverage?: boolean; overageStatus?: string }
   | { kind: "choice_card"; cardId: string }
@@ -726,10 +728,20 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
     const items: StreamDisplayItem[] = [];
 
     if (entry.type === "assistant") {
+      const rawEntry = entry as unknown as Record<string, unknown>;
+      const narrationIndexes = new Set(
+        Array.isArray(rawEntry.narration_block_indexes)
+          ? (rawEntry.narration_block_indexes as unknown[]).filter((n): n is number => typeof n === "number")
+          : [],
+      );
       for (let bi = 0; bi < blocks.length; bi++) {
         const b = blocks[bi];
         if (b.type === "thinking" && b.thinking) {
-          items.push({ kind: "thinking", text: b.thinking });
+          if (narrationIndexes.has(bi)) {
+            items.push({ kind: "thinking", text: b.thinking, narration: true });
+          } else {
+            items.push({ kind: "thinking", text: b.thinking });
+          }
         } else if (b.type === "text" && b.text) {
           items.push({ kind: "text", text: b.text });
         } else if (b.type === "tool_use") {
@@ -971,7 +983,7 @@ export function chunkToolCallRuns(items: StreamDisplayItem[]): StreamRenderChunk
       }
       return;
     }
-    if (item.kind === "thinking" && run) {
+    if (item.kind === "thinking" && !item.narration && run) {
       pending.push({ index, item });
       return;
     }
