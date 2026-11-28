@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { HighlightedCode, HighlightedDiff } from "../ui/HighlightedCode";
 import { langFromPath, parseNumberedLines, type CodeLang } from "../../models/codeView";
+import { isAgentToolName } from "../../models/stream";
+import { stripSubagentHandback } from "../../models/tool";
 
 const labelClass = "text-gray-400 text-[10px] uppercase tracking-wide";
 
@@ -140,5 +142,6 @@ export function ToolResultView({ toolName, input, result, isError }: {
       </div>
     );
   }
-  return <pre className={plainOutputClass}>{result.slice(0, 2000)}</pre>;
+  const text = isAgentToolName(toolName) ? stripSubagentHandback(result) : result;
+  return <pre className={plainOutputClass}>{text.slice(0, 2000)}</pre>;
 }

@@ -115,3 +115,37 @@ export function parseTodoInput(input: unknown): TodoItem[] | null {
   if (inp?.todos && Array.isArray(inp.todos)) return inp.todos;
   return null;
 }
+
+const HANDBACK_MARKER = "[Subagent hand-back]";
+const HANDBACK_REPORT_START = "The report follows:";
+const REPORT_INDENT = "  ";
+
+/**
+ * Claude Code wraps an Agent/Task tool_result in a "[Subagent hand-back]"
+ * frame: an optional `<tools-used-before-summary>` note, a fixed preamble that
+ * ends with "The report follows:", then the report with every line indented by
+ * two spaces. Trailers such as `agentId: ...` and `<usage>` follow at column
+ * zero. This strips the note and preamble, un-indents the report and keeps the
+ * trailers. Results without the frame are returned unchanged.
+ */
+export function stripSubagentHandback(result: string): string {
+  const lines = result.split("\n");
+  const markerIdx = lines.findIndex((l) => l.startsWith(HANDBACK_MARKER));
+  if (markerIdx < 0) return result;
+  const startIdx = lines.findIndex((l, i) => i >= markerIdx && l.includes(HANDBACK_REPORT_START));
+  if (startIdx < 0) return result;
+  const head = lines[startIdx];
+  const inline = head.slice(head.indexOf(HANDBACK_REPORT_START) + HANDBACK_REPORT_START.length).trim();
+
+  const report: string[] = inline ? [inline] : [];
+  let i = startIdx + 1;
+  for (; i < lines.length; i++) {
+    const l = lines[i];
+    if (l.startsWith(REPORT_INDENT)) report.push(l.slice(REPORT_INDENT.length));
+    else if (l.trim() === "") report.push("");
+    else break;
+  }
+  const rest = lines.slice(i).join("\n");
+  const body = report.join("\n").trim();
+  return rest ? `${body}\n\n${rest}` : body;
+}
