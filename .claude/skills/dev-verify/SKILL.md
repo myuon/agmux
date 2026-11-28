@@ -71,6 +71,12 @@ mkdir -p /tmp/agmux-dev-home/.claude
 security find-generic-password -w -s "Claude Code-credentials" > /tmp/agmux-dev-home/.claude/.credentials.json
 ```
 
+### Pitfalls
+
+- 隔離バックエンドの設定で、リモートブラウザのデバッグポートを本番と同じ値（既定の 9223）のままにしない。本番の Chrome に接続してしまう。接続先を変えるため、別のポート（例: 9333）を設定する。
+- 起動直後に状態を一度でも問い合わせると接続が発生する。確認の前に、隔離用の設定でポートが本番と違うことを確かめる。
+- agmux から起動した Chrome が、新規プロファイルではページを読み込まないことがある。その場合は、確認用に `--use-mock-keychain --password-store=basic` 付きで Chrome を手動で起動する。
+
 ### Tips: 長時間走る tool_use を作る
 
 Claude Code は フォアグラウンドの `sleep` をハーネス側でブロックし、`run_in_background: false` を
