@@ -552,6 +552,18 @@ export function filterSubagentLines(lines: unknown[], parentToolUseId: string): 
   return result;
 }
 
+const INTERRUPTED_RE = /^\[Request interrupted by user( for tool use)?\]$/;
+
+function interruptedEvent(text: string): StreamDisplayItem | null {
+  const m = INTERRUPTED_RE.exec(text.trim());
+  if (!m) return null;
+  return {
+    kind: "system_event",
+    eventType: "user_interrupted",
+    label: m[1] ? "ユーザーがツール実行中に中断しました" : "ユーザーが中断しました",
+  };
+}
+
 // rootParentToolUseId selects which thread is rendered at the top level:
 // - null (default): the main agent thread. Every entry with a non-null
 //   parent_tool_use_id belongs to some subagent and is excluded, regardless of
@@ -866,6 +878,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
 
     const role = entry.type as "user" | "assistant";
     const items: StreamDisplayItem[] = [];
+    const interruptItems: StreamDisplayItem[] = [];
 
     if (entry.type === "assistant") {
       const rawEntry = entry as unknown as Record<string, unknown>;
@@ -1027,15 +1040,23 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
       // Only show user text/image content (tool_results are merged into assistant tool_call items)
       for (const b of blocks) {
         if (b.type === "text" && b.text) {
+          const interrupted = interruptedEvent(b.text);
+          if (interrupted) {
+            interruptItems.push(interrupted);
+            continue;
+          }
           items.push(parseBashExecText(b.text) ?? { kind: "text", text: b.text });
         } else if (b.type === "image" && b.source) {
           items.push({ kind: "image", mediaType: b.source.media_type, data: b.source.data });
         }
       }
       // user entries with content as plain string
-      if (items.length === 0 && typeof entry.message?.content === "string" && entry.message.content) {
+      if (items.length === 0 && interruptItems.length === 0 && typeof entry.message?.content === "string" && entry.message.content) {
         const content = entry.message.content;
-        items.push(parseBashExecText(content) ?? { kind: "text", text: content });
+        const interrupted = interruptedEvent(content);
+        if (interrupted) {
+          interruptItems.push(interrupted);
+        } else items.push(parseBashExecText(content) ?? { kind: "text", text: content });
       }
     }
 
@@ -1047,6 +1068,9 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
       } else {
         groups.push({ role, items });
       }
+    }
+    if (interruptItems.length > 0) {
+      groups.push({ role: "system", items: interruptItems });
     }
   }
 
