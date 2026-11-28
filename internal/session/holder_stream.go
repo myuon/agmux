@@ -1335,9 +1335,13 @@ func (sp *HolderStreamProcess) Stop() {
 	case <-sp.done:
 	case <-time.After(5 * time.Second):
 		// Force kill the holder process
-		slog.Warn("holder did not exit gracefully, killing", "pid", sp.holderPID)
-		if p, err := os.FindProcess(sp.holderPID); err == nil {
-			p.Kill()
+		// Skip the kill if the holder was already reaped: its PID may now
+		// belong to an unrelated process.
+		if IsHolderAlive(sp.holderPID) {
+			slog.Warn("holder did not exit gracefully, killing", "pid", sp.holderPID)
+			if p, err := os.FindProcess(sp.holderPID); err == nil {
+				p.Kill()
+			}
 		}
 		<-sp.done
 	}

@@ -6,6 +6,7 @@ import { Section } from "./ui/Section";
 import { AlertBanner } from "./ui/AlertBanner";
 import { StreamOutputView } from "./session/StreamOutputView";
 import { formatDuration, formatNum } from "./LoopDashboard";
+import { visibleInterval } from "../hooks/usePageVisible";
 
 const RUN_STATUS_STYLES: Record<AutomationRunReport["status"], string> = {
   success: "bg-green-50 border-green-300 text-green-700",
@@ -277,8 +278,7 @@ export function LoopTimeline({ automationId }: { automationId: string }) {
 
   useEffect(() => {
     reload();
-    const t = setInterval(reload, 10000);
-    return () => clearInterval(t);
+    return visibleInterval(reload, 10000);
   }, [reload]);
 
   const loadMore = async () => {

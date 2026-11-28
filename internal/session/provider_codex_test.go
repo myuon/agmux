@@ -647,3 +647,37 @@ func TestClaudeProvider_NormalizeStreamLine(t *testing.T) {
 		t.Errorf("ClaudeProvider should pass through unchanged\ngot:  %s\nwant: %s", string(results[0]), input)
 	}
 }
+
+func TestCodexProvider_NormalizeStreamLine_TurnFailed(t *testing.T) {
+	p := NewCodexProvider("")
+	line := []byte(`{"type":"turn.failed","error":{"message":"You've hit your usage limit. Try again at Nov 26th, 2026 9:41 AM."}}`)
+	out := p.NormalizeStreamLine(line)
+	if len(out) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(out))
+	}
+	var ev map[string]string
+	if err := json.Unmarshal(out[0], &ev); err != nil {
+		t.Fatal(err)
+	}
+	if ev["type"] != "system" || ev["subtype"] != "informational" || ev["level"] != "error" {
+		t.Errorf("unexpected event: %v", ev)
+	}
+	if want := "ターンが失敗しました: You've hit your usage limit. Try again at Nov 26th, 2026 9:41 AM."; ev["content"] != want {
+		t.Errorf("content = %q, want %q", ev["content"], want)
+	}
+}
+
+func TestCodexProvider_NormalizeStreamLine_TurnFailedNoMessage(t *testing.T) {
+	p := NewCodexProvider("")
+	out := p.NormalizeStreamLine([]byte(`{"type":"turn.failed"}`))
+	if len(out) != 1 {
+		t.Fatalf("expected 1 line, got %d", len(out))
+	}
+	var ev map[string]string
+	if err := json.Unmarshal(out[0], &ev); err != nil {
+		t.Fatal(err)
+	}
+	if ev["content"] != "ターンが失敗しました" {
+		t.Errorf("content = %q", ev["content"])
+	}
+}

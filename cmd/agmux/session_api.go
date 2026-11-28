@@ -147,3 +147,20 @@ func forkViaDaemon(baseURL, id string, preserveContext bool, prompt string) (dae
 	err := daemonPost(baseURL, "/api/sessions/"+id+"/fork", body, &out)
 	return out, err
 }
+
+// stopViaDaemon, archiveViaDaemon and restartViaDaemon run the operation in
+// the daemon, which owns the live holder connections. An in-process Manager
+// in the CLI has no stream process for the session, so Stop/Archive only
+// updated the DB and left the holder and CLI running as orphans until the
+// next daemon restart; Restart spawned a holder nobody was reading.
+func stopViaDaemon(baseURL, id string) error {
+	return daemonPost(baseURL, "/api/sessions/"+id+"/stop", struct{}{}, nil)
+}
+
+func archiveViaDaemon(baseURL, id string) error {
+	return daemonPost(baseURL, "/api/sessions/"+id+"/archive", struct{}{}, nil)
+}
+
+func restartViaDaemon(baseURL, id string) error {
+	return daemonPost(baseURL, "/api/sessions/"+id+"/restart", struct{}{}, nil)
+}

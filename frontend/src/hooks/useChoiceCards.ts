@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type ChoiceCard } from "../api/client";
 import type { Session } from "../types/session";
 import { useExperimental } from "./useExperimental";
+import { visibleInterval } from "./usePageVisible";
 
 /**
  * Returns lines with synthetic `choice_card` entries inserted at each card's
@@ -42,10 +43,10 @@ export function useOpenChoiceSessions(sessions: Session[]): Set<string> {
         })
         .catch(() => {});
     load();
-    const timer = setInterval(load, 15_000);
+    const stopPoll = visibleInterval(load, 15_000);
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      stopPoll();
     };
     // Session updates (websocket) arrive with every status change, so reload on them.
   }, [enabled, sessions]);

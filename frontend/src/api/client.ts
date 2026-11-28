@@ -157,9 +157,7 @@ export const api = {
   listSessions: () => request<Session[]>("/sessions"),
 
   listForkSessions: (parentSessionId: string) =>
-    request<Session[]>("/sessions").then((sessions) =>
-      sessions.filter((s) => s.parentSessionId === parentSessionId)
-    ),
+    request<Session[]>(`/sessions?parent=${encodeURIComponent(parentSessionId)}`),
 
   getRecentProjects: () =>
     request<RecentProject[]>("/projects/recent"),

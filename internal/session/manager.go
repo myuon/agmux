@@ -87,7 +87,7 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 	if systemPrompt == "" {
 		systemPrompt = defaultSystemPrompt
 	}
-	return &Manager{
+	m := &Manager{
 		db:               db,
 		claudeCommand:    claudeCommand,
 		codexCommand:     "codex",
@@ -100,6 +100,25 @@ func NewManager(db *sql.DB, claudeCommand string, permissionMode string, apiPort
 		ephemeralCancels: make(map[string]context.CancelFunc),
 		logger:           logger.With("component", "session_manager"),
 		backgroundTasks:  NewBackgroundTaskStore(db),
+	}
+	addHolderExitObserver(m.clearReapedHolderPID)
+	return m
+}
+
+// clearReapedHolderPID clears sessions.holder_pid once that holder has been
+// reaped. After the reap the OS may reuse the PID for an unrelated process,
+// so a holder_pid left behind (e.g. after a normal exit 0, which keeps the
+// session idle/running) could later make killStaleHolder or Delete signal
+// that process. The update is conditional on the PID so that a newer
+// holder's PID is never cleared. Status is not touched.
+func (m *Manager) clearReapedHolderPID(sessionID string, pid int) {
+	res, err := m.db.Exec("UPDATE sessions SET holder_pid = 0 WHERE id = ? AND holder_pid = ?", sessionID, pid)
+	if err != nil {
+		m.logger.Debug("clear reaped holder_pid failed", "sessionId", sessionID, "pid", pid, "error", err)
+		return
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		m.logger.Info("cleared holder_pid of reaped holder", "sessionId", sessionID, "holderPid", pid)
 	}
 }
 
@@ -321,6 +340,9 @@ func (m *Manager) RecoverStreamProcesses() {
 	// are closed: armAutoStop writes to the DB.
 	var rearm []string
 	var rearmIdle []string
+	// One-shot sessions whose holder is gone. Cleared after the rows are
+	// closed: the update writes to the DB.
+	var deadOneShot []deadOneShotHolder
 
 	for rows.Next() {
 		var id, projectPath, providerStr, dbCliSessionID, dbModel string
@@ -419,6 +441,19 @@ func (m *Manager) RecoverStreamProcesses() {
 			}
 		}
 
+		// One-shot providers (Codex/Cursor) take the prompt as a positional
+		// arg and exit after each turn, so their holder_pid stays set after a
+		// normal exit. Spawning a holder here has no prompt to give and the
+		// CLI fails with exit code 1 ("No prompt provided via stdin"). Clear
+		// holder_pid instead: the next send spawns the CLI with the prompt.
+		if provider.IsOneShot() {
+			deadOneShot = append(deadOneShot, deadOneShotHolder{id: id, status: Status(recStatus)})
+			if autoStopArmedInt != 0 && Status(recStatus) == StatusWorking {
+				rearmIdle = append(rearmIdle, id)
+			}
+			continue
+		}
+
 		// Start new holder process
 		sp, err := StartHolderStreamProcess(opts, provider)
 		if err != nil {
@@ -440,6 +475,9 @@ func (m *Manager) RecoverStreamProcesses() {
 		m.logger.Error("recover stream processes: rows iteration error", "error", err)
 	}
 	rows.Close()
+	for _, d := range deadOneShot {
+		m.recoverDeadOneShotHolder(d.id, d.status)
+	}
 	// Arm before applying replayed turn ends, so a turn that ended while agmux
 	// was down stops the run like a live turn end does.
 	for _, id := range rearm {
@@ -456,6 +494,29 @@ func (m *Manager) RecoverStreamProcesses() {
 
 	// Recover ephemeral timeout goroutines for active ephemeral sessions
 	m.recoverEphemeralTimeouts()
+}
+
+// deadOneShotHolder is a one-shot session found at recovery whose holder is
+// not alive.
+type deadOneShotHolder struct {
+	id     string
+	status Status
+}
+
+// recoverDeadOneShotHolder handles, at recovery, a one-shot session (Codex/
+// Cursor) whose holder is gone. Nothing is spawned: the CLI needs the next
+// prompt as a positional arg, which SendKeys provides. holder_pid is cleared
+// so the session is not picked up again by the next recovery. A session still
+// recorded as working has no CLI left to finish the turn, so it becomes idle.
+func (m *Manager) recoverDeadOneShotHolder(id string, status Status) {
+	m.logger.Info("recover: one-shot holder is not alive, clearing holder_pid without spawning", "sessionId", id)
+	if status == StatusWorking {
+		if err := m.UpdateStatusWithHolderPIDClear(id, StatusIdle); err != nil {
+			m.logger.Error("recover: failed to set one-shot session idle", "sessionId", id, "error", err)
+		}
+		return
+	}
+	m.updateHolderPID(id, 0)
 }
 
 // replayedTurnEnd is a turn end found in a stream file at recovery that is
@@ -1882,7 +1943,7 @@ func (m *Manager) GetStreamLines(id string, limit int) ([]string, int, error) {
 	}
 
 	// Fallback: read all lines from file, then truncate to limit
-	allLines, err := m.readStreamFile(id, 0, s.ClearOffset)
+	allLines, err := m.readStreamFile(id, 0, s.ClearOffset, m.getProvider(s.Provider))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1893,7 +1954,11 @@ func (m *Manager) GetStreamLines(id string, limit int) ([]string, int, error) {
 	return allLines, total, nil
 }
 
-func (m *Manager) readStreamFile(id string, limit int, clearOffset int64) ([]string, error) {
+// readStreamFile reads the session's raw JSONL file. When p is non-nil each
+// line is normalized by the provider, the same as the live path
+// (HolderStreamProcess) does on load, so e.g. Codex events of an exited
+// session are returned in the Claude-compatible form the frontend renders.
+func (m *Manager) readStreamFile(id string, limit int, clearOffset int64, p Provider) ([]string, error) {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
 		return nil, err
@@ -1925,10 +1990,9 @@ func (m *Manager) readStreamFile(id string, limit int, clearOffset int64) ([]str
 		// Skip transient lines (stream_event, thinking_tokens): the raw JSONL
 		// file contains everything the holder wrote, but history readers must
 		// apply the same filter as the live path (HolderStreamProcess).
-		if isTransientStreamLine(b) {
-			continue
+		for _, nl := range normalizeFileLine(p, b) {
+			lines = append(lines, string(nl))
 		}
-		lines = append(lines, string(b))
 	}
 
 	if limit > 0 && len(lines) > limit {
@@ -1955,7 +2019,7 @@ func (m *Manager) GetStreamLinesAfter(id string, after int) ([]string, int, erro
 	}
 
 	// Fallback: read from file
-	lines, err := m.readStreamFileAfter(id, after, s.ClearOffset)
+	lines, err := m.readStreamFileAfter(id, after, s.ClearOffset, m.getProvider(s.Provider))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -1998,7 +2062,7 @@ func (m *Manager) GetStreamLinesBefore(id string, before, limit int) ([]string, 
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	allLines, err := m.readStreamFile(id, 0, s.ClearOffset)
+	allLines, err := m.readStreamFile(id, 0, s.ClearOffset, m.getProvider(s.Provider))
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -2006,7 +2070,7 @@ func (m *Manager) GetStreamLinesBefore(id string, before, limit int) ([]string, 
 	return page, start, len(allLines), nil
 }
 
-func (m *Manager) readStreamFileAfter(id string, after int, clearOffset int64) ([]string, error) {
+func (m *Manager) readStreamFileAfter(id string, after int, clearOffset int64, p Provider) ([]string, error) {
 	streamsDir, err := db.StreamsDir()
 	if err != nil {
 		return nil, err
@@ -2036,15 +2100,34 @@ func (m *Manager) readStreamFileAfter(id string, after int, clearOffset int64) (
 		}
 		// Skip transient lines so the `after` cursor counts the same filtered
 		// history as the live path (HolderStreamProcess.lines).
-		if isTransientStreamLine(b) {
-			continue
+		for _, nl := range normalizeFileLine(p, b) {
+			if lineIdx >= after {
+				lines = append(lines, string(nl))
+			}
+			lineIdx++
 		}
-		if lineIdx >= after {
-			lines = append(lines, string(b))
-		}
-		lineIdx++
 	}
 	return lines, nil
+}
+
+// normalizeFileLine applies the provider normalization (if p is non-nil) to a
+// raw line from the stream file and drops nil and transient lines, mirroring
+// HolderStreamProcess's handling of the same file.
+func normalizeFileLine(p Provider, b []byte) [][]byte {
+	var candidates [][]byte
+	if p != nil {
+		candidates = p.NormalizeStreamLine(b)
+	} else {
+		candidates = [][]byte{b}
+	}
+	out := candidates[:0]
+	for _, nl := range candidates {
+		if nl == nil || isTransientStreamLine(nl) {
+			continue
+		}
+		out = append(out, nl)
+	}
+	return out
 }
 
 // GetController returns the controller session if it exists.

@@ -4,6 +4,7 @@ import type { AutomationTask } from "../api/client";
 import { Section } from "./ui/Section";
 import { AlertBanner } from "./ui/AlertBanner";
 import { useExperimental } from "../hooks/useExperimental";
+import { visibleInterval } from "../hooks/usePageVisible";
 
 const STATUS_ORDER: AutomationTask["status"][] = ["in_progress", "pending", "failed", "done"];
 
@@ -43,8 +44,7 @@ export function LoopTasks({ automationId }: { automationId: string }) {
   useEffect(() => {
     if (!enabled) return;
     reload();
-    const t = setInterval(reload, 10000);
-    return () => clearInterval(t);
+    return visibleInterval(reload, 10000);
   }, [enabled, reload]);
 
   if (!enabled) return null;

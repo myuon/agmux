@@ -32,6 +32,7 @@ import (
 	"github.com/myuon/agmux/internal/logging"
 	"github.com/myuon/agmux/internal/mcp"
 
+	"github.com/myuon/agmux/internal/retention"
 	"github.com/myuon/agmux/internal/server"
 	"github.com/myuon/agmux/internal/session"
 	"github.com/spf13/cobra"
@@ -196,7 +197,7 @@ func serveCmd() *cobra.Command {
 			defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
 
 			// Daemon logger (slog → stderr + ~/.agmux/agmux.log)
-			logFile, logger, err := logging.Setup()
+			logFile, logger, err := logging.Setup(cfg.Retention.LogDays)
 			if err != nil {
 				return fmt.Errorf("setup logging: %w", err)
 			}
@@ -311,6 +312,22 @@ func serveCmd() *cobra.Command {
 			autoScheduler.OnLimitStop = srv.NoticeAutomation
 			autoScheduler.LoginRequired = claudeAuthMon.Required
 			autoScheduler.Start()
+
+			// Retention (#918): prune old OTel rows and stream files ~1 min
+			// after startup and then every 24h. Re-reads config.toml each run.
+			retentionCtx, retentionCancel := context.WithCancel(context.Background())
+			defer retentionCancel()
+			if streamsDir, err := db.StreamsDir(); err != nil {
+				logger.Warn("retention disabled: streams dir", "error", err)
+			} else {
+				cleaner := retention.New(database, streamsDir, func() config.RetentionConfig {
+					if c, err := config.Load(); err == nil {
+						return c.Retention
+					}
+					return cfg.Retention
+				}, logger)
+				go cleaner.Run(retentionCtx)
+			}
 			// Stop is idempotent; the defer covers error-return paths (frontend
 			// load / listen / Serve errors) that bypass the graceful-shutdown
 			// branch below.
@@ -376,6 +393,7 @@ func serveCmd() *cobra.Command {
 			case sig := <-shutdownCh:
 				logger.Info(fmt.Sprintf("Received %s, shutting down gracefully...", sig))
 				autoScheduler.Stop()
+				retentionCancel()
 				// Close Chrome via CDP (never SIGTERM) so cookies are flushed.
 				rbCtx, rbCancel := context.WithTimeout(context.Background(), 12*time.Second)
 				srv.ShutdownRemoteBrowser(rbCtx)
@@ -655,12 +673,27 @@ func sessionStopCmd() *cobra.Command {
 		Short: "Stop a session",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			cfg, err := config.Load()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			id := args[0]
+			// Stop through the daemon: it owns the holder connection. An
+			// in-process Manager only updates the DB and leaves the holder
+			// running as an orphan.
+			err = stopViaDaemon(daemonBaseURL(cfg), id)
+			if err == nil {
+				fmt.Println("Session stopped.")
+				return nil
+			}
+			if !errors.Is(err, errServerUnreachable) {
+				return err
+			}
+			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
-			id := args[0]
+			defer database.Close()
 			if err := mgr.Stop(id); err != nil {
 				return err
 			}
@@ -676,14 +709,36 @@ func sessionArchiveCmd() *cobra.Command {
 		Short: "Stop and archive one or more sessions",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, _ := config.Load()
-			mgr, _, err := initManager(cfg, cfg.Server.Port, nil)
+			cfg, err := config.Load()
 			if err != nil {
-				return err
+				return fmt.Errorf("load config: %w", err)
+			}
+			baseURL := daemonBaseURL(cfg)
+			// Archive through the daemon (see session stop). Fall back to an
+			// in-process Manager only when the daemon is not running.
+			var mgr session.SessionService
+			var database *sql.DB
+			defer func() {
+				if database != nil {
+					database.Close()
+				}
+			}()
+			archive := func(id string) error {
+				if mgr == nil {
+					err := archiveViaDaemon(baseURL, id)
+					if !errors.Is(err, errServerUnreachable) {
+						return err
+					}
+					mgr, database, err = initManager(cfg, cfg.Server.Port, nil)
+					if err != nil {
+						return err
+					}
+				}
+				return mgr.Archive(id)
 			}
 			failed := 0
 			for _, id := range args {
-				if err := mgr.Archive(id); err != nil {
+				if err := archive(id); err != nil {
 					fmt.Fprintf(os.Stderr, "%s: %v\n", id, err)
 					failed++
 					continue
@@ -708,12 +763,22 @@ func sessionRestartCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("load config: %w", err)
 			}
+			id := args[0]
+			// Restart through the daemon so it owns the new holder and reads
+			// its stream (see session stop).
+			err = restartViaDaemon(daemonBaseURL(cfg), id)
+			if err == nil {
+				fmt.Println("Session restarted.")
+				return nil
+			}
+			if !errors.Is(err, errServerUnreachable) {
+				return err
+			}
 			mgr, database, err := initManager(cfg, cfg.Server.Port, nil)
 			if err != nil {
 				return err
 			}
 			defer database.Close()
-			id := args[0]
 			if err := mgr.Restart(id); err != nil {
 				return err
 			}
@@ -1131,6 +1196,10 @@ func formatBytes(b int64) string {
 func readSessionLines(logPath string, clearOffset int64) ([]string, error) {
 	f, err := os.Open(logPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			// Stream files of old archived sessions are pruned (retention); show nothing.
+			return nil, nil
+		}
 		return nil, fmt.Errorf("open stream file: %w", err)
 	}
 	defer f.Close()
