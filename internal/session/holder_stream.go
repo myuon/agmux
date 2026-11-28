@@ -1335,6 +1335,35 @@ func (sp *HolderStreamProcess) startPeriodicNotification() {
 	}()
 }
 
+// holderStopGracePeriod is how long Stop waits for the holder to exit after
+// sending the stop command before killing its process group.
+var holderStopGracePeriod = 5 * time.Second
+
+// killHolderProcessGroup SIGKILLs the holder's process group (holder + CLI).
+// The group kill is only used when pid really leads its own group (holders are
+// spawned with Setsid, so PGID == PID) and that group is not the daemon's own;
+// pid <= 1 is never signalled (kill(0) / kill(-1) would hit the daemon's group
+// or every process). Otherwise only the holder itself is killed, so Stop's wait
+// for the holder to exit still completes.
+func killHolderProcessGroup(pid int) {
+	if pid <= 1 {
+		return
+	}
+	pgid, err := syscall.Getpgid(pid)
+	if err == nil && pgid == pid && pgid != syscall.Getpgrp() {
+		err = syscall.Kill(-pid, syscall.SIGKILL)
+		if err == nil {
+			return
+		}
+		slog.Warn("kill holder process group failed, killing holder only", "pid", pid, "error", err)
+	} else {
+		slog.Warn("holder is not a process group leader, killing holder only", "pid", pid, "pgid", pgid, "error", err)
+	}
+	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+		slog.Warn("kill holder failed", "pid", pid, "error", err)
+	}
+}
+
 // Stop sends a stop command to the holder.
 func (sp *HolderStreamProcess) Stop() {
 	sp.stopPeriodicNotification()
@@ -1353,15 +1382,16 @@ func (sp *HolderStreamProcess) Stop() {
 	// Wait for holder to exit
 	select {
 	case <-sp.done:
-	case <-time.After(5 * time.Second):
-		// Force kill the holder process
+	case <-time.After(holderStopGracePeriod):
+		// Force kill the holder's whole process group. Killing only the
+		// holder leaves the CLI (its child, in the same group because the
+		// holder is spawned with Setsid) running as an orphan that keeps
+		// working and calling agmux with no one recording its output.
 		// Skip the kill if the holder was already reaped: its PID may now
 		// belong to an unrelated process.
 		if IsHolderAlive(sp.holderPID) {
-			slog.Warn("holder did not exit gracefully, killing", "pid", sp.holderPID)
-			if p, err := os.FindProcess(sp.holderPID); err == nil {
-				p.Kill()
-			}
+			slog.Warn("holder did not exit gracefully, killing process group", "pid", sp.holderPID)
+			killHolderProcessGroup(sp.holderPID)
 		}
 		<-sp.done
 	}
