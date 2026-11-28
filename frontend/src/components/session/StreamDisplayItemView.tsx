@@ -8,6 +8,7 @@ import { ToolCallView } from "./ToolCallView";
 import { ToolCallGroupView } from "./ToolCallGroupView";
 import { ChoiceCardView } from "./ChoiceCards";
 import { AlertTriangle, CheckCircle } from "lucide-react";
+import { resultErrorFooter } from "./resultErrorFooter";
 
 function SystemEventView({ item }: { item: Extract<StreamDisplayItem, { kind: "system_event" }> }) {
   return <SystemEventRow label={item.label} detail={item.detail} />;
@@ -24,6 +25,16 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermis
 }) {
   if (item.kind === "text") {
     return <MarkdownText text={item.text} />;
+  }
+  if (item.kind === "thinking" && item.narration) {
+    // Narration blocks are the CLI's summaries of the words between tool calls,
+    // so show them like body text with the same "· summarized" hint Claude Code uses.
+    return (
+      <div>
+        <MarkdownText text={item.text} />
+        <span className="text-xs text-gray-400"> · summarized</span>
+      </div>
+    );
   }
   if (item.kind === "thinking") {
     return (
@@ -70,9 +81,9 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermis
             {!item.result && item.errors && item.errors.length > 0 && (
               <pre className="mt-1 whitespace-pre-wrap break-words font-sans">{item.errors.join("\n")}</pre>
             )}
-            {(item.subtype || item.terminalReason) && (
+            {resultErrorFooter(item.subtype, item.terminalReason) && (
               <div className="mt-1 text-[11px] text-red-600/80">
-                {[item.subtype, item.terminalReason].filter(Boolean).join(" · ")}
+                {resultErrorFooter(item.subtype, item.terminalReason)}
               </div>
             )}
           </div>
