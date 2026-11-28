@@ -505,6 +505,13 @@ function isProviderCoLocatedTools(provider?: string): boolean {
   return provider === "codex" || provider === "cursor";
 }
 
+// Claude Code wraps some tool errors in <tool_use_error>…</tool_use_error>
+// (e.g. "No such tool available", blocked commands). Show only the inner text.
+export function stripToolUseErrorTag(result: string): string {
+  const m = result.match(/^\s*<tool_use_error>([\s\S]*)<\/tool_use_error>\s*$/);
+  return m ? m[1] : result;
+}
+
 // Merge assistant/user entries into display items, pairing tool_use with tool_result by id
 // partialText: incremental text from stream_event deltas (shown as "typing" in the last assistant group)
 // Parse the `<bash-input>...</bash-input><bash-stdout>...</bash-stdout><bash-stderr>...</bash-stderr><bash-error>...</bash-error>`
@@ -676,7 +683,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               texts.push(b.text);
             }
           }
-          resultMap.set(block.tool_use_id, texts.join(""));
+          resultMap.set(block.tool_use_id, stripToolUseErrorTag(texts.join("")));
           if (images.length > 0) {
             resultImageMap.set(block.tool_use_id, images);
           }
@@ -684,7 +691,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
           const c = typeof block.content === "string"
             ? block.content
             : JSON.stringify(block.content);
-          resultMap.set(block.tool_use_id, c);
+          resultMap.set(block.tool_use_id, stripToolUseErrorTag(c));
         }
       }
     }

@@ -7,6 +7,7 @@ import { compactionLines } from "./compaction";
 import { multipleRunningTasksLines } from "./multipleRunningTasks";
 import { apiRetryLines, apiRetryResolvedLines, apiRetryNoResponseLines } from "./apiRetry";
 import { resultEventSuccessLines, resultEventErrorLines } from "./resultEvent";
+import { toolUseErrorLines } from "./toolUseError";
 import { peerMessageLines } from "./peerMessage";
 import { mockSessions } from "./sessionListScenarios";
 import type { Session } from "../../types/session";
@@ -178,6 +179,13 @@ export const scenarioPresets: ScenarioPreset[] = [
     label: "Peer Message",
     description: "他のセッションから届いた依頼（result.origin.kind=peer）で始まったターン",
     lines: peerMessageLines,
+  },
+  {
+    id: "tool-use-error",
+    type: "stream",
+    label: "Tool Use Error",
+    description: "<tool_use_error> で包まれたツールエラー結果（タグを除いて表示）",
+    lines: toolUseErrorLines,
   },
   {
     id: "send-error",
