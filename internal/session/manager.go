@@ -1507,6 +1507,16 @@ func (m *Manager) wireSessionIDCallback(sessionID string, sp *HolderStreamProces
 	} else {
 		m.logger.Info("onNewLines callback set for session", "sessionId", sessionID)
 	}
+	sp.SetOnTurnStart(func(sid string) {
+		// A turn the CLI started on its own (no SendKeys) after the previous
+		// turn ended: put an idle session back to working so the status is
+		// right and a pending automation auto-stop does not kill it mid-turn.
+		if changed, err := m.markWorkingIfIdle(sid); err != nil {
+			m.logger.Error("failed to update status on turn start", "sessionId", sid, "error", err)
+		} else if changed {
+			m.logger.Info("turn started by the CLI (system/init), setting status to working", "sessionId", sid)
+		}
+	})
 	sp.SetOnTurnComplete(func(sid string) {
 		m.logger.Info("turn completed (result event detected), setting status to idle",
 			"sessionId", sid,
@@ -2252,6 +2262,23 @@ func (m *Manager) UpdateStatus(id string, status Status) error {
 		m.fireStatusChange(id, status, "")
 	}
 	return err
+}
+
+// markWorkingIfIdle sets the session to working only when it is idle, and
+// reports whether it changed. Other statuses (waiting_input, paused, archived
+// ...) are left as they are.
+func (m *Manager) markWorkingIfIdle(id string) (bool, error) {
+	res, err := m.db.Exec("UPDATE sessions SET status = ?, updated_at = ? WHERE id = ? AND status = ?",
+		string(StatusWorking), time.Now(), id, string(StatusIdle))
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return false, nil
+	}
+	m.fireStatusChange(id, StatusWorking, "")
+	return true, nil
 }
 
 // UpdateStatusWithError updates the session status and records the last error message.

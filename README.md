@@ -105,7 +105,14 @@ interval = "30s"
 
 [claude]
 permission_mode = "auto"  # default, acceptEdits, plan, dontAsk, bypassPermissions, auto
+
+[retention]               # 保存日数。0 以下を指定するとその対象は削除しない
+log_days = 14             # ローテーション済み agmux-*.log.gz を保持する日数
+otel_days = 30            # otel_events / otel_metrics の行を保持する日数
+stream_days = 30          # アーカイブ済み・停止済み・DB に無いセッションの streams/<id>.jsonl を保持する日数
 ```
+
+`agmux.log` は日付が変わるか 100MB を超えると `agmux-YYYYMMDD-HHMMSS.log.gz` に切り替わります。OTel とストリームの削除は起動 1 分後と 24 時間ごとに実行されます。
 
 ## シークレットと 1Password 連携
 

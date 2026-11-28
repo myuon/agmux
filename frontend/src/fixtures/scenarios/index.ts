@@ -7,6 +7,7 @@ import { compactionLines } from "./compaction";
 import { multipleRunningTasksLines } from "./multipleRunningTasks";
 import { apiRetryLines, apiRetryResolvedLines, apiRetryNoResponseLines } from "./apiRetry";
 import { resultEventSuccessLines, resultEventErrorLines } from "./resultEvent";
+import { peerMessageLines } from "./peerMessage";
 import { mockSessions } from "./sessionListScenarios";
 import type { Session } from "../../types/session";
 
@@ -170,6 +171,13 @@ export const scenarioPresets: ScenarioPreset[] = [
     label: "Result Event: Error",
     description: "assistantメッセージの後にresult（エラー）が来るシナリオ",
     lines: resultEventErrorLines,
+  },
+  {
+    id: "peer-message",
+    type: "stream",
+    label: "Peer Message",
+    description: "他のセッションから届いた依頼（result.origin.kind=peer）で始まったターン",
+    lines: peerMessageLines,
   },
   {
     id: "send-error",

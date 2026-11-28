@@ -142,6 +142,103 @@ func TestRepairClaudeCredentialsKeepsExpiredEntryWhenFileCannotReplaceIt(t *test
 	}
 }
 
+// credsJSONWith builds a credential payload with explicit refresh fields. A
+// nil refreshExpiry omits refreshTokenExpiresAt.
+func credsJSONWith(t *testing.T, expiry time.Time, refreshToken string, refreshExpiry *time.Time) []byte {
+	t.Helper()
+	oauth := map[string]any{
+		"expiresAt":    expiry.UnixMilli(),
+		"refreshToken": refreshToken,
+	}
+	if refreshExpiry != nil {
+		oauth["refreshTokenExpiresAt"] = refreshExpiry.UnixMilli()
+	}
+	b, err := json.Marshal(map[string]any{"claudeAiOauth": oauth})
+	if err != nil {
+		t.Fatalf("marshal creds: %v", err)
+	}
+	return b
+}
+
+func TestRepairClaudeCredentialsLapsedButRefreshableIsHealthy(t *testing.T) {
+	skipUnlessDarwin(t)
+	now := time.Now()
+	refreshExpiry := now.Add(20 * 24 * time.Hour)
+
+	cases := []struct {
+		name     string
+		keychain []byte
+	}{
+		{name: "refresh token with future expiry", keychain: credsJSONWith(t, now.Add(-time.Hour), "refresh", &refreshExpiry)},
+		{name: "refresh token without expiry field", keychain: credsJSONWith(t, now.Add(-time.Hour), "refresh", nil)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// No credentials file: the setup in which the false warning appeared.
+			deleted := stubClaudeCreds(t, tc.keychain, nil)
+
+			state, err := RepairClaudeCredentials(now)
+			if err != nil {
+				t.Fatalf("RepairClaudeCredentials: %v", err)
+			}
+			if state != ClaudeCredsHealthy {
+				t.Errorf("state = %v, want ClaudeCredsHealthy", state)
+			}
+			if *deleted {
+				t.Error("deleted the only credentials")
+			}
+		})
+	}
+}
+
+func TestRepairClaudeCredentialsUnrefreshableIsUnrecoverable(t *testing.T) {
+	skipUnlessDarwin(t)
+	now := time.Now()
+	pastRefresh := now.Add(-time.Hour)
+
+	cases := []struct {
+		name     string
+		keychain []byte
+	}{
+		{name: "expiresAt zero with refresh token", keychain: credsJSONWith(t, time.UnixMilli(0), "refresh", nil)},
+		{name: "no refresh token", keychain: credsJSONWith(t, now.Add(-time.Hour), "", nil)},
+		{name: "refresh token expired", keychain: credsJSONWith(t, now.Add(-time.Hour), "refresh", &pastRefresh)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			deleted := stubClaudeCreds(t, tc.keychain, nil)
+
+			state, err := RepairClaudeCredentials(now)
+			if err != nil {
+				t.Fatalf("RepairClaudeCredentials: %v", err)
+			}
+			if state != ClaudeCredsUnrecoverable {
+				t.Errorf("state = %v, want ClaudeCredsUnrecoverable", state)
+			}
+			if *deleted {
+				t.Error("deleted the keychain entry with no valid fallback")
+			}
+		})
+	}
+}
+
+func TestRepairClaudeCredentialsStillPrefersValidFileOverLapsedKeychain(t *testing.T) {
+	skipUnlessDarwin(t)
+	now := time.Now()
+
+	// Deletion behaviour is unchanged: a lapsed Keychain entry is still
+	// removed when the file holds a valid token.
+	deleted := stubClaudeCreds(t, credsJSONWith(t, now.Add(-time.Hour), "refresh", nil), credsJSON(t, now.Add(8*time.Hour)))
+
+	state, err := RepairClaudeCredentials(now)
+	if err != nil {
+		t.Fatalf("RepairClaudeCredentials: %v", err)
+	}
+	if state != ClaudeCredsRepaired || !*deleted {
+		t.Errorf("state = %v deleted = %v, want ClaudeCredsRepaired and deleted", state, *deleted)
+	}
+}
+
 func TestRepairClaudeCredentialsNoKeychainEntry(t *testing.T) {
 	skipUnlessDarwin(t)
 	now := time.Now()
