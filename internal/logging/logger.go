@@ -7,9 +7,10 @@ import (
 	"path/filepath"
 )
 
-// Setup initializes slog with JSON output to both stderr and a log file.
-// Returns the log file (caller should defer Close) and the logger.
-func Setup() (*os.File, *slog.Logger, error) {
+// Setup initializes slog with JSON output to both stderr and a rotating log
+// file (~/.agmux/agmux.log). logDays is the retention for rotated logs
+// (<= 0 keeps them forever). The returned writer must be closed by the caller.
+func Setup(logDays int) (io.Closer, *slog.Logger, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return nil, nil, err
@@ -20,39 +21,41 @@ func Setup() (*os.File, *slog.Logger, error) {
 		return nil, nil, err
 	}
 
-	logPath := filepath.Join(logDir, "agmux.log")
-	file, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	// launchd points stderr (and stdout) at agmux.log. Detect that before the
+	// file is rotated so that fd 1/2 can be re-pointed after each rotation.
+	same := stderrIsFile(os.Stderr, filepath.Join(logDir, "agmux.log"))
+	rf, err := openRotating(logDir, rotateOptions{days: logDays, redirect: same})
 	if err != nil {
 		return nil, nil, err
 	}
 
-	logger := slog.New(slog.NewJSONHandler(newWriter(os.Stderr, file), &slog.HandlerOptions{
+	logger := slog.New(slog.NewJSONHandler(newWriter(os.Stderr, rf, same), &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
 
-	return file, logger, nil
+	return rf, logger, nil
+}
+
+func stderrIsFile(stderr *os.File, path string) bool {
+	pi, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	si, err := stderr.Stat()
+	if err != nil {
+		return false
+	}
+	return os.SameFile(pi, si)
 }
 
 // newWriter returns the destination for daemon logs. When stderr already
 // points to the log file (launchd redirects StandardErrorPath to agmux.log),
 // writing to both would duplicate every line, so only the file is used.
-func newWriter(stderr, file *os.File) io.Writer {
-	if sameFile(stderr, file) {
+func newWriter(stderr *os.File, file io.Writer, same bool) io.Writer {
+	if same {
 		return file
 	}
 	return io.MultiWriter(stderr, file)
-}
-
-func sameFile(a, b *os.File) bool {
-	ai, err := a.Stat()
-	if err != nil {
-		return false
-	}
-	bi, err := b.Stat()
-	if err != nil {
-		return false
-	}
-	return os.SameFile(ai, bi)
 }
 
 // LogPath returns the default log file path.
