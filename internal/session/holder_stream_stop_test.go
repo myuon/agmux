@@ -79,3 +79,21 @@ func TestHolderStreamStopKillsCLIOnTimeout(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// killHolderProcessGroup must not signal the daemon's own process group when
+// the pid is not a group leader: here it is a child sharing the test's group,
+// so only that child is killed and the test process survives.
+func TestKillHolderProcessGroupSkipsNonLeader(t *testing.T) {
+	cmd := exec.Command("sleep", "60")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+	killHolderProcessGroup(cmd.Process.Pid)
+	if err := cmd.Wait(); err == nil {
+		t.Fatal("child was not killed")
+	}
+	// pid <= 1 is a no-op (kill(0) / kill(-1) would be catastrophic).
+	killHolderProcessGroup(0)
+	killHolderProcessGroup(1)
+}
