@@ -32,8 +32,18 @@ type Config struct {
 	Templates       []RoleTemplate      `toml:"templates" json:"templates"`
 	PromptTemplates []PromptTemplate    `toml:"prompt_templates" json:"prompt_templates"`
 	LearningInbox   LearningInboxConfig `toml:"learning_inbox,omitempty"`
+	// Retention controls automatic deletion of old logs / OTel rows / streams.
+	Retention RetentionConfig `toml:"retention" json:"retention"`
 	// Experimental holds opt-in feature flags (see internal/experimental).
 	Experimental map[string]bool `toml:"experimental,omitempty" json:"experimental,omitempty"`
+}
+
+// RetentionConfig sets how many days data is kept. A value <= 0 means the
+// category is never deleted.
+type RetentionConfig struct {
+	LogDays    int `toml:"log_days" json:"log_days"`
+	OtelDays   int `toml:"otel_days" json:"otel_days"`
+	StreamDays int `toml:"stream_days" json:"stream_days"`
 }
 
 type ServerConfig struct {
@@ -195,6 +205,7 @@ func Default() *Config {
 		Claude: ClaudeConfig{
 			PermissionMode: DefaultPermissionMode,
 		},
+		Retention: RetentionConfig{LogDays: 14, OtelDays: 30, StreamDays: 30},
 	}
 }
 
