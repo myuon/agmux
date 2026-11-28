@@ -264,8 +264,25 @@ export const compactionLines = [
     "type": "system",
     "subtype": "status",
     "status": "compacting",
+    "compact_output_chars": 0,
     "session_id": "00000000-0000-0000-0000-000000000013",
     "uuid": "00000000-0000-0000-0000-000000000018"
+  },
+  {
+    "type": "system",
+    "subtype": "status",
+    "status": "compacting",
+    "compact_output_chars": 6897,
+    "session_id": "00000000-0000-0000-0000-000000000013",
+    "uuid": "00000000-0000-0000-0000-0000000000c1"
+  },
+  {
+    "type": "system",
+    "subtype": "status",
+    "status": "compacting",
+    "compact_output_chars": 12734,
+    "session_id": "00000000-0000-0000-0000-000000000013",
+    "uuid": "00000000-0000-0000-0000-0000000000c2"
   },
   {
     "type": "system",
