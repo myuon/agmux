@@ -22,7 +22,7 @@ func TestNewWriterSkipsStderrWhenSameFile(t *testing.T) {
 	}
 	defer stderr.Close()
 
-	if _, err := io.WriteString(newWriter(stderr, file), "line\n"); err != nil {
+	if _, err := io.WriteString(newWriter(stderr, file, stderrIsFile(stderr, file.Name())), "line\n"); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(path)
@@ -44,7 +44,7 @@ func TestNewWriterWritesBothWhenDifferentFiles(t *testing.T) {
 	}
 	defer stderr.Close()
 
-	if _, err := io.WriteString(newWriter(stderr, file), "line\n"); err != nil {
+	if _, err := io.WriteString(newWriter(stderr, file, stderrIsFile(stderr, file.Name())), "line\n"); err != nil {
 		t.Fatal(err)
 	}
 	for _, p := range []string{file.Name(), stderr.Name()} {

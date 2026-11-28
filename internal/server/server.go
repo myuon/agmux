@@ -107,7 +107,7 @@ func New(sessions session.SessionService, hub *Hub, devMode bool, logger *slog.L
 		for i, line := range newLines {
 			rawLines[i] = json.RawMessage(line)
 		}
-		hub.Broadcast(Message{
+		hub.BroadcastToSubscribers(sessionID, Message{
 			Type: "stream_update",
 			Data: map[string]interface{}{
 				"sessionId": sessionID,
@@ -323,6 +323,11 @@ func (s *Server) MountFrontend(frontendFS fs.FS) {
 		} else {
 			f.Close()
 		}
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		} else {
+			w.Header().Set("Cache-Control", "no-cache")
+		}
 		fileServer.ServeHTTP(w, r)
 	}))
 }
@@ -436,7 +441,7 @@ func (s *Server) broadcastSessionUpdate() {
 	}
 	s.hub.Broadcast(Message{
 		Type: "session_update",
-		Data: sessions,
+		Data: stripInitialPrompts(sessions),
 	})
 }
 
@@ -469,7 +474,29 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 		sessions = append(sessions, external...)
 	}
 
-	writeJSON(w, http.StatusOK, sessions)
+	if parent := r.URL.Query().Get("parent"); parent != "" {
+		filtered := make([]session.Session, 0)
+		for _, sess := range sessions {
+			if sess.ParentSessionID == parent {
+				filtered = append(filtered, sess)
+			}
+		}
+		sessions = filtered
+	}
+
+	writeJSON(w, http.StatusOK, stripInitialPrompts(sessions))
+}
+
+// stripInitialPrompts blanks InitialPrompt (omitted from JSON via omitempty)
+// on list responses; it dominates the payload size. The single-session
+// endpoint keeps it.
+func stripInitialPrompts(sessions []session.Session) []session.Session {
+	out := make([]session.Session, len(sessions))
+	copy(out, sessions)
+	for i := range out {
+		out[i].InitialPrompt = ""
+	}
+	return out
 }
 
 func (s *Server) createSession(w http.ResponseWriter, r *http.Request) {
@@ -1704,6 +1731,7 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 	cfg.RemoteBrowser = current.RemoteBrowser
 	cfg.Secret = current.Secret
 	cfg.Experimental = current.Experimental
+	cfg.Retention = current.Retention
 	cfg.LearningInbox = current.LearningInbox
 	// Preserve background_task_notification_interval if the request omitted it
 	// (older clients may not send the field).
@@ -2171,7 +2199,12 @@ func slogRequestLogger(logger *slog.Logger) func(next http.Handler) http.Handler
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			start := time.Now()
 			next.ServeHTTP(ww, r)
-			logger.Info("http request",
+			// Debug normally (these lines were ~95% of agmux.log); 5xx stays visible.
+			level := slog.LevelDebug
+			if ww.Status() >= 500 {
+				level = slog.LevelWarn
+			}
+			logger.Log(r.Context(), level, "http request",
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", ww.Status(),

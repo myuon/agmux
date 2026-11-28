@@ -25,7 +25,8 @@ import { api, type DiffFile, type PromptTemplate } from "../api/client";
 import { StatusDot } from "../components/StatusBadge";
 import { useMarkSessionRead } from "../hooks/useMarkSessionRead";
 import { setActiveSessionName } from "../activeSession";
-import { useWebSocket } from "../hooks/useWebSocket";
+import { useWebSocket, useStreamSubscription } from "../hooks/useWebSocket";
+import { useVisibleInterval } from "../hooks/usePageVisible";
 import { ChoiceCardsStream } from "../components/session/ChoiceCards";
 import { StreamOutputView, ActiveTasksPanel } from "../components/session/StreamOutputView";
 import { ArtifactList } from "../components/session/ArtifactList";
@@ -62,6 +63,9 @@ type DeferredData = {
 
 // Page size for loading older history (scroll-to-top / auto-fill).
 const HISTORY_PAGE_SIZE = 300;
+// If a catch-up fetch returns more lines than this, reload the tail instead of
+// appending a huge gap.
+const CATCHUP_MAX_LINES = 500;
 
 function initialHistoryStart(resp: { lines: unknown[]; total: number; start?: number }): number {
   if (typeof resp.start === "number") return resp.start;
@@ -464,6 +468,108 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
     };
   }, []);
 
+  // Apply stream lines (live stream_update or an incremental catch-up fetch)
+  // to the view. `total` is the persisted line count after these lines.
+  const applyStreamLines = useCallback((lines: unknown[], total: number) => {
+    if (lines.length === 0) return;
+    {
+      {
+        const regular: unknown[] = [];
+        for (const line of lines) {
+          const entry = line as Record<string, unknown>;
+          if (entry.type === "stream_event") {
+            // Extract text delta from content_block_delta events
+            const evt = entry.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
+            if (evt?.type === "content_block_delta" && evt.delta?.type === "text_delta" && evt.delta.text) {
+              setPartialText((prev) => prev + evt.delta!.text!);
+            }
+          } else if (entry.type === "system" && entry.subtype === "thinking_tokens") {
+            // Transient thinking progress meter: keep only the latest count,
+            // never push to streamLines (see issue #675)
+            if (typeof entry.estimated_tokens === "number") {
+              setThinkingTokens(entry.estimated_tokens);
+            }
+          } else if (entry.type === "tool_progress") {
+            // Transient heartbeat for a long-running tool: keep only the latest
+            // elapsed_time_seconds per running tool_use, never push to streamLines
+            const parentId = typeof entry.parent_tool_use_id === "string"
+              ? entry.parent_tool_use_id
+              : typeof entry.tool_use_id === "string" ? entry.tool_use_id : undefined;
+            if (parentId && typeof entry.elapsed_time_seconds === "number") {
+              const elapsed = entry.elapsed_time_seconds;
+              setToolProgress((prev) => ({ ...prev, [parentId]: elapsed }));
+            }
+          } else {
+            // Clear partial text and thinking indicator when a complete assistant message arrives
+            if (entry.type === "assistant") {
+              setPartialText("");
+              setThinkingTokens(null);
+            }
+            // Also clear the thinking indicator at turn end
+            if (entry.type === "result") {
+              setThinkingTokens(null);
+              setToolProgress({});
+            }
+            regular.push(line);
+          }
+        }
+        // Cursor-based dedupe. `total` is the number of persisted lines after
+        // this update, so the persisted lines it carries occupy the indices
+        // [total - regular.length, total - 1]. Anything below the cursor was
+        // already applied (the initial snapshot, or the very same broadcast
+        // delivered twice) and must be dropped, otherwise the line renders
+        // twice (issue #709). Content-based dedupe is not usable here: the
+        // same line legitimately repeats (e.g. running the same command twice).
+        // A shrinking `total` means the persisted stream was reset (context
+        // cleared from another tab or the CLI). Drop the stale cursor instead
+        // of silently discarding every line that follows.
+        const cursorRaw = streamCursorRef.current;
+        const cursor = cursorRaw !== null && total >= cursorRaw ? cursorRaw : null;
+        if (cursorRaw !== null && cursor === null) {
+          // History was reset; the old start index no longer applies.
+          historyGenRef.current++;
+          setHistoryStart(0);
+        }
+        let fresh = regular;
+        if (cursor !== null && regular.length > 0) {
+          const firstIndex = total - regular.length;
+          const skip = Math.min(Math.max(cursor - firstIndex, 0), regular.length);
+          if (skip > 0) fresh = regular.slice(skip);
+        }
+        if (fresh.length > 0) {
+          setStreamLines((prev) => [...prev, ...fresh]);
+        }
+      }
+    }
+  }, []);
+
+  // Fetch what we missed since the cursor. Falls back to a full reload when
+  // the stream was reset (total shrank) or the gap is large.
+  const catchUpStreamRef = useRef<() => void>(() => {});
+  catchUpStreamRef.current = () => {
+    if (!sessionId) return;
+    const cursor = streamCursorRef.current;
+    const fullReload = () =>
+      api.getStreamOutput(sessionId).then((resp) => {
+        historyGenRef.current++;
+        setStreamLines(resp.lines);
+        setHistoryStart(initialHistoryStart(resp));
+        setPartialText("");
+        setThinkingTokens(null);
+        streamCursorRef.current = resp.total;
+      });
+    if (cursor === null) {
+      fullReload().catch(() => {});
+      return;
+    }
+    api.getStreamOutputDelta(sessionId, cursor).then((resp) => {
+      if (resp.total < cursor || resp.lines.length > CATCHUP_MAX_LINES) {
+        return fullReload();
+      }
+      applyStreamLines(resp.lines, resp.total);
+    }).catch(() => {});
+  };
+
   // Listen for WebSocket messages (escalation + stream updates)
   const handleWsMessage = useCallback((msg: { type: string; data: unknown }) => {
     if (msg.type === "escalation") {
@@ -523,108 +629,50 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
         setContextUsage({ contextTokens: data.contextTokens, contextWindow: data.contextWindow });
       }
     }
+    if (msg.type === "subscribed") {
+      // The server applied our stream subscription (first open, reconnect or
+      // resume from a hidden tab). Lines broadcast before that were not
+      // delivered to us, so catch up from the cursor.
+      const data = msg.data as { sessionIds?: string[] };
+      if (sessionId && data.sessionIds?.includes(sessionId)) catchUpStreamRef.current();
+    }
     if (msg.type === "stream_update") {
       const data = msg.data as { sessionId: string; lines: unknown[]; total: number };
-      if (data.sessionId === sessionId && data.lines.length > 0) {
-        const regular: unknown[] = [];
-        for (const line of data.lines) {
-          const entry = line as Record<string, unknown>;
-          if (entry.type === "stream_event") {
-            // Extract text delta from content_block_delta events
-            const evt = entry.event as { type?: string; delta?: { type?: string; text?: string } } | undefined;
-            if (evt?.type === "content_block_delta" && evt.delta?.type === "text_delta" && evt.delta.text) {
-              setPartialText((prev) => prev + evt.delta!.text!);
-            }
-          } else if (entry.type === "system" && entry.subtype === "thinking_tokens") {
-            // Transient thinking progress meter: keep only the latest count,
-            // never push to streamLines (see issue #675)
-            if (typeof entry.estimated_tokens === "number") {
-              setThinkingTokens(entry.estimated_tokens);
-            }
-          } else if (entry.type === "tool_progress") {
-            // Transient heartbeat for a long-running tool: keep only the latest
-            // elapsed_time_seconds per running tool_use, never push to streamLines
-            const parentId = typeof entry.parent_tool_use_id === "string"
-              ? entry.parent_tool_use_id
-              : typeof entry.tool_use_id === "string" ? entry.tool_use_id : undefined;
-            if (parentId && typeof entry.elapsed_time_seconds === "number") {
-              const elapsed = entry.elapsed_time_seconds;
-              setToolProgress((prev) => ({ ...prev, [parentId]: elapsed }));
-            }
-          } else {
-            // Clear partial text and thinking indicator when a complete assistant message arrives
-            if (entry.type === "assistant") {
-              setPartialText("");
-              setThinkingTokens(null);
-            }
-            // Also clear the thinking indicator at turn end
-            if (entry.type === "result") {
-              setThinkingTokens(null);
-              setToolProgress({});
-            }
-            regular.push(line);
-          }
-        }
-        // Cursor-based dedupe. `total` is the number of persisted lines after
-        // this update, so the persisted lines it carries occupy the indices
-        // [total - regular.length, total - 1]. Anything below the cursor was
-        // already applied (the initial snapshot, or the very same broadcast
-        // delivered twice) and must be dropped, otherwise the line renders
-        // twice (issue #709). Content-based dedupe is not usable here: the
-        // same line legitimately repeats (e.g. running the same command twice).
-        // A shrinking `total` means the persisted stream was reset (context
-        // cleared from another tab or the CLI). Drop the stale cursor instead
-        // of silently discarding every line that follows.
-        const cursorRaw = streamCursorRef.current;
-        const cursor = cursorRaw !== null && data.total >= cursorRaw ? cursorRaw : null;
-        if (cursorRaw !== null && cursor === null) {
-          // History was reset; the old start index no longer applies.
-          historyGenRef.current++;
-          setHistoryStart(0);
-        }
-        let fresh = regular;
-        if (cursor !== null && regular.length > 0) {
-          const firstIndex = data.total - regular.length;
-          const skip = Math.min(Math.max(cursor - firstIndex, 0), regular.length);
-          if (skip > 0) fresh = regular.slice(skip);
-        }
-        if (fresh.length > 0) {
-          setStreamLines((prev) => [...prev, ...fresh]);
-        }
-        streamCursorRef.current = cursor === null ? data.total : Math.max(cursor, data.total);
-      }
+      if (data.sessionId === sessionId) applyStreamLines(data.lines, data.total);
     }
-  }, [sessionId]);
+  }, [sessionId, applyStreamLines]);
   const { connectionState } = useWebSocket(handleWsMessage);
-  const prevConnectionState = useRef<string>(connectionState);
+  useStreamSubscription(useMemo(() => (sessionId ? [sessionId] : []), [sessionId]));
 
-  // On WebSocket reconnection, do a full sync to catch up on missed messages
+  // After a real disconnect or a hidden-tab pause, resync session/diff. The
+  // stream itself catches up when the server acks the re-subscription.
+  const needsSyncRef = useRef(false);
+  const sawDisconnectRef = useRef(false);
   useEffect(() => {
-    if (prevConnectionState.current === "disconnected" && connectionState === "connected" && sessionId) {
-      // Re-fetch full stream data to ensure no gaps from disconnection
-      api.getStreamOutput(sessionId).then((resp) => {
-        historyGenRef.current++;
-        setStreamLines(resp.lines);
-        setHistoryStart(initialHistoryStart(resp));
-        setPartialText("");
-        setThinkingTokens(null);
-        streamCursorRef.current = resp.total;
-      }).catch(() => {});
+    if (connectionState === "disconnected" || connectionState === "paused") needsSyncRef.current = true;
+    if (connectionState === "connected" && needsSyncRef.current && sessionId) {
+      needsSyncRef.current = false;
       api.getSession(sessionId).then(setSession).catch(() => {});
       api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
     }
-    prevConnectionState.current = connectionState;
   }, [connectionState, sessionId]);
 
-  // Show toasts on WebSocket connection state changes
+  // Show toasts on WebSocket connection state changes. "paused" (tab hidden)
+  // is intentional and silent.
   useEffect(() => {
     if (connectionState === "disconnected") {
+      sawDisconnectRef.current = true;
       setDisconnectToast(true);
     } else if (connectionState === "connected") {
       setDisconnectToast(false);
-      setReconnectToast(true);
-      const timer = setTimeout(() => setReconnectToast(false), 3000);
-      return () => clearTimeout(timer);
+      if (sawDisconnectRef.current) {
+        sawDisconnectRef.current = false;
+        setReconnectToast(true);
+        const timer = setTimeout(() => setReconnectToast(false), 3000);
+        return () => clearTimeout(timer);
+      }
+    } else if (connectionState === "paused") {
+      setDisconnectToast(false);
     }
   }, [connectionState]);
 
@@ -680,15 +728,17 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
       }
     }).catch(() => {});
 
-    // Polling as fallback (stream updates are primarily via WebSocket)
-    const interval = setInterval(() => {
-      api.getSession(sessionId).then((s) => {
-        setSession(s);
-      });
-      api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
-    }, 10000);
-    return () => clearInterval(interval);
   }, [sessionId, initialSession.name, deferred.streamOutput.total]);
+
+  // Polling as fallback (stream updates are primarily via WebSocket).
+  // Paused while the tab is hidden.
+  useVisibleInterval(() => {
+    if (!sessionId) return;
+    api.getSession(sessionId).then((s) => {
+      setSession(s);
+    }).catch(() => {});
+    api.getDiff(sessionId).then((r) => setDiffFiles(r.files)).catch(() => {});
+  }, 10000);
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1319,7 +1369,7 @@ function SessionPageInner({ session: initialSession, deferred }: { session: Sess
 
       {session && connectionState !== "connected" && (
         <div className="mb-2 shrink-0">
-          <ConnectionStatusIndicator state={connectionState} />
+          <ConnectionStatusIndicator state={connectionState === "paused" ? "connecting" : connectionState} />
         </div>
       )}
 

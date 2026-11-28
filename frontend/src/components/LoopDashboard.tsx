@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import type { AutomationRunReport, AutomationTask } from "../api/client";
 import { Section } from "./ui/Section";
 import { AlertBanner } from "./ui/AlertBanner";
+import { visibleInterval } from "../hooks/usePageVisible";
 
 export function formatDuration(sec: number): string {
   if (sec <= 0) return "-";
@@ -89,8 +90,7 @@ export function LoopDashboard({
 
   useEffect(() => {
     reload();
-    const t = setInterval(reload, 10000);
-    return () => clearInterval(t);
+    return visibleInterval(reload, 10000);
   }, [reload]);
 
   const total = reports.length;
