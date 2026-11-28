@@ -523,6 +523,55 @@ export function filterSubagentLines(lines: unknown[], parentToolUseId: string): 
 //   whether the parent Agent tool_use is part of `entries`.
 // - "<tool_use_id>": the subagent thread spawned by that Agent tool_use.
 //   Entries of nested subagents are excluded the same way.
+// Finds the user text entries the CLI injects right after a tool's result
+// (Skill content, ToolSearch's "Tool loaded."). The tool_result is located by
+// tool_use_id rather than position, since parallel tool calls interleave other
+// tool_use/tool_result entries and non-user entries (rate_limit_event, system,
+// tool_progress) or other threads' lines. Returns the first text-only user entry
+// after the result, followed by any consecutive synthetic text entries (e.g.
+// skill re-invocation notice + skill content).
+function findInjectedUserTextIndices(entries: StreamEntry[], toolUseIdx: number, toolUseId: string): number[] {
+  const thread = entries[toolUseIdx].parent_tool_use_id ?? null;
+  const messageId = (entries[toolUseIdx].message as { id?: unknown } | undefined)?.id;
+  const limit = Math.min(entries.length, toolUseIdx + 200);
+  const sameThreadUser = (e: StreamEntry) => e.type === "user" && (e.parent_tool_use_id ?? null) === thread;
+  let r = -1;
+  for (let j = toolUseIdx + 1; j < limit; j++) {
+    const e = entries[j];
+    if (!sameThreadUser(e)) continue;
+    if (parseStreamContentBlocks(e).some(nb => nb.type === "tool_result" && nb.tool_use_id === toolUseId)) {
+      r = j;
+      break;
+    }
+  }
+  if (r < 0) return [];
+  const found: number[] = [];
+  for (let j = r + 1; j < limit; j++) {
+    const e = entries[j];
+    if ((e.parent_tool_use_id ?? null) !== thread) continue;
+    if (e.type !== "user") {
+      // The next assistant turn means no injected text follows. Assistant
+      // entries of the same message are sibling parallel tool_use blocks.
+      if (e.type === "assistant") {
+        const id = (e.message as { id?: unknown } | undefined)?.id;
+        if (messageId === undefined || id !== messageId) break;
+      }
+      if (e.type === "result") break;
+      continue;
+    }
+    const blocks = parseStreamContentBlocks(e);
+    if (blocks.some(nb => nb.type === "tool_result")) {
+      if (found.length > 0) break;
+      continue;
+    }
+    if (!blocks.some(nb => nb.type === "text" && nb.text)) break;
+    if (found.length > 0 && (e as { isSynthetic?: unknown }).isSynthetic !== true) break;
+    found.push(j);
+    if ((e as { isSynthetic?: unknown }).isSynthetic !== true) break;
+  }
+  return found;
+}
+
 export function mergeStreamEntries(entries: StreamEntry[], partialText?: string, provider?: string, rootParentToolUseId: string | null = null): DisplayGroup[] {
   // First pass: collect all tool_results keyed by tool_use_id, and track Skill tool IDs
   const resultMap = new Map<string, string>();
@@ -809,21 +858,15 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
 
           // For Skill calls, fold the next user text (skill content) into the result
           if (b.name === "Skill" && b.id && skillToolIds.has(b.id)) {
-            // Pattern: tool_use(Skill) → user(tool_result) → user(text = skill content)
-            // Scan forward past tool_result entries to find the text-only user entry
+            // Pattern: tool_use(Skill) → user(tool_result) → user(text = skill content).
+            // With parallel tool calls, other tool_use/tool_result entries and
+            // non-user entries (rate_limit_event, system, ...) can sit in between.
             let skillContent = result || "";
-            for (let j = idx + 1; j < entries.length && j <= idx + 4; j++) {
-              const nextEntry = entries[j];
-              if (nextEntry.type !== "user") break;
-              const nextBlocks = parseStreamContentBlocks(nextEntry);
-              const textBlocks = nextBlocks.filter(nb => nb.type === "text" && nb.text);
-              const hasToolResult = nextBlocks.some(nb => nb.type === "tool_result");
-              if (hasToolResult) continue; // skip the tool_result entry
-              if (textBlocks.length > 0) {
-                skillContent += "\n---\n" + textBlocks.map(tb => tb.text).join("\n");
-                skillSkipIndices.add(j);
-                break;
-              }
+            const textIndices = findInjectedUserTextIndices(entries, idx, b.id);
+            for (const j of textIndices) {
+              const textBlocks = parseStreamContentBlocks(entries[j]).filter(nb => nb.type === "text" && nb.text);
+              skillContent += "\n---\n" + textBlocks.map(tb => tb.text).join("\n");
+              skillSkipIndices.add(j);
             }
             items.push({
               kind: "tool_call",
@@ -838,18 +881,8 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
             });
           } else if (b.name === "ToolSearch" && b.id && toolSearchToolIds.has(b.id)) {
             // Skip the "Tool loaded." user text after ToolSearch
-            for (let j = idx + 1; j < entries.length && j <= idx + 4; j++) {
-              const nextEntry = entries[j];
-              if (nextEntry.type !== "user") break;
-              const nextBlocks = parseStreamContentBlocks(nextEntry);
-              const hasToolResult = nextBlocks.some(nb => nb.type === "tool_result");
-              if (hasToolResult) continue;
-              const textBlocks = nextBlocks.filter(nb => nb.type === "text" && nb.text);
-              if (textBlocks.length > 0) {
-                skillSkipIndices.add(j);
-                break;
-              }
-            }
+            const [loadedIdx] = findInjectedUserTextIndices(entries, idx, b.id);
+            if (loadedIdx !== undefined) skillSkipIndices.add(loadedIdx);
             items.push({
               kind: "tool_call",
               name: b.name,
