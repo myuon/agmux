@@ -622,6 +622,8 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
   // Second pass: build display groups
   const groups: DisplayGroup[] = [];
   const skillSkipIndices = new Set<number>();
+  // The "compacting" row of the compaction in progress, if any.
+  let compactingGroup: DisplayGroup | null = null;
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx];
 
@@ -664,9 +666,28 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
           continue;
         }
       }
+      // Compaction progress: the CLI emits status=compacting repeatedly while
+      // the summary grows (compact_output_chars), then status=null when done.
+      // Show a single "compacting" row while it runs and drop it once it ends
+      // (compact_boundary records the finished compaction).
+      {
+        const rawSys = entry as unknown as Record<string, unknown>;
+        if (rawSys.subtype === "status" && rawSys.status === "compacting" && compactingGroup) {
+          continue;
+        }
+        if ((rawSys.subtype === "status" || rawSys.subtype === "compact_boundary") && rawSys.status !== "compacting" && compactingGroup) {
+          const i = groups.indexOf(compactingGroup);
+          if (i >= 0) groups.splice(i, 1);
+          compactingGroup = null;
+        }
+      }
       const sysItem = parseSystemEvent(entry);
       if (sysItem) {
-        groups.push({ role: "system", items: [sysItem] });
+        const group: DisplayGroup = { role: "system", items: [sysItem] };
+        groups.push(group);
+        if (sysItem.kind === "system_event" && sysItem.eventType === "compacting") {
+          compactingGroup = group;
+        }
       }
       continue;
     }
@@ -904,7 +925,8 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
         }
         if (sysItems.length > 0) {
           const last = groups[groups.length - 1];
-          if (last && last.role === "system") last.items.push(...sysItems);
+          // Never append to the in-progress compacting row: it is removed when compaction ends.
+          if (last && last.role === "system" && last !== compactingGroup) last.items.push(...sysItems);
           else groups.push({ role: "system", items: sysItems });
         }
         continue;
