@@ -126,13 +126,13 @@ function summarizeEntry(line: unknown): { type: string; subtype?: string; summar
   return { type, summary: hintParts.join(" "), isUnknown };
 }
 
-// Auto-fill: keep paging in older history while the rendered timeline is
-// shorter than this multiple of the viewport height (subagent-internal and
-// grouped tool lines can make a raw page render almost nothing).
 function formatRetryDuration(ms: number): string {
   return ms >= 60000 ? `${(ms / 60000).toFixed(1)}分` : `${(ms / 1000).toFixed(1)}秒`;
 }
 
+// Auto-fill: keep paging in older history while the rendered timeline is
+// shorter than this multiple of the viewport height (subagent-internal and
+// grouped tool lines can make a raw page render almost nothing).
 const AUTO_FILL_VIEWPORT_RATIO = 1.5;
 // Hard cap on lines loaded by auto-fill (scroll-to-top is not capped).
 const AUTO_FILL_MAX_LINES = 5000;
