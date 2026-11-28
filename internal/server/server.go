@@ -45,6 +45,7 @@ type Server struct {
 	sessions         session.SessionService
 	hub              *Hub
 	router           chi.Router
+	cancelRequests   context.CancelFunc // cancels request base context; see ShutdownHTTP
 	devMode          bool
 	port             int
 	logger           *slog.Logger
@@ -336,10 +337,36 @@ func (s *Server) Handler() http.Handler {
 }
 
 func (s *Server) NewHTTPServer(addr string) *http.Server {
+	// Requests derive their context from baseCtx so that ShutdownHTTP can
+	// cancel long-poll handlers (escalation / permission waits). Without this,
+	// http.Server.Shutdown waits for them until its deadline expires.
+	baseCtx, cancel := context.WithCancel(context.Background())
+	s.cancelRequests = cancel
 	return &http.Server{
 		Addr:    addr,
 		Handler: s.router,
+		BaseContext: func(net.Listener) context.Context {
+			return baseCtx
+		},
 	}
+}
+
+// ShutdownHTTP stops httpSrv gracefully. In-flight request contexts are
+// cancelled first so long-poll handlers return promptly. If connections are
+// still open when timeout expires, they are closed forcibly and no error is
+// returned: the daemon is stopping either way.
+func (s *Server) ShutdownHTTP(httpSrv *http.Server, timeout time.Duration) error {
+	if s.cancelRequests != nil {
+		s.cancelRequests()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	err := httpSrv.Shutdown(ctx)
+	if errors.Is(err, context.DeadlineExceeded) {
+		slog.Warn("graceful HTTP shutdown timed out, closing remaining connections", "timeout", timeout)
+		return httpSrv.Close()
+	}
+	return err
 }
 
 // API handlers
