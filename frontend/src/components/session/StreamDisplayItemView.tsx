@@ -8,6 +8,7 @@ import { ToolCallView } from "./ToolCallView";
 import { ToolCallGroupView } from "./ToolCallGroupView";
 import { ChoiceCardView } from "./ChoiceCards";
 import { AlertTriangle, CheckCircle } from "lucide-react";
+import { resultErrorFooter } from "./resultErrorFooter";
 
 function SystemEventView({ item }: { item: Extract<StreamDisplayItem, { kind: "system_event" }> }) {
   return <SystemEventRow label={item.label} detail={item.detail} />;
@@ -70,9 +71,9 @@ export function StreamDisplayItemView({ item, onAnswer, sessionId, pendingPermis
             {!item.result && item.errors && item.errors.length > 0 && (
               <pre className="mt-1 whitespace-pre-wrap break-words font-sans">{item.errors.join("\n")}</pre>
             )}
-            {(item.subtype || item.terminalReason) && (
+            {resultErrorFooter(item.subtype, item.terminalReason) && (
               <div className="mt-1 text-[11px] text-red-600/80">
-                {[item.subtype, item.terminalReason].filter(Boolean).join(" · ")}
+                {resultErrorFooter(item.subtype, item.terminalReason)}
               </div>
             )}
           </div>

@@ -225,6 +225,22 @@ export const HIDDEN_SYSTEM_SUBTYPES = new Set([
   "dev_intent",
 ]);
 
+// Labels a user text block the CLI marked isSynthetic.
+export function parseSyntheticUserText(text: string): StreamDisplayItem {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("This session is being continued from a previous conversation")) {
+    return { kind: "system_event", eventType: "compact_summary", label: "コンパクション後の要約", detail: trimmed };
+  }
+  const stopHook = trimmed.match(/^Stop hook feedback:\s*([\s\S]*)$/);
+  if (stopHook) {
+    return { kind: "system_event", eventType: "stop_hook_feedback", label: "Stop フックのフィードバック", detail: stopHook[1].trim() || undefined };
+  }
+  if (/^\[Image: original \d+x\d+/.test(trimmed)) {
+    return { kind: "system_event", eventType: "image_scale_note", label: "画像の縮尺注記", detail: trimmed };
+  }
+  return { kind: "system_event", eventType: "synthetic_user_text", label: "システムが追加したメッセージ", detail: trimmed };
+}
+
 function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
   const raw = entry as unknown as Record<string, unknown>;
   const subtype = raw.subtype as string | undefined;
@@ -356,17 +372,34 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
   }
 
   if (subtype === "task_notification") {
-  const status = raw.status as string;
-  const summary = (raw.summary as string) || "";
-  return {
-    kind: "system_event",
-    eventType: "task_notification",
-    label: `タスク${status === "completed" ? "完了" : status}`,
-    detail: summary || undefined,
-  };
-}
+    const status = typeof raw.status === "string" ? raw.status : "";
+    const summary = (raw.summary as string) || "";
+    return {
+      kind: "system_event",
+      eventType: "task_notification",
+      label: taskNotificationLabel(status),
+      detail: summary || undefined,
+    };
+  }
 
   return null;
+}
+
+// Japanese label for a standalone task_notification row.
+export function taskNotificationLabel(status: string): string {
+  switch (status) {
+    case "completed":
+      return "タスク完了";
+    case "failed":
+      return "タスク失敗";
+    case "killed":
+    case "stopped":
+      return "タスク停止";
+    case "dismissed":
+      return "タスク取り消し";
+    default:
+      return status ? `タスク ${status}` : "タスク通知";
+  }
 }
 
 // --- Task (task_started / task_updated / task_notification) folding ---
@@ -523,6 +556,55 @@ export function filterSubagentLines(lines: unknown[], parentToolUseId: string): 
 //   whether the parent Agent tool_use is part of `entries`.
 // - "<tool_use_id>": the subagent thread spawned by that Agent tool_use.
 //   Entries of nested subagents are excluded the same way.
+// Finds the user text entries the CLI injects right after a tool's result
+// (Skill content, ToolSearch's "Tool loaded."). The tool_result is located by
+// tool_use_id rather than position, since parallel tool calls interleave other
+// tool_use/tool_result entries and non-user entries (rate_limit_event, system,
+// tool_progress) or other threads' lines. Returns the first text-only user entry
+// after the result, followed by any consecutive synthetic text entries (e.g.
+// skill re-invocation notice + skill content).
+function findInjectedUserTextIndices(entries: StreamEntry[], toolUseIdx: number, toolUseId: string): number[] {
+  const thread = entries[toolUseIdx].parent_tool_use_id ?? null;
+  const messageId = (entries[toolUseIdx].message as { id?: unknown } | undefined)?.id;
+  const limit = Math.min(entries.length, toolUseIdx + 200);
+  const sameThreadUser = (e: StreamEntry) => e.type === "user" && (e.parent_tool_use_id ?? null) === thread;
+  let r = -1;
+  for (let j = toolUseIdx + 1; j < limit; j++) {
+    const e = entries[j];
+    if (!sameThreadUser(e)) continue;
+    if (parseStreamContentBlocks(e).some(nb => nb.type === "tool_result" && nb.tool_use_id === toolUseId)) {
+      r = j;
+      break;
+    }
+  }
+  if (r < 0) return [];
+  const found: number[] = [];
+  for (let j = r + 1; j < limit; j++) {
+    const e = entries[j];
+    if ((e.parent_tool_use_id ?? null) !== thread) continue;
+    if (e.type !== "user") {
+      // The next assistant turn means no injected text follows. Assistant
+      // entries of the same message are sibling parallel tool_use blocks.
+      if (e.type === "assistant") {
+        const id = (e.message as { id?: unknown } | undefined)?.id;
+        if (messageId === undefined || id !== messageId) break;
+      }
+      if (e.type === "result") break;
+      continue;
+    }
+    const blocks = parseStreamContentBlocks(e);
+    if (blocks.some(nb => nb.type === "tool_result")) {
+      if (found.length > 0) break;
+      continue;
+    }
+    if (!blocks.some(nb => nb.type === "text" && nb.text)) break;
+    if (found.length > 0 && (e as { isSynthetic?: unknown }).isSynthetic !== true) break;
+    found.push(j);
+    if ((e as { isSynthetic?: unknown }).isSynthetic !== true) break;
+  }
+  return found;
+}
+
 export function mergeStreamEntries(entries: StreamEntry[], partialText?: string, provider?: string, rootParentToolUseId: string | null = null): DisplayGroup[] {
   // First pass: collect all tool_results keyed by tool_use_id, and track Skill tool IDs
   const resultMap = new Map<string, string>();
@@ -566,9 +648,16 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
         if (Array.isArray(block.content)) {
           const texts: string[] = [];
           const images: Array<{ mediaType: string; data: string }> = [];
-          for (const b of block.content as Array<{ type?: string; text?: string; source?: { media_type: string; data: string } }>) {
+          for (const b of block.content as Array<{ type?: string; text?: string; tool_name?: string; source?: { media_type?: string; data: string } }>) {
             if (b.type === "image" && b.source) {
-              images.push({ mediaType: b.source.media_type, data: b.source.data });
+              images.push({ mediaType: b.source.media_type ?? "", data: b.source.data });
+            } else if (b.type === "tool_reference" && b.tool_name) {
+              // ToolSearch results: one block per loaded tool, no text.
+              texts.push((texts.length > 0 ? "\n" : "") + b.tool_name);
+            } else if (b.type === "document") {
+              // e.g. PDF read by the Read tool. The body is base64; show a placeholder.
+              const mediaType = b.source?.media_type ?? "unknown";
+              texts.push((texts.length > 0 ? "\n" : "") + `[document: ${mediaType}]`);
             } else if (b.text) {
               texts.push(b.text);
             }
@@ -615,6 +704,8 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
   // Second pass: build display groups
   const groups: DisplayGroup[] = [];
   const skillSkipIndices = new Set<number>();
+  // The "compacting" row of the compaction in progress, if any.
+  let compactingGroup: DisplayGroup | null = null;
   for (let idx = 0; idx < entries.length; idx++) {
     const entry = entries[idx];
 
@@ -657,9 +748,28 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
           continue;
         }
       }
+      // Compaction progress: the CLI emits status=compacting repeatedly while
+      // the summary grows (compact_output_chars), then status=null when done.
+      // Show a single "compacting" row while it runs and drop it once it ends
+      // (compact_boundary records the finished compaction).
+      {
+        const rawSys = entry as unknown as Record<string, unknown>;
+        if (rawSys.subtype === "status" && rawSys.status === "compacting" && compactingGroup) {
+          continue;
+        }
+        if ((rawSys.subtype === "status" || rawSys.subtype === "compact_boundary") && rawSys.status !== "compacting" && compactingGroup) {
+          const i = groups.indexOf(compactingGroup);
+          if (i >= 0) groups.splice(i, 1);
+          compactingGroup = null;
+        }
+      }
       const sysItem = parseSystemEvent(entry);
       if (sysItem) {
-        groups.push({ role: "system", items: [sysItem] });
+        const group: DisplayGroup = { role: "system", items: [sysItem] };
+        groups.push(group);
+        if (sysItem.kind === "system_event" && sysItem.eventType === "compacting") {
+          compactingGroup = group;
+        }
       }
       continue;
     }
@@ -795,21 +905,15 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
 
           // For Skill calls, fold the next user text (skill content) into the result
           if (b.name === "Skill" && b.id && skillToolIds.has(b.id)) {
-            // Pattern: tool_use(Skill) → user(tool_result) → user(text = skill content)
-            // Scan forward past tool_result entries to find the text-only user entry
+            // Pattern: tool_use(Skill) → user(tool_result) → user(text = skill content).
+            // With parallel tool calls, other tool_use/tool_result entries and
+            // non-user entries (rate_limit_event, system, ...) can sit in between.
             let skillContent = result || "";
-            for (let j = idx + 1; j < entries.length && j <= idx + 4; j++) {
-              const nextEntry = entries[j];
-              if (nextEntry.type !== "user") break;
-              const nextBlocks = parseStreamContentBlocks(nextEntry);
-              const textBlocks = nextBlocks.filter(nb => nb.type === "text" && nb.text);
-              const hasToolResult = nextBlocks.some(nb => nb.type === "tool_result");
-              if (hasToolResult) continue; // skip the tool_result entry
-              if (textBlocks.length > 0) {
-                skillContent += "\n---\n" + textBlocks.map(tb => tb.text).join("\n");
-                skillSkipIndices.add(j);
-                break;
-              }
+            const textIndices = findInjectedUserTextIndices(entries, idx, b.id);
+            for (const j of textIndices) {
+              const textBlocks = parseStreamContentBlocks(entries[j]).filter(nb => nb.type === "text" && nb.text);
+              skillContent += "\n---\n" + textBlocks.map(tb => tb.text).join("\n");
+              skillSkipIndices.add(j);
             }
             items.push({
               kind: "tool_call",
@@ -824,18 +928,8 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
             });
           } else if (b.name === "ToolSearch" && b.id && toolSearchToolIds.has(b.id)) {
             // Skip the "Tool loaded." user text after ToolSearch
-            for (let j = idx + 1; j < entries.length && j <= idx + 4; j++) {
-              const nextEntry = entries[j];
-              if (nextEntry.type !== "user") break;
-              const nextBlocks = parseStreamContentBlocks(nextEntry);
-              const hasToolResult = nextBlocks.some(nb => nb.type === "tool_result");
-              if (hasToolResult) continue;
-              const textBlocks = nextBlocks.filter(nb => nb.type === "text" && nb.text);
-              if (textBlocks.length > 0) {
-                skillSkipIndices.add(j);
-                break;
-              }
-            }
+            const [loadedIdx] = findInjectedUserTextIndices(entries, idx, b.id);
+            if (loadedIdx !== undefined) skillSkipIndices.add(loadedIdx);
             items.push({
               kind: "tool_call",
               name: b.name,
@@ -893,6 +987,28 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
     } else if (entry.type === "user") {
       // Skip user text that was folded into a Skill tool call
       if (skillSkipIndices.has(idx)) {
+        continue;
+      }
+
+      // CLI-injected text (compaction summary, Stop hook feedback, image scale
+      // notes) is not something the user typed; show it as a system row.
+      if ((entry as { isSynthetic?: boolean }).isSynthetic) {
+        const texts = blocks.filter((b) => b.type === "text" && b.text).map((b) => b.text as string);
+        if (texts.length === 0 && typeof entry.message?.content === "string" && entry.message.content) {
+          texts.push(entry.message.content);
+        }
+        const sysItems: StreamDisplayItem[] = texts.map(parseSyntheticUserText);
+        for (const b of blocks) {
+          if (b.type === "image" && b.source) {
+            sysItems.push({ kind: "image", mediaType: b.source.media_type, data: b.source.data });
+          }
+        }
+        if (sysItems.length > 0) {
+          const last = groups[groups.length - 1];
+          // Never append to the in-progress compacting row: it is removed when compaction ends.
+          if (last && last.role === "system" && last !== compactingGroup) last.items.push(...sysItems);
+          else groups.push({ role: "system", items: sysItems });
+        }
         continue;
       }
 
