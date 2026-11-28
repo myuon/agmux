@@ -702,17 +702,32 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
           ? (raw.errors as unknown[]).filter((e): e is string => typeof e === "string" && e !== "")
           : undefined,
       };
-      // For error results: suppress the immediately preceding assistant group if its
-      // text content matches the error message (Claude echoes the error as an assistant message)
+      // For error results: Claude echoes the error as an assistant text message.
+      // Remove only the echoed text item(s) from the preceding assistant group, keeping
+      // tool_use / thinking items that share the group (tool_result-only user rows
+      // don't split assistant groups). Drop the group only if it becomes empty.
       if (isError && resultText) {
         const last = groups[groups.length - 1];
         if (last && last.role === "assistant") {
-          const lastTexts = last.items
-            .filter((i): i is Extract<StreamDisplayItem, { kind: "text" }> => i.kind === "text")
-            .map(i => i.text)
-            .join("");
-          if (lastTexts === resultText) {
-            groups.pop();
+          const lastItem = last.items[last.items.length - 1];
+          let remaining: StreamDisplayItem[] | undefined;
+          if (lastItem && lastItem.kind === "text" && lastItem.text === resultText) {
+            remaining = last.items.slice(0, -1);
+          } else {
+            const lastTexts = last.items
+              .filter((i): i is Extract<StreamDisplayItem, { kind: "text" }> => i.kind === "text")
+              .map(i => i.text)
+              .join("");
+            if (lastTexts === resultText) {
+              remaining = last.items.filter(i => i.kind !== "text");
+            }
+          }
+          if (remaining) {
+            if (remaining.length === 0) {
+              groups.pop();
+            } else {
+              groups[groups.length - 1] = { ...last, items: remaining };
+            }
           }
         }
       }
