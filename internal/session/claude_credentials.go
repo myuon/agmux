@@ -43,7 +43,9 @@ const claudeSecurityTimeout = 5 * time.Second
 // package exists to detect.
 type claudeCredentials struct {
 	ClaudeAiOauth struct {
-		ExpiresAt *int64 `json:"expiresAt"`
+		ExpiresAt             *int64 `json:"expiresAt"`
+		RefreshToken          string `json:"refreshToken"`
+		RefreshTokenExpiresAt *int64 `json:"refreshTokenExpiresAt"`
 	} `json:"claudeAiOauth"`
 }
 
@@ -149,6 +151,31 @@ func parseClaudeExpiry(payload []byte) (time.Time, bool) {
 	return time.UnixMilli(*creds.ClaudeAiOauth.ExpiresAt), true
 }
 
+// claudeCanSelfRefresh reports whether the CLI can renew an expired access
+// token in payload on its own. Access tokens last only hours, so an entry whose
+// expiresAt has merely passed is routine: the CLI refreshes it on next use and
+// rewrites the Keychain. Only entries that cannot be refreshed need a re-login.
+//
+// The #701 corruption (expiresAt=0) is never treated as refreshable, so that
+// case keeps being reported.
+func claudeCanSelfRefresh(payload []byte, now time.Time) bool {
+	var creds claudeCredentials
+	if err := json.Unmarshal(payload, &creds); err != nil {
+		return false
+	}
+	o := creds.ClaudeAiOauth
+	if o.ExpiresAt == nil || *o.ExpiresAt <= 0 {
+		return false
+	}
+	if o.RefreshToken == "" {
+		return false
+	}
+	if o.RefreshTokenExpiresAt != nil && !time.UnixMilli(*o.RefreshTokenExpiresAt).After(now) {
+		return false
+	}
+	return true
+}
+
 // ClaudeCredentialState describes what a repair attempt found.
 type ClaudeCredentialState int
 
@@ -159,8 +186,9 @@ const (
 	// ClaudeCredsRepaired means an expired Keychain entry was removed so the
 	// CLI falls back to the valid credential file.
 	ClaudeCredsRepaired
-	// ClaudeCredsUnrecoverable means the Keychain entry is expired and the
-	// credential file cannot stand in for it, so only a re-login helps.
+	// ClaudeCredsUnrecoverable means the Keychain entry is expired, cannot be
+	// refreshed by the CLI, and the credential file cannot stand in for it,
+	// so only a re-login helps.
 	ClaudeCredsUnrecoverable
 )
 
@@ -195,11 +223,19 @@ func RepairClaudeCredentials(now time.Time) (ClaudeCredentialState, error) {
 		return ClaudeCredsUnrecoverable, fmt.Errorf("locate credentials file: %w", err)
 	}
 	fileBytes, err := os.ReadFile(path)
-	if err != nil {
-		return ClaudeCredsUnrecoverable, nil
+	fileValid := false
+	if err == nil {
+		if fileExpiry, ok := parseClaudeExpiry(fileBytes); ok && fileExpiry.After(now) {
+			fileValid = true
+		}
 	}
-	fileExpiry, ok := parseClaudeExpiry(fileBytes)
-	if !ok || !fileExpiry.After(now) {
+	if !fileValid {
+		// The file cannot take over, but an access token that has simply
+		// lapsed is renewed by the CLI with its refresh token. Warning about
+		// a re-login there would be a false alarm.
+		if claudeCanSelfRefresh(payload, now) {
+			return ClaudeCredsHealthy, nil
+		}
 		return ClaudeCredsUnrecoverable, nil
 	}
 
