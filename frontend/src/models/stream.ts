@@ -550,9 +550,16 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
         if (Array.isArray(block.content)) {
           const texts: string[] = [];
           const images: Array<{ mediaType: string; data: string }> = [];
-          for (const b of block.content as Array<{ type?: string; text?: string; source?: { media_type: string; data: string } }>) {
+          for (const b of block.content as Array<{ type?: string; text?: string; tool_name?: string; source?: { media_type?: string; data: string } }>) {
             if (b.type === "image" && b.source) {
-              images.push({ mediaType: b.source.media_type, data: b.source.data });
+              images.push({ mediaType: b.source.media_type ?? "", data: b.source.data });
+            } else if (b.type === "tool_reference" && b.tool_name) {
+              // ToolSearch results: one block per loaded tool, no text.
+              texts.push((texts.length > 0 ? "\n" : "") + b.tool_name);
+            } else if (b.type === "document") {
+              // e.g. PDF read by the Read tool. The body is base64; show a placeholder.
+              const mediaType = b.source?.media_type ?? "unknown";
+              texts.push((texts.length > 0 ? "\n" : "") + `[document: ${mediaType}]`);
             } else if (b.text) {
               texts.push(b.text);
             }
