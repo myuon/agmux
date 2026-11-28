@@ -372,17 +372,34 @@ function parseSystemEvent(entry: StreamEntry): StreamDisplayItem | null {
   }
 
   if (subtype === "task_notification") {
-  const status = raw.status as string;
-  const summary = (raw.summary as string) || "";
-  return {
-    kind: "system_event",
-    eventType: "task_notification",
-    label: `タスク${status === "completed" ? "完了" : status}`,
-    detail: summary || undefined,
-  };
-}
+    const status = typeof raw.status === "string" ? raw.status : "";
+    const summary = (raw.summary as string) || "";
+    return {
+      kind: "system_event",
+      eventType: "task_notification",
+      label: taskNotificationLabel(status),
+      detail: summary || undefined,
+    };
+  }
 
   return null;
+}
+
+// Japanese label for a standalone task_notification row.
+export function taskNotificationLabel(status: string): string {
+  switch (status) {
+    case "completed":
+      return "タスク完了";
+    case "failed":
+      return "タスク失敗";
+    case "killed":
+    case "stopped":
+      return "タスク停止";
+    case "dismissed":
+      return "タスク取り消し";
+    default:
+      return status ? `タスク ${status}` : "タスク通知";
+  }
 }
 
 // --- Task (task_started / task_updated / task_notification) folding ---

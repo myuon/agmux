@@ -338,6 +338,8 @@ export function backgroundTaskStatusLabel(status: string): { label: string; clas
     case "killed":
     case "stopped":
       return { label: "バックグラウンド停止", className: "text-gray-600 bg-gray-100 border-gray-300" };
+    case "dismissed":
+      return { label: "バックグラウンド取り消し", className: "text-gray-600 bg-gray-100 border-gray-300" };
     default:
       return { label: `バックグラウンド ${status}`, className: "text-gray-600 bg-gray-100 border-gray-300" };
   }
