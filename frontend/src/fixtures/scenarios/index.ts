@@ -5,9 +5,10 @@ import { agentSubtaskLines } from "./agentSubtask";
 import { normalConversationLines } from "./normalConversation";
 import { compactionLines } from "./compaction";
 import { multipleRunningTasksLines } from "./multipleRunningTasks";
-import { apiRetryLines, apiRetryResolvedLines } from "./apiRetry";
+import { apiRetryLines, apiRetryResolvedLines, apiRetryNoResponseLines } from "./apiRetry";
 import { resultEventSuccessLines, resultEventErrorLines } from "./resultEvent";
 import { toolUseErrorLines } from "./toolUseError";
+import { peerMessageLines } from "./peerMessage";
 import { mockSessions } from "./sessionListScenarios";
 import type { Session } from "../../types/session";
 
@@ -145,6 +146,13 @@ export const scenarioPresets: ScenarioPreset[] = [
     lines: apiRetryResolvedLines,
   },
   {
+    id: "api-retry-no-response",
+    type: "stream",
+    label: "API Retry (無応答後)",
+    description: "no_response 付きのリトライ — 応答がなかった時間を表示",
+    lines: apiRetryNoResponseLines,
+  },
+  {
     id: "multiple-running-tasks",
     type: "stream",
     label: "Multiple Running Tasks",
@@ -164,6 +172,13 @@ export const scenarioPresets: ScenarioPreset[] = [
     label: "Result Event: Error",
     description: "assistantメッセージの後にresult（エラー）が来るシナリオ",
     lines: resultEventErrorLines,
+  },
+  {
+    id: "peer-message",
+    type: "stream",
+    label: "Peer Message",
+    description: "他のセッションから届いた依頼（result.origin.kind=peer）で始まったターン",
+    lines: peerMessageLines,
   },
   {
     id: "tool-use-error",
