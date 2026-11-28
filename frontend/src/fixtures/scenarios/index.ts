@@ -5,7 +5,7 @@ import { agentSubtaskLines } from "./agentSubtask";
 import { normalConversationLines } from "./normalConversation";
 import { compactionLines } from "./compaction";
 import { multipleRunningTasksLines } from "./multipleRunningTasks";
-import { apiRetryLines, apiRetryResolvedLines } from "./apiRetry";
+import { apiRetryLines, apiRetryResolvedLines, apiRetryNoResponseLines } from "./apiRetry";
 import { resultEventSuccessLines, resultEventErrorLines } from "./resultEvent";
 import { peerMessageLines } from "./peerMessage";
 import { mockSessions } from "./sessionListScenarios";
@@ -143,6 +143,13 @@ export const scenarioPresets: ScenarioPreset[] = [
     label: "API Retry (解消済み)",
     description: "リトライ後にassistantが再開 — インジケーター非表示",
     lines: apiRetryResolvedLines,
+  },
+  {
+    id: "api-retry-no-response",
+    type: "stream",
+    label: "API Retry (無応答後)",
+    description: "no_response 付きのリトライ — 応答がなかった時間を表示",
+    lines: apiRetryNoResponseLines,
   },
   {
     id: "multiple-running-tasks",

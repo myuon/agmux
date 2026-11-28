@@ -126,6 +126,10 @@ function summarizeEntry(line: unknown): { type: string; subtype?: string; summar
   return { type, summary: hintParts.join(" "), isUnknown };
 }
 
+function formatRetryDuration(ms: number): string {
+  return ms >= 60000 ? `${(ms / 60000).toFixed(1)}分` : `${(ms / 1000).toFixed(1)}秒`;
+}
+
 // Auto-fill: keep paging in older history while the rendered timeline is
 // shorter than this multiple of the viewport height (subagent-internal and
 // grouped tool lines can make a raw page render almost nothing).
@@ -234,7 +238,13 @@ export function StreamOutputView({ lines, partialText, thinkingTokens, className
       const e = entries[i];
       if (e.type === "system" && (e as unknown as Record<string, unknown>).subtype === "api_retry") {
         const raw = e as unknown as Record<string, unknown>;
+        // no_response: the CLI got no response at all and is retrying after
+        // waiting waited_ms (retry_delay_ms is 0 in this case).
+        const noResponse = raw.no_response as Record<string, unknown> | undefined;
+        const noResponseWaitedMs =
+          noResponse && typeof noResponse.waited_ms === "number" ? noResponse.waited_ms : undefined;
         return {
+          noResponseWaitedMs,
           attempt: (raw.attempt as number) || 0,
           maxRetries: (raw.max_retries as number) || 0,
           retryDelayMs: (raw.retry_delay_ms as number) || 0,
@@ -372,9 +382,9 @@ export function StreamOutputView({ lines, partialText, thinkingTokens, className
               </span>
             )}
             <span className="shrink-0 text-amber-400 ml-auto">
-              待機 {trailingRetry.retryDelayMs >= 60000
-                ? `${(trailingRetry.retryDelayMs / 60000).toFixed(1)}分`
-                : `${(trailingRetry.retryDelayMs / 1000).toFixed(1)}秒`}
+              {trailingRetry.noResponseWaitedMs != null
+                ? `${formatRetryDuration(trailingRetry.noResponseWaitedMs)} 応答なし`
+                : `待機 ${formatRetryDuration(trailingRetry.retryDelayMs)}`}
             </span>
           </div>
         )}

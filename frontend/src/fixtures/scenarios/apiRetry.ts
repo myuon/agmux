@@ -121,3 +121,20 @@ export const apiRetryResolvedLines = [
     "uuid": "00000000-0000-0000-0000-000000000005"
   },
 ];
+
+// Scenario: API retry after no response — the CLI waited without any response
+export const apiRetryNoResponseLines = [
+  apiRetryLines[0],
+  {
+    "type": "system",
+    "subtype": "api_retry",
+    "attempt": 1,
+    "max_retries": 1,
+    "retry_delay_ms": 0,
+    "error_status": null,
+    "error": "unknown",
+    "no_response": { "waited_ms": 349000, "retry_wait_ms": 599000 },
+    "session_id": "00000000-0000-0000-0000-000000000000",
+    "uuid": "00000000-0000-0000-0000-000000000005"
+  },
+];
