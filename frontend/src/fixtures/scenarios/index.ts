@@ -8,6 +8,7 @@ import { multipleRunningTasksLines } from "./multipleRunningTasks";
 import { apiRetryLines, apiRetryResolvedLines } from "./apiRetry";
 import { resultEventSuccessLines, resultEventErrorLines } from "./resultEvent";
 import { peerMessageLines } from "./peerMessage";
+import { persistedOutputLines } from "./persistedOutput";
 import { mockSessions } from "./sessionListScenarios";
 import type { Session } from "../../types/session";
 
@@ -164,6 +165,13 @@ export const scenarioPresets: ScenarioPreset[] = [
     label: "Result Event: Error",
     description: "assistantメッセージの後にresult（エラー）が来るシナリオ",
     lines: resultEventErrorLines,
+  },
+  {
+    id: "persisted-output",
+    type: "stream",
+    label: "Persisted Output",
+    description: "<persisted-output> で包まれた大きなツール出力（タグを除いて表示）",
+    lines: persistedOutputLines,
   },
   {
     id: "peer-message",
