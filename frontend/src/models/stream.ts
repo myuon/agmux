@@ -619,6 +619,18 @@ function findInjectedUserTextIndices(entries: StreamEntry[], toolUseIdx: number,
   return found;
 }
 
+// Claude Code wraps large tool outputs in <persisted-output>...</persisted-output>
+// ("Output too large (..). Full output saved to: ... Preview (first 2KB): ...").
+// Remove the wrapper tags and keep the inner text (and anything after it).
+export function stripPersistedOutputTag(text: string): string {
+  // Text may follow the closing tag (e.g. Bash's "Shell cwd was reset to ...").
+  const m = /^\s*<persisted-output>\n?([\s\S]*?)\n?<\/persisted-output>(?:\n|$)([\s\S]*)$/.exec(text);
+  if (!m) return text;
+  const inner = m[1];
+  const rest = m[2].replace(/\s+$/, "");
+  return rest ? `${inner}\n${rest}` : inner;
+}
+
 export function mergeStreamEntries(entries: StreamEntry[], partialText?: string, provider?: string, rootParentToolUseId: string | null = null): DisplayGroup[] {
   // First pass: collect all tool_results keyed by tool_use_id, and track Skill tool IDs
   const resultMap = new Map<string, string>();
@@ -676,7 +688,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
               texts.push(b.text);
             }
           }
-          resultMap.set(block.tool_use_id, texts.join(""));
+          resultMap.set(block.tool_use_id, stripPersistedOutputTag(texts.join("")));
           if (images.length > 0) {
             resultImageMap.set(block.tool_use_id, images);
           }
@@ -684,7 +696,7 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
           const c = typeof block.content === "string"
             ? block.content
             : JSON.stringify(block.content);
-          resultMap.set(block.tool_use_id, c);
+          resultMap.set(block.tool_use_id, stripPersistedOutputTag(c));
         }
       }
     }
