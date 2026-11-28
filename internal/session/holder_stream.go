@@ -170,6 +170,7 @@ type HolderStreamProcess struct {
 	onNewLines       func(sessionID string, newLines []string, total int)
 	onProcessExit    func(sessionID string, exitErr error)
 	onTurnComplete   func(sessionID string)
+	onTurnStart      func(sessionID string) // system/init: the CLI began a turn (possibly on its own)
 	onTurnFailed     func(sessionID string) // result event with a non-success subtype
 	onHolderRestart  func(sessionID string, newPID int)
 	onContextUsage   func(sessionID string, contextTokens, contextWindow int64)
@@ -696,6 +697,18 @@ func (sp *HolderStreamProcess) readLoop() {
 				}
 			}
 		}
+		if ev.Type == "system" && ev.Subtype == "init" {
+			// The CLI emits system/init at the start of every turn, including
+			// turns it starts on its own (e.g. after a background task
+			// finished). Such a turn can follow a result that already set the
+			// session idle, so report it to put the session back to working.
+			sp.mu.RLock()
+			scb := sp.onTurnStart
+			sp.mu.RUnlock()
+			if scb != nil {
+				scb(sp.streamOpts.SessionID)
+			}
+		}
 		switch ev.Type {
 		case "assistant":
 			var au assistantUsage
@@ -906,6 +919,13 @@ func (sp *HolderStreamProcess) RunningTasks() int {
 	sp.mu.RLock()
 	defer sp.mu.RUnlock()
 	return sp.runningTasks
+}
+
+// SetOnTurnStart sets a callback for when the CLI begins a turn (system/init).
+func (sp *HolderStreamProcess) SetOnTurnStart(fn func(sessionID string)) {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+	sp.onTurnStart = fn
 }
 
 // SetOnTurnComplete sets a callback for when the CLI completes a turn.

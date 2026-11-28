@@ -150,6 +150,40 @@ func TestAutoStop_WaitsForBackgroundTasks(t *testing.T) {
 	waitStatus(t, m, id, StatusArchived)
 }
 
+// The CLI can start the next turn by itself right after a result that set
+// the session idle (e.g. after a background task finished). Its system/init
+// must put the session back to working so the pending auto-stop does not kill
+// the CLI mid-turn; the session stops after that turn ends instead.
+func TestAutoStop_CLIStartedTurnDuringDelayBlocksStop(t *testing.T) {
+	m, rec := autoStopTestManager(t)
+	m.autoStopDelay = 300 * time.Millisecond
+	id, fh := createAutoSession(t, m, rec, "auto-1")
+	fh.emitTurnComplete(t)
+	waitStatus(t, m, id, StatusIdle)
+	writeLine(t, fh, `{"type":"system","subtype":"init","session_id":"cli-1"}`)
+	waitStatus(t, m, id, StatusWorking)
+	time.Sleep(600 * time.Millisecond)
+	if s, _ := m.Get(id); s.Status != StatusWorking {
+		t.Fatalf("status = %s, want working (CLI turn in progress)", s.Status)
+	}
+	writeLine(t, fh, `{"type":"result","subtype":"success"}`)
+	waitStatus(t, m, id, StatusArchived)
+}
+
+// system/init does not override waiting_input.
+func TestTurnStart_KeepsWaitingInput(t *testing.T) {
+	m, rec := autoStopTestManager(t)
+	id, fh := createAutoSession(t, m, rec, "")
+	if err := m.UpdateStatus(id, StatusWaitingInput); err != nil {
+		t.Fatal(err)
+	}
+	writeLine(t, fh, `{"type":"system","subtype":"init","session_id":"cli-1"}`)
+	time.Sleep(200 * time.Millisecond)
+	if s, _ := m.Get(id); s.Status != StatusWaitingInput {
+		t.Fatalf("status = %s, want waiting_input", s.Status)
+	}
+}
+
 func TestAutoStop_TaskStartedDuringDelayBlocksStop(t *testing.T) {
 	m, rec := autoStopTestManager(t)
 	m.autoStopDelay = 300 * time.Millisecond
