@@ -32,6 +32,7 @@ import (
 	"github.com/myuon/agmux/internal/logging"
 	"github.com/myuon/agmux/internal/mcp"
 
+	"github.com/myuon/agmux/internal/retention"
 	"github.com/myuon/agmux/internal/server"
 	"github.com/myuon/agmux/internal/session"
 	"github.com/spf13/cobra"
@@ -196,7 +197,7 @@ func serveCmd() *cobra.Command {
 			defer syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
 
 			// Daemon logger (slog → stderr + ~/.agmux/agmux.log)
-			logFile, logger, err := logging.Setup()
+			logFile, logger, err := logging.Setup(cfg.Retention.LogDays)
 			if err != nil {
 				return fmt.Errorf("setup logging: %w", err)
 			}
@@ -311,6 +312,22 @@ func serveCmd() *cobra.Command {
 			autoScheduler.OnLimitStop = srv.NoticeAutomation
 			autoScheduler.LoginRequired = claudeAuthMon.Required
 			autoScheduler.Start()
+
+			// Retention (#918): prune old OTel rows and stream files ~1 min
+			// after startup and then every 24h. Re-reads config.toml each run.
+			retentionCtx, retentionCancel := context.WithCancel(context.Background())
+			defer retentionCancel()
+			if streamsDir, err := db.StreamsDir(); err != nil {
+				logger.Warn("retention disabled: streams dir", "error", err)
+			} else {
+				cleaner := retention.New(database, streamsDir, func() config.RetentionConfig {
+					if c, err := config.Load(); err == nil {
+						return c.Retention
+					}
+					return cfg.Retention
+				}, logger)
+				go cleaner.Run(retentionCtx)
+			}
 			// Stop is idempotent; the defer covers error-return paths (frontend
 			// load / listen / Serve errors) that bypass the graceful-shutdown
 			// branch below.
@@ -376,6 +393,7 @@ func serveCmd() *cobra.Command {
 			case sig := <-shutdownCh:
 				logger.Info(fmt.Sprintf("Received %s, shutting down gracefully...", sig))
 				autoScheduler.Stop()
+				retentionCancel()
 				// Close Chrome via CDP (never SIGTERM) so cookies are flushed.
 				rbCtx, rbCancel := context.WithTimeout(context.Background(), 12*time.Second)
 				srv.ShutdownRemoteBrowser(rbCtx)
@@ -1178,6 +1196,10 @@ func formatBytes(b int64) string {
 func readSessionLines(logPath string, clearOffset int64) ([]string, error) {
 	f, err := os.Open(logPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			// Stream files of old archived sessions are pruned (retention); show nothing.
+			return nil, nil
+		}
 		return nil, fmt.Errorf("open stream file: %w", err)
 	}
 	defer f.Close()

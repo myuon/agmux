@@ -1704,6 +1704,7 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 	cfg.RemoteBrowser = current.RemoteBrowser
 	cfg.Secret = current.Secret
 	cfg.Experimental = current.Experimental
+	cfg.Retention = current.Retention
 	cfg.LearningInbox = current.LearningInbox
 	// Preserve background_task_notification_interval if the request omitted it
 	// (older clients may not send the field).
@@ -2171,7 +2172,12 @@ func slogRequestLogger(logger *slog.Logger) func(next http.Handler) http.Handler
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 			start := time.Now()
 			next.ServeHTTP(ww, r)
-			logger.Info("http request",
+			// Debug normally (these lines were ~95% of agmux.log); 5xx stays visible.
+			level := slog.LevelDebug
+			if ww.Status() >= 500 {
+				level = slog.LevelWarn
+			}
+			logger.Log(r.Context(), level, "http request",
 				"method", r.Method,
 				"path", r.URL.Path,
 				"status", ww.Status(),
