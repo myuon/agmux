@@ -829,6 +829,10 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
       const raw = entry as unknown as Record<string, unknown>;
       const isError = (raw.is_error as boolean) === true;
       const resultText = typeof raw.result === "string" ? raw.result : "";
+      // resume 時の stale な task-notification 起点で出る、何も実行していない空 result は表示しない
+      if (!isError && raw.num_turns === 0 && resultText.trim() === "") {
+        continue;
+      }
       const item: StreamDisplayItem = {
         kind: "result",
         isError,
