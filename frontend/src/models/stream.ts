@@ -925,7 +925,8 @@ export function mergeStreamEntries(entries: StreamEntry[], partialText?: string,
         }
         if (sysItems.length > 0) {
           const last = groups[groups.length - 1];
-          if (last && last.role === "system") last.items.push(...sysItems);
+          // Never append to the in-progress compacting row: it is removed when compaction ends.
+          if (last && last.role === "system" && last !== compactingGroup) last.items.push(...sysItems);
           else groups.push({ role: "system", items: sysItems });
         }
         continue;
